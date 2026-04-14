@@ -1,0 +1,34 @@
+services:
+  # Backend — FastAPI
+  - type: web
+    name: linkdeck-backend
+    runtime: python
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: uvicorn backend.server:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: MONGO_URL
+        sync: false          # You set this in Render dashboard
+      - key: DB_NAME
+        value: linkdeck
+      - key: JWT_SECRET
+        generateValue: true  # Render auto-generates a secure random value
+      - key: FRONTEND_URL
+        sync: false          # Set to: https://itinerary.travloger.in
+      - key: ADMIN_EMAIL
+        value: admin@travloger.in
+      - key: ADMIN_PASSWORD
+        sync: false          # You set this in Render dashboard
+      - key: EMERGENT_LLM_KEY
+        value: ""            # Leave blank - we replace storage separately
+
+  # Frontend — React (Static Site)
+  - type: web
+    name: linkdeck-frontend
+    runtime: static
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: frontend/build
+    envVars:
+      - key: REACT_APP_BACKEND_URL
+        sync: false          # Set to your backend Render URL
+      - key: REACT_APP_SITE_URL
+        value: https://itinerary.travloger.in
