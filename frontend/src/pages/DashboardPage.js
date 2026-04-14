@@ -75,7 +75,7 @@ export default function DashboardPage() {
         axios.get(`${API}/links`, { withCredentials: true, params }),
         axios.get(`${API}/dashboard/stats`, { withCredentials: true }),
       ]);
-      setPdfs(pdfsRes.data);
+      setPdfs(pdfsRes.data?.data || pdfsRes.data || []);
       setLinks(linksRes.data);
       setStats(statsRes.data);
     } catch (err) {
