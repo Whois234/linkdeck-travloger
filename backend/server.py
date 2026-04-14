@@ -368,7 +368,10 @@ frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=[frontend_url, "http://localhost:3000"],
+    allow_origins=[
+     "http://localhost:3000",
+     "https://linkdeck-travloger.vercel.app"
+    ],
     allow_methods=["*"],
     allow_headers=["*"],
 )
