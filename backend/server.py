@@ -364,14 +364,15 @@ async def dashboard_stats(request: Request):
 app.include_router(api_router)
 
 # CORS
-frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+from fastapi.middleware.cors import CORSMiddleware
+
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
     allow_origins=[
-     "http://localhost:3000",
-     "https://linkdeck-travloger.vercel.app"
+        "http://localhost:3000"
     ],
+    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
