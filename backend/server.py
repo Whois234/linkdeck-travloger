@@ -17,6 +17,8 @@ import requests
 from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel, Field
 from typing import Optional
+from datetime import datetime, timezone
+from fastapi import HTTPException, Request
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -369,14 +371,53 @@ from fastapi.middleware.cors import CORSMiddleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000"
+        "http://localhost:3000",
+        "https://linkdeck-travloger.vercel.app",
+        "https://linkdeck-travloger-duqplmsi0-whois234s-projects.vercel.app"
     ],
     allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+from fastapi import UploadFile, File
+from uuid import uuid4
+import os
 
+UPLOAD_DIR = "uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+@api_router.post("/pdfs/upload")
+async def upload_pdf(
+    file: UploadFile = File(...),
+    request: Request = None
+):
+    user = await get_current_user(request)
+
+    if not file.filename.endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files allowed")
+
+    file_id = str(uuid4())
+    file_path = f"{UPLOAD_DIR}/{file_id}_{file.filename}"
+
+    # Save file
+    with open(file_path, "wb") as f:
+        content = await file.read()
+        f.write(content)
+
+    # Save to DB
+    pdf_doc = {
+        "id": file_id,
+        "file_name": file.filename,
+        "storage_path": file_path,
+        "user_id": user["_id"],
+        "link_count": 0,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+
+    await db.pdfs.insert_one(pdf_doc)
+
+    return {"message": "PDF uploaded successfully"}
 # Startup
 @app.on_event("startup")
 async def startup():
