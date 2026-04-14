@@ -14,6 +14,7 @@ import {
   Upload, Link2, Copy, Trash2, FileText, ExternalLink, LogOut, Search, Filter,
   CheckCircle, XCircle, Eye, Loader2, FileUp, LinkIcon, MapPin
 } from 'lucide-react';
+console.log("fix applied");
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const SITE_URL = process.env.REACT_APP_SITE_URL || process.env.REACT_APP_BACKEND_URL;
@@ -298,6 +299,7 @@ export default function DashboardPage() {
               </div>
             ) : (
               <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+                // fix
                 <Table>
                   <TableHeader>
                     <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
@@ -309,7 +311,7 @@ export default function DashboardPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {pdfs.map((pdf) => (
+                    {(Array.isArray(pdfs) ? pdfs : []).map((pdf) => (
                       <TableRow key={pdf.id} className="border-b hover:bg-slate-50 transition-colors" style={{ borderColor: '#f1f5f9' }} data-testid={`pdf-row-${pdf.id}`}>
                         <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>
                           <div className="flex items-center gap-2">
