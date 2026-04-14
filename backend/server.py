@@ -149,8 +149,8 @@ async def register(input: RegisterInput, response: Response):
     access_token = create_access_token(user_id, email)
     refresh_token = create_refresh_token(user_id)
     is_https = "https" in os.environ.get("FRONTEND_URL", "")
-    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=is_https, samesite="lax", max_age=3600, path="/")
-    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=is_https, samesite="lax", max_age=604800, path="/")
+    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=is_https, samesite="none", max_age=3600, path="/")
+    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=is_https, samesite="none", max_age=604800, path="/")
     return {"id": user_id, "email": email, "name": input.name, "role": "user"}
 
 @api_router.post("/auth/login")
@@ -165,8 +165,8 @@ async def login(input: LoginInput, request: Request, response: Response):
     access_token = create_access_token(user_id, email)
     refresh_token = create_refresh_token(user_id)
     is_https = "https" in os.environ.get("FRONTEND_URL", "")
-    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=is_https, samesite="lax", max_age=3600, path="/")
-    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=is_https, samesite="lax", max_age=604800, path="/")
+    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=is_https, samesite="none", max_age=3600, path="/")
+    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=is_https, samesite="none", max_age=604800, path="/")
     return {"id": user_id, "email": email, "name": user.get("name", ""), "role": user.get("role", "user")}
 
 @api_router.post("/auth/logout")
@@ -196,7 +196,7 @@ async def refresh_token(request: Request, response: Response):
         user_id = str(user["_id"])
         access_token = create_access_token(user_id, user["email"])
         is_https = "https" in os.environ.get("FRONTEND_URL", "")
-        response.set_cookie(key="access_token", value=access_token, httponly=True, secure=is_https, samesite="lax", max_age=3600, path="/")
+        response.set_cookie(key="access_token", value=access_token, httponly=True, secure=is_https, samesite="none", max_age=3600, path="/")
         return {"message": "Token refreshed"}
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Refresh token expired")
