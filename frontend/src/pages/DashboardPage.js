@@ -459,7 +459,7 @@ export default function DashboardPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {links.map((link) => (
+                    {(Array.isArray(links) ? links : []).map((link) => (
                       <TableRow key={link.id} className="border-b hover:bg-slate-50 transition-colors" style={{ borderColor: '#f1f5f9' }} data-testid={`link-row-${link.id}`}>
 
                         {/* Customer Name */}
