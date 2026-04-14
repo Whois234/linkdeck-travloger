@@ -299,7 +299,6 @@ export default function DashboardPage() {
               </div>
             ) : (
               <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
-                // fix
                 <Table>
                   <TableHeader>
                     <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
