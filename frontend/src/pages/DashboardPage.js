@@ -379,7 +379,7 @@ export default function DashboardPage() {
                           <SelectValue placeholder="Choose a PDF" />
                         </SelectTrigger>
                         <SelectContent className="rounded-xl">
-                          {pdfs.map(pdf => (
+                          {(Array.isArray(pdfs) ? pdfs : []).map(pdf => (
                             <SelectItem key={pdf.id} value={pdf.id} className="rounded-lg">{pdf.file_name}</SelectItem>
                           ))}
                         </SelectContent>
