@@ -5,6 +5,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, UploadFile, File, Header, Query
+from fastapi.responses import RedirectResponse
 from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -186,7 +187,7 @@ async def refresh_token(request: Request, response: Response):
 
 # ---- PDF ENDPOINTS ----
 @api_router.post("/pdfs/upload")
-from fastapi.responses import RedirectResponse
+
 
 @api_router.get("/view/{link_id}")
 async def view_pdf(link_id: str):
