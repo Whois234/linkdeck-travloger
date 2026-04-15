@@ -277,7 +277,7 @@ async def create_link(input: LinkCreateInput, request: Request):
         raise HTTPException(status_code=404, detail="PDF not found")
     unique_id = str(uuid.uuid4())[:8]
     link_doc = {
-        "_id": unique_id,   # ✅ IMPORTANT (Mongo primary key)
+        "_id": unique_id,
         "pdf_id": input.pdf_id,
         "user_id": user["_id"],
         "customer_name": input.customer_name,
