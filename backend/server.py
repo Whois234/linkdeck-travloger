@@ -45,7 +45,6 @@ def get_jwt_secret():
     return os.environ["JWT_SECRET"]
 
 # Object Storage config
-data = await file.read()
 
 result = cloudinary.uploader.upload(
     data,
@@ -212,6 +211,7 @@ async def refresh_token(request: Request, response: Response):
 @api_router.post("/pdfs/upload")
 async def upload_pdf(request: Request, file: UploadFile = File(...)):
     user = await get_current_user(request)
+    data = await file.read()
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
     if file.size and file.size > 50 * 1024 * 1024:
