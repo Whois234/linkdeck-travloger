@@ -65,7 +65,12 @@ pdf_doc = {
 }
 
 await db.pdfs.insert_one(pdf_doc)
-    return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
+return {
+    "id": file_id,
+    "file_name": file.filename,
+    "file_size": len(data),
+    "created_at": pdf_doc["created_at"]
+}
 
 # Password hashing
 def hash_password(password: str) -> str:
