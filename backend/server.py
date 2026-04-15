@@ -12,7 +12,7 @@ import os
 import logging
 import uuid
 import bcrypt
-import jwt
+from jose import jwt
 import requests
 from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel, Field
