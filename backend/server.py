@@ -45,36 +45,26 @@ def get_jwt_secret():
     return os.environ["JWT_SECRET"]
 
 # Object Storage config
-STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
-EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY")
-APP_NAME = "pdf-link-tracker"
-storage_key = None
+data = await file.read()
 
-def init_storage():
-    global storage_key
-    if storage_key:
-        return storage_key
-    resp = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY}, timeout=30)
-    resp.raise_for_status()
-    storage_key = resp.json()["storage_key"]
-    return storage_key
+result = cloudinary.uploader.upload(
+    data,
+    resource_type="raw",
+    folder="linkdeck_pdfs"
+)
 
-def put_object(path: str, data: bytes, content_type: str) -> dict:
-    key = init_storage()
-    resp = requests.put(
-        f"{STORAGE_URL}/objects/{path}",
-        headers={"X-Storage-Key": key, "Content-Type": content_type},
-        data=data, timeout=120
-    )
-    resp.raise_for_status()
-    return resp.json()
+file_id = str(uuid.uuid4())
 
-def get_object(path: str) -> tuple:
-    key = init_storage()
-    resp = requests.get(
-        f"{STORAGE_URL}/objects/{path}",
-        headers={"X-Storage-Key": key}, timeout=60
-    )
+pdf_doc = {
+    "id": file_id,
+    "user_id": user["_id"],
+    "file_name": file.filename,
+    "file_url": result["secure_url"],  # ✅ MUST BE THIS
+    "file_size": len(data),
+    "created_at": datetime.now(timezone.utc).isoformat()
+}
+
+await db.pdfs.insert_one(pdf_doc)
     resp.raise_for_status()
     return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
 
