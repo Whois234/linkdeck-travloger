@@ -186,6 +186,28 @@ async def refresh_token(request: Request, response: Response):
 
 # ---- PDF ENDPOINTS ----
 @api_router.post("/pdfs/upload")
+from fastapi.responses import RedirectResponse
+
+@api_router.get("/view/{link_id}")
+async def view_pdf(link_id: str):
+    link = await db.links.find_one({"_id": link_id})
+
+    if not link:
+        raise HTTPException(status_code=404, detail="Link not found")
+
+    # increment opens
+    await db.links.update_one(
+        {"_id": link_id},
+        {"$inc": {"opens": 1}}
+    )
+
+    # get pdf
+    pdf = await db.pdfs.find_one({"_id": link["pdf_id"]})
+
+    if not pdf:
+        raise HTTPException(status_code=404, detail="PDF not found")
+
+    return RedirectResponse(url=pdf["file_url"])
 async def upload_pdf(request: Request, file: UploadFile = File(...)):
     user = await get_current_user(request)
 
@@ -254,7 +276,7 @@ async def create_link(input: LinkCreateInput, request: Request):
         raise HTTPException(status_code=404, detail="PDF not found")
     unique_id = str(uuid.uuid4())[:8]
     link_doc = {
-        "id": unique_id,
+        "_id": unique_id,
         "pdf_id": input.pdf_id,
         "user_id": user["_id"],
         "customer_name": input.customer_name,
@@ -266,7 +288,7 @@ async def create_link(input: LinkCreateInput, request: Request):
     }
     await db.links.insert_one(link_doc)
     return {
-        "id": unique_id,
+        "_id": unique_id,
         "pdf_id": input.pdf_id,
         "pdf_name": pdf["file_name"],
         "customer_name": input.customer_name,
@@ -275,6 +297,7 @@ async def create_link(input: LinkCreateInput, request: Request):
         "open_count": 0,
         "last_opened_at": None,
         "created_at": link_doc["created_at"]
+        "url": f"/view/{unique_id}"
     }
 
 @api_router.get("/links")
