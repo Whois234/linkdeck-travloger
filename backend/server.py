@@ -444,7 +444,6 @@ async def upload_pdf(
 async def startup():
     # Create indexes
     await db.users.create_index("email", unique=True)
-    await db.links.create_index("id", unique=True)
     await db.pdfs.create_index("id", unique=True)
     await db.links.create_index("user_id")
     await db.pdfs.create_index("user_id")
