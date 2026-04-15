@@ -559,9 +559,12 @@ export default function DashboardPage() {
                             {/* Open in new tab */}
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <a href={`${SITE_URL}/view/${link._id}`} target="_blank" rel="noopener noreferrer"
+                                <a
+                                  href={`${SITE_URL}/view/${link._id}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
                                   className="inline-flex items-center justify-center h-8 w-8 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
-                                  data-testid={`open-link-${link.id}`}>
+                                >
                                   <ExternalLink className="w-4 h-4" />
                                 </a>
                               </TooltipTrigger>
