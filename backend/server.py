@@ -297,7 +297,7 @@ async def create_link(input: LinkCreateInput, request: Request):
         "opened": False,
         "open_count": 0,
         "last_opened_at": None,
-        "created_at": link_doc["created_at"]
+        "created_at": link_doc["created_at"],
         "url": f"/view/{unique_id}"
     }
 
