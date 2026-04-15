@@ -101,7 +101,6 @@ export default function DashboardPage() {
     try {
       await axios.post(`${API}/pdfs/upload`, formData, {
         withCredentials: true,
-        headers: { 'Content-Type': 'multipart/form-data' },
       });
       toast.success('PDF uploaded successfully');
       setUploadOpen(false);
