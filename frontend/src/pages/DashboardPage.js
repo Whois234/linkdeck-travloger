@@ -481,7 +481,7 @@ export default function DashboardPage() {
                   </TableHeader>
                   <TableBody>
                     {(Array.isArray(links) ? links : []).map((link) => (
-                      <TableRow key={link.id} className="border-b hover:bg-slate-50 transition-colors" style={{ borderColor: '#f1f5f9' }} data-testid={`link-row-${link.id}`}>
+                      <TableRow key={link._id} className="border-b hover:bg-slate-50 transition-colors" style={{ borderColor: '#f1f5f9' }} data-testid={`link-row-${link._id}`}>
 
                         {/* Customer Name */}
                         <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>{link.customer_name}</TableCell>
@@ -546,7 +546,7 @@ export default function DashboardPage() {
                             {/* Copy Link */}
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => copyLink(link.id)}
+                                <Button variant="ghost" size="sm" onClick={() => copyLink(link._id)}
                                   className="h-8 w-8 p-0 rounded-lg hover:bg-blue-50"
                                   style={{ color: 'var(--teal)' }}
                                   data-testid={`copy-link-${link.id}`}>
@@ -559,7 +559,7 @@ export default function DashboardPage() {
                             {/* Open in new tab */}
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <a href={`${SITE_URL}/view/${link.id}`} target="_blank" rel="noopener noreferrer"
+                                <a href={`${SITE_URL}/view/${link._id}`} target="_blank" rel="noopener noreferrer"
                                   className="inline-flex items-center justify-center h-8 w-8 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
                                   data-testid={`open-link-${link.id}`}>
                                   <ExternalLink className="w-4 h-4" />
