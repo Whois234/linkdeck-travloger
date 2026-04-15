@@ -188,16 +188,18 @@ async def refresh_token(request: Request, response: Response):
 @api_router.post("/pdfs/upload")
 async def upload_pdf(request: Request, file: UploadFile = File(...)):
     user = await get_current_user(request)
-    if not file.filename.lower().endswith('.pdf'):
+
+    if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
+
     if file.size and file.size > 50 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large. Max 50MB.")
 
-# Upload to Cloudinary
+    # Upload to Cloudinary ✅
     result = cloudinary.uploader.upload(
-    file.file,
-    resource_type="raw",
-    folder="linkdeck_pdfs"
+        file.file,
+        resource_type="raw",
+        folder="linkdeck_pdfs"
     )
 
     file_id = str(uuid.uuid4())
@@ -206,12 +208,19 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
         "id": file_id,
         "user_id": str(user["_id"]),
         "file_name": file.filename,
-        "file_url": result["secure_url"],  # 🔥 IMPORTANT
+        "file_url": result["secure_url"],
         "file_size": file.size,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
+
     await db.pdfs.insert_one(pdf_doc)
-    return {"id": file_id, "file_name": file.filename, "file_size": len(data), "created_at": pdf_doc["created_at"]}
+
+    return {
+        "id": file_id,
+        "file_name": file.filename,
+        "file_size": file.size,
+        "created_at": pdf_doc["created_at"]
+    }
 
 @api_router.get("/pdfs")
 async def list_pdfs(request: Request):
