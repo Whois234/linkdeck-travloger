@@ -199,7 +199,9 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
     result = cloudinary.uploader.upload(
         file.file,
         resource_type="raw",
-        folder="linkdeck_pdfs"
+        folder="linkdeck_pdfs",
+        timeout=60,
+        use_filename=True
     )
 
     file_id = str(uuid.uuid4())
@@ -218,6 +220,7 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
     return {
         "id": file_id,
         "file_name": file.filename,
+        "file_url": result["secure_url"],  # ✅ ADD THIS
         "file_size": file.size,
         "created_at": pdf_doc["created_at"]
     }

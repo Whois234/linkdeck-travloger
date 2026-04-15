@@ -99,18 +99,24 @@ export default function DashboardPage() {
     const formData = new FormData();
     formData.append('file', file);
     try {
-      await axios.post(`${API}/pdfs/upload`, formData, {
+      const res = await axios.post(`${API}/pdfs/upload`, formData, {
         withCredentials: true,
       });
+
+      console.log("UPLOAD RESPONSE:", res.data); // 🔍 DEBUG
+
       toast.success('PDF uploaded successfully');
-      setUploadOpen(false);
-      fetchData();
+
+// ✅ instantly update UI
+      setPdfs((prev) => [res.data, ...prev]);
+
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Upload failed');
     } finally {
       setUploading(false);
     }
   };
+
 
   const handleCreateLink = async (e) => {
     e.preventDefault();
@@ -234,6 +240,23 @@ export default function DashboardPage() {
         <div style={{ height: 3, background: 'linear-gradient(90deg, var(--gold), var(--teal-light), var(--gold))' }} />
 
         <main className="max-w-[1400px] mx-auto px-5 md:px-10 py-8">
+        <h3 style={{ marginTop: "20px" }}>Uploaded PDFs</h3>
+
+        {pdfs.length === 0 ? (
+          <p>No PDFs uploaded yet</p>
+        ) : (
+          pdfs.map((pdf) => (
+            <div key={pdf.id} style={{ marginBottom: "10px" }}>
+      
+              <div>{pdf.file_name}</div>
+
+              <a href={pdf.file_url} target="_blank" rel="noopener noreferrer">
+                View PDF
+              </a>
+
+            </div>
+          ))
+        )}
 
           {/* ── STATS ── */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
