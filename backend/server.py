@@ -5,7 +5,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, UploadFile, File, Header, Query
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, FileResponse
 from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -186,55 +186,38 @@ async def refresh_token(request: Request, response: Response):
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
 # ---- PDF ENDPOINTS ----
+UPLOAD_DIR = ROOT_DIR / "uploads"
+UPLOAD_DIR.mkdir(exist_ok=True)
+
+
 @api_router.post("/pdfs/upload")
-
-
-@api_router.get("/view/{link_id}")
-async def view_pdf(link_id: str):
-    link = await db.links.find_one({"_id": link_id})
-
-    if not link:
-        raise HTTPException(status_code=404, detail="Link not found")
-
-    # increment opens
-    await db.links.update_one(
-        {"_id": link_id},
-        {"$inc": {"opens": 1}}
-    )
-
-    # get pdf
-    pdf = await db.pdfs.find_one({"_id": link["pdf_id"]})
-
-    if not pdf:
-        raise HTTPException(status_code=404, detail="PDF not found")
-
-    return RedirectResponse(url=pdf["file_url"])
 async def upload_pdf(request: Request, file: UploadFile = File(...)):
     user = await get_current_user(request)
 
-    if not file.filename.lower().endswith(".pdf"):
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
 
-    if file.size and file.size > 50 * 1024 * 1024:
+    content = await file.read()
+    if len(content) > 50 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large. Max 50MB.")
 
-    # Upload to Cloudinary ✅
-    result = cloudinary.uploader.upload(
-        file.file,
-        resource_type="raw",
-        folder="linkdeck_pdfs",
-        timeout=60,
-        use_filename=True
-    )
-
     file_id = str(uuid.uuid4())
+    safe_name = f"{file_id}_{Path(file.filename).name.replace(' ', '_')}"
+    file_path = UPLOAD_DIR / safe_name
+
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    base_url = str(request.base_url).rstrip("/")
+    file_url = f"{base_url}/api/uploads/{safe_name}"
 
     pdf_doc = {
         "id": file_id,
-        "user_id": str(user["_id"]),
+        "user_id": user["_id"],
         "file_name": file.filename,
-        "file_url": result["secure_url"],
-        "file_size": file.size,
+        "file_url": file_url,
+        "storage_path": str(file_path),
+        "file_size": len(content),
         "created_at": datetime.now(timezone.utc).isoformat()
     }
 
@@ -243,10 +226,19 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
     return {
         "id": file_id,
         "file_name": file.filename,
-        "file_url": result["secure_url"],  # ✅ ADD THIS
-        "file_size": file.size,
+        "file_url": file_url,
+        "file_size": len(content),
+        "link_count": 0,
         "created_at": pdf_doc["created_at"]
     }
+
+
+@api_router.get("/uploads/{filename}")
+async def get_uploaded_pdf(filename: str):
+    file_path = UPLOAD_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="PDF not found")
+    return FileResponse(file_path, media_type="application/pdf")
 
 @api_router.get("/pdfs")
 async def list_pdfs(request: Request):
@@ -333,6 +325,25 @@ async def delete_link(link_id: str, request: Request):
     return {"message": "Link deleted"}
 
 # ---- VIEW / TRACKING ENDPOINTS (PUBLIC) ----
+@api_router.get("/view/{link_id}")
+async def view_pdf(link_id: str):
+    link = await db.links.find_one({"_id": link_id})
+    if not link:
+        raise HTTPException(status_code=404, detail="Link not found")
+
+    pdf = await db.pdfs.find_one({"id": link["pdf_id"]}, {"_id": 0})
+    if not pdf:
+        raise HTTPException(status_code=404, detail="PDF not found")
+
+    now = datetime.now(timezone.utc).isoformat()
+    await db.links.update_one(
+        {"_id": link_id},
+        {"$set": {"opened": True, "last_opened_at": now}, "$inc": {"open_count": 1}}
+    )
+
+    return RedirectResponse(url=pdf["file_url"])
+
+
 @api_router.get("/view/{unique_id}/info")
 async def get_pdf_info(unique_id: str):
     """Get PDF info for a link WITHOUT tracking. Used for rendering."""
@@ -342,7 +353,7 @@ async def get_pdf_info(unique_id: str):
     pdf = await db.pdfs.find_one({"id": link["pdf_id"]}, {"_id": 0})
     if not pdf:
         raise HTTPException(status_code=404, detail="PDF not found")
-    return {"pdf_name": pdf["file_name"], "storage_path": pdf["storage_path"]}
+    return {"pdf_name": pdf["file_name"], "file_url": pdf["file_url"]}
 
 @api_router.post("/view/{unique_id}/track")
 async def track_visit(unique_id: str):
@@ -357,18 +368,6 @@ async def track_visit(unique_id: str):
     )
     return {"tracked": True}
 
-@api_router.get("/pdf-serve/{path:path}")
-async def serve_pdf(path: str):
-    try:
-        data, content_type = get_object(path)
-        return Response(content=data, media_type="application/pdf", headers={
-            "Content-Disposition": "inline",
-            "Cache-Control": "public, max-age=3600"
-        })
-    except Exception as e:
-        logger.error(f"Error serving PDF: {e}")
-        raise HTTPException(status_code=404, detail="PDF not found")
-
 # ---- DASHBOARD STATS ----
 @api_router.get("/dashboard/stats")
 async def dashboard_stats(request: Request):
@@ -382,9 +381,6 @@ async def dashboard_stats(request: Request):
         "opened_links": opened_links,
         "unopened_links": total_links - opened_links
     }
-
-# Include router
-app.include_router(api_router)
 
 # CORS
 from fastapi.middleware.cors import CORSMiddleware
@@ -401,44 +397,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-from fastapi import UploadFile, File
-from uuid import uuid4
-import os
 
-UPLOAD_DIR = "uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-@api_router.post("/pdfs/upload")
-async def upload_pdf(
-    file: UploadFile = File(...),
-    request: Request = None
-):
-    user = await get_current_user(request)
-
-    if not file.filename.endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files allowed")
-
-    file_id = str(uuid4())
-    file_path = f"{UPLOAD_DIR}/{file_id}_{file.filename}"
-
-    # Save file
-    with open(file_path, "wb") as f:
-        content = await file.read()
-        f.write(content)
-
-    # Save to DB
-    pdf_doc = {
-        "id": file_id,
-        "file_name": file.filename,
-        "storage_path": file_path,
-        "user_id": user["_id"],
-        "link_count": 0,
-        "created_at": datetime.now(timezone.utc).isoformat()
-    }
-
-    await db.pdfs.insert_one(pdf_doc)
-
-    return {"message": "PDF uploaded successfully"}
+# Include router after all routes are defined
+app.include_router(api_router)
 # Startup
 @app.on_event("startup")
 async def startup():

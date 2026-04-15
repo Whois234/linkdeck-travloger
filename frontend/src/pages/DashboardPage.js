@@ -106,16 +106,13 @@ export default function DashboardPage() {
     const formData = new FormData();
     formData.append('file', file);
     try {
-      const res = await axios.post(`${API}/pdfs/upload`, formData, {
+      await axios.post(`${API}/pdfs/upload`, formData, {
         withCredentials: true,
       });
 
-      console.log("UPLOAD RESPONSE:", res.data); // 🔍 DEBUG
-
       toast.success('PDF uploaded successfully');
-
-// ✅ instantly update UI
-      setPdfs((prev) => [res.data, ...prev]);
+      setUploadOpen(false);
+      await fetchData();
 
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Upload failed');
