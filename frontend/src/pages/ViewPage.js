@@ -33,9 +33,7 @@ export default function ViewPage() {
         }
         const { data } = await axios.get(`${API}/view/${uniqueId}/info`);
         setPdfName(data.pdf_name);
-        const pdfResp = await axios.get(`${API}/pdf-serve/${data.storage_path}`, { responseType: 'blob' });
-        const blobUrl = URL.createObjectURL(pdfResp.data);
-        setPdfUrl(blobUrl);
+        setPdfUrl(data.file_url);
       } catch (err) {
         setError(err.response?.data?.detail || 'PDF not found or link is invalid');
       } finally {
@@ -43,7 +41,7 @@ export default function ViewPage() {
       }
     };
     loadPdf();
-    return () => { if (pdfUrl) URL.revokeObjectURL(pdfUrl); };
+    return () => { if (pdfUrl); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uniqueId]);
 
