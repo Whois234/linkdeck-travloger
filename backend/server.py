@@ -19,6 +19,15 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime, timezone
 from fastapi import HTTPException, Request
+import cloudinary
+import cloudinary.uploader
+import os
+
+cloudinary.config(
+    cloud_name=os.environ.get("CLOUDINARY_CLOUD_NAME"),
+    api_key=os.environ.get("CLOUDINARY_API_KEY"),
+    api_secret=os.environ.get("CLOUDINARY_API_SECRET"),
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -214,17 +223,24 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
     if file.size and file.size > 50 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large. Max 50MB.")
     data = await file.read()
-    file_id = str(uuid.uuid4())
-    storage_path = f"{APP_NAME}/uploads/{user['_id']}/{file_id}.pdf"
-    result = put_object(storage_path, data, "application/pdf")
-    pdf_doc = {
-        "id": file_id,
-        "user_id": user["_id"],
-        "file_name": file.filename,
-        "storage_path": result["path"],
-        "file_size": len(data),
-        "created_at": datetime.now(timezone.utc).isoformat()
-    }
+
+# Upload to Cloudinary
+result = cloudinary.uploader.upload(
+    data,
+    resource_type="raw",
+    folder="linkdeck_pdfs"
+)
+
+file_id = str(uuid.uuid4())
+
+pdf_doc = {
+    "id": file_id,
+    "user_id": user["_id"],
+    "file_name": file.filename,
+    "file_url": result["secure_url"],  # 🔥 IMPORTANT
+    "file_size": len(data),
+    "created_at": datetime.now(timezone.utc).isoformat()
+}
     await db.pdfs.insert_one(pdf_doc)
     return {"id": file_id, "file_name": file.filename, "file_size": len(data), "created_at": pdf_doc["created_at"]}
 
