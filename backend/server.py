@@ -42,6 +42,27 @@ db = client[os.environ['DB_NAME']]
 # JWT config
 JWT_ALGORITHM = "HS256"
 
+
+def cloudinary_ready() -> bool:
+    return all([
+        os.environ.get("CLOUDINARY_CLOUD_NAME"),
+        os.environ.get("CLOUDINARY_API_KEY"),
+        os.environ.get("CLOUDINARY_API_SECRET"),
+    ])
+
+
+def resolve_pdf_url(pdf: dict, request: Optional[Request] = None) -> Optional[str]:
+    file_url = pdf.get("file_url")
+    if file_url:
+        return file_url
+
+    storage_path = pdf.get("storage_path")
+    if not storage_path or request is None:
+        return None
+
+    filename = Path(storage_path).name
+    return f"{str(request.base_url).rstrip('/')}/api/uploads/{filename}"
+
 def get_jwt_secret():
     return os.environ["JWT_SECRET"]
 
@@ -205,11 +226,24 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
     safe_name = f"{file_id}_{Path(file.filename).name.replace(' ', '_')}"
     file_path = UPLOAD_DIR / safe_name
 
-    with open(file_path, "wb") as f:
-        f.write(content)
+    file_url = None
 
-    base_url = str(request.base_url).rstrip("/")
-    file_url = f"{base_url}/api/uploads/{safe_name}"
+    if cloudinary_ready():
+        file.file.seek(0)
+        result = cloudinary.uploader.upload(
+            file.file,
+            resource_type="raw",
+            folder="linkdeck_pdfs",
+            public_id=file_id,
+            use_filename=False,
+            overwrite=True,
+        )
+        file_url = result["secure_url"]
+    else:
+        with open(file_path, "wb") as f:
+            f.write(content)
+        base_url = str(request.base_url).rstrip("/")
+        file_url = f"{base_url}/api/uploads/{safe_name}"
 
     pdf_doc = {
         "id": file_id,
@@ -335,13 +369,17 @@ async def view_pdf(link_id: str):
     if not pdf:
         raise HTTPException(status_code=404, detail="PDF not found")
 
+    pdf_url = resolve_pdf_url(pdf)
+    if not pdf_url:
+        raise HTTPException(status_code=404, detail="PDF file is missing. Please re-upload the PDF.")
+
     now = datetime.now(timezone.utc).isoformat()
     await db.links.update_one(
         {"_id": link_id},
         {"$set": {"opened": True, "last_opened_at": now}, "$inc": {"open_count": 1}}
     )
 
-    return RedirectResponse(url=pdf["file_url"])
+    return RedirectResponse(url=pdf_url)
 
 
 @api_router.get("/view/{unique_id}/info")
@@ -353,7 +391,12 @@ async def get_pdf_info(unique_id: str):
     pdf = await db.pdfs.find_one({"id": link["pdf_id"]}, {"_id": 0})
     if not pdf:
         raise HTTPException(status_code=404, detail="PDF not found")
-    return {"pdf_name": pdf["file_name"], "file_url": pdf["file_url"]}
+
+    pdf_url = resolve_pdf_url(pdf, request)
+    if not pdf_url:
+        raise HTTPException(status_code=404, detail="PDF file is missing. Please re-upload the PDF.")
+
+    return {"pdf_name": pdf["file_name"], "file_url": pdf_url}
 
 @api_router.post("/view/{unique_id}/track")
 async def track_visit(unique_id: str):
