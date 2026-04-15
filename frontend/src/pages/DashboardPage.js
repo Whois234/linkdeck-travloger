@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
-const SITE_URL = process.env.REACT_APP_SITE_URL || process.env.REACT_APP_BACKEND_URL;
+const SITE_URL = process.env.REACT_APP_SITE_URL || window.location.origin;
 
 function getLinkId(link) {
   return link?._id ?? link?.id ?? '';
@@ -244,24 +244,6 @@ export default function DashboardPage() {
         <div style={{ height: 3, background: 'linear-gradient(90deg, var(--gold), var(--teal-light), var(--gold))' }} />
 
         <main className="max-w-[1400px] mx-auto px-5 md:px-10 py-8">
-        <h3 style={{ marginTop: "20px" }}>Uploaded PDFs</h3>
-
-        {pdfs.length === 0 ? (
-          <p>No PDFs uploaded yet</p>
-        ) : (
-          pdfs.map((pdf) => (
-            <div key={pdf.id} style={{ marginBottom: "10px" }}>
-      
-              <div>{pdf.file_name}</div>
-
-              <a href={pdf.file_url} target="_blank" rel="noopener noreferrer">
-                View PDF
-              </a>
-
-            </div>
-          ))
-        )}
-
           {/* ── STATS ── */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
             {[
