@@ -14,10 +14,13 @@ import {
   Upload, Link2, Copy, Trash2, FileText, ExternalLink, LogOut, Search, Filter,
   CheckCircle, XCircle, Eye, Loader2, FileUp, LinkIcon, MapPin
 } from 'lucide-react';
-console.log("fix applied");
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const SITE_URL = process.env.REACT_APP_SITE_URL || process.env.REACT_APP_BACKEND_URL;
+
+function getLinkId(link) {
+  return link?._id ?? link?.id ?? '';
+}
 
 // Format phone → wa.me link: strip non-digits, prepend 91 if 10-digit Indian number
 function toWaLink(phone) {
@@ -75,8 +78,12 @@ export default function DashboardPage() {
         axios.get(`${API}/links`, { withCredentials: true, params }),
         axios.get(`${API}/dashboard/stats`, { withCredentials: true }),
       ]);
+      const normalizedLinks = (Array.isArray(linksRes.data) ? linksRes.data : []).map((link) => ({
+        ...link,
+        _id: getLinkId(link),
+      }));
       setPdfs(pdfsRes.data?.data || pdfsRes.data || []);
-      setLinks(linksRes.data);
+      setLinks(normalizedLinks);
       setStats(statsRes.data);
     } catch (err) {
       if (err.response?.status === 401) return;
@@ -480,8 +487,11 @@ export default function DashboardPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(Array.isArray(links) ? links : []).map((link) => (
-                      <TableRow key={link._id} className="border-b hover:bg-slate-50 transition-colors" style={{ borderColor: '#f1f5f9' }} data-testid={`link-row-${link._id}`}>
+                    {(Array.isArray(links) ? links : []).map((link) => {
+                      const linkId = getLinkId(link);
+
+                      return (
+                      <TableRow key={linkId || `${link.customer_phone}-${link.created_at}`} className="border-b hover:bg-slate-50 transition-colors" style={{ borderColor: '#f1f5f9' }} data-testid={`link-row-${linkId || 'missing-id'}`}>
 
                         {/* Customer Name */}
                         <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>{link.customer_name}</TableCell>
@@ -499,13 +509,13 @@ export default function DashboardPage() {
                           {link.opened ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold"
                               style={{ backgroundColor: '#dcfce7', color: '#16a34a' }}
-                              data-testid={`link-status-${link.id}`}>
+                              data-testid={`link-status-${linkId || 'missing-id'}`}>
                               <Eye className="w-3 h-3" /> Opened
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold"
                               style={{ backgroundColor: '#fee2e2', color: '#dc2626' }}
-                              data-testid={`link-status-${link.id}`}>
+                              data-testid={`link-status-${linkId || 'missing-id'}`}>
                               <XCircle className="w-3 h-3" /> Not Opened
                             </span>
                           )}
@@ -535,7 +545,7 @@ export default function DashboardPage() {
                                   rel="noopener noreferrer"
                                   className="wa-btn inline-flex items-center justify-center h-8 w-8 rounded-lg transition-all"
                                   style={{ backgroundColor: '#25D366', color: 'white' }}
-                                  data-testid={`wa-link-${link.id}`}
+                                  data-testid={`wa-link-${linkId || 'missing-id'}`}
                                 >
                                   <WhatsAppIcon size={15} />
                                 </a>
@@ -546,10 +556,11 @@ export default function DashboardPage() {
                             {/* Copy Link */}
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => copyLink(link._id)}
+                                <Button variant="ghost" size="sm" onClick={() => copyLink(linkId)}
                                   className="h-8 w-8 p-0 rounded-lg hover:bg-blue-50"
                                   style={{ color: 'var(--teal)' }}
-                                  data-testid={`copy-link-${link.id}`}>
+                                  disabled={!linkId}
+                                  data-testid={`copy-link-${linkId || 'missing-id'}`}>
                                   <Copy className="w-4 h-4" />
                                 </Button>
                               </TooltipTrigger>
@@ -560,10 +571,14 @@ export default function DashboardPage() {
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <a
-                                  href={`${SITE_URL}/view/${link._id}`}
+                                  href={linkId ? `${SITE_URL}/view/${linkId}` : '#'}
                                   target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center justify-center h-8 w-8 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                                  rel={linkId ? 'noopener noreferrer' : undefined}
+                                  className={`inline-flex items-center justify-center h-8 w-8 rounded-lg transition-colors ${
+                                    linkId
+                                      ? 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
+                                      : 'text-slate-300 pointer-events-none'
+                                  }`}
                                 >
                                   <ExternalLink className="w-4 h-4" />
                                 </a>
@@ -574,9 +589,10 @@ export default function DashboardPage() {
                             {/* Delete */}
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => handleDeleteLink(link.id)}
+                                <Button variant="ghost" size="sm" onClick={() => handleDeleteLink(linkId)}
                                   className="h-8 w-8 p-0 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50"
-                                  data-testid={`delete-link-${link.id}`}>
+                                  disabled={!linkId}
+                                  data-testid={`delete-link-${linkId || 'missing-id'}`}>
                                   <Trash2 className="w-4 h-4" />
                                 </Button>
                               </TooltipTrigger>
@@ -586,7 +602,7 @@ export default function DashboardPage() {
                           </div>
                         </TableCell>
                       </TableRow>
-                    ))}
+                    )})}
                   </TableBody>
                 </Table>
               </div>

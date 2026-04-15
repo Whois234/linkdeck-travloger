@@ -314,7 +314,7 @@ async def list_links(request: Request, status: Optional[str] = None, search: Opt
             {"customer_name": {"$regex": search, "$options": "i"}},
             {"customer_phone": {"$regex": search, "$options": "i"}}
         ]
-    links = await db.links.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    links = await db.links.find(query).sort("created_at", -1).to_list(1000)
     # Enrich with PDF names
     pdf_ids = list(set(l["pdf_id"] for l in links))
     pdfs = await db.pdfs.find({"id": {"$in": pdf_ids}}, {"_id": 0, "id": 1, "file_name": 1}).to_list(1000)
@@ -326,17 +326,17 @@ async def list_links(request: Request, status: Optional[str] = None, search: Opt
 @api_router.delete("/links/{link_id}")
 async def delete_link(link_id: str, request: Request):
     user = await get_current_user(request)
-    link = await db.links.find_one({"id": link_id, "user_id": user["_id"]})
+    link = await db.links.find_one({"_id": link_id, "user_id": user["_id"]})
     if not link:
         raise HTTPException(status_code=404, detail="Link not found")
-    await db.links.delete_one({"id": link_id})
+    await db.links.delete_one({"_id": link_id})
     return {"message": "Link deleted"}
 
 # ---- VIEW / TRACKING ENDPOINTS (PUBLIC) ----
 @api_router.get("/view/{unique_id}/info")
 async def get_pdf_info(unique_id: str):
     """Get PDF info for a link WITHOUT tracking. Used for rendering."""
-    link = await db.links.find_one({"id": unique_id}, {"_id": 0})
+    link = await db.links.find_one({"_id": unique_id})
     if not link:
         raise HTTPException(status_code=404, detail="Link not found")
     pdf = await db.pdfs.find_one({"id": link["pdf_id"]}, {"_id": 0})
@@ -347,12 +347,12 @@ async def get_pdf_info(unique_id: str):
 @api_router.post("/view/{unique_id}/track")
 async def track_visit(unique_id: str):
     """Track a single visit. Called once per page load."""
-    link = await db.links.find_one({"id": unique_id}, {"_id": 0})
+    link = await db.links.find_one({"_id": unique_id})
     if not link:
         raise HTTPException(status_code=404, detail="Link not found")
     now = datetime.now(timezone.utc).isoformat()
     await db.links.update_one(
-        {"id": unique_id},
+        {"_id": unique_id},
         {"$set": {"opened": True, "last_opened_at": now}, "$inc": {"open_count": 1}}
     )
     return {"tracked": True}
