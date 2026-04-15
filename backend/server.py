@@ -46,30 +46,7 @@ def get_jwt_secret():
 
 # Object Storage config
 
-result = cloudinary.uploader.upload(
-    data,
-    resource_type="raw",
-    folder="linkdeck_pdfs"
-)
 
-file_id = str(uuid.uuid4())
-
-pdf_doc = {
-    "id": file_id,
-    "user_id": user["_id"],
-    "file_name": file.filename,
-    "file_url": result["secure_url"],  # ✅ MUST BE THIS
-    "file_size": len(data),
-    "created_at": datetime.now(timezone.utc).isoformat()
-}
-
-await db.pdfs.insert_one(pdf_doc)
-return {
-    "id": file_id,
-    "file_name": file.filename,
-    "file_size": len(data),
-    "created_at": pdf_doc["created_at"]
-}
 
 # Password hashing
 def hash_password(password: str) -> str:
@@ -216,27 +193,27 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
     if file.size and file.size > 50 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large. Max 50MB.")
-data = await file.read()
+    data = await file.read()
 
 # Upload to Cloudinary
-result = cloudinary.uploader.upload(
-    data,
-    resource_type="raw",
-    folder="linkdeck_pdfs"
-)
+    result = cloudinary.uploader.upload(
+        data,
+        resource_type="raw",
+        folder="linkdeck_pdfs"
+    )
 
-file_id = str(uuid.uuid4())
+    file_id = str(uuid.uuid4())
 
-pdf_doc = {
-    "id": file_id,
-    "user_id": str(user["_id"]),
-    "file_name": file.filename,
-    "file_url": result["secure_url"],  # 🔥 IMPORTANT
-    "file_size": len(data),
-    "created_at": datetime.now(timezone.utc).isoformat()
-}
-await db.pdfs.insert_one(pdf_doc)
-return {"id": file_id, "file_name": file.filename, "file_size": len(data), "created_at": pdf_doc["created_at"]}
+    pdf_doc = {
+        "id": file_id,
+        "user_id": str(user["_id"]),
+        "file_name": file.filename,
+        "file_url": result["secure_url"],  # 🔥 IMPORTANT
+        "file_size": len(data),
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.pdfs.insert_one(pdf_doc)
+    return {"id": file_id, "file_name": file.filename, "file_size": len(data), "created_at": pdf_doc["created_at"]}
 
 @api_router.get("/pdfs")
 async def list_pdfs(request: Request):
