@@ -40,6 +40,7 @@ export default function ViewPage() {
   const sessionId = useRef(null);
   const sessionStartedAt = useRef(null);
   const heartbeatTimer = useRef(null);
+  const mobileRedirectTimer = useRef(null);
 
   const sendHeartbeat = async () => {
     if (!sessionId.current || !sessionStartedAt.current) return;
@@ -89,6 +90,13 @@ export default function ViewPage() {
         } catch {
           // Session analytics are optional; the PDF should still open.
         }
+        if (isMobileDevice()) {
+          mobileRedirectTimer.current = window.setTimeout(() => {
+            sendHeartbeatBeacon();
+            window.location.replace(publicPdfUrl);
+          }, 1200);
+          return;
+        }
         heartbeatTimer.current = window.setInterval(sendHeartbeat, 3000);
       } catch (err) {
         if (err.response?.status === 410) {
@@ -108,6 +116,7 @@ export default function ViewPage() {
     window.addEventListener('beforeunload', handleFinalHeartbeat);
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
+      if (mobileRedirectTimer.current) window.clearTimeout(mobileRedirectTimer.current);
       if (heartbeatTimer.current) window.clearInterval(heartbeatTimer.current);
       sendHeartbeatBeacon();
       window.removeEventListener('pagehide', handleFinalHeartbeat);
