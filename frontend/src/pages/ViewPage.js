@@ -35,6 +35,7 @@ export default function ViewPage() {
   const [pdfName, setPdfName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [expired, setExpired] = useState(false);
   const tracked = useRef(false);
   const sessionId = useRef(null);
   const sessionStartedAt = useRef(null);
@@ -95,6 +96,9 @@ export default function ViewPage() {
         }
         heartbeatTimer.current = window.setInterval(sendHeartbeat, 3000);
       } catch (err) {
+        if (err.response?.status === 410) {
+          setExpired(true);
+        }
         setError(err.response?.data?.detail || 'PDF not found or link is invalid');
       } finally {
         setLoading(false);
@@ -133,11 +137,16 @@ export default function ViewPage() {
       <div className="min-h-screen flex flex-col items-center justify-center bg-white" data-testid="view-error">
         <TravlogerMark size={48} />
         <AlertCircle className="w-10 h-10 mt-4" style={{ color: '#dc2626' }} />
-        <h2 className="text-lg font-bold mt-3" style={{ color: '#144a57' }}>Link Not Found</h2>
-        <p className="text-sm text-slate-500 mt-1">{error}</p>
-        <p className="text-xs text-slate-400 mt-4">
-          Contact us at{' '}
+        <h2 className="text-lg font-bold mt-3" style={{ color: '#144a57' }}>
+          {expired ? 'Itinerary Expired' : 'Link Not Found'}
+        </h2>
+        <p className="text-sm text-slate-500 mt-2 max-w-md text-center px-6">{error}</p>
+        <p className="text-xs text-slate-400 mt-4 text-center px-6">
+          Contact{' '}
           <a href="https://travloger.in" className="underline" style={{ color: '#E8A020' }}>travloger.in</a>
+          {' '}or{' '}
+          <a href="https://wa.me/916281392007" className="underline" style={{ color: '#E8A020' }}>WhatsApp +91 62813 92007</a>
+          {' '}for the latest itinerary.
         </p>
       </div>
     );

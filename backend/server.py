@@ -41,6 +41,10 @@ db = client[os.environ['DB_NAME']]
 
 # JWT config
 JWT_ALGORITHM = "HS256"
+EXPIRED_ITINERARY_MESSAGE = (
+    "Sorry, the itinerary is expired. Please contact travloger.in "
+    "(wa.me/916281392007) for the latest itinerary."
+)
 
 
 def cloudinary_ready() -> bool:
@@ -69,6 +73,120 @@ def inline_pdf_headers(file_name: str) -> dict:
     return {
         "Content-Disposition": f'inline; filename="{safe_name}"',
         "Cache-Control": "private, max-age=300",
+    }
+
+
+def normalize_datetime(value: Optional[str]) -> datetime:
+    if not value:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    try:
+        return datetime.fromisoformat(value).astimezone(timezone.utc)
+    except Exception:
+        return datetime.min.replace(tzinfo=timezone.utc)
+
+
+def infer_device_type(user_agent: str, is_mobile: bool) -> str:
+    ua = (user_agent or "").lower()
+    if is_mobile or "mobile" in ua or "android" in ua or "iphone" in ua:
+        return "Mobile"
+    if "ipad" in ua or "tablet" in ua:
+        return "Tablet"
+    return "Desktop"
+
+
+def infer_platform(user_agent: str) -> str:
+    ua = (user_agent or "").lower()
+    if "iphone" in ua or "ipad" in ua or "ios" in ua:
+        return "iOS"
+    if "android" in ua:
+        return "Android"
+    if "windows" in ua:
+        return "Windows"
+    if "mac os" in ua or "macintosh" in ua:
+        return "macOS"
+    if "linux" in ua:
+        return "Linux"
+    return "Unknown"
+
+
+def infer_browser(user_agent: str) -> str:
+    ua = (user_agent or "").lower()
+    if "edg/" in ua:
+        return "Edge"
+    if "chrome/" in ua and "edg/" not in ua:
+        return "Chrome"
+    if "safari/" in ua and "chrome/" not in ua:
+        return "Safari"
+    if "firefox/" in ua:
+        return "Firefox"
+    if "opr/" in ua or "opera/" in ua:
+        return "Opera"
+    return "Unknown"
+
+
+def get_client_ip(request: Request) -> str:
+    forwarded_for = request.headers.get("x-forwarded-for", "")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip:
+        return real_ip.strip()
+    client_host = getattr(request.client, "host", None)
+    return client_host or ""
+
+
+def get_location_snapshot(request: Request) -> dict:
+    headers = request.headers
+    city = headers.get("x-vercel-ip-city") or headers.get("cf-ipcity") or ""
+    region = headers.get("x-vercel-ip-country-region") or headers.get("cf-region") or ""
+    country = headers.get("x-vercel-ip-country") or headers.get("cf-ipcountry") or ""
+    parts = [part for part in [city, region, country] if part]
+    return {
+        "city": city,
+        "region": region,
+        "country": country,
+        "label": ", ".join(parts) if parts else "Unknown",
+    }
+
+
+def get_link_pdf_name(link: dict, pdf_map: dict) -> str:
+    return (
+        link.get("pdf_name_snapshot")
+        or pdf_map.get(link.get("pdf_id"))
+        or "Deleted PDF"
+    )
+
+
+def get_session_pdf_name(session: dict, pdf_map: dict) -> str:
+    return (
+        session.get("pdf_name_snapshot")
+        or pdf_map.get(session.get("pdf_id"))
+        or "Deleted PDF"
+    )
+
+
+def get_session_number(session: dict, sorted_sessions_for_link: list[dict]) -> int:
+    for index, item in enumerate(sorted_sessions_for_link, start=1):
+        if item.get("_id") == session.get("_id"):
+            return index
+    return 0
+
+
+async def build_link_summary(link: dict, pdf_map: dict) -> dict:
+    sessions = await db.view_sessions.find({"link_id": link["_id"]}).sort("started_at", 1).to_list(1000)
+    total_time = sum(int(session.get("duration_seconds") or 0) for session in sessions)
+    latest_session = sessions[-1] if sessions else None
+    return {
+        **link,
+        "pdf_name": get_link_pdf_name(link, pdf_map),
+        "pdf_deleted": bool(link.get("pdf_deleted")) or link.get("pdf_id") not in pdf_map,
+        "session_count": len(sessions),
+        "total_time_seconds": total_time,
+        "avg_time_seconds": round(total_time / len(sessions)) if sessions else 0,
+        "latest_session_started_at": latest_session.get("started_at") if latest_session else None,
+        "latest_device": latest_session.get("device_type") if latest_session else None,
+        "latest_platform": latest_session.get("platform") if latest_session else None,
+        "latest_location": latest_session.get("location_label") if latest_session else None,
     }
 
 def get_jwt_secret():
@@ -376,7 +494,7 @@ async def admin_analytics(
 
     for link in links:
         pdf_id = link.get("pdf_id")
-        pdf_name = pdf_map.get(pdf_id, "Unknown PDF")
+        pdf_name = get_link_pdf_name(link, pdf_map)
         if pdf_id not in links_by_pdf:
             links_by_pdf[pdf_id] = {"pdf_id": pdf_id, "pdf_name": pdf_name, "links": 0, "opens": 0}
         links_by_pdf[pdf_id]["links"] += 1
@@ -399,7 +517,7 @@ async def admin_analytics(
     sessions_by_pdf = {}
     for session in sessions:
         pdf_id = session.get("pdf_id")
-        pdf_name = pdf_map.get(pdf_id, "Unknown PDF")
+        pdf_name = get_session_pdf_name(session, pdf_map)
         if pdf_id not in sessions_by_pdf:
             sessions_by_pdf[pdf_id] = {"pdf_id": pdf_id, "pdf_name": pdf_name, "sessions": 0, "total_time_seconds": 0}
         sessions_by_pdf[pdf_id]["sessions"] += 1
@@ -423,6 +541,38 @@ async def admin_analytics(
         "opens_by_hour": [{"hour": f"{hour}:00", "opens": opens} for hour, opens in opens_by_hour.items()],
         "time_by_pdf": sorted(time_by_pdf, key=lambda item: item["total_time_seconds"], reverse=True),
     }
+
+
+@api_router.get("/admin/recent-activity")
+async def admin_recent_activity(request: Request, limit: int = 20):
+    await get_current_admin(request)
+    pdfs = await db.pdfs.find({}, {"_id": 0, "id": 1, "file_name": 1}).to_list(10000)
+    pdf_map = {pdf["id"]: pdf.get("file_name", "Unknown PDF") for pdf in pdfs}
+    sessions = await db.view_sessions.find({}).sort("started_at", -1).to_list(max(1, min(limit, 100)))
+    link_ids = list({session.get("link_id") for session in sessions if session.get("link_id")})
+    all_sessions_for_links = await db.view_sessions.find({"link_id": {"$in": link_ids}}).sort("started_at", 1).to_list(10000) if link_ids else []
+    sessions_by_link = {}
+    for session in all_sessions_for_links:
+        sessions_by_link.setdefault(session.get("link_id"), []).append(session)
+
+    activity = []
+    for session in sessions:
+        per_link_sessions = sessions_by_link.get(session.get("link_id"), [])
+        activity.append({
+            "session_id": session.get("_id"),
+            "link_id": session.get("link_id"),
+            "customer_name": session.get("customer_name") or "Unknown Customer",
+            "customer_phone": session.get("customer_phone") or "--",
+            "pdf_name": get_session_pdf_name(session, pdf_map),
+            "session_number": get_session_number(session, per_link_sessions),
+            "started_at": session.get("started_at"),
+            "duration_seconds": int(session.get("duration_seconds") or 0),
+            "device_type": session.get("device_type") or infer_device_type(session.get("user_agent", ""), bool(session.get("is_mobile"))),
+            "platform": session.get("platform") or infer_platform(session.get("user_agent", "")),
+            "browser": session.get("browser") or infer_browser(session.get("user_agent", "")),
+            "location_label": session.get("location_label") or "Unknown",
+        })
+    return {"items": activity}
 
 # ---- PDF ENDPOINTS ----
 UPLOAD_DIR = ROOT_DIR / "uploads"
@@ -506,6 +656,68 @@ async def list_pdfs(request: Request):
         pdf["link_count"] = link_count
     return pdfs
 
+
+@api_router.get("/pdfs/archived")
+async def list_archived_pdfs(request: Request):
+    user = await get_current_user(request)
+    archived_links = await db.links.find(
+        {"user_id": user["_id"], "pdf_deleted": True}
+    ).to_list(5000)
+
+    archived_by_pdf = {}
+    for link in archived_links:
+        pdf_key = link.get("pdf_id") or link.get("pdf_name_snapshot") or link.get("_id")
+        if pdf_key not in archived_by_pdf:
+            archived_by_pdf[pdf_key] = {
+                "pdf_id": link.get("pdf_id"),
+                "pdf_name": link.get("pdf_name_snapshot") or "Deleted PDF",
+                "pdf_deleted_at": link.get("pdf_deleted_at"),
+                "link_count": 0,
+                "opened_links": 0,
+                "total_opens": 0,
+                "tracked_sessions": 0,
+                "total_time_seconds": 0,
+                "latest_opened_at": None,
+            }
+
+        item = archived_by_pdf[pdf_key]
+        item["link_count"] += 1
+        item["opened_links"] += 1 if link.get("opened") else 0
+        item["total_opens"] += int(link.get("open_count") or 0)
+        latest_opened_at = link.get("last_opened_at")
+        if normalize_datetime(latest_opened_at) > normalize_datetime(item.get("latest_opened_at")):
+            item["latest_opened_at"] = latest_opened_at
+        if not item.get("pdf_deleted_at") and link.get("pdf_deleted_at"):
+            item["pdf_deleted_at"] = link.get("pdf_deleted_at")
+
+    archived_pdf_ids = [item.get("pdf_id") for item in archived_by_pdf.values() if item.get("pdf_id")]
+    sessions = await db.view_sessions.find(
+        {"user_id": user["_id"], "pdf_deleted": True, "pdf_id": {"$in": archived_pdf_ids}}
+    ).to_list(10000) if archived_pdf_ids else []
+
+    for session in sessions:
+        pdf_key = session.get("pdf_id") or session.get("pdf_name_snapshot")
+        if pdf_key not in archived_by_pdf:
+            archived_by_pdf[pdf_key] = {
+                "pdf_id": session.get("pdf_id"),
+                "pdf_name": session.get("pdf_name_snapshot") or "Deleted PDF",
+                "pdf_deleted_at": None,
+                "link_count": 0,
+                "opened_links": 0,
+                "total_opens": 0,
+                "tracked_sessions": 0,
+                "total_time_seconds": 0,
+                "latest_opened_at": None,
+            }
+        archived_by_pdf[pdf_key]["tracked_sessions"] += 1
+        archived_by_pdf[pdf_key]["total_time_seconds"] += int(session.get("duration_seconds") or 0)
+
+    return sorted(
+        archived_by_pdf.values(),
+        key=lambda item: normalize_datetime(item.get("pdf_deleted_at")),
+        reverse=True,
+    )
+
 @api_router.delete("/pdfs/{pdf_id}")
 async def delete_pdf(pdf_id: str, request: Request):
     user = await get_current_user(request)
@@ -513,8 +725,22 @@ async def delete_pdf(pdf_id: str, request: Request):
     if not pdf:
         raise HTTPException(status_code=404, detail="PDF not found")
     await db.pdfs.delete_one({"id": pdf_id})
-    await db.links.delete_many({"pdf_id": pdf_id})
-    return {"message": "PDF deleted"}
+    await db.links.update_many(
+        {"pdf_id": pdf_id, "user_id": user["_id"]},
+        {"$set": {
+            "pdf_deleted": True,
+            "pdf_name_snapshot": pdf.get("file_name", "Deleted PDF"),
+            "pdf_deleted_at": datetime.now(timezone.utc).isoformat(),
+        }}
+    )
+    await db.view_sessions.update_many(
+        {"pdf_id": pdf_id, "user_id": user["_id"]},
+        {"$set": {
+            "pdf_deleted": True,
+            "pdf_name_snapshot": pdf.get("file_name", "Deleted PDF"),
+        }}
+    )
+    return {"message": "PDF deleted. Link analytics remain available, but the itinerary is now expired."}
 
 # ---- LINK ENDPOINTS ----
 @api_router.post("/links")
@@ -530,6 +756,8 @@ async def create_link(input: LinkCreateInput, request: Request):
         "user_id": user["_id"],
         "customer_name": input.customer_name,
         "customer_phone": input.customer_phone,
+        "pdf_name_snapshot": pdf.get("file_name", "Unknown PDF"),
+        "pdf_deleted": False,
         "opened": False,
         "open_count": 0,
         "last_opened_at": None,
@@ -550,7 +778,12 @@ async def create_link(input: LinkCreateInput, request: Request):
     }
 
 @api_router.get("/links")
-async def list_links(request: Request, status: Optional[str] = None, search: Optional[str] = None):
+async def list_links(
+    request: Request,
+    status: Optional[str] = None,
+    search: Optional[str] = None,
+    sort: Optional[str] = None
+):
     user = await get_current_user(request)
     query = {"user_id": user["_id"]}
     if status == "opened":
@@ -567,14 +800,64 @@ async def list_links(request: Request, status: Optional[str] = None, search: Opt
     pdf_ids = list(set(l["pdf_id"] for l in links))
     pdfs = await db.pdfs.find({"id": {"$in": pdf_ids}}, {"_id": 0, "id": 1, "file_name": 1}).to_list(1000)
     pdf_map = {p["id"]: p["file_name"] for p in pdfs}
+    summaries = []
     for link in links:
-        link["pdf_name"] = pdf_map.get(link["pdf_id"], "Unknown")
-        sessions = await db.view_sessions.find({"link_id": link["_id"]}).to_list(1000)
-        total_time = sum(int(session.get("duration_seconds") or 0) for session in sessions)
-        link["session_count"] = len(sessions)
-        link["total_time_seconds"] = total_time
-        link["avg_time_seconds"] = round(total_time / len(sessions)) if sessions else 0
-    return links
+        summaries.append(await build_link_summary(link, pdf_map))
+
+    if sort == "recently_opened":
+        summaries.sort(key=lambda item: normalize_datetime(item.get("last_opened_at")), reverse=True)
+    elif sort == "time_spent":
+        summaries.sort(key=lambda item: int(item.get("total_time_seconds") or 0), reverse=True)
+    elif sort == "most_opened":
+        summaries.sort(key=lambda item: int(item.get("open_count") or 0), reverse=True)
+    else:
+        summaries.sort(key=lambda item: normalize_datetime(item.get("created_at")), reverse=True)
+
+    return summaries
+
+
+@api_router.get("/links/{link_id}/insights")
+async def get_link_insights(link_id: str, request: Request):
+    user = await get_current_user(request)
+    link = await db.links.find_one({"_id": link_id, "user_id": user["_id"]})
+    if not link:
+        raise HTTPException(status_code=404, detail="Link not found")
+
+    pdfs = await db.pdfs.find({"id": link.get("pdf_id")}, {"_id": 0, "id": 1, "file_name": 1}).to_list(1)
+    pdf_map = {pdf["id"]: pdf.get("file_name", "Unknown PDF") for pdf in pdfs}
+    sessions = await db.view_sessions.find({"link_id": link_id}).sort("started_at", 1).to_list(1000)
+    sessions_payload = []
+    for index, session in enumerate(sessions, start=1):
+        sessions_payload.append({
+            "session_id": session.get("_id"),
+            "session_number": index,
+            "started_at": session.get("started_at"),
+            "last_seen_at": session.get("last_seen_at"),
+            "duration_seconds": int(session.get("duration_seconds") or 0),
+            "device_type": session.get("device_type") or infer_device_type(session.get("user_agent", ""), bool(session.get("is_mobile"))),
+            "platform": session.get("platform") or infer_platform(session.get("user_agent", "")),
+            "browser": session.get("browser") or infer_browser(session.get("user_agent", "")),
+            "location_label": session.get("location_label") or "Unknown",
+            "screen_width": session.get("screen_width"),
+            "screen_height": session.get("screen_height"),
+        })
+
+    total_time = sum(item["duration_seconds"] for item in sessions_payload)
+    return {
+        "link": {
+            "_id": link.get("_id"),
+            "customer_name": link.get("customer_name"),
+            "customer_phone": link.get("customer_phone"),
+            "pdf_name": get_link_pdf_name(link, pdf_map),
+            "pdf_deleted": bool(link.get("pdf_deleted")) or link.get("pdf_id") not in pdf_map,
+            "created_at": link.get("created_at"),
+            "open_count": int(link.get("open_count") or 0),
+            "last_opened_at": link.get("last_opened_at"),
+            "session_count": len(sessions_payload),
+            "total_time_seconds": total_time,
+        },
+        "sessions": sessions_payload,
+    }
 
 @api_router.delete("/links/{link_id}")
 async def delete_link(link_id: str, request: Request):
@@ -593,8 +876,8 @@ async def view_pdf(link_id: str):
         raise HTTPException(status_code=404, detail="Link not found")
 
     pdf = await db.pdfs.find_one({"id": link["pdf_id"]}, {"_id": 0})
-    if not pdf:
-        raise HTTPException(status_code=404, detail="PDF not found")
+    if not pdf or link.get("pdf_deleted"):
+        raise HTTPException(status_code=410, detail=EXPIRED_ITINERARY_MESSAGE)
 
     pdf_url = resolve_pdf_url(pdf)
     if not pdf_url:
@@ -616,11 +899,11 @@ async def get_pdf_info(unique_id: str, request: Request):
     if not link:
         raise HTTPException(status_code=404, detail="Link not found")
     pdf = await db.pdfs.find_one({"id": link["pdf_id"]}, {"_id": 0})
-    if not pdf:
-        raise HTTPException(status_code=404, detail="PDF not found")
+    if not pdf or link.get("pdf_deleted"):
+        raise HTTPException(status_code=410, detail=EXPIRED_ITINERARY_MESSAGE)
 
     return {
-        "pdf_name": pdf["file_name"],
+        "pdf_name": link.get("pdf_name_snapshot") or pdf["file_name"],
         "file_url": f"{str(request.base_url).rstrip('/')}/api/view/{unique_id}/pdf",
     }
 
@@ -633,8 +916,8 @@ async def get_pdf_file(unique_id: str, request: Request):
         raise HTTPException(status_code=404, detail="Link not found")
 
     pdf = await db.pdfs.find_one({"id": link["pdf_id"]}, {"_id": 0})
-    if not pdf:
-        raise HTTPException(status_code=404, detail="PDF not found")
+    if not pdf or link.get("pdf_deleted"):
+        raise HTTPException(status_code=410, detail=EXPIRED_ITINERARY_MESSAGE)
 
     storage_path = pdf.get("storage_path")
     if storage_path and Path(storage_path).exists():
@@ -667,6 +950,9 @@ async def track_visit(unique_id: str):
     link = await db.links.find_one({"_id": unique_id})
     if not link:
         raise HTTPException(status_code=404, detail="Link not found")
+    pdf = await db.pdfs.find_one({"id": link.get("pdf_id")}, {"_id": 0, "id": 1})
+    if link.get("pdf_deleted") or not pdf:
+        raise HTTPException(status_code=410, detail=EXPIRED_ITINERARY_MESSAGE)
     now = datetime.now(timezone.utc).isoformat()
     await db.links.update_one(
         {"_id": unique_id},
@@ -680,14 +966,21 @@ async def start_view_session(unique_id: str, input: ViewSessionStartInput, reque
     link = await db.links.find_one({"_id": unique_id})
     if not link:
         raise HTTPException(status_code=404, detail="Link not found")
+    pdf = await db.pdfs.find_one({"id": link.get("pdf_id")}, {"_id": 0, "id": 1})
+    if link.get("pdf_deleted") or not pdf:
+        raise HTTPException(status_code=410, detail=EXPIRED_ITINERARY_MESSAGE)
 
     session_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
+    user_agent = request.headers.get("user-agent", "")
+    location = get_location_snapshot(request)
     await db.view_sessions.insert_one({
         "_id": session_id,
         "link_id": unique_id,
         "pdf_id": link.get("pdf_id"),
         "user_id": link.get("user_id"),
+        "pdf_name_snapshot": link.get("pdf_name_snapshot"),
+        "pdf_deleted": bool(link.get("pdf_deleted")),
         "customer_name": link.get("customer_name"),
         "customer_phone": link.get("customer_phone"),
         "started_at": now,
@@ -696,7 +989,15 @@ async def start_view_session(unique_id: str, input: ViewSessionStartInput, reque
         "screen_width": input.screen_width,
         "screen_height": input.screen_height,
         "is_mobile": input.is_mobile,
-        "user_agent": request.headers.get("user-agent", ""),
+        "device_type": infer_device_type(user_agent, input.is_mobile),
+        "platform": infer_platform(user_agent),
+        "browser": infer_browser(user_agent),
+        "user_agent": user_agent,
+        "ip_address": get_client_ip(request),
+        "location_city": location.get("city"),
+        "location_region": location.get("region"),
+        "location_country": location.get("country"),
+        "location_label": location.get("label"),
     })
     return {"session_id": session_id}
 

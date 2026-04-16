@@ -7,12 +7,12 @@ import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { Badge } from '../components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
 import { toast } from 'sonner';
 import {
   Upload, Link2, Copy, Trash2, FileText, ExternalLink, LogOut, Search, Filter,
-  CheckCircle, XCircle, Eye, Loader2, FileUp, LinkIcon, MapPin
+  CheckCircle, XCircle, Eye, Loader2, FileUp, LinkIcon, MapPin, ArrowUpDown,
+  Smartphone, Monitor, Globe2, Archive, Download
 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -30,6 +30,36 @@ function formatDuration(seconds) {
 
 function getLinkId(link) {
   return link?._id ?? link?.id ?? '';
+}
+
+function formatSessionOrdinal(value) {
+  const number = Number(value || 0);
+  if (!number) return '--';
+  const mod100 = number % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${number}th`;
+  const suffixMap = { 1: 'st', 2: 'nd', 3: 'rd' };
+  return `${number}${suffixMap[number % 10] || 'th'}`;
+}
+
+function csvEscape(value) {
+  const stringValue = value == null ? '' : String(value);
+  if (/[",\n]/.test(stringValue)) {
+    return `"${stringValue.replace(/"/g, '""')}"`;
+  }
+  return stringValue;
+}
+
+function downloadCsv(filename, rows) {
+  const content = rows.map((row) => row.map(csvEscape).join(',')).join('\n');
+  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
 
 // Format phone → wa.me link: strip non-digits, prepend 91 if 10-digit Indian number
@@ -65,6 +95,7 @@ function WhatsAppIcon({ size = 16 }) {
 export default function DashboardPage() {
   const { user, logout } = useAuth();
   const [pdfs, setPdfs] = useState([]);
+  const [archivedPdfs, setArchivedPdfs] = useState([]);
   const [links, setLinks] = useState([]);
   const [stats, setStats] = useState({ total_pdfs: 0, total_links: 0, opened_links: 0, unopened_links: 0 });
   const [uploading, setUploading] = useState(false);
@@ -75,7 +106,11 @@ export default function DashboardPage() {
   const [customerPhone, setCustomerPhone] = useState('');
   const [creatingLink, setCreatingLink] = useState(false);
   const [filterStatus, setFilterStatus] = useState('all');
+  const [sortBy, setSortBy] = useState('recently_created');
   const [searchQuery, setSearchQuery] = useState('');
+  const [insightsOpen, setInsightsOpen] = useState(false);
+  const [selectedInsight, setSelectedInsight] = useState(null);
+  const [insightsLoading, setInsightsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
@@ -83,8 +118,10 @@ export default function DashboardPage() {
       const params = {};
       if (filterStatus !== 'all') params.status = filterStatus;
       if (searchQuery.trim()) params.search = searchQuery.trim();
-      const [pdfsRes, linksRes, statsRes] = await Promise.all([
+      if (sortBy) params.sort = sortBy;
+      const [pdfsRes, archivedRes, linksRes, statsRes] = await Promise.all([
         axios.get(`${API}/pdfs`, { withCredentials: true }),
+        axios.get(`${API}/pdfs/archived`, { withCredentials: true }),
         axios.get(`${API}/links`, { withCredentials: true, params }),
         axios.get(`${API}/dashboard/stats`, { withCredentials: true }),
       ]);
@@ -93,6 +130,7 @@ export default function DashboardPage() {
         _id: getLinkId(link),
       }));
       setPdfs(pdfsRes.data?.data || pdfsRes.data || []);
+      setArchivedPdfs(Array.isArray(archivedRes.data) ? archivedRes.data : []);
       setLinks(normalizedLinks);
       setStats(statsRes.data);
     } catch (err) {
@@ -101,7 +139,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [filterStatus, searchQuery]);
+  }, [filterStatus, searchQuery, sortBy]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -159,7 +197,7 @@ export default function DashboardPage() {
   };
 
   const handleDeletePdf = async (pdfId) => {
-    if (!window.confirm('Delete this PDF and all its links?')) return;
+    if (!window.confirm('Delete this PDF? Customer analytics and links will stay in the dashboard, but the itinerary link will expire for customers.')) return;
     try {
       await axios.delete(`${API}/pdfs/${pdfId}`, { withCredentials: true });
       toast.success('PDF deleted');
@@ -197,6 +235,70 @@ export default function DashboardPage() {
     if (!bytes) return '';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  };
+
+  const loadInsights = async (linkId) => {
+    setInsightsOpen(true);
+    setInsightsLoading(true);
+    try {
+      const { data } = await axios.get(`${API}/links/${linkId}/insights`, { withCredentials: true });
+      setSelectedInsight(data);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to load customer insights');
+    } finally {
+      setInsightsLoading(false);
+    }
+  };
+
+  const getDeviceIcon = (deviceType) => {
+    if (deviceType === 'Mobile' || deviceType === 'Tablet') return Smartphone;
+    return Monitor;
+  };
+
+  const exportLinksCsv = () => {
+    const rows = [
+      ['Customer Name', 'Phone', 'PDF', 'PDF Status', 'Opened', 'Open Count', 'Session Count', 'Total Time', 'Last Opened', 'Latest Device', 'Latest Platform', 'Latest Location', 'Created At'],
+      ...links.map((link) => [
+        link.customer_name,
+        link.customer_phone,
+        link.pdf_name,
+        link.pdf_deleted ? 'Expired' : 'Active',
+        link.opened ? 'Yes' : 'No',
+        link.open_count || 0,
+        link.session_count || 0,
+        formatDuration(link.total_time_seconds),
+        formatDate(link.last_opened_at),
+        link.latest_device || '--',
+        link.latest_platform || '--',
+        link.latest_location || '--',
+        formatDate(link.created_at),
+      ]),
+    ];
+    downloadCsv('travloger-customer-links.csv', rows);
+    toast.success('Customer analytics CSV downloaded');
+  };
+
+  const exportInsightSessionsCsv = () => {
+    if (!selectedInsight) return;
+    const rows = [
+      ['Customer Name', 'Phone', 'PDF', 'Session', 'Opened At', 'Last Seen', 'Time Spent', 'Device', 'Platform', 'Browser', 'Location', 'Screen Size'],
+      ...selectedInsight.sessions.map((session) => [
+        selectedInsight.link.customer_name,
+        selectedInsight.link.customer_phone,
+        selectedInsight.link.pdf_name,
+        `${formatSessionOrdinal(session.session_number)} session`,
+        formatDate(session.started_at),
+        formatDate(session.last_seen_at),
+        formatDuration(session.duration_seconds),
+        session.device_type || '--',
+        session.platform || '--',
+        session.browser || '--',
+        session.location_label || '--',
+        session.screen_width && session.screen_height ? `${session.screen_width}x${session.screen_height}` : '--',
+      ]),
+    ];
+    downloadCsv(`travloger-${selectedInsight.link.customer_name || 'customer'}-sessions.csv`, rows);
+    toast.success('Session insights CSV downloaded');
   };
 
   if (loading) {
@@ -368,70 +470,79 @@ export default function DashboardPage() {
           <section className="animate-fade-in-up" style={{ animationDelay: '380ms' }}>
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
               <h2 className="text-xl font-bold" style={{ color: 'var(--teal)' }}>Tracking Links</h2>
-              <Dialog open={linkOpen} onOpenChange={setLinkOpen}>
-                <DialogTrigger asChild>
-                  <Button
-                    className="font-semibold text-white rounded-lg flex items-center gap-2"
-                    style={{ backgroundColor: 'var(--gold)' }}
-                    disabled={pdfs.length === 0}
-                    data-testid="generate-link-button"
-                  >
-                    <Link2 className="w-4 h-4" /> Generate Link
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="rounded-xl border" style={{ borderColor: '#e5e7eb' }}>
-                  <DialogHeader>
-                    <div className="flex items-center gap-3 mb-1">
-                      <TravlogerMark size={28} />
-                      <DialogTitle className="font-bold text-xl" style={{ color: 'var(--teal)' }}>
-                        Create Tracking Link
-                      </DialogTitle>
-                    </div>
-                  </DialogHeader>
-                  <form onSubmit={handleCreateLink} className="space-y-4 pt-1">
-                    <div>
-                      <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Select Itinerary PDF</Label>
-                      <Select value={selectedPdf} onValueChange={setSelectedPdf}>
-                        <SelectTrigger className="mt-1.5 rounded-lg border-slate-200" data-testid="select-pdf-trigger">
-                          <SelectValue placeholder="Choose a PDF" />
-                        </SelectTrigger>
-                        <SelectContent className="rounded-xl">
-                          {(Array.isArray(pdfs) ? pdfs : []).map(pdf => (
-                            <SelectItem key={pdf.id} value={pdf.id} className="rounded-lg">{pdf.file_name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Customer Name</Label>
-                      <Input value={customerName} onChange={e => setCustomerName(e.target.value)}
-                        placeholder="e.g. Rahul Sharma"
-                        className="mt-1.5 rounded-lg border-slate-200 focus:ring-2"
-                        style={{ '--tw-ring-color': 'var(--teal)' }}
-                        data-testid="customer-name-input" required />
-                    </div>
-                    <div>
-                      <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Customer WhatsApp Number</Label>
-                      <Input value={customerPhone} onChange={e => setCustomerPhone(e.target.value)}
-                        placeholder="e.g. 8328046859"
-                        className="mt-1.5 rounded-lg border-slate-200"
-                        data-testid="customer-phone-input" required />
-                      <p className="text-xs text-slate-400 mt-1">Enter 10-digit Indian number — WhatsApp link auto-generates</p>
-                    </div>
-                    <Button type="submit"
-                      className="w-full rounded-lg font-bold h-11 text-white"
-                      style={{ backgroundColor: 'var(--teal)' }}
-                      disabled={creatingLink}
-                      data-testid="create-link-submit">
-                      {creatingLink ? <Loader2 className="w-4 h-4 animate-spin" /> : '✦ Create Tracking Link'}
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  onClick={exportLinksCsv}
+                  className="rounded-lg border-slate-200 text-slate-600"
+                >
+                  <Download className="w-4 h-4 mr-2" /> Export CSV
+                </Button>
+                <Dialog open={linkOpen} onOpenChange={setLinkOpen}>
+                  <DialogTrigger asChild>
+                    <Button
+                      className="font-semibold text-white rounded-lg flex items-center gap-2"
+                      style={{ backgroundColor: 'var(--gold)' }}
+                      disabled={pdfs.length === 0}
+                      data-testid="generate-link-button"
+                    >
+                      <Link2 className="w-4 h-4" /> Generate Link
                     </Button>
-                  </form>
-                </DialogContent>
-              </Dialog>
+                  </DialogTrigger>
+                  <DialogContent className="rounded-xl border" style={{ borderColor: '#e5e7eb' }}>
+                    <DialogHeader>
+                      <div className="flex items-center gap-3 mb-1">
+                        <TravlogerMark size={28} />
+                        <DialogTitle className="font-bold text-xl" style={{ color: 'var(--teal)' }}>
+                          Create Tracking Link
+                        </DialogTitle>
+                      </div>
+                    </DialogHeader>
+                    <form onSubmit={handleCreateLink} className="space-y-4 pt-1">
+                      <div>
+                        <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Select Itinerary PDF</Label>
+                        <Select value={selectedPdf} onValueChange={setSelectedPdf}>
+                          <SelectTrigger className="mt-1.5 rounded-lg border-slate-200" data-testid="select-pdf-trigger">
+                            <SelectValue placeholder="Choose a PDF" />
+                          </SelectTrigger>
+                          <SelectContent className="rounded-xl">
+                            {(Array.isArray(pdfs) ? pdfs : []).map(pdf => (
+                              <SelectItem key={pdf.id} value={pdf.id} className="rounded-lg">{pdf.file_name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Customer Name</Label>
+                        <Input value={customerName} onChange={e => setCustomerName(e.target.value)}
+                          placeholder="e.g. Rahul Sharma"
+                          className="mt-1.5 rounded-lg border-slate-200 focus:ring-2"
+                          style={{ '--tw-ring-color': 'var(--teal)' }}
+                          data-testid="customer-name-input" required />
+                      </div>
+                      <div>
+                        <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Customer WhatsApp Number</Label>
+                        <Input value={customerPhone} onChange={e => setCustomerPhone(e.target.value)}
+                          placeholder="e.g. 8328046859"
+                          className="mt-1.5 rounded-lg border-slate-200"
+                          data-testid="customer-phone-input" required />
+                        <p className="text-xs text-slate-400 mt-1">Enter 10-digit Indian number — WhatsApp link auto-generates</p>
+                      </div>
+                      <Button type="submit"
+                        className="w-full rounded-lg font-bold h-11 text-white"
+                        style={{ backgroundColor: 'var(--teal)' }}
+                        disabled={creatingLink}
+                        data-testid="create-link-submit">
+                        {creatingLink ? <Loader2 className="w-4 h-4 animate-spin" /> : '✦ Create Tracking Link'}
+                      </Button>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              </div>
             </div>
 
             {/* Filters */}
-            <div className="flex flex-col sm:flex-row gap-3 mb-4">
+            <div className="flex flex-col lg:flex-row gap-3 mb-4">
               <div className="relative flex-1 max-w-sm">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <Input value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
@@ -448,6 +559,18 @@ export default function DashboardPage() {
                   <SelectItem value="all">All Links</SelectItem>
                   <SelectItem value="opened">Opened</SelectItem>
                   <SelectItem value="not_opened">Not Opened</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={sortBy} onValueChange={setSortBy}>
+                <SelectTrigger className="w-[220px] rounded-lg border-slate-200">
+                  <ArrowUpDown className="w-4 h-4 mr-2 text-slate-400" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl">
+                  <SelectItem value="recently_created">Recently Created</SelectItem>
+                  <SelectItem value="recently_opened">Recently Opened</SelectItem>
+                  <SelectItem value="time_spent">Most Time Spent</SelectItem>
+                  <SelectItem value="most_opened">Most Opens</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -484,14 +607,30 @@ export default function DashboardPage() {
                       <TableRow key={linkId || `${link.customer_phone}-${link.created_at}`} className="border-b hover:bg-slate-50 transition-colors" style={{ borderColor: '#f1f5f9' }} data-testid={`link-row-${linkId || 'missing-id'}`}>
 
                         {/* Customer Name */}
-                        <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>{link.customer_name}</TableCell>
+                        <TableCell>
+                          <button
+                            type="button"
+                            onClick={() => loadInsights(linkId)}
+                            className="font-semibold text-left hover:underline"
+                            style={{ color: 'var(--teal)' }}
+                          >
+                            {link.customer_name}
+                          </button>
+                        </TableCell>
 
                         {/* Phone */}
                         <TableCell className="text-slate-600 text-sm font-mono">{link.customer_phone}</TableCell>
 
                         {/* PDF Name */}
                         <TableCell>
-                          <span className="text-xs text-slate-500 truncate max-w-[140px] inline-block">{link.pdf_name}</span>
+                          <div className="max-w-[170px]">
+                            <span className="text-xs text-slate-500 truncate max-w-[170px] inline-block">{link.pdf_name}</span>
+                            {link.pdf_deleted && (
+                              <div className="text-[11px] font-semibold mt-1" style={{ color: '#b45309' }}>
+                                Itinerary expired
+                              </div>
+                            )}
+                          </div>
                         </TableCell>
 
                         {/* Status Badge */}
@@ -523,6 +662,9 @@ export default function DashboardPage() {
                         <TableCell className="text-slate-500 text-xs">
                           <div className="font-bold" style={{ color: 'var(--teal)' }}>{formatDuration(link.total_time_seconds)}</div>
                           <div className="text-slate-400">{link.session_count || 0} sessions</div>
+                          {link.latest_location && link.latest_location !== 'Unknown' && (
+                            <div className="text-slate-400 mt-1 truncate max-w-[140px]">{link.latest_location}</div>
+                          )}
                         </TableCell>
 
                         {/* Last Opened */}
@@ -604,6 +746,139 @@ export default function DashboardPage() {
               </div>
             )}
           </section>
+
+          <section className="mt-8 animate-fade-in-up">
+            <div className="flex items-center gap-2 mb-4">
+              <Archive className="w-5 h-5" style={{ color: 'var(--gold)' }} />
+              <h2 className="text-xl font-bold" style={{ color: 'var(--teal)' }}>Expired / Archived PDFs</h2>
+            </div>
+            {archivedPdfs.length === 0 ? (
+              <div className="bg-white rounded-xl border p-8 text-center" style={{ borderColor: '#e5e7eb' }}>
+                <Archive className="w-10 h-10 mx-auto mb-3 text-slate-200" />
+                <p className="font-semibold text-slate-500">No archived PDFs yet</p>
+                <p className="text-xs mt-1 text-slate-400">Deleted itineraries will stay here with their customer analytics.</p>
+              </div>
+            ) : (
+              <div className="bg-white rounded-xl border overflow-x-auto" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
+                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">PDF</TableHead>
+                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Deleted At</TableHead>
+                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Links</TableHead>
+                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Opens</TableHead>
+                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Sessions</TableHead>
+                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Total Time</TableHead>
+                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Last Opened</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {archivedPdfs.map((pdf) => (
+                      <TableRow key={`${pdf.pdf_id || pdf.pdf_name}-${pdf.pdf_deleted_at || ''}`} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
+                        <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>{pdf.pdf_name}</TableCell>
+                        <TableCell className="text-xs text-slate-400">{formatDate(pdf.pdf_deleted_at)}</TableCell>
+                        <TableCell className="text-sm text-slate-600">{pdf.link_count || 0}</TableCell>
+                        <TableCell className="text-sm text-slate-600">{pdf.total_opens || 0}</TableCell>
+                        <TableCell className="text-sm text-slate-600">{pdf.tracked_sessions || 0}</TableCell>
+                        <TableCell className="text-sm text-slate-600">{formatDuration(pdf.total_time_seconds)}</TableCell>
+                        <TableCell className="text-xs text-slate-400">{formatDate(pdf.latest_opened_at)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </section>
+
+          <Dialog open={insightsOpen} onOpenChange={(open) => {
+            setInsightsOpen(open);
+            if (!open) {
+              setSelectedInsight(null);
+              setInsightsLoading(false);
+            }
+          }}>
+            <DialogContent className="max-w-3xl rounded-xl border" style={{ borderColor: '#e5e7eb' }}>
+              <DialogHeader>
+                <div className="flex items-center justify-between gap-3 pr-8">
+                  <DialogTitle className="text-xl font-bold" style={{ color: 'var(--teal)' }}>
+                    {selectedInsight?.link?.customer_name || 'Customer insights'}
+                  </DialogTitle>
+                  {selectedInsight && (
+                    <Button variant="outline" onClick={exportInsightSessionsCsv} className="rounded-lg border-slate-200 text-slate-600">
+                      <Download className="w-4 h-4 mr-2" /> Export Sessions CSV
+                    </Button>
+                  )}
+                </div>
+              </DialogHeader>
+              {insightsLoading ? (
+                <div className="py-14 flex items-center justify-center">
+                  <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--teal)' }} />
+                </div>
+              ) : selectedInsight ? (
+                <div className="space-y-5">
+                  <div className="grid sm:grid-cols-4 gap-3">
+                    {[
+                      { label: 'Phone', value: selectedInsight.link.customer_phone },
+                      { label: 'PDF', value: selectedInsight.link.pdf_name },
+                      { label: 'Sessions', value: selectedInsight.link.session_count },
+                      { label: 'Total Time', value: formatDuration(selectedInsight.link.total_time_seconds) },
+                    ].map((item) => (
+                      <div key={item.label} className="rounded-lg border p-3" style={{ borderColor: '#e5e7eb', backgroundColor: '#f8fafc' }}>
+                        <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">{item.label}</div>
+                        <div className="mt-2 text-sm font-semibold break-words" style={{ color: 'var(--teal)' }}>{item.value || '--'}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="rounded-xl border overflow-hidden" style={{ borderColor: '#e5e7eb' }}>
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
+                          <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Session</TableHead>
+                          <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Opened At</TableHead>
+                          <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Time Spent</TableHead>
+                          <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Device</TableHead>
+                          <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Location</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {selectedInsight.sessions.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={5} className="text-center py-10 text-sm text-slate-400">
+                              No sessions yet for this customer.
+                            </TableCell>
+                          </TableRow>
+                        ) : selectedInsight.sessions.map((session) => {
+                          const DeviceIcon = getDeviceIcon(session.device_type);
+                          return (
+                            <TableRow key={session.session_id} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
+                              <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>
+                                {formatSessionOrdinal(session.session_number)} session
+                              </TableCell>
+                              <TableCell className="text-sm text-slate-500">{formatDate(session.started_at)}</TableCell>
+                              <TableCell className="text-sm font-semibold text-slate-600">{formatDuration(session.duration_seconds)}</TableCell>
+                              <TableCell className="text-xs text-slate-500">
+                                <div className="flex items-center gap-2">
+                                  <DeviceIcon className="w-4 h-4" />
+                                  <span>{session.device_type} · {session.platform}</span>
+                                </div>
+                                <div className="text-slate-400 mt-1">{session.browser}</div>
+                              </TableCell>
+                              <TableCell className="text-xs text-slate-500">
+                                <div className="flex items-center gap-2">
+                                  <Globe2 className="w-4 h-4" />
+                                  <span>{session.location_label || 'Unknown'}</span>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              ) : null}
+            </DialogContent>
+          </Dialog>
 
           {/* Footer */}
           <div className="mt-12 text-center pb-4">

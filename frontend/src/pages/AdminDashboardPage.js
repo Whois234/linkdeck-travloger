@@ -7,7 +7,7 @@ import { Label } from '../components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Badge } from '../components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
-import { Eye, FileText, KeyRound, LinkIcon, Loader2, LogOut, ShieldCheck, UserPlus, Users } from 'lucide-react';
+import { Eye, FileText, KeyRound, LinkIcon, Loader2, LogOut, ShieldCheck, UserPlus, Users, Globe2, Monitor, Smartphone, Download } from 'lucide-react';
 import {
   Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip as ChartTooltip, XAxis, YAxis
 } from 'recharts';
@@ -32,6 +32,36 @@ function formatDuration(seconds) {
   return `${hours}h ${minutes % 60}m`;
 }
 
+function formatSessionOrdinal(value) {
+  const number = Number(value || 0);
+  if (!number) return '--';
+  const mod100 = number % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${number}th`;
+  const suffixMap = { 1: 'st', 2: 'nd', 3: 'rd' };
+  return `${number}${suffixMap[number % 10] || 'th'}`;
+}
+
+function csvEscape(value) {
+  const stringValue = value == null ? '' : String(value);
+  if (/[",\n]/.test(stringValue)) {
+    return `"${stringValue.replace(/"/g, '""')}"`;
+  }
+  return stringValue;
+}
+
+function downloadCsv(filename, rows) {
+  const content = rows.map((row) => row.map(csvEscape).join(',')).join('\n');
+  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 function TravlogerMark({ size = 32 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -53,6 +83,7 @@ export default function AdminDashboardPage() {
     opens_by_hour: [],
     time_by_pdf: [],
   });
+  const [recentActivity, setRecentActivity] = useState([]);
   const [analyticsDays, setAnalyticsDays] = useState(30);
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
@@ -77,9 +108,14 @@ export default function AdminDashboardPage() {
         withCredentials: true,
         params: analyticsParams,
       });
+      const activityRes = await axios.get(`${API}/admin/recent-activity`, {
+        withCredentials: true,
+        params: { limit: 12 },
+      });
       setUsers(usersRes.data || []);
       setStats(statsRes.data || {});
       setAnalytics(analyticsRes.data || {});
+      setRecentActivity(activityRes.data?.items || []);
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Failed to load admin dashboard');
     } finally {
@@ -136,6 +172,31 @@ export default function AdminDashboardPage() {
       </div>
     );
   }
+
+  const getDeviceIcon = (deviceType) => {
+    if (deviceType === 'Mobile' || deviceType === 'Tablet') return Smartphone;
+    return Monitor;
+  };
+
+  const exportRecentActivityCsv = () => {
+    const rows = [
+      ['Customer Name', 'Phone', 'PDF', 'Session', 'Time Spent', 'Opened At', 'Device', 'Platform', 'Browser', 'Location'],
+      ...recentActivity.map((item) => [
+        item.customer_name,
+        item.customer_phone,
+        item.pdf_name,
+        `${formatSessionOrdinal(item.session_number)} session`,
+        formatDuration(item.duration_seconds),
+        formatDate(item.started_at),
+        item.device_type || '--',
+        item.platform || '--',
+        item.browser || '--',
+        item.location_label || '--',
+      ]),
+    ];
+    downloadCsv('travloger-admin-recent-activity.csv', rows);
+    toast.success('Recent activity CSV downloaded');
+  };
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--off-white)' }}>
@@ -286,6 +347,67 @@ export default function AdminDashboardPage() {
                     <TableCell className="text-sm text-slate-600">{formatDuration(item.avg_time_seconds)}</TableCell>
                   </TableRow>
                 ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          <div className="bg-white rounded-xl border overflow-x-auto mt-4" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+            <div className="px-5 py-4 border-b" style={{ borderColor: '#f1f5f9' }}>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="font-bold" style={{ color: 'var(--teal)' }}>Recent Activity</h3>
+                  <p className="text-sm text-slate-500 mt-1">Latest customer opens with session order, watch time, device, and approximate location.</p>
+                </div>
+                <Button variant="outline" onClick={exportRecentActivityCsv} className="rounded-lg border-slate-200 text-slate-600">
+                  <Download className="w-4 h-4 mr-2" /> Export CSV
+                </Button>
+              </div>
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Customer</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Phone</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">PDF</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Session</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Time Spent</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Opened At</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Device</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Location</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {recentActivity.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="py-10 text-center text-sm text-slate-400">
+                      No recent activity yet.
+                    </TableCell>
+                  </TableRow>
+                ) : recentActivity.map((item) => {
+                  const DeviceIcon = getDeviceIcon(item.device_type);
+                  return (
+                    <TableRow key={item.session_id} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
+                      <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>{item.customer_name}</TableCell>
+                      <TableCell className="text-sm text-slate-600">{item.customer_phone}</TableCell>
+                      <TableCell className="text-sm text-slate-500 max-w-[220px] truncate">{item.pdf_name}</TableCell>
+                      <TableCell className="text-sm text-slate-600">{formatSessionOrdinal(item.session_number)} session</TableCell>
+                      <TableCell className="text-sm text-slate-600">{formatDuration(item.duration_seconds)}</TableCell>
+                      <TableCell className="text-xs text-slate-400">{formatDate(item.started_at)}</TableCell>
+                      <TableCell className="text-xs text-slate-500">
+                        <div className="flex items-center gap-2">
+                          <DeviceIcon className="w-4 h-4" />
+                          <span>{item.device_type} · {item.platform}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-xs text-slate-500">
+                        <div className="flex items-center gap-2">
+                          <Globe2 className="w-4 h-4" />
+                          <span>{item.location_label || 'Unknown'}</span>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
