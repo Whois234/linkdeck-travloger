@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
-import * as pdfjsLib from 'pdfjs-dist/webpack.mjs';
-import { AlertCircle, Loader2, Minus, Plus } from 'lucide-react';
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { AlertCircle, ChevronLeft, ChevronRight, Loader2, Minus, Plus } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const DEFAULT_ZOOM = 1;
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/legacy/build/pdf.worker.mjs',
+  import.meta.url
+).toString();
 
 function getPublicPdfUrl(uniqueId, fallbackUrl) {
   if (typeof window === 'undefined' || window.location.hostname === 'localhost') {
@@ -31,10 +35,15 @@ function TravlogerMark({ size = 28 }) {
   );
 }
 
-function PdfPageCanvas({ pdfDocument, pageNumber, viewerWidth, zoomLevel, registerPageNode }) {
+function PdfPageCanvas({ pdfDocument, pageNumber, viewerWidth, zoomLevel, registerPageNode, onRenderError }) {
   const wrapperRef = useRef(null);
   const canvasRef = useRef(null);
   const [pageHeight, setPageHeight] = useState(320);
+  const renderErrorRef = useRef(onRenderError);
+
+  useEffect(() => {
+    renderErrorRef.current = onRenderError;
+  }, [onRenderError]);
 
   useEffect(() => {
     registerPageNode(pageNumber, wrapperRef.current);
@@ -54,14 +63,16 @@ function PdfPageCanvas({ pdfDocument, pageNumber, viewerWidth, zoomLevel, regist
         const scale = (fitWidth / unscaledViewport.width) * zoomLevel;
         const viewport = page.getViewport({ scale });
         const canvas = canvasRef.current;
-        const context = canvas.getContext('2d');
-        const pixelRatio = window.devicePixelRatio || 1;
+        const context = canvas.getContext('2d', { alpha: false });
+        const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
 
         canvas.width = Math.floor(viewport.width * pixelRatio);
         canvas.height = Math.floor(viewport.height * pixelRatio);
         canvas.style.width = `${viewport.width}px`;
         canvas.style.height = `${viewport.height}px`;
+        canvas.style.backgroundColor = '#ffffff';
         context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+        context.imageSmoothingEnabled = true;
         setPageHeight(viewport.height);
 
         renderTask = page.render({
@@ -72,6 +83,7 @@ function PdfPageCanvas({ pdfDocument, pageNumber, viewerWidth, zoomLevel, regist
       } catch (error) {
         if (!cancelled && error?.name !== 'RenderingCancelledException') {
           console.error(`Failed to render PDF page ${pageNumber}`, error);
+          renderErrorRef.current?.(error);
         }
       }
     };
@@ -88,13 +100,10 @@ function PdfPageCanvas({ pdfDocument, pageNumber, viewerWidth, zoomLevel, regist
     <section
       ref={wrapperRef}
       data-page-number={pageNumber}
-      className="mx-auto mb-5 rounded-lg border bg-white shadow-sm"
-      style={{ borderColor: '#e2e8f0', minHeight: pageHeight }}
+      className="mx-auto mb-5 overflow-hidden rounded-sm bg-white shadow-[0_10px_30px_rgba(15,23,42,0.08)]"
+      style={{ minHeight: pageHeight }}
     >
-      <div className="flex items-center justify-between border-b px-4 py-2 text-xs font-semibold uppercase tracking-wider text-slate-400" style={{ borderColor: '#f1f5f9' }}>
-        <span>Page {pageNumber}</span>
-      </div>
-      <div className="overflow-hidden rounded-b-lg">
+      <div className="overflow-hidden">
         <canvas ref={canvasRef} className="block mx-auto max-w-full" />
       </div>
     </section>
@@ -114,6 +123,7 @@ export default function ViewPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [zoomLevel, setZoomLevel] = useState(DEFAULT_ZOOM);
   const [viewerWidth, setViewerWidth] = useState(0);
+  const [renderError, setRenderError] = useState('');
   const tracked = useRef(false);
   const sessionId = useRef(null);
   const sessionStartedAt = useRef(null);
@@ -241,6 +251,7 @@ export default function ViewPage() {
         currentPageRef.current = 1;
         currentPageStartedAtRef.current = Date.now();
       } catch (err) {
+        console.error('PDF viewer load failed', err);
         if (err.response?.status === 410) {
           setExpired(true);
         }
@@ -308,6 +319,13 @@ export default function ViewPage() {
     [pageCount]
   );
 
+  const jumpToPage = useCallback((pageNumber) => {
+    const node = pageNodesRef.current[pageNumber];
+    if (!node || !viewerRef.current) return;
+    node.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setActivePage(pageNumber);
+  }, [setActivePage]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-white" data-testid="view-loading">
@@ -339,15 +357,33 @@ export default function ViewPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#f8fafc]" data-testid="view-page">
+    <div className="min-h-screen flex flex-col bg-[#eef2f7]" data-testid="view-page">
       <header
-        className="flex items-center gap-3 px-4 md:px-5 h-12 border-b flex-shrink-0"
-        style={{ backgroundColor: '#144a57', borderColor: 'rgba(232,160,32,0.3)' }}
+        className="flex items-center gap-3 px-4 md:px-5 h-14 border-b flex-shrink-0"
+        style={{ backgroundColor: '#144a57', borderColor: 'rgba(232,160,32,0.25)' }}
       >
         <TravlogerMark size={24} />
         <span className="text-sm font-semibold text-white truncate flex-1">{pdfName}</span>
         <div className="hidden sm:flex items-center gap-2 text-xs text-white/75">
-          <span>Page {currentPage} / {pageCount || '--'}</span>
+          <div className="flex items-center gap-1 rounded-full bg-white/10 px-1 py-1">
+            <button
+              type="button"
+              onClick={() => jumpToPage(Math.max(1, currentPage - 1))}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/80 hover:bg-white/10"
+              disabled={currentPage <= 1}
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="min-w-[68px] text-center font-semibold">Page {currentPage} / {pageCount || '--'}</span>
+            <button
+              type="button"
+              onClick={() => jumpToPage(Math.min(pageCount || 1, currentPage + 1))}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/80 hover:bg-white/10"
+              disabled={currentPage >= pageCount}
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
           <div className="flex items-center gap-1 rounded-full bg-white/10 px-1.5 py-1">
             <button
               type="button"
@@ -368,9 +404,27 @@ export default function ViewPage() {
         </div>
       </header>
 
-      <div className="border-b bg-white px-4 py-3 text-xs text-slate-500 md:hidden">
+      <div className="border-b bg-white/90 backdrop-blur px-4 py-3 text-xs text-slate-500 md:hidden">
         <div className="flex items-center justify-between gap-3">
-          <span>Page {currentPage} / {pageCount || '--'}</span>
+          <div className="flex items-center gap-1 rounded-full border border-slate-200 px-1 py-1">
+            <button
+              type="button"
+              onClick={() => jumpToPage(Math.max(1, currentPage - 1))}
+              className="inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"
+              disabled={currentPage <= 1}
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+            </button>
+            <span className="min-w-[66px] text-center font-semibold text-slate-700">Page {currentPage} / {pageCount || '--'}</span>
+            <button
+              type="button"
+              onClick={() => jumpToPage(Math.min(pageCount || 1, currentPage + 1))}
+              className="inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"
+              disabled={currentPage >= pageCount}
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
           <div className="flex items-center gap-1 rounded-full border px-1.5 py-1" style={{ borderColor: '#e2e8f0' }}>
             <button
               type="button"
@@ -392,6 +446,11 @@ export default function ViewPage() {
       </div>
 
       <main ref={viewerRef} className="flex-1 overflow-y-auto px-3 py-4 md:px-5">
+        {renderError && (
+          <div className="mx-auto mb-4 max-w-5xl rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+            This PDF is taking longer than expected to render on this device. Try refreshing once.
+          </div>
+        )}
         {viewerLoading ? (
           <div className="flex items-center justify-center py-16">
             <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#144a57' }} />
@@ -406,6 +465,7 @@ export default function ViewPage() {
                 viewerWidth={viewerWidth}
                 zoomLevel={zoomLevel}
                 registerPageNode={registerPageNode}
+                onRenderError={(error) => setRenderError(error?.message || 'Failed to render PDF')}
               />
             ))}
           </div>
