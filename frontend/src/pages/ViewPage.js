@@ -5,6 +5,12 @@ import { Loader2, AlertCircle } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
+function isMobileDevice() {
+  if (typeof window === 'undefined') return false;
+  return window.matchMedia('(max-width: 768px)').matches ||
+    /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+}
+
 function TravlogerMark({ size = 28 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -34,6 +40,9 @@ export default function ViewPage() {
         const { data } = await axios.get(`${API}/view/${uniqueId}/info`);
         setPdfName(data.pdf_name);
         setPdfUrl(data.file_url);
+        if (isMobileDevice()) {
+          window.location.replace(data.file_url);
+        }
       } catch (err) {
         setError(err.response?.data?.detail || 'PDF not found or link is invalid');
       } finally {
