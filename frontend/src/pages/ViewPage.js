@@ -73,6 +73,7 @@ export default function ViewPage() {
   const [loading, setLoading] = useState(true);
   const [viewerLoading, setViewerLoading] = useState(true);
   const [expired, setExpired] = useState(false);
+  const [useNativeFallback, setUseNativeFallback] = useState(false);
   const [pageCount, setPageCount] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageWidth, setPageWidth] = useState(0);
@@ -308,6 +309,14 @@ export default function ViewPage() {
           <div className="flex items-center justify-center py-16">
             <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#144a57' }} />
           </div>
+        ) : useNativeFallback ? (
+          <div className="mx-auto max-w-6xl overflow-hidden rounded bg-white shadow-[0_2px_14px_rgba(15,23,42,0.08)]">
+            <iframe
+              src={pdfUrl}
+              title={pdfName}
+              className="block h-[calc(100vh-3rem)] w-full border-0"
+            />
+          </div>
         ) : (
           <div className="mx-auto max-w-5xl">
             <Document
@@ -317,7 +326,7 @@ export default function ViewPage() {
                   <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#144a57' }} />
                 </div>
               }
-              error="Unable to display this PDF right now."
+              error={null}
               onLoadSuccess={({ numPages }) => {
                 setViewerLoading(false);
                 setPageCount(numPages);
@@ -326,9 +335,10 @@ export default function ViewPage() {
                 currentPageRef.current = 1;
                 currentPageStartedAtRef.current = Date.now();
               }}
-              onLoadError={() => {
+              onLoadError={(loadError) => {
+                console.error('react-pdf failed to load document, switching to native fallback', loadError);
                 setViewerLoading(false);
-                setError('Unable to display this PDF right now.');
+                setUseNativeFallback(true);
               }}
               options={{
                 cMapUrl: 'https://unpkg.com/pdfjs-dist@5.6.205/cmaps/',
@@ -336,7 +346,7 @@ export default function ViewPage() {
                 standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@5.6.205/standard_fonts/',
               }}
             >
-              {pageNumbers.map((pageNumber) => (
+              {!useNativeFallback && pageNumbers.map((pageNumber) => (
                 <PdfPageSurface
                   key={pageNumber}
                   pageNumber={pageNumber}
