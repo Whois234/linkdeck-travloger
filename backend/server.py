@@ -546,7 +546,7 @@ async def startup():
     await db.links.create_index("user_id")
     await db.pdfs.create_index("user_id")
     # Seed admin
-    admin_email = os.environ.get("ADMIN_EMAIL", "admin@example.com")
+    admin_email = os.environ.get("ADMIN_EMAIL", "admin@travloger.in")
     admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
     existing = await db.users.find_one({"email": admin_email})
     if existing is None:
@@ -559,9 +559,13 @@ async def startup():
             "created_at": datetime.now(timezone.utc).isoformat()
         })
         logger.info(f"Admin user created: {admin_email}")
-    elif not verify_password(admin_password, existing["password_hash"]):
-        await db.users.update_one({"email": admin_email}, {"$set": {"password_hash": hash_password(admin_password)}})
-        logger.info("Admin password updated")
+    else:
+        updates = {"role": "admin", "name": existing.get("name") or "Admin"}
+        if not verify_password(admin_password, existing["password_hash"]):
+            updates["password_hash"] = hash_password(admin_password)
+            logger.info("Admin password updated")
+        await db.users.update_one({"email": admin_email}, {"$set": updates})
+        logger.info(f"Admin user verified: {admin_email}")
     # Init storage
     # Disabled emergent storage (not needed)
 admin_email = "admin@travloger.in"
