@@ -121,6 +121,7 @@ export default function DashboardPage() {
   const [expandedLinkId, setExpandedLinkId] = useState('');
   const [insightsByLink, setInsightsByLink] = useState({});
   const [insightsLoading, setInsightsLoading] = useState(false);
+  const [selectedSessionDetail, setSelectedSessionDetail] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
@@ -317,6 +318,14 @@ export default function DashboardPage() {
     ];
     downloadCsv(`travloger-${selectedInsight.link.customer_name || 'customer'}-sessions.csv`, rows);
     toast.success('Session insights CSV downloaded');
+  };
+
+  const openSessionDetail = (link, session) => {
+    setSelectedSessionDetail({
+      customer_name: link.customer_name,
+      pdf_name: link.pdf_name,
+      session,
+    });
   };
 
   if (loading) {
@@ -817,8 +826,15 @@ export default function DashboardPage() {
                                         const DeviceIcon = getDeviceIcon(session.device_type);
                                         return (
                                           <TableRow key={session.session_id} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
-                                            <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>
-                                              {formatSessionOrdinal(session.session_number)} session
+                                            <TableCell>
+                                              <button
+                                                type="button"
+                                                onClick={() => openSessionDetail(link, session)}
+                                                className="font-semibold hover:underline"
+                                                style={{ color: 'var(--teal)' }}
+                                              >
+                                                {formatSessionOrdinal(session.session_number)} session
+                                              </button>
                                             </TableCell>
                                             <TableCell className="text-sm text-slate-500">{formatDate(session.started_at)}</TableCell>
                                             <TableCell className="text-sm font-semibold text-slate-600">{formatDuration(session.duration_seconds)}</TableCell>
@@ -904,6 +920,69 @@ export default function DashboardPage() {
               </div>
             )}
           </section>
+
+          <Dialog open={Boolean(selectedSessionDetail)} onOpenChange={(open) => {
+            if (!open) setSelectedSessionDetail(null);
+          }}>
+            <DialogContent className="max-w-xl rounded-xl border" style={{ borderColor: '#e5e7eb' }}>
+              <DialogHeader>
+                <DialogTitle className="text-xl font-bold" style={{ color: 'var(--teal)' }}>
+                  {selectedSessionDetail
+                    ? `${selectedSessionDetail.customer_name} · ${formatSessionOrdinal(selectedSessionDetail.session.session_number)} session`
+                    : 'Session pages'}
+                </DialogTitle>
+              </DialogHeader>
+              {selectedSessionDetail && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-lg border p-3" style={{ borderColor: '#e5e7eb', backgroundColor: '#f8fafc' }}>
+                      <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Opened At</div>
+                      <div className="mt-2 text-sm font-semibold" style={{ color: 'var(--teal)' }}>
+                        {formatDate(selectedSessionDetail.session.started_at)}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border p-3" style={{ borderColor: '#e5e7eb', backgroundColor: '#f8fafc' }}>
+                      <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Time Spent</div>
+                      <div className="mt-2 text-sm font-semibold" style={{ color: 'var(--teal)' }}>
+                        {formatDuration(selectedSessionDetail.session.duration_seconds)}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="rounded-xl border overflow-hidden" style={{ borderColor: '#e5e7eb' }}>
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
+                          <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Page</TableHead>
+                          <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Time Spent</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {selectedSessionDetail.session.page_breakdown?.length ? (
+                          selectedSessionDetail.session.page_breakdown.map((page) => (
+                            <TableRow key={`${selectedSessionDetail.session.session_id}-${page.page_number}`} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
+                              <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>
+                                Page {page.page_number}
+                              </TableCell>
+                              <TableCell className="text-sm text-slate-600">{formatDuration(page.duration_seconds)}</TableCell>
+                            </TableRow>
+                          ))
+                        ) : (
+                          <TableRow>
+                            <TableCell colSpan={2} className="py-10 text-center text-sm text-slate-400">
+                              No page-wise timing available for this session.
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    Page timing is currently stored in whole seconds. Sub-second values like `0.5s` are not yet captured.
+                  </p>
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
 
           {/* Footer */}
           <div className="mt-12 text-center pb-4">
