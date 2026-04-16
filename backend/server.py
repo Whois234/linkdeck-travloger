@@ -151,6 +151,15 @@ class AdminCreateUserInput(BaseModel):
 class AdminResetPasswordInput(BaseModel):
     password: str
 
+class ViewSessionStartInput(BaseModel):
+    screen_width: Optional[int] = None
+    screen_height: Optional[int] = None
+    is_mobile: bool = False
+
+class ViewSessionHeartbeatInput(BaseModel):
+    session_id: str
+    duration_seconds: int
+
 # Create app
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -315,6 +324,78 @@ async def admin_stats(request: Request):
         "total_links": total_links,
         "opened_links": opened_links,
         "unopened_links": total_links - opened_links
+    }
+
+
+@api_router.get("/admin/analytics")
+async def admin_analytics(request: Request, days: Optional[int] = 30):
+    await get_current_admin(request)
+
+    date_filter = {}
+    if days and days > 0:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        date_filter = {"created_at": {"$gte": cutoff}}
+
+    links = await db.links.find(date_filter).to_list(10000)
+    pdfs = await db.pdfs.find({}, {"_id": 0, "id": 1, "file_name": 1}).to_list(10000)
+    session_filter = {}
+    if days and days > 0:
+        session_filter = {"started_at": {"$gte": cutoff}}
+    sessions = await db.view_sessions.find(session_filter).to_list(10000)
+    pdf_map = {pdf["id"]: pdf.get("file_name", "Unknown PDF") for pdf in pdfs}
+
+    links_by_pdf = {}
+    opens_by_hour = {str(hour).zfill(2): 0 for hour in range(24)}
+
+    for link in links:
+        pdf_id = link.get("pdf_id")
+        pdf_name = pdf_map.get(pdf_id, "Unknown PDF")
+        if pdf_id not in links_by_pdf:
+            links_by_pdf[pdf_id] = {"pdf_id": pdf_id, "pdf_name": pdf_name, "links": 0, "opens": 0}
+        links_by_pdf[pdf_id]["links"] += 1
+        links_by_pdf[pdf_id]["opens"] += int(link.get("open_count") or 0)
+
+        opened_at = link.get("last_opened_at")
+        if opened_at:
+            try:
+                opened_dt = datetime.fromisoformat(opened_at).astimezone(timezone.utc)
+                if not days or days <= 0 or opened_dt >= datetime.fromisoformat(cutoff):
+                    opens_by_hour[str(opened_dt.hour).zfill(2)] += 1
+            except Exception:
+                pass
+
+    total_duration = sum(int(session.get("duration_seconds") or 0) for session in sessions)
+    tracked_sessions = len(sessions)
+    avg_time_spent = round(total_duration / tracked_sessions) if tracked_sessions else 0
+    total_opens = sum(int(link.get("open_count") or 0) for link in links)
+    avg_opens_per_link = round(total_opens / len(links), 2) if links else 0
+
+    sessions_by_pdf = {}
+    for session in sessions:
+        pdf_id = session.get("pdf_id")
+        pdf_name = pdf_map.get(pdf_id, "Unknown PDF")
+        if pdf_id not in sessions_by_pdf:
+            sessions_by_pdf[pdf_id] = {"pdf_id": pdf_id, "pdf_name": pdf_name, "sessions": 0, "total_time_seconds": 0}
+        sessions_by_pdf[pdf_id]["sessions"] += 1
+        sessions_by_pdf[pdf_id]["total_time_seconds"] += int(session.get("duration_seconds") or 0)
+
+    time_by_pdf = []
+    for item in sessions_by_pdf.values():
+        item["avg_time_seconds"] = round(item["total_time_seconds"] / item["sessions"]) if item["sessions"] else 0
+        time_by_pdf.append(item)
+
+    return {
+        "summary": {
+            "total_links": len(links),
+            "total_opens": total_opens,
+            "avg_opens_per_link": avg_opens_per_link,
+            "tracked_sessions": tracked_sessions,
+            "total_time_seconds": total_duration,
+            "avg_time_seconds": avg_time_spent,
+        },
+        "links_by_pdf": sorted(links_by_pdf.values(), key=lambda item: item["links"], reverse=True),
+        "opens_by_hour": [{"hour": f"{hour}:00", "opens": opens} for hour, opens in opens_by_hour.items()],
+        "time_by_pdf": sorted(time_by_pdf, key=lambda item: item["total_time_seconds"], reverse=True),
     }
 
 # ---- PDF ENDPOINTS ----
@@ -560,6 +641,47 @@ async def track_visit(unique_id: str):
         {"_id": unique_id},
         {"$set": {"opened": True, "last_opened_at": now}, "$inc": {"open_count": 1}}
     )
+    return {"tracked": True}
+
+
+@api_router.post("/view/{unique_id}/session/start")
+async def start_view_session(unique_id: str, input: ViewSessionStartInput, request: Request):
+    link = await db.links.find_one({"_id": unique_id})
+    if not link:
+        raise HTTPException(status_code=404, detail="Link not found")
+
+    session_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    await db.view_sessions.insert_one({
+        "_id": session_id,
+        "link_id": unique_id,
+        "pdf_id": link.get("pdf_id"),
+        "user_id": link.get("user_id"),
+        "customer_name": link.get("customer_name"),
+        "customer_phone": link.get("customer_phone"),
+        "started_at": now,
+        "last_seen_at": now,
+        "duration_seconds": 0,
+        "screen_width": input.screen_width,
+        "screen_height": input.screen_height,
+        "is_mobile": input.is_mobile,
+        "user_agent": request.headers.get("user-agent", ""),
+    })
+    return {"session_id": session_id}
+
+
+@api_router.post("/view/{unique_id}/session/heartbeat")
+async def heartbeat_view_session(unique_id: str, input: ViewSessionHeartbeatInput):
+    duration = max(0, min(int(input.duration_seconds or 0), 24 * 60 * 60))
+    result = await db.view_sessions.update_one(
+        {"_id": input.session_id, "link_id": unique_id},
+        {"$set": {
+            "duration_seconds": duration,
+            "last_seen_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Session not found")
     return {"tracked": True}
 
 # ---- DASHBOARD STATS ----

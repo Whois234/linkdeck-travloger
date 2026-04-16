@@ -8,6 +8,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Badge } from '../components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Eye, FileText, KeyRound, LinkIcon, Loader2, LogOut, ShieldCheck, UserPlus, Users } from 'lucide-react';
+import {
+  Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip as ChartTooltip, XAxis, YAxis
+} from 'recharts';
 import { toast } from 'sonner';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -17,6 +20,16 @@ function formatDate(dateStr) {
   const d = new Date(dateStr);
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) +
     ' · ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatDuration(seconds) {
+  const value = Number(seconds || 0);
+  if (value < 60) return `${value}s`;
+  const minutes = Math.floor(value / 60);
+  const remainingSeconds = value % 60;
+  if (minutes < 60) return `${minutes}m ${remainingSeconds}s`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
 }
 
 function TravlogerMark({ size = 32 }) {
@@ -34,6 +47,13 @@ export default function AdminDashboardPage() {
   const { user, logout } = useAuth();
   const [users, setUsers] = useState([]);
   const [stats, setStats] = useState({ total_users: 0, total_pdfs: 0, total_links: 0, opened_links: 0 });
+  const [analytics, setAnalytics] = useState({
+    summary: {},
+    links_by_pdf: [],
+    opens_by_hour: [],
+    time_by_pdf: [],
+  });
+  const [analyticsDays, setAnalyticsDays] = useState(30);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -48,14 +68,19 @@ export default function AdminDashboardPage() {
         axios.get(`${API}/admin/users`, { withCredentials: true }),
         axios.get(`${API}/admin/stats`, { withCredentials: true }),
       ]);
+      const analyticsRes = await axios.get(`${API}/admin/analytics`, {
+        withCredentials: true,
+        params: { days: analyticsDays },
+      });
       setUsers(usersRes.data || []);
       setStats(statsRes.data || {});
+      setAnalytics(analyticsRes.data || {});
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Failed to load admin dashboard');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [analyticsDays]);
 
   useEffect(() => { fetchAdminData(); }, [fetchAdminData]);
 
@@ -152,6 +177,100 @@ export default function AdminDashboardPage() {
             </div>
           ))}
         </div>
+
+        <section className="mb-8">
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 mb-4">
+            <div>
+              <h2 className="text-xl font-bold" style={{ color: 'var(--teal)' }}>Itinerary Analytics</h2>
+              <p className="text-sm text-slate-500 mt-1">Track link creation, open timing, and average viewing time.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <select
+                value={analyticsDays}
+                onChange={e => setAnalyticsDays(Number(e.target.value))}
+                className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600"
+              >
+                <option value={7}>Last 7 days</option>
+                <option value={30}>Last 30 days</option>
+                <option value={90}>Last 90 days</option>
+                <option value={0}>All time</option>
+              </select>
+              <Badge className="rounded-full" style={{ backgroundColor: '#fef3c7', color: '#b45309' }}>
+                Page-wise time needs custom PDF viewer
+              </Badge>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+            {[
+              { label: 'Total Opens', value: analytics.summary?.total_opens || 0 },
+              { label: 'Avg Opens / Link', value: analytics.summary?.avg_opens_per_link || 0 },
+              { label: 'Tracked Sessions', value: analytics.summary?.tracked_sessions || 0 },
+              { label: 'Avg Time Spent', value: formatDuration(analytics.summary?.avg_time_seconds || 0) },
+            ].map((item) => (
+              <div key={item.label} className="bg-white rounded-xl p-4 border" style={{ borderColor: '#e5e7eb' }}>
+                <div className="text-xs font-bold uppercase tracking-wider text-slate-400">{item.label}</div>
+                <div className="text-2xl font-black mt-2" style={{ color: 'var(--teal)' }}>{item.value}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid lg:grid-cols-2 gap-4">
+            <div className="bg-white rounded-xl border p-5" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+              <h3 className="font-bold mb-4" style={{ color: 'var(--teal)' }}>Links Created By PDF</h3>
+              <div className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={analytics.links_by_pdf || []}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="pdf_name" tick={{ fontSize: 11 }} interval={0} angle={-12} textAnchor="end" height={70} />
+                    <YAxis allowDecimals={false} />
+                    <ChartTooltip />
+                    <Bar dataKey="links" fill="#144a57" name="Links" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="opens" fill="#E8A020" name="Opens" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl border p-5" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+              <h3 className="font-bold mb-4" style={{ color: 'var(--teal)' }}>When Customers Open Links</h3>
+              <div className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={analytics.opens_by_hour || []}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="hour" tick={{ fontSize: 11 }} interval={2} />
+                    <YAxis allowDecimals={false} />
+                    <ChartTooltip />
+                    <Line type="monotone" dataKey="opens" stroke="#E8A020" strokeWidth={3} dot={{ r: 3 }} name="Opens" />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl border overflow-x-auto mt-4" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+            <Table>
+              <TableHeader>
+                <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">PDF</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Tracked Sessions</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Total Time</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Avg Time</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(analytics.time_by_pdf || []).map((item) => (
+                  <TableRow key={item.pdf_id || item.pdf_name} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
+                    <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>{item.pdf_name}</TableCell>
+                    <TableCell className="text-sm text-slate-600">{item.sessions}</TableCell>
+                    <TableCell className="text-sm text-slate-600">{formatDuration(item.total_time_seconds)}</TableCell>
+                    <TableCell className="text-sm text-slate-600">{formatDuration(item.avg_time_seconds)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </section>
 
         <section>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">

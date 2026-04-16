@@ -36,6 +36,22 @@ export default function ViewPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const tracked = useRef(false);
+  const sessionId = useRef(null);
+  const sessionStartedAt = useRef(null);
+  const heartbeatTimer = useRef(null);
+
+  const sendHeartbeat = async () => {
+    if (!sessionId.current || !sessionStartedAt.current) return;
+    const durationSeconds = Math.max(0, Math.round((Date.now() - sessionStartedAt.current) / 1000));
+    try {
+      await axios.post(`${API}/view/${uniqueId}/session/heartbeat`, {
+        session_id: sessionId.current,
+        duration_seconds: durationSeconds,
+      });
+    } catch {
+      // Tracking should never interrupt the customer viewing experience.
+    }
+  };
 
   useEffect(() => {
     const loadPdf = async () => {
@@ -48,9 +64,23 @@ export default function ViewPage() {
         const publicPdfUrl = getPublicPdfUrl(uniqueId, data.file_url);
         setPdfName(data.pdf_name);
         setPdfUrl(publicPdfUrl);
-        if (isMobileDevice()) {
-          window.location.replace(publicPdfUrl);
+        try {
+          const sessionRes = await axios.post(`${API}/view/${uniqueId}/session/start`, {
+            screen_width: window.innerWidth,
+            screen_height: window.innerHeight,
+            is_mobile: isMobileDevice(),
+          });
+          sessionId.current = sessionRes.data?.session_id;
+          sessionStartedAt.current = Date.now();
+        } catch {
+          // Session analytics are optional; the PDF should still open.
         }
+        if (isMobileDevice()) {
+          await sendHeartbeat();
+          window.location.replace(publicPdfUrl);
+          return;
+        }
+        heartbeatTimer.current = window.setInterval(sendHeartbeat, 10000);
       } catch (err) {
         setError(err.response?.data?.detail || 'PDF not found or link is invalid');
       } finally {
@@ -58,7 +88,10 @@ export default function ViewPage() {
       }
     };
     loadPdf();
-    return () => { if (pdfUrl); };
+    return () => {
+      if (heartbeatTimer.current) window.clearInterval(heartbeatTimer.current);
+      sendHeartbeat();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uniqueId]);
 
