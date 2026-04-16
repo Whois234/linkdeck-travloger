@@ -480,6 +480,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
+        "https://itinerary.travloger.in",
         "https://linkdeck-travloger.vercel.app",
         "https://linkdeck-travloger-duqplmsi0-whois234s-projects.vercel.app"
     ],
