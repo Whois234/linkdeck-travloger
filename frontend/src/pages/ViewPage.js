@@ -83,7 +83,6 @@ export default function ViewPage() {
   const heartbeatTimer = useRef(null);
   const viewerRef = useRef(null);
   const pageNodesRef = useRef({});
-  const observerRef = useRef(null);
   const currentPageRef = useRef(1);
   const currentPageStartedAtRef = useRef(null);
   const pageDurationsMsRef = useRef({});
@@ -225,7 +224,6 @@ export default function ViewPage() {
 
     return () => {
       if (heartbeatTimer.current) window.clearInterval(heartbeatTimer.current);
-      if (observerRef.current) observerRef.current.disconnect();
       sendHeartbeatBeacon();
       window.removeEventListener('pagehide', handleFinalHeartbeat);
       window.removeEventListener('beforeunload', handleFinalHeartbeat);
@@ -243,25 +241,47 @@ export default function ViewPage() {
 
   useEffect(() => {
     if (!pageCount || !viewerRef.current) return;
-    if (observerRef.current) observerRef.current.disconnect();
+    const container = viewerRef.current;
+    let rafId = null;
 
-    observerRef.current = new IntersectionObserver((entries) => {
-      const visibleEntries = entries
-        .filter((entry) => entry.isIntersecting)
-        .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
-      if (!visibleEntries.length) return;
-      const pageNumber = Number(visibleEntries[0].target.getAttribute('data-page-number'));
-      if (pageNumber) setActivePage(pageNumber);
-    }, {
-      root: viewerRef.current,
-      threshold: [0.45, 0.7, 0.9],
-    });
+    const updateActivePageFromScroll = () => {
+      rafId = null;
+      const nodes = Object.entries(pageNodesRef.current);
+      if (!nodes.length) return;
 
-    Object.values(pageNodesRef.current).forEach((node) => {
-      if (node) observerRef.current.observe(node);
-    });
+      const containerRect = container.getBoundingClientRect();
+      const targetLine = containerRect.top + containerRect.height * 0.35;
+      let closestPage = currentPageRef.current;
+      let closestDistance = Number.POSITIVE_INFINITY;
 
-    return () => observerRef.current?.disconnect();
+      nodes.forEach(([pageNumber, node]) => {
+        if (!node) return;
+        const rect = node.getBoundingClientRect();
+        const pageMidpoint = rect.top + rect.height / 2;
+        const distance = Math.abs(pageMidpoint - targetLine);
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          closestPage = Number(pageNumber);
+        }
+      });
+
+      if (closestPage) setActivePage(closestPage);
+    };
+
+    const handleScroll = () => {
+      if (rafId != null) return;
+      rafId = window.requestAnimationFrame(updateActivePageFromScroll);
+    };
+
+    updateActivePageFromScroll();
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('resize', handleScroll);
+
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', handleScroll);
+      if (rafId != null) window.cancelAnimationFrame(rafId);
+    };
   }, [pageCount, setActivePage, pageWidth]);
 
   const pageNumbers = useMemo(
