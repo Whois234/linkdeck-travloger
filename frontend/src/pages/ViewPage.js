@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
-import { AlertCircle, ChevronLeft, ChevronRight, Loader2, Minus, Plus } from 'lucide-react';
+import { Document, Page, pdfjs } from 'react-pdf';
+import { AlertCircle, Loader2 } from 'lucide-react';
+
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url,
+).toString();
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
-const DEFAULT_ZOOM = 1;
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/legacy/build/pdf.worker.mjs',
-  import.meta.url
-).toString();
 
 function getPublicPdfUrl(uniqueId, fallbackUrl) {
   if (typeof window === 'undefined' || window.location.hostname === 'localhost') {
@@ -35,77 +35,32 @@ function TravlogerMark({ size = 28 }) {
   );
 }
 
-function PdfPageCanvas({ pdfDocument, pageNumber, viewerWidth, zoomLevel, registerPageNode, onRenderError }) {
+function PdfPageSurface({ pageNumber, pageWidth, registerPageNode }) {
   const wrapperRef = useRef(null);
-  const canvasRef = useRef(null);
-  const [pageHeight, setPageHeight] = useState(320);
-  const renderErrorRef = useRef(onRenderError);
-
-  useEffect(() => {
-    renderErrorRef.current = onRenderError;
-  }, [onRenderError]);
 
   useEffect(() => {
     registerPageNode(pageNumber, wrapperRef.current);
     return () => registerPageNode(pageNumber, null);
   }, [pageNumber, registerPageNode]);
 
-  useEffect(() => {
-    let cancelled = false;
-    let renderTask = null;
-
-    const renderPage = async () => {
-      if (!pdfDocument || !canvasRef.current || !viewerWidth) return;
-      try {
-        const page = await pdfDocument.getPage(pageNumber);
-        const unscaledViewport = page.getViewport({ scale: 1 });
-        const fitWidth = Math.max(260, viewerWidth - 32);
-        const scale = (fitWidth / unscaledViewport.width) * zoomLevel;
-        const viewport = page.getViewport({ scale });
-        const canvas = canvasRef.current;
-        const context = canvas.getContext('2d', { alpha: false });
-        const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
-
-        canvas.width = Math.floor(viewport.width * pixelRatio);
-        canvas.height = Math.floor(viewport.height * pixelRatio);
-        canvas.style.width = `${viewport.width}px`;
-        canvas.style.height = `${viewport.height}px`;
-        canvas.style.backgroundColor = '#ffffff';
-        context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-        context.imageSmoothingEnabled = true;
-        setPageHeight(viewport.height);
-
-        renderTask = page.render({
-          canvasContext: context,
-          viewport,
-        });
-        await renderTask.promise;
-      } catch (error) {
-        if (!cancelled && error?.name !== 'RenderingCancelledException') {
-          console.error(`Failed to render PDF page ${pageNumber}`, error);
-          renderErrorRef.current?.(error);
-        }
-      }
-    };
-
-    renderPage();
-
-    return () => {
-      cancelled = true;
-      if (renderTask?.cancel) renderTask.cancel();
-    };
-  }, [pageNumber, pdfDocument, viewerWidth, zoomLevel]);
-
   return (
     <section
       ref={wrapperRef}
       data-page-number={pageNumber}
-      className="mx-auto mb-5 overflow-hidden rounded-sm bg-white shadow-[0_10px_30px_rgba(15,23,42,0.08)]"
-      style={{ minHeight: pageHeight }}
+      className="mx-auto mb-3 bg-white shadow-[0_2px_14px_rgba(15,23,42,0.08)]"
+      style={{ width: pageWidth || '100%', maxWidth: '100%' }}
     >
-      <div className="overflow-hidden">
-        <canvas ref={canvasRef} className="block mx-auto max-w-full" />
-      </div>
+      <Page
+        pageNumber={pageNumber}
+        width={pageWidth || undefined}
+        renderAnnotationLayer={false}
+        renderTextLayer={false}
+        loading={
+          <div className="flex min-h-[320px] items-center justify-center bg-white">
+            <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
+          </div>
+        }
+      />
     </section>
   );
 }
@@ -118,12 +73,9 @@ export default function ViewPage() {
   const [loading, setLoading] = useState(true);
   const [viewerLoading, setViewerLoading] = useState(true);
   const [expired, setExpired] = useState(false);
-  const [pdfDocument, setPdfDocument] = useState(null);
   const [pageCount, setPageCount] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
-  const [zoomLevel, setZoomLevel] = useState(DEFAULT_ZOOM);
-  const [viewerWidth, setViewerWidth] = useState(0);
-  const [renderError, setRenderError] = useState('');
+  const [pageWidth, setPageWidth] = useState(0);
   const tracked = useRef(false);
   const sessionId = useRef(null);
   const sessionStartedAt = useRef(null);
@@ -209,8 +161,8 @@ export default function ViewPage() {
 
   useEffect(() => {
     const resizeObserver = new ResizeObserver((entries) => {
-      const nextWidth = entries[0]?.contentRect?.width || 0;
-      setViewerWidth(nextWidth);
+      const containerWidth = entries[0]?.contentRect?.width || 0;
+      setPageWidth(Math.max(260, Math.floor(containerWidth - 8)));
     });
     if (viewerRef.current) resizeObserver.observe(viewerRef.current);
     return () => resizeObserver.disconnect();
@@ -241,24 +193,13 @@ export default function ViewPage() {
         } catch {
           // Session analytics are optional; the PDF should still open.
         }
-
-        const loadingTask = pdfjsLib.getDocument({ url: publicPdfUrl });
-        const nextPdfDocument = await loadingTask.promise;
-        setPdfDocument(nextPdfDocument);
-        setPageCount(nextPdfDocument.numPages);
-        pageCountRef.current = nextPdfDocument.numPages;
-        setCurrentPage(1);
-        currentPageRef.current = 1;
-        currentPageStartedAtRef.current = Date.now();
       } catch (err) {
-        console.error('PDF viewer load failed', err);
         if (err.response?.status === 410) {
           setExpired(true);
         }
         setError(err.response?.data?.detail || 'PDF not found or link is invalid');
       } finally {
         setLoading(false);
-        setViewerLoading(false);
       }
     };
 
@@ -284,12 +225,12 @@ export default function ViewPage() {
   }, [sendHeartbeatBeacon, uniqueId]);
 
   useEffect(() => {
-    if (!pdfDocument) return;
+    if (!pageCount) return;
     heartbeatTimer.current = window.setInterval(sendHeartbeat, 3000);
     return () => {
       if (heartbeatTimer.current) window.clearInterval(heartbeatTimer.current);
     };
-  }, [pdfDocument, sendHeartbeat]);
+  }, [pageCount, sendHeartbeat]);
 
   useEffect(() => {
     if (!pageCount || !viewerRef.current) return;
@@ -312,19 +253,12 @@ export default function ViewPage() {
     });
 
     return () => observerRef.current?.disconnect();
-  }, [pageCount, setActivePage, viewerWidth, zoomLevel]);
+  }, [pageCount, setActivePage, pageWidth]);
 
   const pageNumbers = useMemo(
     () => Array.from({ length: pageCount }, (_, index) => index + 1),
     [pageCount]
   );
-
-  const jumpToPage = useCallback((pageNumber) => {
-    const node = pageNodesRef.current[pageNumber];
-    if (!node || !viewerRef.current) return;
-    node.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    setActivePage(pageNumber);
-  }, [setActivePage]);
 
   if (loading) {
     return (
@@ -357,117 +291,65 @@ export default function ViewPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#eef2f7]" data-testid="view-page">
+    <div className="min-h-screen flex flex-col bg-[#edf1f6]" data-testid="view-page">
       <header
-        className="flex items-center gap-3 px-4 md:px-5 h-14 border-b flex-shrink-0"
+        className="flex items-center gap-3 px-4 md:px-5 h-12 border-b flex-shrink-0"
         style={{ backgroundColor: '#144a57', borderColor: 'rgba(232,160,32,0.25)' }}
       >
         <TravlogerMark size={24} />
         <span className="text-sm font-semibold text-white truncate flex-1">{pdfName}</span>
-        <div className="hidden sm:flex items-center gap-2 text-xs text-white/75">
-          <div className="flex items-center gap-1 rounded-full bg-white/10 px-1 py-1">
-            <button
-              type="button"
-              onClick={() => jumpToPage(Math.max(1, currentPage - 1))}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/80 hover:bg-white/10"
-              disabled={currentPage <= 1}
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <span className="min-w-[68px] text-center font-semibold">Page {currentPage} / {pageCount || '--'}</span>
-            <button
-              type="button"
-              onClick={() => jumpToPage(Math.min(pageCount || 1, currentPage + 1))}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/80 hover:bg-white/10"
-              disabled={currentPage >= pageCount}
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-          <div className="flex items-center gap-1 rounded-full bg-white/10 px-1.5 py-1">
-            <button
-              type="button"
-              onClick={() => setZoomLevel((value) => Math.max(0.75, Number((value - 0.1).toFixed(2))))}
-              className="inline-flex h-6 w-6 items-center justify-center rounded-full text-white/80 hover:bg-white/10"
-            >
-              <Minus className="w-3.5 h-3.5" />
-            </button>
-            <span className="min-w-[48px] text-center font-semibold">{Math.round(zoomLevel * 100)}%</span>
-            <button
-              type="button"
-              onClick={() => setZoomLevel((value) => Math.min(1.8, Number((value + 0.1).toFixed(2))))}
-              className="inline-flex h-6 w-6 items-center justify-center rounded-full text-white/80 hover:bg-white/10"
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </button>
-          </div>
+        <div className="text-xs font-medium text-white/70">
+          {pageCount ? `${currentPage} / ${pageCount}` : ''}
         </div>
       </header>
 
-      <div className="border-b bg-white/90 backdrop-blur px-4 py-3 text-xs text-slate-500 md:hidden">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-1 rounded-full border border-slate-200 px-1 py-1">
-            <button
-              type="button"
-              onClick={() => jumpToPage(Math.max(1, currentPage - 1))}
-              className="inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"
-              disabled={currentPage <= 1}
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />
-            </button>
-            <span className="min-w-[66px] text-center font-semibold text-slate-700">Page {currentPage} / {pageCount || '--'}</span>
-            <button
-              type="button"
-              onClick={() => jumpToPage(Math.min(pageCount || 1, currentPage + 1))}
-              className="inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"
-              disabled={currentPage >= pageCount}
-            >
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-          <div className="flex items-center gap-1 rounded-full border px-1.5 py-1" style={{ borderColor: '#e2e8f0' }}>
-            <button
-              type="button"
-              onClick={() => setZoomLevel((value) => Math.max(0.75, Number((value - 0.1).toFixed(2))))}
-              className="inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"
-            >
-              <Minus className="w-3.5 h-3.5" />
-            </button>
-            <span className="min-w-[46px] text-center font-semibold text-slate-700">{Math.round(zoomLevel * 100)}%</span>
-            <button
-              type="button"
-              onClick={() => setZoomLevel((value) => Math.min(1.8, Number((value + 0.1).toFixed(2))))}
-              className="inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <main ref={viewerRef} className="flex-1 overflow-y-auto px-3 py-4 md:px-5">
-        {renderError && (
-          <div className="mx-auto mb-4 max-w-5xl rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-            This PDF is taking longer than expected to render on this device. Try refreshing once.
-          </div>
-        )}
-        {viewerLoading ? (
+      <main ref={viewerRef} className="flex-1 overflow-y-auto px-2 py-3 md:px-5 md:py-4">
+        {!pdfUrl ? (
           <div className="flex items-center justify-center py-16">
             <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#144a57' }} />
           </div>
         ) : (
           <div className="mx-auto max-w-5xl">
-            {pageNumbers.map((pageNumber) => (
-              <PdfPageCanvas
-                key={pageNumber}
-                pdfDocument={pdfDocument}
-                pageNumber={pageNumber}
-                viewerWidth={viewerWidth}
-                zoomLevel={zoomLevel}
-                registerPageNode={registerPageNode}
-                onRenderError={(error) => setRenderError(error?.message || 'Failed to render PDF')}
-              />
-            ))}
+            <Document
+              file={pdfUrl}
+              loading={
+                <div className="flex items-center justify-center py-16">
+                  <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#144a57' }} />
+                </div>
+              }
+              error="Unable to display this PDF right now."
+              onLoadSuccess={({ numPages }) => {
+                setViewerLoading(false);
+                setPageCount(numPages);
+                pageCountRef.current = numPages;
+                setCurrentPage(1);
+                currentPageRef.current = 1;
+                currentPageStartedAtRef.current = Date.now();
+              }}
+              onLoadError={() => {
+                setViewerLoading(false);
+                setError('Unable to display this PDF right now.');
+              }}
+              options={{
+                cMapUrl: 'https://unpkg.com/pdfjs-dist@5.6.205/cmaps/',
+                cMapPacked: true,
+                standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@5.6.205/standard_fonts/',
+              }}
+            >
+              {pageNumbers.map((pageNumber) => (
+                <PdfPageSurface
+                  key={pageNumber}
+                  pageNumber={pageNumber}
+                  pageWidth={pageWidth}
+                  registerPageNode={registerPageNode}
+                />
+              ))}
+            </Document>
+            {viewerLoading && (
+              <div className="flex items-center justify-center py-16">
+                <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#144a57' }} />
+              </div>
+            )}
           </div>
         )}
       </main>
