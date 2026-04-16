@@ -54,6 +54,8 @@ export default function AdminDashboardPage() {
     time_by_pdf: [],
   });
   const [analyticsDays, setAnalyticsDays] = useState(30);
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -68,9 +70,12 @@ export default function AdminDashboardPage() {
         axios.get(`${API}/admin/users`, { withCredentials: true }),
         axios.get(`${API}/admin/stats`, { withCredentials: true }),
       ]);
+      const analyticsParams = analyticsDays === -1
+        ? { days: 0, start_date: customStartDate || undefined, end_date: customEndDate || undefined }
+        : { days: analyticsDays };
       const analyticsRes = await axios.get(`${API}/admin/analytics`, {
         withCredentials: true,
-        params: { days: analyticsDays },
+        params: analyticsParams,
       });
       setUsers(usersRes.data || []);
       setStats(statsRes.data || {});
@@ -80,7 +85,7 @@ export default function AdminDashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [analyticsDays]);
+  }, [analyticsDays, customStartDate, customEndDate]);
 
   useEffect(() => { fetchAdminData(); }, [fetchAdminData]);
 
@@ -184,7 +189,7 @@ export default function AdminDashboardPage() {
               <h2 className="text-xl font-bold" style={{ color: 'var(--teal)' }}>Itinerary Analytics</h2>
               <p className="text-sm text-slate-500 mt-1">Track link creation, open timing, and average viewing time.</p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <select
                 value={analyticsDays}
                 onChange={e => setAnalyticsDays(Number(e.target.value))}
@@ -194,10 +199,24 @@ export default function AdminDashboardPage() {
                 <option value={30}>Last 30 days</option>
                 <option value={90}>Last 90 days</option>
                 <option value={0}>All time</option>
+                <option value={-1}>Custom range</option>
               </select>
-              <Badge className="rounded-full" style={{ backgroundColor: '#fef3c7', color: '#b45309' }}>
-                Page-wise time needs custom PDF viewer
-              </Badge>
+              {analyticsDays === -1 && (
+                <>
+                  <Input
+                    type="date"
+                    value={customStartDate}
+                    onChange={e => setCustomStartDate(e.target.value)}
+                    className="h-9 w-[150px] rounded-lg border-slate-200 text-sm"
+                  />
+                  <Input
+                    type="date"
+                    value={customEndDate}
+                    onChange={e => setCustomEndDate(e.target.value)}
+                    className="h-9 w-[150px] rounded-lg border-slate-200 text-sm"
+                  />
+                </>
+              )}
             </div>
           </div>
 

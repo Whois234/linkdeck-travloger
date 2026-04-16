@@ -18,6 +18,16 @@ import {
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const SITE_URL = process.env.REACT_APP_SITE_URL || window.location.origin;
 
+function formatDuration(seconds) {
+  const value = Number(seconds || 0);
+  if (value < 60) return `${value}s`;
+  const minutes = Math.floor(value / 60);
+  const remainingSeconds = value % 60;
+  if (minutes < 60) return `${minutes}m ${remainingSeconds}s`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
+}
+
 function getLinkId(link) {
   return link?._id ?? link?.id ?? '';
 }
@@ -461,6 +471,7 @@ export default function DashboardPage() {
                       <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">PDF</TableHead>
                       <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Status</TableHead>
                       <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10 text-center">Opens</TableHead>
+                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Time Spent</TableHead>
                       <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Last Opened</TableHead>
                       <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10 text-right">Actions</TableHead>
                     </TableRow>
@@ -506,6 +517,12 @@ export default function DashboardPage() {
                             style={{ backgroundColor: link.open_count > 0 ? 'rgba(20,74,87,0.1)' : '#f1f5f9', color: link.open_count > 0 ? 'var(--teal)' : '#94a3b8' }}>
                             {link.open_count}
                           </span>
+                        </TableCell>
+
+                        {/* Total Time Spent */}
+                        <TableCell className="text-slate-500 text-xs">
+                          <div className="font-bold" style={{ color: 'var(--teal)' }}>{formatDuration(link.total_time_seconds)}</div>
+                          <div className="text-slate-400">{link.session_count || 0} sessions</div>
                         </TableCell>
 
                         {/* Last Opened */}

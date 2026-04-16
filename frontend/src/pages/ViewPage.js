@@ -53,6 +53,19 @@ export default function ViewPage() {
     }
   };
 
+  const sendHeartbeatBeacon = () => {
+    if (!sessionId.current || !sessionStartedAt.current || !navigator.sendBeacon) return;
+    const durationSeconds = Math.max(0, Math.round((Date.now() - sessionStartedAt.current) / 1000));
+    const payload = JSON.stringify({
+      session_id: sessionId.current,
+      duration_seconds: durationSeconds,
+    });
+    navigator.sendBeacon(
+      `${API}/view/${uniqueId}/session/heartbeat`,
+      new Blob([payload], { type: 'application/json' })
+    );
+  };
+
   useEffect(() => {
     const loadPdf = async () => {
       try {
@@ -76,11 +89,11 @@ export default function ViewPage() {
           // Session analytics are optional; the PDF should still open.
         }
         if (isMobileDevice()) {
-          await sendHeartbeat();
+          sendHeartbeatBeacon();
           window.location.replace(publicPdfUrl);
           return;
         }
-        heartbeatTimer.current = window.setInterval(sendHeartbeat, 10000);
+        heartbeatTimer.current = window.setInterval(sendHeartbeat, 3000);
       } catch (err) {
         setError(err.response?.data?.detail || 'PDF not found or link is invalid');
       } finally {
@@ -88,9 +101,19 @@ export default function ViewPage() {
       }
     };
     loadPdf();
+    const handleFinalHeartbeat = () => sendHeartbeatBeacon();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') sendHeartbeatBeacon();
+    };
+    window.addEventListener('pagehide', handleFinalHeartbeat);
+    window.addEventListener('beforeunload', handleFinalHeartbeat);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
       if (heartbeatTimer.current) window.clearInterval(heartbeatTimer.current);
-      sendHeartbeat();
+      sendHeartbeatBeacon();
+      window.removeEventListener('pagehide', handleFinalHeartbeat);
+      window.removeEventListener('beforeunload', handleFinalHeartbeat);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uniqueId]);

@@ -328,11 +328,23 @@ async def admin_stats(request: Request):
 
 
 @api_router.get("/admin/analytics")
-async def admin_analytics(request: Request, days: Optional[int] = 30):
+async def admin_analytics(
+    request: Request,
+    days: Optional[int] = 30,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None
+):
     await get_current_admin(request)
 
     date_filter = {}
-    if days and days > 0:
+    cutoff = None
+    if start_date or end_date:
+        date_filter["created_at"] = {}
+        if start_date:
+            date_filter["created_at"]["$gte"] = f"{start_date}T00:00:00+00:00"
+        if end_date:
+            date_filter["created_at"]["$lte"] = f"{end_date}T23:59:59+00:00"
+    elif days and days > 0:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
         date_filter = {"created_at": {"$gte": cutoff}}
 
@@ -343,6 +355,21 @@ async def admin_analytics(request: Request, days: Optional[int] = 30):
         session_filter = {"started_at": {"$gte": cutoff}}
     sessions = await db.view_sessions.find(session_filter).to_list(10000)
     pdf_map = {pdf["id"]: pdf.get("file_name", "Unknown PDF") for pdf in pdfs}
+
+    def is_in_selected_range(value: Optional[str]) -> bool:
+        if not value:
+            return False
+        try:
+            dt = datetime.fromisoformat(value).astimezone(timezone.utc)
+            if start_date and dt < datetime.fromisoformat(f"{start_date}T00:00:00+00:00"):
+                return False
+            if end_date and dt > datetime.fromisoformat(f"{end_date}T23:59:59+00:00"):
+                return False
+            if cutoff and dt < datetime.fromisoformat(cutoff):
+                return False
+            return True
+        except Exception:
+            return False
 
     links_by_pdf = {}
     opens_by_hour = {str(hour).zfill(2): 0 for hour in range(24)}
@@ -356,11 +383,10 @@ async def admin_analytics(request: Request, days: Optional[int] = 30):
         links_by_pdf[pdf_id]["opens"] += int(link.get("open_count") or 0)
 
         opened_at = link.get("last_opened_at")
-        if opened_at:
+        if is_in_selected_range(opened_at):
             try:
                 opened_dt = datetime.fromisoformat(opened_at).astimezone(timezone.utc)
-                if not days or days <= 0 or opened_dt >= datetime.fromisoformat(cutoff):
-                    opens_by_hour[str(opened_dt.hour).zfill(2)] += 1
+                opens_by_hour[str(opened_dt.hour).zfill(2)] += 1
             except Exception:
                 pass
 
@@ -543,6 +569,11 @@ async def list_links(request: Request, status: Optional[str] = None, search: Opt
     pdf_map = {p["id"]: p["file_name"] for p in pdfs}
     for link in links:
         link["pdf_name"] = pdf_map.get(link["pdf_id"], "Unknown")
+        sessions = await db.view_sessions.find({"link_id": link["_id"]}).to_list(1000)
+        total_time = sum(int(session.get("duration_seconds") or 0) for session in sessions)
+        link["session_count"] = len(sessions)
+        link["total_time_seconds"] = total_time
+        link["avg_time_seconds"] = round(total_time / len(sessions)) if sessions else 0
     return links
 
 @api_router.delete("/links/{link_id}")
