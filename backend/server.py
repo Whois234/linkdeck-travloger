@@ -121,6 +121,13 @@ async def get_current_user(request: Request) -> dict:
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
+
+async def get_current_admin(request: Request) -> dict:
+    user = await get_current_user(request)
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
 # Pydantic models
 class RegisterInput(BaseModel):
     email: str
@@ -213,6 +220,44 @@ async def refresh_token(request: Request, response: Response):
         raise HTTPException(status_code=401, detail="Refresh token expired")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+
+# ---- ADMIN ENDPOINTS ----
+@api_router.get("/admin/users")
+async def list_users(request: Request):
+    await get_current_admin(request)
+    users = await db.users.find(
+        {},
+        {"password_hash": 0}
+    ).sort("created_at", -1).to_list(1000)
+
+    return [
+        {
+            "id": str(user["_id"]),
+            "email": user.get("email", ""),
+            "name": user.get("name", ""),
+            "role": user.get("role", "user"),
+            "created_at": user.get("created_at"),
+            "password_status": "Protected"
+        }
+        for user in users
+    ]
+
+
+@api_router.get("/admin/stats")
+async def admin_stats(request: Request):
+    await get_current_admin(request)
+    total_users = await db.users.count_documents({})
+    total_pdfs = await db.pdfs.count_documents({})
+    total_links = await db.links.count_documents({})
+    opened_links = await db.links.count_documents({"opened": True})
+    return {
+        "total_users": total_users,
+        "total_pdfs": total_pdfs,
+        "total_links": total_links,
+        "opened_links": opened_links,
+        "unopened_links": total_links - opened_links
+    }
 
 # ---- PDF ENDPOINTS ----
 UPLOAD_DIR = ROOT_DIR / "uploads"

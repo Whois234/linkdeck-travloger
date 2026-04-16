@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
 import { Label } from '../components/ui/label';
-import { ArrowRight, Loader2 } from 'lucide-react';
+import { ArrowRight, Eye, EyeOff, Loader2, UserPlus } from 'lucide-react';
 
 function formatApiError(detail) {
   if (detail == null) return "Something went wrong. Please try again.";
@@ -26,11 +26,14 @@ function TravlogerMark({ size = 40 }) {
 }
 
 export default function LoginPage() {
+  const [mode, setMode] = useState('login');
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const { login } = useAuth();
+  const { login, register } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
@@ -38,7 +41,11 @@ export default function LoginPage() {
     setError('');
     setSubmitting(true);
     try {
-      await login(email, password);
+      if (mode === 'register') {
+        await register(email, password, name || 'User');
+      } else {
+        await login(email, password);
+      }
       navigate('/');
     } catch (err) {
       setError(formatApiError(err.response?.data?.detail) || err.message);
@@ -108,8 +115,12 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <h2 className="text-2xl font-black mb-1" style={{ color: 'var(--teal)' }}>Welcome back</h2>
-          <p className="text-sm text-slate-500 mb-8">Sign in to your LinkDeck dashboard</p>
+          <h2 className="text-2xl font-black mb-1" style={{ color: 'var(--teal)' }}>
+            {mode === 'login' ? 'Welcome back' : 'Create your account'}
+          </h2>
+          <p className="text-sm text-slate-500 mb-8">
+            {mode === 'login' ? 'Sign in to your LinkDeck dashboard' : 'Register to start sharing tracked itineraries'}
+          </p>
 
           {error && (
             <div className="mb-4 p-3 rounded-lg text-sm font-medium"
@@ -120,6 +131,15 @@ export default function LoginPage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            {mode === 'register' && (
+              <div>
+                <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Name</Label>
+                <Input id="name" type="text" value={name} onChange={e => setName(e.target.value)}
+                  placeholder="Your name"
+                  className="mt-1.5 rounded-lg border-slate-200 focus:ring-2"
+                  data-testid="register-name-input" required />
+              </div>
+            )}
             <div>
               <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Email</Label>
               <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)}
@@ -129,10 +149,20 @@ export default function LoginPage() {
             </div>
             <div>
               <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Password</Label>
-              <Input id="password" type="password" value={password} onChange={e => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="mt-1.5 rounded-lg border-slate-200"
-                data-testid="login-password-input" required />
+              <div className="relative mt-1.5">
+                <Input id="password" type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="rounded-lg border-slate-200 pr-11"
+                  data-testid="login-password-input" required />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(prev => !prev)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
             <Button type="submit"
               className="w-full rounded-lg font-bold h-11 text-white flex items-center justify-center gap-2"
@@ -141,13 +171,30 @@ export default function LoginPage() {
               data-testid="login-submit-button">
               {submitting
                 ? <Loader2 className="w-4 h-4 animate-spin" />
-                : <><span>Sign In</span><ArrowRight className="w-4 h-4" /></>
+                : mode === 'login'
+                  ? <><span>Sign In</span><ArrowRight className="w-4 h-4" /></>
+                  : <><span>Create Account</span><UserPlus className="w-4 h-4" /></>
               }
             </Button>
           </form>
 
-          <p className="mt-8 text-center text-xs text-slate-400">
-            LinkDeck is a private tool for <span className="font-semibold" style={{ color: 'var(--teal)' }}>Travloger</span> team only.
+          <p className="mt-6 text-center text-sm text-slate-500">
+            {mode === 'login' ? "Don't have an account?" : 'Already have an account?'}{' '}
+            <button
+              type="button"
+              onClick={() => {
+                setMode(mode === 'login' ? 'register' : 'login');
+                setError('');
+              }}
+              className="font-bold hover:underline"
+              style={{ color: 'var(--gold)' }}
+            >
+              {mode === 'login' ? 'Register' : 'Sign in'}
+            </button>
+          </p>
+
+          <p className="mt-5 text-center text-xs text-slate-400">
+            LinkDeck is a secure tool for <span className="font-semibold" style={{ color: 'var(--teal)' }}>Travloger</span> itinerary sharing.
           </p>
         </div>
       </div>

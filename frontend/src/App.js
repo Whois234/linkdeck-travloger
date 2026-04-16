@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { Toaster } from "./components/ui/sonner";
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
+import AdminDashboardPage from "./pages/AdminDashboardPage";
 import ViewPage from "./pages/ViewPage";
 import { Loader2 } from "lucide-react";
 
@@ -34,12 +35,17 @@ function PublicRoute({ children }) {
 }
 
 function App() {
+  function HomePage() {
+    const { user } = useAuth();
+    return user?.role === "admin" ? <AdminDashboardPage /> : <DashboardPage />;
+  }
+
   return (
     <BrowserRouter>
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
-          <Route path="/" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+          <Route path="/" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
           <Route path="/view/:uniqueId" element={<ViewPage />} />
         </Routes>
         <Toaster position="top-right" richColors />
