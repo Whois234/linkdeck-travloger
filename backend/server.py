@@ -162,7 +162,7 @@ async def register(input: RegisterInput, response: Response):
     is_https = "https" in os.environ.get("FRONTEND_URL", "")
     response.set_cookie(key="access_token", value=access_token, httponly=True, secure=is_https, samesite="none", max_age=3600, path="/")
     response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=is_https, samesite="none", max_age=604800, path="/")
-    return {"id": user_id, "email": email, "name": input.name, "role": "user"}
+    return {"id": user_id, "email": email, "name": input.name, "role": "user", "access_token": access_token}
 
 @api_router.post("/auth/login")
 async def login(input: LoginInput, request: Request, response: Response):
@@ -178,7 +178,7 @@ async def login(input: LoginInput, request: Request, response: Response):
     is_https = "https" in os.environ.get("FRONTEND_URL", "")
     response.set_cookie(key="access_token", value=access_token, httponly=True, secure=is_https, samesite="none", max_age=3600, path="/")
     response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=is_https, samesite="none", max_age=604800, path="/")
-    return {"id": user_id, "email": email, "name": user.get("name", ""), "role": user.get("role", "user")}
+    return {"id": user_id, "email": email, "name": user.get("name", ""), "role": user.get("role", "user"), "access_token": access_token}
 
 @api_router.post("/auth/logout")
 async def logout(response: Response):
@@ -208,7 +208,7 @@ async def refresh_token(request: Request, response: Response):
         access_token = create_access_token(user_id, user["email"])
         is_https = "https" in os.environ.get("FRONTEND_URL", "")
         response.set_cookie(key="access_token", value=access_token, httponly=True, secure=is_https, samesite="none", max_age=3600, path="/")
-        return {"message": "Token refreshed"}
+        return {"message": "Token refreshed", "access_token": access_token}
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Refresh token expired")
     except jwt.InvalidTokenError:
