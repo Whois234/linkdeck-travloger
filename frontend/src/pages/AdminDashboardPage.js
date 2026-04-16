@@ -2,9 +2,12 @@ import { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Badge } from '../components/ui/badge';
-import { Loader2, LogOut, ShieldCheck, Users, FileText, LinkIcon, Eye } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
+import { Eye, FileText, KeyRound, LinkIcon, Loader2, LogOut, ShieldCheck, UserPlus, Users } from 'lucide-react';
 import { toast } from 'sonner';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -32,6 +35,12 @@ export default function AdminDashboardPage() {
   const [users, setUsers] = useState([]);
   const [stats, setStats] = useState({ total_users: 0, total_pdfs: 0, total_links: 0, opened_links: 0 });
   const [loading, setLoading] = useState(true);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newUserName, setNewUserName] = useState('');
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserPassword, setNewUserPassword] = useState('');
+  const [resettingId, setResettingId] = useState('');
 
   const fetchAdminData = useCallback(async () => {
     try {
@@ -49,6 +58,46 @@ export default function AdminDashboardPage() {
   }, []);
 
   useEffect(() => { fetchAdminData(); }, [fetchAdminData]);
+
+  const handleCreateUser = async (e) => {
+    e.preventDefault();
+    setCreating(true);
+    try {
+      await axios.post(`${API}/admin/users`, {
+        name: newUserName,
+        email: newUserEmail,
+        password: newUserPassword,
+      }, { withCredentials: true });
+      toast.success('User created with temporary password');
+      setCreateOpen(false);
+      setNewUserName('');
+      setNewUserEmail('');
+      setNewUserPassword('');
+      fetchAdminData();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to create user');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleResetPassword = async (item) => {
+    const newPassword = window.prompt(`Enter a new password for ${item.email}`);
+    if (!newPassword) return;
+
+    setResettingId(item.id);
+    try {
+      await axios.post(`${API}/admin/users/${item.id}/reset-password`, {
+        password: newPassword,
+      }, { withCredentials: true });
+      toast.success('Password reset successfully');
+      fetchAdminData();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to reset password');
+    } finally {
+      setResettingId('');
+    }
+  };
 
   if (loading) {
     return (
@@ -105,11 +154,51 @@ export default function AdminDashboardPage() {
         </div>
 
         <section>
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
             <h2 className="text-xl font-bold" style={{ color: 'var(--teal)' }}>Registered Users</h2>
-            <Badge className="rounded-full" style={{ backgroundColor: 'rgba(20,74,87,0.08)', color: 'var(--teal)' }}>
-              Passwords are encrypted
-            </Badge>
+            <div className="flex items-center gap-2">
+              <Badge className="rounded-full" style={{ backgroundColor: 'rgba(20,74,87,0.08)', color: 'var(--teal)' }}>
+                Passwords are resettable
+              </Badge>
+              <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+                <DialogTrigger asChild>
+                  <Button className="rounded-lg font-bold text-white" style={{ backgroundColor: 'var(--teal)' }}>
+                    <UserPlus className="w-4 h-4 mr-2" /> Create User
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="rounded-xl border" style={{ borderColor: '#e5e7eb' }}>
+                  <DialogHeader>
+                    <DialogTitle className="font-bold text-xl" style={{ color: 'var(--teal)' }}>
+                      Create User
+                    </DialogTitle>
+                  </DialogHeader>
+                  <form onSubmit={handleCreateUser} className="space-y-4 pt-2">
+                    <div>
+                      <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Name</Label>
+                      <Input value={newUserName} onChange={e => setNewUserName(e.target.value)}
+                        placeholder="e.g. Sales Agent"
+                        className="mt-1.5 rounded-lg border-slate-200" required />
+                    </div>
+                    <div>
+                      <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Email</Label>
+                      <Input type="email" value={newUserEmail} onChange={e => setNewUserEmail(e.target.value)}
+                        placeholder="agent@travloger.in"
+                        className="mt-1.5 rounded-lg border-slate-200" required />
+                    </div>
+                    <div>
+                      <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Temporary Password</Label>
+                      <Input value={newUserPassword} onChange={e => setNewUserPassword(e.target.value)}
+                        placeholder="Enter temporary password"
+                        className="mt-1.5 rounded-lg border-slate-200" required />
+                      <p className="text-xs text-slate-400 mt-1">Share this password with the user. They can log in with it immediately.</p>
+                    </div>
+                    <Button type="submit" disabled={creating} className="w-full rounded-lg font-bold text-white" style={{ backgroundColor: 'var(--teal)' }}>
+                      {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Create User'}
+                    </Button>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            </div>
           </div>
 
           <div className="bg-white rounded-xl border overflow-x-auto" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
@@ -122,6 +211,7 @@ export default function AdminDashboardPage() {
                   <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Role</TableHead>
                   <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Password</TableHead>
                   <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Created</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10 text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -137,6 +227,14 @@ export default function AdminDashboardPage() {
                     </TableCell>
                     <TableCell className="text-sm text-slate-500">{item.password_status}</TableCell>
                     <TableCell className="text-xs text-slate-400">{formatDate(item.created_at)}</TableCell>
+                    <TableCell className="text-right">
+                      <Button variant="ghost" size="sm" onClick={() => handleResetPassword(item)}
+                        disabled={resettingId === item.id}
+                        className="rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100">
+                        {resettingId === item.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4 mr-1.5" />}
+                        Reset
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

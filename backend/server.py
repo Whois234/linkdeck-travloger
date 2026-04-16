@@ -143,6 +143,14 @@ class LinkCreateInput(BaseModel):
     customer_name: str
     customer_phone: str
 
+class AdminCreateUserInput(BaseModel):
+    email: str
+    password: str
+    name: str = "User"
+
+class AdminResetPasswordInput(BaseModel):
+    password: str
+
 # Create app
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -238,10 +246,60 @@ async def list_users(request: Request):
             "name": user.get("name", ""),
             "role": user.get("role", "user"),
             "created_at": user.get("created_at"),
-            "password_status": "Protected"
+            "password_status": "Password Set" if user.get("password_hash") else "No Password"
         }
         for user in users
     ]
+
+
+@api_router.post("/admin/users")
+async def admin_create_user(input: AdminCreateUserInput, request: Request):
+    await get_current_admin(request)
+    email = input.email.strip().lower()
+    if not email or not input.password:
+        raise HTTPException(status_code=400, detail="Email and temporary password are required")
+
+    existing = await db.users.find_one({"email": email})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    user_doc = {
+        "email": email,
+        "password_hash": hash_password(input.password),
+        "name": input.name.strip() or "User",
+        "role": "user",
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    result = await db.users.insert_one(user_doc)
+    return {
+        "id": str(result.inserted_id),
+        "email": user_doc["email"],
+        "name": user_doc["name"],
+        "role": user_doc["role"],
+        "created_at": user_doc["created_at"],
+        "password_status": "Password Set"
+    }
+
+
+@api_router.post("/admin/users/{user_id}/reset-password")
+async def admin_reset_password(user_id: str, input: AdminResetPasswordInput, request: Request):
+    await get_current_admin(request)
+    if not input.password:
+        raise HTTPException(status_code=400, detail="New password is required")
+
+    from bson import ObjectId
+    try:
+        object_id = ObjectId(user_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid user ID")
+
+    result = await db.users.update_one(
+        {"_id": object_id},
+        {"$set": {"password_hash": hash_password(input.password)}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"message": "Password reset successfully"}
 
 
 @api_router.get("/admin/stats")
