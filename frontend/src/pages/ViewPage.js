@@ -5,6 +5,13 @@ import { Loader2, AlertCircle } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
+function getPublicPdfUrl(uniqueId, fallbackUrl) {
+  if (typeof window === 'undefined' || window.location.hostname === 'localhost') {
+    return fallbackUrl;
+  }
+  return `${window.location.origin}/api/view/${uniqueId}/pdf`;
+}
+
 function isMobileDevice() {
   if (typeof window === 'undefined') return false;
   return window.matchMedia('(max-width: 768px)').matches ||
@@ -38,10 +45,11 @@ export default function ViewPage() {
           axios.post(`${API}/view/${uniqueId}/track`).catch(() => {});
         }
         const { data } = await axios.get(`${API}/view/${uniqueId}/info`);
+        const publicPdfUrl = getPublicPdfUrl(uniqueId, data.file_url);
         setPdfName(data.pdf_name);
-        setPdfUrl(data.file_url);
+        setPdfUrl(publicPdfUrl);
         if (isMobileDevice()) {
-          window.location.replace(data.file_url);
+          window.location.replace(publicPdfUrl);
         }
       } catch (err) {
         setError(err.response?.data?.detail || 'PDF not found or link is invalid');
