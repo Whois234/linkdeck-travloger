@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { Fragment, useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
 import { Button } from '../components/ui/button';
@@ -12,7 +12,7 @@ import { toast } from 'sonner';
 import {
   Upload, Link2, Copy, Trash2, FileText, ExternalLink, LogOut, Search, Filter,
   CheckCircle, XCircle, Eye, Loader2, FileUp, LinkIcon, MapPin, ArrowUpDown,
-  Smartphone, Monitor, Globe2, Archive, Download
+  Smartphone, Monitor, Globe2, Archive, Download, ChevronDown, ChevronUp, CalendarClock
 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -108,8 +108,8 @@ export default function DashboardPage() {
   const [filterStatus, setFilterStatus] = useState('all');
   const [sortBy, setSortBy] = useState('recently_created');
   const [searchQuery, setSearchQuery] = useState('');
-  const [insightsOpen, setInsightsOpen] = useState(false);
-  const [selectedInsight, setSelectedInsight] = useState(null);
+  const [expandedLinkId, setExpandedLinkId] = useState('');
+  const [insightsByLink, setInsightsByLink] = useState({});
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -238,11 +238,17 @@ export default function DashboardPage() {
   };
 
   const loadInsights = async (linkId) => {
-    setInsightsOpen(true);
+    if (!linkId) return;
+    if (expandedLinkId === linkId) {
+      setExpandedLinkId('');
+      return;
+    }
+    setExpandedLinkId(linkId);
+    if (insightsByLink[linkId]) return;
     setInsightsLoading(true);
     try {
       const { data } = await axios.get(`${API}/links/${linkId}/insights`, { withCredentials: true });
-      setSelectedInsight(data);
+      setInsightsByLink((current) => ({ ...current, [linkId]: data }));
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Failed to load customer insights');
     } finally {
@@ -279,6 +285,7 @@ export default function DashboardPage() {
   };
 
   const exportInsightSessionsCsv = () => {
+    const selectedInsight = insightsByLink[expandedLinkId];
     if (!selectedInsight) return;
     const rows = [
       ['Customer Name', 'Phone', 'PDF', 'Session', 'Opened At', 'Last Seen', 'Time Spent', 'Device', 'Platform', 'Browser', 'Location', 'Screen Size'],
@@ -602,144 +609,235 @@ export default function DashboardPage() {
                   <TableBody>
                     {(Array.isArray(links) ? links : []).map((link) => {
                       const linkId = getLinkId(link);
+                      const isExpanded = expandedLinkId === linkId;
+                      const insight = insightsByLink[linkId];
 
                       return (
-                      <TableRow key={linkId || `${link.customer_phone}-${link.created_at}`} className="border-b hover:bg-slate-50 transition-colors" style={{ borderColor: '#f1f5f9' }} data-testid={`link-row-${linkId || 'missing-id'}`}>
+                      <Fragment key={linkId || `${link.customer_phone}-${link.created_at}`}>
+                        <TableRow key={linkId || `${link.customer_phone}-${link.created_at}`} className="border-b hover:bg-slate-50 transition-colors" style={{ borderColor: '#f1f5f9' }} data-testid={`link-row-${linkId || 'missing-id'}`}>
 
-                        {/* Customer Name */}
-                        <TableCell>
-                          <button
-                            type="button"
-                            onClick={() => loadInsights(linkId)}
-                            className="font-semibold text-left hover:underline"
-                            style={{ color: 'var(--teal)' }}
-                          >
-                            {link.customer_name}
-                          </button>
-                        </TableCell>
-
-                        {/* Phone */}
-                        <TableCell className="text-slate-600 text-sm font-mono">{link.customer_phone}</TableCell>
-
-                        {/* PDF Name */}
-                        <TableCell>
-                          <div className="max-w-[170px]">
-                            <span className="text-xs text-slate-500 truncate max-w-[170px] inline-block">{link.pdf_name}</span>
-                            {link.pdf_deleted && (
-                              <div className="text-[11px] font-semibold mt-1" style={{ color: '#b45309' }}>
-                                Itinerary expired
-                              </div>
-                            )}
-                          </div>
-                        </TableCell>
-
-                        {/* Status Badge */}
-                        <TableCell>
-                          {link.opened ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold"
-                              style={{ backgroundColor: '#dcfce7', color: '#16a34a' }}
-                              data-testid={`link-status-${linkId || 'missing-id'}`}>
-                              <Eye className="w-3 h-3" /> Opened
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold"
-                              style={{ backgroundColor: '#fee2e2', color: '#dc2626' }}
-                              data-testid={`link-status-${linkId || 'missing-id'}`}>
-                              <XCircle className="w-3 h-3" /> Not Opened
-                            </span>
-                          )}
-                        </TableCell>
-
-                        {/* Open Count */}
-                        <TableCell className="text-center">
-                          <span className="inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-black"
-                            style={{ backgroundColor: link.open_count > 0 ? 'rgba(20,74,87,0.1)' : '#f1f5f9', color: link.open_count > 0 ? 'var(--teal)' : '#94a3b8' }}>
-                            {link.open_count}
-                          </span>
-                        </TableCell>
-
-                        {/* Total Time Spent */}
-                        <TableCell className="text-slate-500 text-xs">
-                          <div className="font-bold" style={{ color: 'var(--teal)' }}>{formatDuration(link.total_time_seconds)}</div>
-                          <div className="text-slate-400">{link.session_count || 0} sessions</div>
-                          {link.latest_location && link.latest_location !== 'Unknown' && (
-                            <div className="text-slate-400 mt-1 truncate max-w-[140px]">{link.latest_location}</div>
-                          )}
-                        </TableCell>
-
-                        {/* Last Opened */}
-                        <TableCell className="text-slate-400 text-xs">{formatDate(link.last_opened_at)}</TableCell>
-
-                        {/* Actions */}
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1">
-
-                            {/* WhatsApp Button */}
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <a
-                                  href={toWaLink(link.customer_phone)}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="wa-btn inline-flex items-center justify-center h-8 w-8 rounded-lg transition-all"
-                                  style={{ backgroundColor: '#25D366', color: 'white' }}
-                                  data-testid={`wa-link-${linkId || 'missing-id'}`}
-                                >
-                                  <WhatsAppIcon size={15} />
-                                </a>
-                              </TooltipTrigger>
-                              <TooltipContent><p>WhatsApp {link.customer_name}</p></TooltipContent>
-                            </Tooltip>
-
-                            {/* Copy Link */}
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => copyLink(linkId)}
-                                  className="h-8 w-8 p-0 rounded-lg hover:bg-blue-50"
+                          {/* Customer Name */}
+                          <TableCell>
+                            <div className="flex items-start gap-2 min-w-[180px]">
+                              <button
+                                type="button"
+                                onClick={() => loadInsights(linkId)}
+                                className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50"
+                                aria-label={isExpanded ? 'Hide sessions' : 'Show sessions'}
+                              >
+                                {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                              </button>
+                              <div className="min-w-0">
+                                <button
+                                  type="button"
+                                  onClick={() => loadInsights(linkId)}
+                                  className="font-semibold text-left hover:underline"
                                   style={{ color: 'var(--teal)' }}
-                                  disabled={!linkId}
-                                  data-testid={`copy-link-${linkId || 'missing-id'}`}>
-                                  <Copy className="w-4 h-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent><p>Copy link</p></TooltipContent>
-                            </Tooltip>
-
-                            {/* Open in new tab */}
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <a
-                                  href={linkId ? `${SITE_URL}/view/${linkId}` : '#'}
-                                  target="_blank"
-                                  rel={linkId ? 'noopener noreferrer' : undefined}
-                                  className={`inline-flex items-center justify-center h-8 w-8 rounded-lg transition-colors ${
-                                    linkId
-                                      ? 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
-                                      : 'text-slate-300 pointer-events-none'
-                                  }`}
                                 >
-                                  <ExternalLink className="w-4 h-4" />
-                                </a>
-                              </TooltipTrigger>
-                              <TooltipContent><p>Preview link</p></TooltipContent>
-                            </Tooltip>
+                                  {link.customer_name}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => loadInsights(linkId)}
+                                  className="mt-1 inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-500 hover:bg-slate-50"
+                                >
+                                  <CalendarClock className="w-3 h-3" />
+                                  Created {formatDate(link.created_at)}
+                                </button>
+                              </div>
+                            </div>
+                          </TableCell>
 
-                            {/* Delete */}
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => handleDeleteLink(linkId)}
-                                  className="h-8 w-8 p-0 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50"
-                                  disabled={!linkId}
-                                  data-testid={`delete-link-${linkId || 'missing-id'}`}>
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent><p>Delete link</p></TooltipContent>
-                            </Tooltip>
+                          {/* Phone */}
+                          <TableCell className="text-slate-600 text-sm font-mono">{link.customer_phone}</TableCell>
 
-                          </div>
-                        </TableCell>
-                      </TableRow>
+                          {/* PDF Name */}
+                          <TableCell>
+                            <div className="max-w-[170px]">
+                              <span className="text-xs text-slate-500 truncate max-w-[170px] inline-block">{link.pdf_name}</span>
+                              {link.pdf_deleted && (
+                                <div className="text-[11px] font-semibold mt-1" style={{ color: '#b45309' }}>
+                                  Itinerary expired
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
+
+                          {/* Status Badge */}
+                          <TableCell>
+                            {link.opened ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold"
+                                style={{ backgroundColor: '#dcfce7', color: '#16a34a' }}
+                                data-testid={`link-status-${linkId || 'missing-id'}`}>
+                                <Eye className="w-3 h-3" /> Opened
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold"
+                                style={{ backgroundColor: '#fee2e2', color: '#dc2626' }}
+                                data-testid={`link-status-${linkId || 'missing-id'}`}>
+                                <XCircle className="w-3 h-3" /> Not Opened
+                              </span>
+                            )}
+                          </TableCell>
+
+                          {/* Open Count */}
+                          <TableCell className="text-center">
+                            <span className="inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-black"
+                              style={{ backgroundColor: link.open_count > 0 ? 'rgba(20,74,87,0.1)' : '#f1f5f9', color: link.open_count > 0 ? 'var(--teal)' : '#94a3b8' }}>
+                              {link.open_count}
+                            </span>
+                          </TableCell>
+
+                          {/* Total Time Spent */}
+                          <TableCell className="text-slate-500 text-xs">
+                            <div className="font-bold" style={{ color: 'var(--teal)' }}>{formatDuration(link.total_time_seconds)}</div>
+                            <div className="text-slate-400">{link.session_count || 0} sessions</div>
+                            {link.latest_location && link.latest_location !== 'Unknown' && (
+                              <div className="text-slate-400 mt-1 truncate max-w-[140px]">{link.latest_location}</div>
+                            )}
+                          </TableCell>
+
+                          {/* Last Opened */}
+                          <TableCell className="text-slate-400 text-xs">{formatDate(link.last_opened_at)}</TableCell>
+
+                          {/* Actions */}
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1">
+
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <a
+                                    href={toWaLink(link.customer_phone)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="wa-btn inline-flex items-center justify-center h-8 w-8 rounded-lg transition-all"
+                                    style={{ backgroundColor: '#25D366', color: 'white' }}
+                                    data-testid={`wa-link-${linkId || 'missing-id'}`}
+                                  >
+                                    <WhatsAppIcon size={15} />
+                                  </a>
+                                </TooltipTrigger>
+                                <TooltipContent><p>WhatsApp {link.customer_name}</p></TooltipContent>
+                              </Tooltip>
+
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button variant="ghost" size="sm" onClick={() => copyLink(linkId)}
+                                    className="h-8 w-8 p-0 rounded-lg hover:bg-blue-50"
+                                    style={{ color: 'var(--teal)' }}
+                                    disabled={!linkId}
+                                    data-testid={`copy-link-${linkId || 'missing-id'}`}>
+                                    <Copy className="w-4 h-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent><p>Copy link</p></TooltipContent>
+                              </Tooltip>
+
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <a
+                                    href={linkId ? `${SITE_URL}/view/${linkId}` : '#'}
+                                    target="_blank"
+                                    rel={linkId ? 'noopener noreferrer' : undefined}
+                                    className={`inline-flex items-center justify-center h-8 w-8 rounded-lg transition-colors ${
+                                      linkId
+                                        ? 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
+                                        : 'text-slate-300 pointer-events-none'
+                                    }`}
+                                  >
+                                    <ExternalLink className="w-4 h-4" />
+                                  </a>
+                                </TooltipTrigger>
+                                <TooltipContent><p>Preview link</p></TooltipContent>
+                              </Tooltip>
+
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button variant="ghost" size="sm" onClick={() => handleDeleteLink(linkId)}
+                                    className="h-8 w-8 p-0 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50"
+                                    disabled={!linkId}
+                                    data-testid={`delete-link-${linkId || 'missing-id'}`}>
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent><p>Delete link</p></TooltipContent>
+                              </Tooltip>
+
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                        {isExpanded && (
+                          <TableRow className="border-b" style={{ borderColor: '#e2e8f0', backgroundColor: '#fafcfd' }}>
+                            <TableCell colSpan={8} className="px-5 py-4">
+                              <div className="flex items-center justify-between gap-3 mb-3">
+                                <div>
+                                  <div className="text-sm font-semibold" style={{ color: 'var(--teal)' }}>
+                                    {link.customer_name} session history
+                                  </div>
+                                  <div className="text-xs text-slate-400">
+                                    All previous opens, with exact start time and time spent in each session.
+                                  </div>
+                                </div>
+                                {insight && insight.sessions?.length > 0 && (
+                                  <Button variant="outline" onClick={exportInsightSessionsCsv} className="rounded-lg border-slate-200 text-slate-600">
+                                    <Download className="w-4 h-4 mr-2" /> Export Sessions CSV
+                                  </Button>
+                                )}
+                              </div>
+                              {insightsLoading && !insight ? (
+                                <div className="py-6 flex items-center justify-center">
+                                  <Loader2 className="w-5 h-5 animate-spin" style={{ color: 'var(--teal)' }} />
+                                </div>
+                              ) : insight?.sessions?.length ? (
+                                <div className="overflow-hidden rounded-lg border" style={{ borderColor: '#e5e7eb' }}>
+                                  <Table>
+                                    <TableHeader>
+                                      <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
+                                        <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Session</TableHead>
+                                        <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Opened At</TableHead>
+                                        <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Time Spent</TableHead>
+                                        <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Device</TableHead>
+                                        <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Location</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {insight.sessions.map((session) => {
+                                        const DeviceIcon = getDeviceIcon(session.device_type);
+                                        return (
+                                          <TableRow key={session.session_id} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
+                                            <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>
+                                              {formatSessionOrdinal(session.session_number)} session
+                                            </TableCell>
+                                            <TableCell className="text-sm text-slate-500">{formatDate(session.started_at)}</TableCell>
+                                            <TableCell className="text-sm font-semibold text-slate-600">{formatDuration(session.duration_seconds)}</TableCell>
+                                            <TableCell className="text-xs text-slate-500">
+                                              <div className="flex items-center gap-2">
+                                                <DeviceIcon className="w-4 h-4" />
+                                                <span>{session.device_type} · {session.platform}</span>
+                                              </div>
+                                              <div className="text-slate-400 mt-1">{session.browser}</div>
+                                            </TableCell>
+                                            <TableCell className="text-xs text-slate-500">
+                                              <div className="flex items-center gap-2">
+                                                <Globe2 className="w-4 h-4" />
+                                                <span>{session.location_label || 'Unknown'}</span>
+                                              </div>
+                                            </TableCell>
+                                          </TableRow>
+                                        );
+                                      })}
+                                    </TableBody>
+                                  </Table>
+                                </div>
+                              ) : (
+                                <div className="rounded-lg border px-4 py-6 text-center text-sm text-slate-400" style={{ borderColor: '#e5e7eb' }}>
+                                  No sessions yet for this customer.
+                                </div>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </Fragment>
                     )})}
                   </TableBody>
                 </Table>
@@ -789,96 +887,6 @@ export default function DashboardPage() {
               </div>
             )}
           </section>
-
-          <Dialog open={insightsOpen} onOpenChange={(open) => {
-            setInsightsOpen(open);
-            if (!open) {
-              setSelectedInsight(null);
-              setInsightsLoading(false);
-            }
-          }}>
-            <DialogContent className="max-w-3xl rounded-xl border" style={{ borderColor: '#e5e7eb' }}>
-              <DialogHeader>
-                <div className="flex items-center justify-between gap-3 pr-8">
-                  <DialogTitle className="text-xl font-bold" style={{ color: 'var(--teal)' }}>
-                    {selectedInsight?.link?.customer_name || 'Customer insights'}
-                  </DialogTitle>
-                  {selectedInsight && (
-                    <Button variant="outline" onClick={exportInsightSessionsCsv} className="rounded-lg border-slate-200 text-slate-600">
-                      <Download className="w-4 h-4 mr-2" /> Export Sessions CSV
-                    </Button>
-                  )}
-                </div>
-              </DialogHeader>
-              {insightsLoading ? (
-                <div className="py-14 flex items-center justify-center">
-                  <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--teal)' }} />
-                </div>
-              ) : selectedInsight ? (
-                <div className="space-y-5">
-                  <div className="grid sm:grid-cols-4 gap-3">
-                    {[
-                      { label: 'Phone', value: selectedInsight.link.customer_phone },
-                      { label: 'PDF', value: selectedInsight.link.pdf_name },
-                      { label: 'Sessions', value: selectedInsight.link.session_count },
-                      { label: 'Total Time', value: formatDuration(selectedInsight.link.total_time_seconds) },
-                    ].map((item) => (
-                      <div key={item.label} className="rounded-lg border p-3" style={{ borderColor: '#e5e7eb', backgroundColor: '#f8fafc' }}>
-                        <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">{item.label}</div>
-                        <div className="mt-2 text-sm font-semibold break-words" style={{ color: 'var(--teal)' }}>{item.value || '--'}</div>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="rounded-xl border overflow-hidden" style={{ borderColor: '#e5e7eb' }}>
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
-                          <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Session</TableHead>
-                          <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Opened At</TableHead>
-                          <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Time Spent</TableHead>
-                          <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Device</TableHead>
-                          <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Location</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {selectedInsight.sessions.length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={5} className="text-center py-10 text-sm text-slate-400">
-                              No sessions yet for this customer.
-                            </TableCell>
-                          </TableRow>
-                        ) : selectedInsight.sessions.map((session) => {
-                          const DeviceIcon = getDeviceIcon(session.device_type);
-                          return (
-                            <TableRow key={session.session_id} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
-                              <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>
-                                {formatSessionOrdinal(session.session_number)} session
-                              </TableCell>
-                              <TableCell className="text-sm text-slate-500">{formatDate(session.started_at)}</TableCell>
-                              <TableCell className="text-sm font-semibold text-slate-600">{formatDuration(session.duration_seconds)}</TableCell>
-                              <TableCell className="text-xs text-slate-500">
-                                <div className="flex items-center gap-2">
-                                  <DeviceIcon className="w-4 h-4" />
-                                  <span>{session.device_type} · {session.platform}</span>
-                                </div>
-                                <div className="text-slate-400 mt-1">{session.browser}</div>
-                              </TableCell>
-                              <TableCell className="text-xs text-slate-500">
-                                <div className="flex items-center gap-2">
-                                  <Globe2 className="w-4 h-4" />
-                                  <span>{session.location_label || 'Unknown'}</span>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </div>
-              ) : null}
-            </DialogContent>
-          </Dialog>
 
           {/* Footer */}
           <div className="mt-12 text-center pb-4">
