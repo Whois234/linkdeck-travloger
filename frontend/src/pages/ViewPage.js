@@ -88,6 +88,7 @@ export default function ViewPage() {
   const currentPageStartedAtRef = useRef(null);
   const pageDurationsMsRef = useRef({});
   const pageCountRef = useRef(0);
+  const nativeRedirectedRef = useRef(false);
 
   const registerPageNode = useCallback((pageNumber, node) => {
     if (node) {
@@ -168,6 +169,13 @@ export default function ViewPage() {
     if (viewerRef.current) resizeObserver.observe(viewerRef.current);
     return () => resizeObserver.disconnect();
   }, []);
+
+  useEffect(() => {
+    if (!useNativeFallback || !pdfUrl || !isMobileDevice() || nativeRedirectedRef.current) return;
+    nativeRedirectedRef.current = true;
+    sendHeartbeatBeacon();
+    window.location.replace(pdfUrl);
+  }, [pdfUrl, sendHeartbeatBeacon, useNativeFallback]);
 
   useEffect(() => {
     const loadPdf = async () => {
