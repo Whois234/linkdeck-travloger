@@ -1,5 +1,6 @@
 from dotenv import load_dotenv
 from pathlib import Path
+import ipaddress
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -45,6 +46,7 @@ EXPIRED_ITINERARY_MESSAGE = (
     "Sorry, the itinerary is expired. Please contact travloger.in "
     "(wa.me/916281392007) for the latest itinerary."
 )
+IP_API_FIELDS = "status,message,query,country,countryCode,regionName,city"
 
 
 def cloudinary_ready() -> bool:
@@ -140,12 +142,115 @@ def get_location_snapshot(request: Request) -> dict:
     city = headers.get("x-vercel-ip-city") or headers.get("cf-ipcity") or ""
     region = headers.get("x-vercel-ip-country-region") or headers.get("cf-region") or ""
     country = headers.get("x-vercel-ip-country") or headers.get("cf-ipcountry") or ""
+    source = "headers" if any([city, region, country]) else None
     parts = [part for part in [city, region, country] if part]
     return {
         "city": city,
         "region": region,
         "country": country,
-        "label": ", ".join(parts) if parts else "Unknown",
+        "label": ", ".join(parts) if parts else None,
+        "source": source,
+    }
+
+
+def merge_location_data(primary: dict, fallback: dict) -> dict:
+    city = primary.get("city") or fallback.get("city")
+    region = primary.get("region") or fallback.get("region")
+    country = fallback.get("country") or primary.get("country")
+    parts = [part for part in [city, region, country] if part]
+    return {
+        "city": city,
+        "region": region,
+        "country": country,
+        "label": ", ".join(parts) if parts else None,
+        "source": primary.get("source") if primary.get("city") and primary.get("region") else fallback.get("source") or primary.get("source"),
+    }
+
+
+def get_header_snapshot(request: Request) -> dict:
+    relevant_headers = [
+        "x-forwarded-for",
+        "x-real-ip",
+        "x-vercel-ip-city",
+        "x-vercel-ip-country-region",
+        "x-vercel-ip-country",
+        "cf-connecting-ip",
+        "cf-ipcity",
+        "cf-region",
+        "cf-ipcountry",
+        "user-agent",
+        "host",
+        "origin",
+        "referer",
+    ]
+    return {
+        "captured_at": datetime.now(timezone.utc).isoformat(),
+        "headers": {name: request.headers.get(name) for name in relevant_headers if request.headers.get(name)},
+    }
+
+
+def is_public_ip(ip_value: str) -> bool:
+    if not ip_value:
+        return False
+    try:
+        ip_obj = ipaddress.ip_address(ip_value)
+        return not (ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_reserved or ip_obj.is_multicast)
+    except ValueError:
+        return False
+
+
+async def lookup_ip_geolocation(ip_address: str) -> dict:
+    if not is_public_ip(ip_address):
+        return {"city": None, "region": None, "country": None, "label": None, "source": None}
+
+    cached = await db.geo_cache.find_one({"_id": ip_address})
+    if cached:
+        parts = [part for part in [cached.get("city"), cached.get("region"), cached.get("country")] if part]
+        return {
+            "city": cached.get("city"),
+            "region": cached.get("region"),
+            "country": cached.get("country"),
+            "label": ", ".join(parts) if parts else None,
+            "source": cached.get("source") or "cache",
+        }
+
+    try:
+        response = requests.get(
+            f"http://ip-api.com/json/{ip_address}",
+            params={"fields": IP_API_FIELDS},
+            timeout=3,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except Exception as exc:
+        logger.warning(f"IP geolocation lookup failed for {ip_address}: {exc}")
+        return {"city": None, "region": None, "country": None, "label": None, "source": None}
+
+    if payload.get("status") != "success":
+        return {"city": None, "region": None, "country": None, "label": None, "source": None}
+
+    city = payload.get("city") or None
+    region = payload.get("regionName") or None
+    country = payload.get("country") or None
+    source = "ip-api"
+    await db.geo_cache.update_one(
+        {"_id": ip_address},
+        {"$set": {
+            "city": city,
+            "region": region,
+            "country": country,
+            "source": source,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }},
+        upsert=True,
+    )
+    parts = [part for part in [city, region, country] if part]
+    return {
+        "city": city,
+        "region": region,
+        "country": country,
+        "label": ", ".join(parts) if parts else None,
+        "source": source,
     }
 
 
@@ -570,7 +675,8 @@ async def admin_recent_activity(request: Request, limit: int = 20):
             "device_type": session.get("device_type") or infer_device_type(session.get("user_agent", ""), bool(session.get("is_mobile"))),
             "platform": session.get("platform") or infer_platform(session.get("user_agent", "")),
             "browser": session.get("browser") or infer_browser(session.get("user_agent", "")),
-            "location_label": session.get("location_label") or "Unknown",
+            "location_label": session.get("location_label"),
+            "location_source": session.get("location_source"),
         })
     return {"items": activity}
 
@@ -837,7 +943,8 @@ async def get_link_insights(link_id: str, request: Request):
             "device_type": session.get("device_type") or infer_device_type(session.get("user_agent", ""), bool(session.get("is_mobile"))),
             "platform": session.get("platform") or infer_platform(session.get("user_agent", "")),
             "browser": session.get("browser") or infer_browser(session.get("user_agent", "")),
-            "location_label": session.get("location_label") or "Unknown",
+            "location_label": session.get("location_label"),
+            "location_source": session.get("location_source"),
             "screen_width": session.get("screen_width"),
             "screen_height": session.get("screen_height"),
         })
@@ -973,7 +1080,13 @@ async def start_view_session(unique_id: str, input: ViewSessionStartInput, reque
     session_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
     user_agent = request.headers.get("user-agent", "")
+    client_ip = get_client_ip(request)
     location = get_location_snapshot(request)
+    needs_ip_enrichment = not location.get("city") or not location.get("region")
+    if needs_ip_enrichment:
+        ip_lookup = await lookup_ip_geolocation(client_ip)
+        if ip_lookup.get("label"):
+            location = merge_location_data(location, ip_lookup)
     await db.view_sessions.insert_one({
         "_id": session_id,
         "link_id": unique_id,
@@ -993,11 +1106,13 @@ async def start_view_session(unique_id: str, input: ViewSessionStartInput, reque
         "platform": infer_platform(user_agent),
         "browser": infer_browser(user_agent),
         "user_agent": user_agent,
-        "ip_address": get_client_ip(request),
+        "ip_address": client_ip,
         "location_city": location.get("city"),
         "location_region": location.get("region"),
         "location_country": location.get("country"),
         "location_label": location.get("label"),
+        "location_source": location.get("source"),
+        "request_header_snapshot": get_header_snapshot(request),
     })
     return {"session_id": session_id}
 

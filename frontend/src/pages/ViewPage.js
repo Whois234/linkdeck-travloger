@@ -89,11 +89,6 @@ export default function ViewPage() {
         } catch {
           // Session analytics are optional; the PDF should still open.
         }
-        if (isMobileDevice()) {
-          sendHeartbeatBeacon();
-          window.location.replace(publicPdfUrl);
-          return;
-        }
         heartbeatTimer.current = window.setInterval(sendHeartbeat, 3000);
       } catch (err) {
         if (err.response?.status === 410) {
