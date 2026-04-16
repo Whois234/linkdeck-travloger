@@ -383,7 +383,7 @@ async def view_pdf(link_id: str):
 
 
 @api_router.get("/view/{unique_id}/info")
-async def get_pdf_info(unique_id: str):
+async def get_pdf_info(unique_id: str, request: Request):
     """Get PDF info for a link WITHOUT tracking. Used for rendering."""
     link = await db.links.find_one({"_id": unique_id})
     if not link:
