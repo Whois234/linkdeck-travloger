@@ -12,7 +12,7 @@ import { toast } from 'sonner';
 import {
   Upload, Link2, Copy, Trash2, FileText, ExternalLink, LogOut, Search, Filter,
   CheckCircle, XCircle, Eye, Loader2, FileUp, LinkIcon, MapPin, ArrowUpDown,
-  Smartphone, Monitor, Globe2, Archive, Download, ChevronDown, ChevronUp, CalendarClock
+  Smartphone, Monitor, Globe2, Archive, Download, ChevronDown, ChevronUp
 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -636,14 +636,9 @@ export default function DashboardPage() {
                                 >
                                   {link.customer_name}
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() => loadInsights(linkId)}
-                                  className="mt-1 inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-500 hover:bg-slate-50"
-                                >
-                                  <CalendarClock className="w-3 h-3" />
+                                <div className="mt-1 text-[11px] text-slate-400">
                                   Created {formatDate(link.created_at)}
-                                </button>
+                                </div>
                               </div>
                             </div>
                           </TableCell>
@@ -818,10 +813,14 @@ export default function DashboardPage() {
                                               <div className="text-slate-400 mt-1">{session.browser}</div>
                                             </TableCell>
                                             <TableCell className="text-xs text-slate-500">
-                                              <div className="flex items-center gap-2">
-                                                <Globe2 className="w-4 h-4" />
-                                                <span>{session.location_label || 'Unknown'}</span>
-                                              </div>
+                                              {session.location_label ? (
+                                                <div className="flex items-center gap-2">
+                                                  <Globe2 className="w-4 h-4" />
+                                                  <span>{session.location_label}</span>
+                                                </div>
+                                              ) : (
+                                                <span className="text-slate-300"> </span>
+                                              )}
                                             </TableCell>
                                           </TableRow>
                                         );
