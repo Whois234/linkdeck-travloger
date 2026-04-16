@@ -63,6 +63,14 @@ def resolve_pdf_url(pdf: dict, request: Optional[Request] = None) -> Optional[st
     filename = Path(storage_path).name
     return f"{str(request.base_url).rstrip('/')}/api/uploads/{filename}"
 
+
+def inline_pdf_headers(file_name: str) -> dict:
+    safe_name = Path(file_name or "document.pdf").name.replace('"', "")
+    return {
+        "Content-Disposition": f'inline; filename="{safe_name}"',
+        "Cache-Control": "private, max-age=300",
+    }
+
 def get_jwt_secret():
     return os.environ["JWT_SECRET"]
 
@@ -272,7 +280,11 @@ async def get_uploaded_pdf(filename: str):
     file_path = UPLOAD_DIR / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="PDF not found")
-    return FileResponse(file_path, media_type="application/pdf")
+    return FileResponse(
+        file_path,
+        media_type="application/pdf",
+        headers=inline_pdf_headers(filename),
+    )
 
 @api_router.get("/pdfs")
 async def list_pdfs(request: Request):
@@ -392,11 +404,47 @@ async def get_pdf_info(unique_id: str, request: Request):
     if not pdf:
         raise HTTPException(status_code=404, detail="PDF not found")
 
+    return {
+        "pdf_name": pdf["file_name"],
+        "file_url": f"{str(request.base_url).rstrip('/')}/api/view/{unique_id}/pdf",
+    }
+
+
+@api_router.get("/view/{unique_id}/pdf")
+async def get_pdf_file(unique_id: str, request: Request):
+    """Serve the linked PDF inline so browsers show it instead of downloading it."""
+    link = await db.links.find_one({"_id": unique_id})
+    if not link:
+        raise HTTPException(status_code=404, detail="Link not found")
+
+    pdf = await db.pdfs.find_one({"id": link["pdf_id"]}, {"_id": 0})
+    if not pdf:
+        raise HTTPException(status_code=404, detail="PDF not found")
+
+    storage_path = pdf.get("storage_path")
+    if storage_path and Path(storage_path).exists():
+        return FileResponse(
+            storage_path,
+            media_type="application/pdf",
+            headers=inline_pdf_headers(pdf.get("file_name", "document.pdf")),
+        )
+
     pdf_url = resolve_pdf_url(pdf, request)
     if not pdf_url:
         raise HTTPException(status_code=404, detail="PDF file is missing. Please re-upload the PDF.")
 
-    return {"pdf_name": pdf["file_name"], "file_url": pdf_url}
+    try:
+        upstream = requests.get(pdf_url, timeout=30)
+        upstream.raise_for_status()
+    except Exception as e:
+        logger.error(f"Error fetching PDF for inline view: {e}")
+        raise HTTPException(status_code=404, detail="PDF file is missing. Please re-upload the PDF.")
+
+    return Response(
+        content=upstream.content,
+        media_type="application/pdf",
+        headers=inline_pdf_headers(pdf.get("file_name", "document.pdf")),
+    )
 
 @api_router.post("/view/{unique_id}/track")
 async def track_visit(unique_id: str):
