@@ -4,6 +4,7 @@ import axios from 'axios';
 const AuthContext = createContext(null);
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const TOKEN_KEY = 'linkdeck_access_token';
+let refreshPromise = null;
 
 function setAuthToken(token) {
   if (token) {
@@ -41,6 +42,62 @@ export function AuthProvider({ children }) {
   }, []);
 
   useEffect(() => { checkAuth(); }, [checkAuth]);
+
+  useEffect(() => {
+    const responseInterceptor = axios.interceptors.response.use(
+      (response) => response,
+      async (error) => {
+        const originalRequest = error.config || {};
+        const status = error.response?.status;
+        const detail = error.response?.data?.detail;
+        const requestUrl = originalRequest.url || '';
+        const isRefreshRequest = requestUrl.includes('/auth/refresh');
+        const isAuthBootstrapRequest = requestUrl.includes('/auth/me');
+
+        if (status !== 401 || originalRequest._retry || isRefreshRequest) {
+          return Promise.reject(error);
+        }
+
+        if (detail !== 'Token expired' && !isAuthBootstrapRequest) {
+          return Promise.reject(error);
+        }
+
+        originalRequest._retry = true;
+
+        try {
+          if (!refreshPromise) {
+            refreshPromise = axios
+              .post(`${API}/auth/refresh`, {}, { withCredentials: true })
+              .then(({ data }) => {
+                if (data?.access_token) setAuthToken(data.access_token);
+                return data?.access_token;
+              })
+              .finally(() => {
+                refreshPromise = null;
+              });
+          }
+
+          const refreshedToken = await refreshPromise;
+          if (refreshedToken) {
+            originalRequest.headers = {
+              ...(originalRequest.headers || {}),
+              Authorization: `Bearer ${refreshedToken}`,
+            };
+          }
+          originalRequest.withCredentials = true;
+          return axios(originalRequest);
+        } catch (refreshError) {
+          setAuthToken(null);
+          setUser(false);
+          return Promise.reject(refreshError);
+        }
+      }
+    );
+
+    return () => {
+      axios.interceptors.response.eject(responseInterceptor);
+    };
+  }, []);
 
   const login = async (email, password) => {
     const { data } = await axios.post(`${API}/auth/login`, { email, password }, { withCredentials: true });
