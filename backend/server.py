@@ -294,6 +294,28 @@ async def build_link_summary(link: dict, pdf_map: dict) -> dict:
         "latest_location": latest_session.get("location_label") if latest_session else None,
     }
 
+
+def normalize_page_durations(raw_page_durations: Optional[dict]) -> dict[str, int]:
+    normalized = {}
+    if not isinstance(raw_page_durations, dict):
+        return normalized
+    for key, value in raw_page_durations.items():
+        try:
+            page_key = str(int(key))
+            normalized[page_key] = max(0, min(int(value or 0), 24 * 60 * 60))
+        except Exception:
+            continue
+    return normalized
+
+
+def build_page_breakdown(raw_page_durations: Optional[dict]) -> list[dict]:
+    normalized = normalize_page_durations(raw_page_durations)
+    items = [
+        {"page_number": int(page), "duration_seconds": duration}
+        for page, duration in normalized.items()
+    ]
+    return sorted(items, key=lambda item: item["page_number"])
+
 def get_jwt_secret():
     return os.environ["JWT_SECRET"]
 
@@ -382,6 +404,9 @@ class ViewSessionStartInput(BaseModel):
 class ViewSessionHeartbeatInput(BaseModel):
     session_id: str
     duration_seconds: int
+    current_page: Optional[int] = None
+    total_pages: Optional[int] = None
+    page_durations: dict[str, int] = Field(default_factory=dict)
 
 # Create app
 app = FastAPI()
@@ -933,18 +958,26 @@ async def get_link_insights(link_id: str, request: Request):
     pdf_map = {pdf["id"]: pdf.get("file_name", "Unknown PDF") for pdf in pdfs}
     sessions = await db.view_sessions.find({"link_id": link_id}).sort("started_at", 1).to_list(1000)
     sessions_payload = []
+    aggregate_page_totals = {}
     for index, session in enumerate(sessions, start=1):
+        page_breakdown = build_page_breakdown(session.get("page_durations"))
+        for item in page_breakdown:
+            page_key = str(item["page_number"])
+            aggregate_page_totals[page_key] = aggregate_page_totals.get(page_key, 0) + item["duration_seconds"]
         sessions_payload.append({
             "session_id": session.get("_id"),
             "session_number": index,
             "started_at": session.get("started_at"),
             "last_seen_at": session.get("last_seen_at"),
             "duration_seconds": int(session.get("duration_seconds") or 0),
+            "current_page": session.get("current_page"),
+            "total_pages": session.get("total_pages"),
             "device_type": session.get("device_type") or infer_device_type(session.get("user_agent", ""), bool(session.get("is_mobile"))),
             "platform": session.get("platform") or infer_platform(session.get("user_agent", "")),
             "browser": session.get("browser") or infer_browser(session.get("user_agent", "")),
             "location_label": session.get("location_label"),
             "location_source": session.get("location_source"),
+            "page_breakdown": page_breakdown,
             "screen_width": session.get("screen_width"),
             "screen_height": session.get("screen_height"),
         })
@@ -962,6 +995,10 @@ async def get_link_insights(link_id: str, request: Request):
             "last_opened_at": link.get("last_opened_at"),
             "session_count": len(sessions_payload),
             "total_time_seconds": total_time,
+            "page_breakdown": sorted(
+                [{"page_number": int(page), "duration_seconds": duration} for page, duration in aggregate_page_totals.items()],
+                key=lambda item: item["page_number"]
+            ),
         },
         "sessions": sessions_payload,
     }
@@ -1099,6 +1136,9 @@ async def start_view_session(unique_id: str, input: ViewSessionStartInput, reque
         "started_at": now,
         "last_seen_at": now,
         "duration_seconds": 0,
+        "current_page": 1,
+        "total_pages": None,
+        "page_durations": {},
         "screen_width": input.screen_width,
         "screen_height": input.screen_height,
         "is_mobile": input.is_mobile,
@@ -1120,12 +1160,20 @@ async def start_view_session(unique_id: str, input: ViewSessionStartInput, reque
 @api_router.post("/view/{unique_id}/session/heartbeat")
 async def heartbeat_view_session(unique_id: str, input: ViewSessionHeartbeatInput):
     duration = max(0, min(int(input.duration_seconds or 0), 24 * 60 * 60))
+    page_durations = normalize_page_durations(input.page_durations)
+    update_payload = {
+        "duration_seconds": duration,
+        "last_seen_at": datetime.now(timezone.utc).isoformat()
+    }
+    if input.current_page:
+        update_payload["current_page"] = max(1, int(input.current_page))
+    if input.total_pages:
+        update_payload["total_pages"] = max(1, int(input.total_pages))
+    if page_durations:
+        update_payload["page_durations"] = page_durations
     result = await db.view_sessions.update_one(
         {"_id": input.session_id, "link_id": unique_id},
-        {"$set": {
-            "duration_seconds": duration,
-            "last_seen_at": datetime.now(timezone.utc).isoformat()
-        }}
+        {"$set": update_payload}
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Session not found")

@@ -41,6 +41,16 @@ function formatSessionOrdinal(value) {
   return `${number}${suffixMap[number % 10] || 'th'}`;
 }
 
+function formatPageBreakdown(pageBreakdown = []) {
+  if (!Array.isArray(pageBreakdown) || pageBreakdown.length === 0) return '--';
+  return pageBreakdown
+    .slice()
+    .sort((a, b) => b.duration_seconds - a.duration_seconds)
+    .slice(0, 3)
+    .map((item) => `P${item.page_number} (${formatDuration(item.duration_seconds)})`)
+    .join(', ');
+}
+
 function csvEscape(value) {
   const stringValue = value == null ? '' : String(value);
   if (/[",\n]/.test(stringValue)) {
@@ -288,7 +298,7 @@ export default function DashboardPage() {
     const selectedInsight = insightsByLink[expandedLinkId];
     if (!selectedInsight) return;
     const rows = [
-      ['Customer Name', 'Phone', 'PDF', 'Session', 'Opened At', 'Last Seen', 'Time Spent', 'Device', 'Platform', 'Browser', 'Location', 'Screen Size'],
+      ['Customer Name', 'Phone', 'PDF', 'Session', 'Opened At', 'Last Seen', 'Time Spent', 'Device', 'Platform', 'Browser', 'Location', 'Screen Size', 'Top Pages'],
       ...selectedInsight.sessions.map((session) => [
         selectedInsight.link.customer_name,
         selectedInsight.link.customer_phone,
@@ -302,6 +312,7 @@ export default function DashboardPage() {
         session.browser || '--',
         session.location_label || '--',
         session.screen_width && session.screen_height ? `${session.screen_width}x${session.screen_height}` : '--',
+        formatPageBreakdown(session.page_breakdown),
       ]),
     ];
     downloadCsv(`travloger-${selectedInsight.link.customer_name || 'customer'}-sessions.csv`, rows);
@@ -772,6 +783,11 @@ export default function DashboardPage() {
                                   <div className="text-xs text-slate-400">
                                     All previous opens, with exact start time and time spent in each session.
                                   </div>
+                                  {insight?.link?.page_breakdown?.length > 0 && (
+                                    <div className="mt-2 text-xs text-slate-500">
+                                      Most viewed pages: <span className="font-semibold" style={{ color: 'var(--teal)' }}>{formatPageBreakdown(insight.link.page_breakdown)}</span>
+                                    </div>
+                                  )}
                                 </div>
                                 {insight && insight.sessions?.length > 0 && (
                                   <Button variant="outline" onClick={exportInsightSessionsCsv} className="rounded-lg border-slate-200 text-slate-600">
@@ -793,6 +809,7 @@ export default function DashboardPage() {
                                         <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Time Spent</TableHead>
                                         <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Device</TableHead>
                                         <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Location</TableHead>
+                                        <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Top Pages</TableHead>
                                       </TableRow>
                                     </TableHeader>
                                     <TableBody>
@@ -822,6 +839,7 @@ export default function DashboardPage() {
                                                 <span className="text-slate-300"> </span>
                                               )}
                                             </TableCell>
+                                            <TableCell className="text-xs text-slate-500">{formatPageBreakdown(session.page_breakdown)}</TableCell>
                                           </TableRow>
                                         );
                                       })}
