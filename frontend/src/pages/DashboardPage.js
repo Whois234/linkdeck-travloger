@@ -184,7 +184,6 @@ export default function DashboardPage() {
         Object.entries(upload_fields).forEach(([key, value]) => {
           formData.append(key, value);
         });
-        formData.append('Content-Type', content_type || 'application/pdf');
         formData.append('file', file);
         await axios.post(upload_url, formData);
       } else {
