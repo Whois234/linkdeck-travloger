@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError
 import os
 import logging
@@ -57,11 +58,17 @@ def s3_ready() -> bool:
 
 
 def get_s3_client():
+    region = os.environ.get("AWS_REGION")
     return boto3.client(
         "s3",
-        region_name=os.environ.get("AWS_REGION"),
+        region_name=region,
+        endpoint_url=f"https://s3.{region}.amazonaws.com",
         aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
         aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
+        config=Config(
+            signature_version="s3v4",
+            s3={"addressing_style": "virtual"},
+        ),
     )
 
 
