@@ -57,23 +57,33 @@ def s3_ready() -> bool:
     ])
 
 
-def get_s3_client():
+def get_s3_client(addressing_style: str = "path", use_endpoint_override: bool = True):
     region = os.environ.get("AWS_REGION")
-    return boto3.client(
-        "s3",
-        region_name=region,
-        endpoint_url=f"https://s3.{region}.amazonaws.com",
-        aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
-        aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
-        config=Config(
+    client_kwargs = {
+        "service_name": "s3",
+        "region_name": region,
+        "aws_access_key_id": os.environ.get("AWS_ACCESS_KEY_ID"),
+        "aws_secret_access_key": os.environ.get("AWS_SECRET_ACCESS_KEY"),
+        "config": Config(
             signature_version="s3v4",
-            s3={"addressing_style": "path"},
+            s3={"addressing_style": addressing_style},
         ),
+    }
+    if use_endpoint_override:
+        client_kwargs["endpoint_url"] = f"https://s3.{region}.amazonaws.com"
+    return boto3.client(
+        **client_kwargs,
     )
 
 
 def get_s3_bucket_name() -> str:
     return os.environ["S3_PDF_BUCKET"]
+
+
+def get_s3_form_upload_url() -> str:
+    region = os.environ["AWS_REGION"]
+    bucket = get_s3_bucket_name()
+    return f"https://{bucket}.s3.{region}.amazonaws.com"
 
 
 def get_s3_key_prefix() -> str:
@@ -820,7 +830,7 @@ async def initiate_pdf_upload(input: PdfUploadInitiateInput, request: Request):
     await db.pdfs.insert_one(pdf_doc)
 
     try:
-        presigned_post = get_s3_client().generate_presigned_post(
+        presigned_post = get_s3_client(addressing_style="virtual", use_endpoint_override=False).generate_presigned_post(
             Bucket=get_s3_bucket_name(),
             Key=object_key,
             Conditions=[
@@ -835,7 +845,7 @@ async def initiate_pdf_upload(input: PdfUploadInitiateInput, request: Request):
 
     return {
         "id": file_id,
-        "upload_url": presigned_post["url"],
+        "upload_url": get_s3_form_upload_url(),
         "upload_fields": presigned_post["fields"],
         "upload_method": "post",
         "object_key": object_key,
