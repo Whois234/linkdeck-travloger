@@ -825,7 +825,6 @@ async def initiate_pdf_upload(input: PdfUploadInitiateInput, request: Request):
             Params={
                 "Bucket": get_s3_bucket_name(),
                 "Key": object_key,
-                "ContentType": pdf_doc["content_type"],
             },
             ExpiresIn=PRESIGNED_UPLOAD_TTL_SECONDS,
         )
