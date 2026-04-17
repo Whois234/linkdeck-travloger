@@ -185,7 +185,14 @@ export default function DashboardPage() {
           formData.append(key, value);
         });
         formData.append('file', file);
-        await axios.post(upload_url, formData);
+        const uploadResponse = await fetch(upload_url, {
+          method: 'POST',
+          body: formData,
+        });
+        if (!uploadResponse.ok) {
+          const responseText = await uploadResponse.text();
+          throw new Error(responseText || `S3 upload failed with status ${uploadResponse.status}`);
+        }
       } else {
         await axios.put(upload_url, file, {
           headers: {
@@ -205,7 +212,10 @@ export default function DashboardPage() {
       await fetchData();
 
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Upload failed');
+      const detail = err.response?.data?.detail
+        || err.message
+        || 'Upload failed';
+      toast.error(detail.slice(0, 180));
     } finally {
       setUploading(false);
       e.target.value = '';
