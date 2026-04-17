@@ -117,7 +117,7 @@ def validate_pdf_upload(file_name: str, file_size: int, content_type: Optional[s
     if file_size > MAX_PDF_SIZE_BYTES:
         raise HTTPException(status_code=400, detail="File too large. Max 100MB.")
     normalized_content_type = (content_type or "").lower()
-    if normalized_content_type and normalized_content_type not in {"application/pdf", "application/x-pdf"}:
+    if normalized_content_type and normalized_content_type not in {"application/pdf", "application/x-pdf", "application/octet-stream", "binary/octet-stream"}:
         raise HTTPException(status_code=400, detail="Invalid file type. Upload a PDF.")
 
 
