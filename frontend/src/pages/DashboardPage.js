@@ -177,13 +177,23 @@ export default function DashboardPage() {
       }, {
         withCredentials: true,
       });
-      const { id, upload_url, content_type } = initiateRes.data;
+      const { id, upload_url, upload_fields, upload_method, content_type } = initiateRes.data;
 
-      await axios.put(upload_url, file, {
-        headers: {
-          'Content-Type': content_type || 'application/pdf',
-        },
-      });
+      if ((upload_method || '').toLowerCase() === 'post' && upload_fields) {
+        const formData = new FormData();
+        Object.entries(upload_fields).forEach(([key, value]) => {
+          formData.append(key, value);
+        });
+        formData.append('Content-Type', content_type || 'application/pdf');
+        formData.append('file', file);
+        await axios.post(upload_url, formData);
+      } else {
+        await axios.put(upload_url, file, {
+          headers: {
+            'Content-Type': content_type || 'application/pdf',
+          },
+        });
+      }
 
       await axios.post(`${API}/pdfs/upload/complete`, {
         pdf_id: id,

@@ -820,12 +820,12 @@ async def initiate_pdf_upload(input: PdfUploadInitiateInput, request: Request):
     await db.pdfs.insert_one(pdf_doc)
 
     try:
-        upload_url = get_s3_client().generate_presigned_url(
-            "put_object",
-            Params={
-                "Bucket": get_s3_bucket_name(),
-                "Key": object_key,
-            },
+        presigned_post = get_s3_client().generate_presigned_post(
+            Bucket=get_s3_bucket_name(),
+            Key=object_key,
+            Conditions=[
+                ["content-length-range", 1, MAX_PDF_SIZE_BYTES],
+            ],
             ExpiresIn=PRESIGNED_UPLOAD_TTL_SECONDS,
         )
     except Exception as exc:
@@ -835,7 +835,9 @@ async def initiate_pdf_upload(input: PdfUploadInitiateInput, request: Request):
 
     return {
         "id": file_id,
-        "upload_url": upload_url,
+        "upload_url": presigned_post["url"],
+        "upload_fields": presigned_post["fields"],
+        "upload_method": "post",
         "object_key": object_key,
         "content_type": pdf_doc["content_type"],
         "expires_in": PRESIGNED_UPLOAD_TTL_SECONDS,
