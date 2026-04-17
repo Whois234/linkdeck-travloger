@@ -5,11 +5,13 @@ import ipaddress
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, UploadFile, File, Header, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Header, Query
 from fastapi.responses import RedirectResponse, FileResponse
 from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+import boto3
+from botocore.exceptions import ClientError
 import os
 import logging
 import uuid
@@ -21,15 +23,8 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime, timezone
 from fastapi import HTTPException, Request
-import cloudinary
-import cloudinary.uploader
 import os
-
-cloudinary.config(
-    cloud_name=os.environ.get("CLOUDINARY_CLOUD_NAME"),
-    api_key=os.environ.get("CLOUDINARY_API_KEY"),
-    api_secret=os.environ.get("CLOUDINARY_API_SECRET"),
-)
+from urllib.parse import quote
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -47,17 +42,83 @@ EXPIRED_ITINERARY_MESSAGE = (
     "(wa.me/916281392007) for the latest itinerary."
 )
 IP_API_FIELDS = "status,message,query,country,countryCode,regionName,city"
+MAX_PDF_SIZE_BYTES = 100 * 1024 * 1024
+PRESIGNED_UPLOAD_TTL_SECONDS = 15 * 60
+PRESIGNED_DOWNLOAD_TTL_SECONDS = 60 * 60
 
 
-def cloudinary_ready() -> bool:
+def s3_ready() -> bool:
     return all([
-        os.environ.get("CLOUDINARY_CLOUD_NAME"),
-        os.environ.get("CLOUDINARY_API_KEY"),
-        os.environ.get("CLOUDINARY_API_SECRET"),
+        os.environ.get("AWS_ACCESS_KEY_ID"),
+        os.environ.get("AWS_SECRET_ACCESS_KEY"),
+        os.environ.get("AWS_REGION"),
+        os.environ.get("S3_PDF_BUCKET"),
     ])
 
 
+def get_s3_client():
+    return boto3.client(
+        "s3",
+        region_name=os.environ.get("AWS_REGION"),
+        aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
+    )
+
+
+def get_s3_bucket_name() -> str:
+    return os.environ["S3_PDF_BUCKET"]
+
+
+def get_s3_key_prefix() -> str:
+    return os.environ.get("S3_PDF_KEY_PREFIX", "pdfs").strip("/") or "pdfs"
+
+
+def get_cloudfront_base_url() -> Optional[str]:
+    domain = (os.environ.get("AWS_CLOUDFRONT_DOMAIN") or "").strip().rstrip("/")
+    if not domain:
+        return None
+    if not domain.startswith("http://") and not domain.startswith("https://"):
+        domain = f"https://{domain}"
+    return domain
+
+
+def sanitize_filename(file_name: str) -> str:
+    name = Path(file_name or "document.pdf").name
+    safe = "".join(ch if ch.isalnum() or ch in {"-", "_", "."} else "_" for ch in name)
+    return safe or "document.pdf"
+
+
+def build_pdf_object_key(user_id: str, pdf_id: str, file_name: str) -> str:
+    return f"{get_s3_key_prefix()}/{user_id}/{pdf_id}/{sanitize_filename(file_name)}"
+
+
+def validate_pdf_upload(file_name: str, file_size: int, content_type: Optional[str] = None) -> None:
+    if not file_name or not file_name.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are allowed")
+    if file_size <= 0:
+        raise HTTPException(status_code=400, detail="PDF file is empty")
+    if file_size > MAX_PDF_SIZE_BYTES:
+        raise HTTPException(status_code=400, detail="File too large. Max 100MB.")
+    normalized_content_type = (content_type or "").lower()
+    if normalized_content_type and normalized_content_type not in {"application/pdf", "application/x-pdf"}:
+        raise HTTPException(status_code=400, detail="Invalid file type. Upload a PDF.")
+
+
 def resolve_pdf_url(pdf: dict, request: Optional[Request] = None) -> Optional[str]:
+    if pdf.get("storage_provider") == "s3" and pdf.get("object_key") and s3_ready():
+        object_key = pdf["object_key"]
+        cloudfront_base_url = get_cloudfront_base_url()
+        if cloudfront_base_url:
+            return f"{cloudfront_base_url}/{quote(object_key)}"
+        try:
+            return get_s3_client().generate_presigned_url(
+                "get_object",
+                Params={"Bucket": get_s3_bucket_name(), "Key": object_key},
+                ExpiresIn=PRESIGNED_DOWNLOAD_TTL_SECONDS,
+            )
+        except Exception as exc:
+            logger.error("Failed to generate S3 download URL for %s: %s", object_key, exc)
+
     file_url = pdf.get("file_url")
     if file_url:
         return file_url
@@ -389,6 +450,14 @@ class LinkCreateInput(BaseModel):
     customer_name: str
     customer_phone: str
 
+class PdfUploadInitiateInput(BaseModel):
+    file_name: str
+    file_size: int
+    content_type: str = "application/pdf"
+
+class PdfUploadCompleteInput(BaseModel):
+    pdf_id: str
+
 class AdminCreateUserInput(BaseModel):
     email: str
     password: str
@@ -564,7 +633,7 @@ async def admin_reset_password(user_id: str, input: AdminResetPasswordInput, req
 async def admin_stats(request: Request):
     await get_current_admin(request)
     total_users = await db.users.count_documents({})
-    total_pdfs = await db.pdfs.count_documents({"archived": {"$ne": True}})
+    total_pdfs = await db.pdfs.count_documents({"archived": {"$ne": True}, "upload_status": {"$ne": "pending"}})
     total_links = await db.links.count_documents({})
     opened_links = await db.links.count_documents({"opened": True})
     return {
@@ -711,62 +780,109 @@ UPLOAD_DIR = ROOT_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 
-@api_router.post("/pdfs/upload")
-async def upload_pdf(request: Request, file: UploadFile = File(...)):
+@api_router.post("/pdfs/upload/initiate")
+async def initiate_pdf_upload(input: PdfUploadInitiateInput, request: Request):
     user = await get_current_user(request)
+    if not s3_ready():
+        raise HTTPException(status_code=503, detail="S3 storage is not configured")
 
-    if not file.filename or not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are allowed")
-
-    content = await file.read()
-    if len(content) > 50 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="File too large. Max 50MB.")
+    validate_pdf_upload(input.file_name, input.file_size, input.content_type)
 
     file_id = str(uuid.uuid4())
-    safe_name = f"{file_id}_{Path(file.filename).name.replace(' ', '_')}"
-    file_path = UPLOAD_DIR / safe_name
-
-    file_url = None
-
-    if cloudinary_ready():
-        file.file.seek(0)
-        result = cloudinary.uploader.upload(
-            file.file,
-            resource_type="raw",
-            folder="linkdeck_pdfs",
-            public_id=file_id,
-            use_filename=False,
-            overwrite=True,
-        )
-        file_url = result["secure_url"]
-    else:
-        with open(file_path, "wb") as f:
-            f.write(content)
-        base_url = str(request.base_url).rstrip("/")
-        file_url = f"{base_url}/api/uploads/{safe_name}"
+    object_key = build_pdf_object_key(user["_id"], file_id, input.file_name)
+    now = datetime.now(timezone.utc).isoformat()
 
     pdf_doc = {
         "id": file_id,
         "user_id": user["_id"],
-        "file_name": file.filename,
-        "file_url": file_url,
-        "storage_path": str(file_path),
-        "file_size": len(content),
+        "file_name": sanitize_filename(input.file_name),
+        "file_size": int(input.file_size),
+        "content_type": input.content_type or "application/pdf",
+        "storage_provider": "s3",
+        "bucket": get_s3_bucket_name(),
+        "object_key": object_key,
+        "file_url": None,
+        "storage_path": None,
+        "upload_status": "pending",
         "archived": False,
         "archived_at": None,
-        "created_at": datetime.now(timezone.utc).isoformat()
+        "created_at": now,
+        "updated_at": now,
     }
 
     await db.pdfs.insert_one(pdf_doc)
 
+    try:
+        upload_url = get_s3_client().generate_presigned_url(
+            "put_object",
+            Params={
+                "Bucket": get_s3_bucket_name(),
+                "Key": object_key,
+                "ContentType": pdf_doc["content_type"],
+            },
+            ExpiresIn=PRESIGNED_UPLOAD_TTL_SECONDS,
+        )
+    except Exception as exc:
+        await db.pdfs.delete_one({"id": file_id, "user_id": user["_id"]})
+        logger.error("Failed to create S3 upload URL for %s: %s", object_key, exc)
+        raise HTTPException(status_code=500, detail="Could not start PDF upload")
+
     return {
         "id": file_id,
-        "file_name": file.filename,
-        "file_url": file_url,
-        "file_size": len(content),
-        "link_count": 0,
-        "created_at": pdf_doc["created_at"]
+        "upload_url": upload_url,
+        "object_key": object_key,
+        "content_type": pdf_doc["content_type"],
+        "expires_in": PRESIGNED_UPLOAD_TTL_SECONDS,
     }
+
+
+@api_router.post("/pdfs/upload/complete")
+async def complete_pdf_upload(input: PdfUploadCompleteInput, request: Request):
+    user = await get_current_user(request)
+    pdf = await db.pdfs.find_one({"id": input.pdf_id, "user_id": user["_id"]})
+    if not pdf:
+        raise HTTPException(status_code=404, detail="Pending PDF upload not found")
+    if pdf.get("storage_provider") != "s3":
+        raise HTTPException(status_code=400, detail="Unsupported PDF storage provider")
+
+    try:
+        metadata = get_s3_client().head_object(Bucket=pdf["bucket"], Key=pdf["object_key"])
+    except ClientError as exc:
+        logger.error("Failed to confirm S3 upload for %s: %s", pdf.get("object_key"), exc)
+        raise HTTPException(status_code=400, detail="PDF upload not found in S3. Please upload again.")
+
+    content_length = int(metadata.get("ContentLength") or 0)
+    content_type = metadata.get("ContentType") or pdf.get("content_type") or "application/pdf"
+    validate_pdf_upload(pdf.get("file_name"), content_length, content_type)
+
+    delivery_url = resolve_pdf_url({**pdf, "upload_status": "ready"})
+    updated_at = datetime.now(timezone.utc).isoformat()
+    await db.pdfs.update_one(
+        {"id": input.pdf_id, "user_id": user["_id"]},
+        {"$set": {
+            "file_size": content_length,
+            "content_type": content_type,
+            "etag": str(metadata.get("ETag") or "").strip('"'),
+            "upload_status": "ready",
+            "file_url": delivery_url if delivery_url and get_cloudfront_base_url() else None,
+            "updated_at": updated_at,
+            "uploaded_at": updated_at,
+        }}
+    )
+
+    return {
+        "id": pdf["id"],
+        "file_name": pdf["file_name"],
+        "file_size": content_length,
+        "link_count": 0,
+        "created_at": pdf["created_at"],
+        "file_url": delivery_url,
+    }
+
+
+@api_router.post("/pdfs/upload")
+async def upload_pdf_legacy():
+    raise HTTPException(status_code=410, detail="Use the presigned upload flow: /api/pdfs/upload/initiate and /api/pdfs/upload/complete")
 
 
 @api_router.get("/uploads/{filename}")
@@ -780,10 +896,14 @@ async def get_uploaded_pdf(filename: str):
         headers=inline_pdf_headers(filename),
     )
 
+
 @api_router.get("/pdfs")
 async def list_pdfs(request: Request):
     user = await get_current_user(request)
-    pdfs = await db.pdfs.find({"user_id": user["_id"], "archived": {"$ne": True}}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    pdfs = await db.pdfs.find(
+        {"user_id": user["_id"], "archived": {"$ne": True}, "upload_status": {"$ne": "pending"}},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(1000)
     # Add link count for each PDF
     for pdf in pdfs:
         link_count = await db.links.count_documents({"pdf_id": pdf["id"]})
@@ -886,7 +1006,7 @@ async def delete_pdf(pdf_id: str, request: Request):
 @api_router.post("/links")
 async def create_link(input: LinkCreateInput, request: Request):
     user = await get_current_user(request)
-    pdf = await db.pdfs.find_one({"id": input.pdf_id, "user_id": user["_id"]})
+    pdf = await db.pdfs.find_one({"id": input.pdf_id, "user_id": user["_id"], "upload_status": {"$ne": "pending"}})
     if not pdf:
         raise HTTPException(status_code=404, detail="PDF not found")
     if pdf.get("archived"):
@@ -1059,9 +1179,13 @@ async def get_pdf_info(unique_id: str, request: Request):
     if not pdf:
         raise HTTPException(status_code=410, detail=EXPIRED_ITINERARY_MESSAGE)
 
+    pdf_url = resolve_pdf_url(pdf, request)
+    if not pdf_url:
+        raise HTTPException(status_code=404, detail="PDF file is missing. Please re-upload the PDF.")
+
     return {
         "pdf_name": link.get("pdf_name_snapshot") or pdf["file_name"],
-        "file_url": f"{str(request.base_url).rstrip('/')}/api/view/{unique_id}/pdf",
+        "file_url": pdf_url,
     }
 
 
@@ -1088,18 +1212,7 @@ async def get_pdf_file(unique_id: str, request: Request):
     if not pdf_url:
         raise HTTPException(status_code=404, detail="PDF file is missing. Please re-upload the PDF.")
 
-    try:
-        upstream = requests.get(pdf_url, timeout=30)
-        upstream.raise_for_status()
-    except Exception as e:
-        logger.error(f"Error fetching PDF for inline view: {e}")
-        raise HTTPException(status_code=404, detail="PDF file is missing. Please re-upload the PDF.")
-
-    return Response(
-        content=upstream.content,
-        media_type="application/pdf",
-        headers=inline_pdf_headers(pdf.get("file_name", "document.pdf")),
-    )
+    return RedirectResponse(url=pdf_url)
 
 @api_router.post("/view/{unique_id}/track")
 async def track_visit(unique_id: str):
@@ -1197,7 +1310,7 @@ async def heartbeat_view_session(unique_id: str, input: ViewSessionHeartbeatInpu
 @api_router.get("/dashboard/stats")
 async def dashboard_stats(request: Request):
     user = await get_current_user(request)
-    total_pdfs = await db.pdfs.count_documents({"user_id": user["_id"], "archived": {"$ne": True}})
+    total_pdfs = await db.pdfs.count_documents({"user_id": user["_id"], "archived": {"$ne": True}, "upload_status": {"$ne": "pending"}})
     total_links = await db.links.count_documents({"user_id": user["_id"]})
     opened_links = await db.links.count_documents({"user_id": user["_id"], "opened": True})
     return {
@@ -1266,7 +1379,7 @@ with open("memory/test_credentials.md", "w") as f:
         f.write(f"# Test Credentials\n\n")
         f.write(f"## Admin\n- Email: {admin_email}\n- Password: {admin_password}\n- Role: admin\n\n")
         f.write(f"## Auth Endpoints\n- POST /api/auth/register\n- POST /api/auth/login\n- POST /api/auth/logout\n- GET /api/auth/me\n- POST /api/auth/refresh\n\n")
-        f.write(f"## PDF Endpoints\n- POST /api/pdfs/upload\n- GET /api/pdfs\n- DELETE /api/pdfs/{{pdf_id}}\n\n")
+        f.write(f"## PDF Endpoints\n- POST /api/pdfs/upload/initiate\n- POST /api/pdfs/upload/complete\n- GET /api/pdfs\n- DELETE /api/pdfs/{{pdf_id}}\n\n")
         f.write(f"## Link Endpoints\n- POST /api/links\n- GET /api/links\n- DELETE /api/links/{{link_id}}\n\n")
         f.write(f"## View Endpoints\n- GET /api/view/{{unique_id}}\n- GET /api/pdf-serve/{{path}}\n\n")
         f.write(f"## Dashboard\n- GET /api/dashboard/stats\n")

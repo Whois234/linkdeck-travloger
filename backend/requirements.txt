@@ -6,6 +6,6 @@ python-dotenv
 bcrypt
 python-jose
 passlib
-cloudinary
+boto3
 requests
 python-multipart

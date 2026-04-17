@@ -40,7 +40,12 @@
    - `FRONTEND_URL` → `https://itinerary.travloger.in`
    - `ADMIN_EMAIL` → `admin@travloger.in`
    - `ADMIN_PASSWORD` → your chosen password
-   - `EMERGENT_LLM_KEY` → (leave blank)
+   - `AWS_ACCESS_KEY_ID` → IAM access key for the PDF upload user
+   - `AWS_SECRET_ACCESS_KEY` → IAM secret key for the PDF upload user
+   - `AWS_REGION` → your AWS region (e.g. `ap-south-1`)
+   - `S3_PDF_BUCKET` → your S3 bucket name
+   - `S3_PDF_KEY_PREFIX` → `pdfs`
+   - `AWS_CLOUDFRONT_DOMAIN` → optional CloudFront domain like `d123abc.cloudfront.net`
 8. Deploy → Wait ~3 mins → Copy the backend URL (e.g. https://linkdeck-backend.onrender.com)
 
 ### Deploy Frontend:
@@ -79,9 +84,15 @@
 ---
 
 ## PDF Storage Note
-The app currently uses Emergent's object storage for PDFs.
-Once you leave Emergent, PDF serving will break.
-**Fix:** Replace with Cloudinary (free 25GB) — ask for the code change when ready.
+The app now uploads PDFs directly from the browser to S3 using backend-generated presigned URLs.
+Delivery works with either:
+- `AWS_CLOUDFRONT_DOMAIN` for CloudFront-backed viewing
+- signed S3 download URLs when CloudFront is not configured
+
+Recommended S3 bucket CORS:
+- Allowed origins: `https://itinerary.travloger.in`, your Vercel preview domains
+- Allowed methods: `PUT`, `GET`, `HEAD`
+- Allowed headers: `Content-Type`
 
 ---
 

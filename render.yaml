@@ -18,8 +18,18 @@ services:
         value: admin@travloger.in
       - key: ADMIN_PASSWORD
         sync: false          # You set this in Render dashboard
-      - key: EMERGENT_LLM_KEY
-        value: ""            # Leave blank - we replace storage separately
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_REGION
+        sync: false
+      - key: S3_PDF_BUCKET
+        sync: false
+      - key: S3_PDF_KEY_PREFIX
+        value: pdfs
+      - key: AWS_CLOUDFRONT_DOMAIN
+        sync: false
 
   # Frontend — React (Static Site)
   - type: web

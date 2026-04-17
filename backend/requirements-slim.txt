@@ -9,3 +9,4 @@ python-multipart==0.0.24
 pydantic==2.12.5
 starlette==0.37.2
 requests==2.33.1
+boto3==1.39.0

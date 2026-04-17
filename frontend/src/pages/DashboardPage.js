@@ -157,15 +157,37 @@ export default function DashboardPage() {
   const handleUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.name.toLowerCase().endsWith('.pdf')) {
+    const isPdf = file.name.toLowerCase().endsWith('.pdf') && (!file.type || file.type === 'application/pdf');
+    if (!isPdf) {
       toast.error('Only PDF files are allowed');
+      e.target.value = '';
+      return;
+    }
+    if (file.size > 100 * 1024 * 1024) {
+      toast.error('File too large. Max 100MB.');
+      e.target.value = '';
       return;
     }
     setUploading(true);
-    const formData = new FormData();
-    formData.append('file', file);
     try {
-      await axios.post(`${API}/pdfs/upload`, formData, {
+      const initiateRes = await axios.post(`${API}/pdfs/upload/initiate`, {
+        file_name: file.name,
+        file_size: file.size,
+        content_type: file.type || 'application/pdf',
+      }, {
+        withCredentials: true,
+      });
+      const { id, upload_url, content_type } = initiateRes.data;
+
+      await axios.put(upload_url, file, {
+        headers: {
+          'Content-Type': content_type || 'application/pdf',
+        },
+      });
+
+      await axios.post(`${API}/pdfs/upload/complete`, {
+        pdf_id: id,
+      }, {
         withCredentials: true,
       });
 
@@ -177,6 +199,7 @@ export default function DashboardPage() {
       toast.error(err.response?.data?.detail || 'Upload failed');
     } finally {
       setUploading(false);
+      e.target.value = '';
     }
   };
 
@@ -430,7 +453,7 @@ export default function DashboardPage() {
                       <span className="font-semibold text-sm" style={{ color: 'var(--teal)' }}>
                         {uploading ? 'Uploading...' : 'Click to select PDF'}
                       </span>
-                      <span className="text-xs mt-1 text-slate-400">Max 50MB</span>
+                      <span className="text-xs mt-1 text-slate-400">Max 100MB</span>
                       <input type="file" accept=".pdf" onChange={handleUpload} className="hidden" disabled={uploading} data-testid="upload-file-input" />
                     </label>
                   </div>

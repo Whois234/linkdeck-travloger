@@ -12,10 +12,14 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 function getPublicPdfUrl(uniqueId, fallbackUrl) {
-  if (typeof window === 'undefined' || window.location.hostname === 'localhost') {
+  if (!fallbackUrl) return '';
+  if (/^https?:\/\//i.test(fallbackUrl)) {
     return fallbackUrl;
   }
-  return `${window.location.origin}/api/view/${uniqueId}/pdf`;
+  if (typeof window === 'undefined') {
+    return fallbackUrl;
+  }
+  return new URL(fallbackUrl, window.location.origin).toString();
 }
 
 function isMobileDevice() {
