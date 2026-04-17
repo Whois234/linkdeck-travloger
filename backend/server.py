@@ -67,7 +67,7 @@ def get_s3_client():
         aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
         config=Config(
             signature_version="s3v4",
-            s3={"addressing_style": "virtual"},
+            s3={"addressing_style": "path"},
         ),
     )
 
