@@ -284,7 +284,8 @@ async def build_link_summary(link: dict, pdf_map: dict) -> dict:
     return {
         **link,
         "pdf_name": get_link_pdf_name(link, pdf_map),
-        "pdf_deleted": bool(link.get("pdf_deleted")) or link.get("pdf_id") not in pdf_map,
+        "pdf_deleted": bool(link.get("pdf_deleted")) or (link.get("pdf_id") not in pdf_map and not link.get("pdf_archived")),
+        "pdf_archived": bool(link.get("pdf_archived")),
         "session_count": len(sessions),
         "total_time_seconds": total_time,
         "avg_time_seconds": round(total_time / len(sessions)) if sessions else 0,
@@ -563,7 +564,7 @@ async def admin_reset_password(user_id: str, input: AdminResetPasswordInput, req
 async def admin_stats(request: Request):
     await get_current_admin(request)
     total_users = await db.users.count_documents({})
-    total_pdfs = await db.pdfs.count_documents({})
+    total_pdfs = await db.pdfs.count_documents({"archived": {"$ne": True}})
     total_links = await db.links.count_documents({})
     opened_links = await db.links.count_documents({"opened": True})
     return {
@@ -751,6 +752,8 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
         "file_url": file_url,
         "storage_path": str(file_path),
         "file_size": len(content),
+        "archived": False,
+        "archived_at": None,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
 
@@ -780,7 +783,7 @@ async def get_uploaded_pdf(filename: str):
 @api_router.get("/pdfs")
 async def list_pdfs(request: Request):
     user = await get_current_user(request)
-    pdfs = await db.pdfs.find({"user_id": user["_id"]}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    pdfs = await db.pdfs.find({"user_id": user["_id"], "archived": {"$ne": True}}, {"_id": 0}).sort("created_at", -1).to_list(1000)
     # Add link count for each PDF
     for pdf in pdfs:
         link_count = await db.links.count_documents({"pdf_id": pdf["id"]})
@@ -792,7 +795,7 @@ async def list_pdfs(request: Request):
 async def list_archived_pdfs(request: Request):
     user = await get_current_user(request)
     archived_links = await db.links.find(
-        {"user_id": user["_id"], "pdf_deleted": True}
+        {"user_id": user["_id"], "$or": [{"pdf_deleted": True}, {"pdf_archived": True}]}
     ).to_list(5000)
 
     archived_by_pdf = {}
@@ -801,8 +804,8 @@ async def list_archived_pdfs(request: Request):
         if pdf_key not in archived_by_pdf:
             archived_by_pdf[pdf_key] = {
                 "pdf_id": link.get("pdf_id"),
-                "pdf_name": link.get("pdf_name_snapshot") or "Deleted PDF",
-                "pdf_deleted_at": link.get("pdf_deleted_at"),
+                "pdf_name": link.get("pdf_name_snapshot") or "Archived PDF",
+                "pdf_deleted_at": link.get("pdf_archived_at") or link.get("pdf_deleted_at"),
                 "link_count": 0,
                 "opened_links": 0,
                 "total_opens": 0,
@@ -818,12 +821,13 @@ async def list_archived_pdfs(request: Request):
         latest_opened_at = link.get("last_opened_at")
         if normalize_datetime(latest_opened_at) > normalize_datetime(item.get("latest_opened_at")):
             item["latest_opened_at"] = latest_opened_at
-        if not item.get("pdf_deleted_at") and link.get("pdf_deleted_at"):
-            item["pdf_deleted_at"] = link.get("pdf_deleted_at")
+        archived_at = link.get("pdf_archived_at") or link.get("pdf_deleted_at")
+        if not item.get("pdf_deleted_at") and archived_at:
+            item["pdf_deleted_at"] = archived_at
 
     archived_pdf_ids = [item.get("pdf_id") for item in archived_by_pdf.values() if item.get("pdf_id")]
     sessions = await db.view_sessions.find(
-        {"user_id": user["_id"], "pdf_deleted": True, "pdf_id": {"$in": archived_pdf_ids}}
+        {"user_id": user["_id"], "$or": [{"pdf_deleted": True}, {"pdf_archived": True}], "pdf_id": {"$in": archived_pdf_ids}}
     ).to_list(10000) if archived_pdf_ids else []
 
     for session in sessions:
@@ -831,7 +835,7 @@ async def list_archived_pdfs(request: Request):
         if pdf_key not in archived_by_pdf:
             archived_by_pdf[pdf_key] = {
                 "pdf_id": session.get("pdf_id"),
-                "pdf_name": session.get("pdf_name_snapshot") or "Deleted PDF",
+                "pdf_name": session.get("pdf_name_snapshot") or "Archived PDF",
                 "pdf_deleted_at": None,
                 "link_count": 0,
                 "opened_links": 0,
@@ -855,23 +859,28 @@ async def delete_pdf(pdf_id: str, request: Request):
     pdf = await db.pdfs.find_one({"id": pdf_id, "user_id": user["_id"]})
     if not pdf:
         raise HTTPException(status_code=404, detail="PDF not found")
-    await db.pdfs.delete_one({"id": pdf_id})
+    archived_at = datetime.now(timezone.utc).isoformat()
+    await db.pdfs.update_one(
+        {"id": pdf_id, "user_id": user["_id"]},
+        {"$set": {"archived": True, "archived_at": archived_at}}
+    )
     await db.links.update_many(
         {"pdf_id": pdf_id, "user_id": user["_id"]},
         {"$set": {
-            "pdf_deleted": True,
+            "pdf_archived": True,
             "pdf_name_snapshot": pdf.get("file_name", "Deleted PDF"),
-            "pdf_deleted_at": datetime.now(timezone.utc).isoformat(),
+            "pdf_archived_at": archived_at,
         }}
     )
     await db.view_sessions.update_many(
         {"pdf_id": pdf_id, "user_id": user["_id"]},
         {"$set": {
-            "pdf_deleted": True,
+            "pdf_archived": True,
             "pdf_name_snapshot": pdf.get("file_name", "Deleted PDF"),
+            "pdf_archived_at": archived_at,
         }}
     )
-    return {"message": "PDF deleted. Link analytics remain available, but the itinerary is now expired."}
+    return {"message": "PDF archived. Existing customer links still work, and analytics remain available."}
 
 # ---- LINK ENDPOINTS ----
 @api_router.post("/links")
@@ -880,6 +889,8 @@ async def create_link(input: LinkCreateInput, request: Request):
     pdf = await db.pdfs.find_one({"id": input.pdf_id, "user_id": user["_id"]})
     if not pdf:
         raise HTTPException(status_code=404, detail="PDF not found")
+    if pdf.get("archived"):
+        raise HTTPException(status_code=400, detail="Archived PDFs cannot be used for new links")
     unique_id = str(uuid.uuid4())[:8]
     link_doc = {
         "_id": unique_id,
@@ -889,6 +900,7 @@ async def create_link(input: LinkCreateInput, request: Request):
         "customer_phone": input.customer_phone,
         "pdf_name_snapshot": pdf.get("file_name", "Unknown PDF"),
         "pdf_deleted": False,
+        "pdf_archived": bool(pdf.get("archived")),
         "opened": False,
         "open_count": 0,
         "last_opened_at": None,
@@ -989,7 +1001,8 @@ async def get_link_insights(link_id: str, request: Request):
             "customer_name": link.get("customer_name"),
             "customer_phone": link.get("customer_phone"),
             "pdf_name": get_link_pdf_name(link, pdf_map),
-            "pdf_deleted": bool(link.get("pdf_deleted")) or link.get("pdf_id") not in pdf_map,
+            "pdf_deleted": bool(link.get("pdf_deleted")) or (link.get("pdf_id") not in pdf_map and not link.get("pdf_archived")),
+            "pdf_archived": bool(link.get("pdf_archived")),
             "created_at": link.get("created_at"),
             "open_count": int(link.get("open_count") or 0),
             "last_opened_at": link.get("last_opened_at"),
@@ -1020,7 +1033,7 @@ async def view_pdf(link_id: str):
         raise HTTPException(status_code=404, detail="Link not found")
 
     pdf = await db.pdfs.find_one({"id": link["pdf_id"]}, {"_id": 0})
-    if not pdf or link.get("pdf_deleted"):
+    if not pdf:
         raise HTTPException(status_code=410, detail=EXPIRED_ITINERARY_MESSAGE)
 
     pdf_url = resolve_pdf_url(pdf)
@@ -1043,7 +1056,7 @@ async def get_pdf_info(unique_id: str, request: Request):
     if not link:
         raise HTTPException(status_code=404, detail="Link not found")
     pdf = await db.pdfs.find_one({"id": link["pdf_id"]}, {"_id": 0})
-    if not pdf or link.get("pdf_deleted"):
+    if not pdf:
         raise HTTPException(status_code=410, detail=EXPIRED_ITINERARY_MESSAGE)
 
     return {
@@ -1060,7 +1073,7 @@ async def get_pdf_file(unique_id: str, request: Request):
         raise HTTPException(status_code=404, detail="Link not found")
 
     pdf = await db.pdfs.find_one({"id": link["pdf_id"]}, {"_id": 0})
-    if not pdf or link.get("pdf_deleted"):
+    if not pdf:
         raise HTTPException(status_code=410, detail=EXPIRED_ITINERARY_MESSAGE)
 
     storage_path = pdf.get("storage_path")
@@ -1095,7 +1108,7 @@ async def track_visit(unique_id: str):
     if not link:
         raise HTTPException(status_code=404, detail="Link not found")
     pdf = await db.pdfs.find_one({"id": link.get("pdf_id")}, {"_id": 0, "id": 1})
-    if link.get("pdf_deleted") or not pdf:
+    if not pdf:
         raise HTTPException(status_code=410, detail=EXPIRED_ITINERARY_MESSAGE)
     now = datetime.now(timezone.utc).isoformat()
     await db.links.update_one(
@@ -1111,7 +1124,7 @@ async def start_view_session(unique_id: str, input: ViewSessionStartInput, reque
     if not link:
         raise HTTPException(status_code=404, detail="Link not found")
     pdf = await db.pdfs.find_one({"id": link.get("pdf_id")}, {"_id": 0, "id": 1})
-    if link.get("pdf_deleted") or not pdf:
+    if not pdf:
         raise HTTPException(status_code=410, detail=EXPIRED_ITINERARY_MESSAGE)
 
     session_id = str(uuid.uuid4())
@@ -1131,6 +1144,7 @@ async def start_view_session(unique_id: str, input: ViewSessionStartInput, reque
         "user_id": link.get("user_id"),
         "pdf_name_snapshot": link.get("pdf_name_snapshot"),
         "pdf_deleted": bool(link.get("pdf_deleted")),
+        "pdf_archived": bool(link.get("pdf_archived")),
         "customer_name": link.get("customer_name"),
         "customer_phone": link.get("customer_phone"),
         "started_at": now,
@@ -1183,7 +1197,7 @@ async def heartbeat_view_session(unique_id: str, input: ViewSessionHeartbeatInpu
 @api_router.get("/dashboard/stats")
 async def dashboard_stats(request: Request):
     user = await get_current_user(request)
-    total_pdfs = await db.pdfs.count_documents({"user_id": user["_id"]})
+    total_pdfs = await db.pdfs.count_documents({"user_id": user["_id"], "archived": {"$ne": True}})
     total_links = await db.links.count_documents({"user_id": user["_id"]})
     opened_links = await db.links.count_documents({"user_id": user["_id"], "opened": True})
     return {

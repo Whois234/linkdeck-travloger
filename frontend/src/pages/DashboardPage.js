@@ -208,13 +208,13 @@ export default function DashboardPage() {
   };
 
   const handleDeletePdf = async (pdfId) => {
-    if (!window.confirm('Delete this PDF? Customer analytics and links will stay in the dashboard, but the itinerary link will expire for customers.')) return;
+    if (!window.confirm('Archive this PDF? It will be removed from active PDFs, but customers can still open the existing link and your analytics will stay available.')) return;
     try {
       await axios.delete(`${API}/pdfs/${pdfId}`, { withCredentials: true });
-      toast.success('PDF deleted');
+      toast.success('PDF archived');
       fetchData();
     } catch {
-      toast.error('Failed to delete PDF');
+      toast.error('Failed to archive PDF');
     }
   };
 
@@ -279,7 +279,7 @@ export default function DashboardPage() {
         link.customer_name,
         link.customer_phone,
         link.pdf_name,
-        link.pdf_deleted ? 'Expired' : 'Active',
+        link.pdf_archived ? 'Archived' : link.pdf_deleted ? 'Expired' : 'Active',
         link.opened ? 'Yes' : 'No',
         link.open_count || 0,
         link.session_count || 0,
@@ -482,7 +482,7 @@ export default function DashboardPage() {
                                 <Trash2 className="w-4 h-4" />
                               </Button>
                             </TooltipTrigger>
-                            <TooltipContent><p>Delete PDF</p></TooltipContent>
+                            <TooltipContent><p>Archive PDF</p></TooltipContent>
                           </Tooltip>
                         </TableCell>
                       </TableRow>
@@ -670,9 +670,14 @@ export default function DashboardPage() {
                           <TableCell>
                             <div className="max-w-[170px]">
                               <span className="text-xs text-slate-500 truncate max-w-[170px] inline-block">{link.pdf_name}</span>
-                              {link.pdf_deleted && (
+                              {link.pdf_archived && (
                                 <div className="text-[11px] font-semibold mt-1" style={{ color: '#b45309' }}>
-                                  Itinerary expired
+                                  Archived itinerary
+                                </div>
+                              )}
+                              {link.pdf_deleted && !link.pdf_archived && (
+                                <div className="text-[11px] font-semibold mt-1" style={{ color: '#b45309' }}>
+                                  Itinerary unavailable
                                 </div>
                               )}
                             </div>
@@ -881,13 +886,13 @@ export default function DashboardPage() {
           <section className="mt-8 animate-fade-in-up">
             <div className="flex items-center gap-2 mb-4">
               <Archive className="w-5 h-5" style={{ color: 'var(--gold)' }} />
-              <h2 className="text-xl font-bold" style={{ color: 'var(--teal)' }}>Expired / Archived PDFs</h2>
+              <h2 className="text-xl font-bold" style={{ color: 'var(--teal)' }}>Archived PDFs</h2>
             </div>
             {archivedPdfs.length === 0 ? (
               <div className="bg-white rounded-xl border p-8 text-center" style={{ borderColor: '#e5e7eb' }}>
                 <Archive className="w-10 h-10 mx-auto mb-3 text-slate-200" />
                 <p className="font-semibold text-slate-500">No archived PDFs yet</p>
-                <p className="text-xs mt-1 text-slate-400">Deleted itineraries will stay here with their customer analytics.</p>
+                <p className="text-xs mt-1 text-slate-400">Archived itineraries stay here with their customer analytics and old public links.</p>
               </div>
             ) : (
               <div className="bg-white rounded-xl border overflow-x-auto" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
@@ -895,7 +900,7 @@ export default function DashboardPage() {
                   <TableHeader>
                     <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
                       <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">PDF</TableHead>
-                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Deleted At</TableHead>
+                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Archived At</TableHead>
                       <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Links</TableHead>
                       <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Opens</TableHead>
                       <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Sessions</TableHead>
