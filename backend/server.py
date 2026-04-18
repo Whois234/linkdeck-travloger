@@ -1,31 +1,27 @@
 from dotenv import load_dotenv
 from pathlib import Path
 import ipaddress
+import logging
+import os
+import uuid
+from datetime import datetime, timezone, timedelta
+from typing import Optional
+from urllib.parse import quote
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Header, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse, FileResponse, StreamingResponse
-from fastapi.responses import JSONResponse
-from starlette.middleware.cors import CORSMiddleware
+from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
-import os
-import logging
-import uuid
 import bcrypt
 from jose import jwt
 import requests
-from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel, Field
-from typing import Optional
-from datetime import datetime, timezone
-from fastapi import HTTPException, Request
-import os
-from urllib.parse import quote
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -798,7 +794,7 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 
 
 @api_router.post("/pdfs/upload/initiate")
-async def initiate_pdf_upload(input: PdfUploadInitiateInput, request: Request):
+async def initiate_pdf_upload(input: PdfUploadInitiateInput):
     user = await get_current_user(request)
     if not s3_ready():
         raise HTTPException(status_code=503, detail="S3 storage is not configured")
@@ -855,7 +851,7 @@ async def initiate_pdf_upload(input: PdfUploadInitiateInput, request: Request):
 
 
 @api_router.post("/pdfs/upload/complete")
-async def complete_pdf_upload(input: PdfUploadCompleteInput, request: Request):
+async def complete_pdf_upload(input: PdfUploadCompleteInput):
     user = await get_current_user(request)
     pdf = await db.pdfs.find_one({"id": input.pdf_id, "user_id": user["_id"]})
     if not pdf:
@@ -1354,9 +1350,6 @@ async def dashboard_stats(request: Request):
         "unopened_links": total_links - opened_links
     }
 
-# CORS
-from fastapi.middleware.cors import CORSMiddleware
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -1415,7 +1408,7 @@ with open("memory/test_credentials.md", "w") as f:
         f.write(f"## Auth Endpoints\n- POST /api/auth/register\n- POST /api/auth/login\n- POST /api/auth/logout\n- GET /api/auth/me\n- POST /api/auth/refresh\n\n")
         f.write(f"## PDF Endpoints\n- POST /api/pdfs/upload/initiate\n- POST /api/pdfs/upload/complete\n- GET /api/pdfs\n- DELETE /api/pdfs/{{pdf_id}}\n\n")
         f.write(f"## Link Endpoints\n- POST /api/links\n- GET /api/links\n- DELETE /api/links/{{link_id}}\n\n")
-        f.write(f"## View Endpoints\n- GET /api/view/{{unique_id}}\n- GET /api/pdf-serve/{{path}}\n\n")
+        f.write(f"## View Endpoints\n- GET /api/view/{{unique_id}}\n- GET /api/view/{{unique_id}}/pdf\n\n")
         f.write(f"## Dashboard\n- GET /api/dashboard/stats\n")
 
 @app.on_event("shutdown")
