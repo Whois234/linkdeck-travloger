@@ -6,7 +6,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Header, Query
-from fastapi.responses import RedirectResponse, FileResponse
+from fastapi.responses import RedirectResponse, FileResponse, StreamingResponse
 from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -812,7 +812,7 @@ async def initiate_pdf_upload(input: PdfUploadInitiateInput, request: Request):
     pdf_doc = {
         "id": file_id,
         "user_id": user["_id"],
-        "file_name": sanitize_filename(input.file_name),
+        "file_name": Path(input.file_name or "document.pdf").name,
         "file_size": int(input.file_size),
         "content_type": input.content_type or "application/pdf",
         "storage_provider": "s3",
@@ -1203,7 +1203,7 @@ async def get_pdf_info(unique_id: str, request: Request):
 
     return {
         "pdf_name": link.get("pdf_name_snapshot") or pdf["file_name"],
-        "file_url": pdf_url,
+        "file_url": f"{str(request.base_url).rstrip('/')}/api/view/{unique_id}/pdf",
     }
 
 
@@ -1230,7 +1230,23 @@ async def get_pdf_file(unique_id: str, request: Request):
     if not pdf_url:
         raise HTTPException(status_code=404, detail="PDF file is missing. Please re-upload the PDF.")
 
-    return RedirectResponse(url=pdf_url)
+    try:
+        upstream = requests.get(pdf_url, stream=True, timeout=60)
+        upstream.raise_for_status()
+    except Exception as exc:
+        logger.error("Error streaming PDF for inline view: %s", exc)
+        raise HTTPException(status_code=404, detail="PDF file is missing. Please re-upload the PDF.")
+
+    response_headers = inline_pdf_headers(pdf.get("file_name", "document.pdf"))
+    content_length = upstream.headers.get("Content-Length")
+    if content_length:
+        response_headers["Content-Length"] = content_length
+
+    return StreamingResponse(
+        upstream.iter_content(chunk_size=1024 * 64),
+        media_type="application/pdf",
+        headers=response_headers,
+    )
 
 @api_router.post("/view/{unique_id}/track")
 async def track_visit(unique_id: str):
