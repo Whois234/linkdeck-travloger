@@ -13,10 +13,13 @@ const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 function getPublicPdfUrl(uniqueId, fallbackUrl) {
   if (!fallbackUrl) return '';
-  if (/^https?:\/\//i.test(fallbackUrl)) {
+  if (typeof window === 'undefined') {
     return fallbackUrl;
   }
-  if (typeof window === 'undefined') {
+  if (window.location.hostname !== 'localhost') {
+    return `${window.location.origin}/api/view/${uniqueId}/pdf`;
+  }
+  if (/^https?:\/\//i.test(fallbackUrl)) {
     return fallbackUrl;
   }
   return new URL(fallbackUrl, window.location.origin).toString();
