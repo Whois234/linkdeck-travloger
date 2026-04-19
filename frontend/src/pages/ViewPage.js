@@ -290,7 +290,7 @@ export default function ViewPage() {
       <div className="min-h-screen flex flex-col items-center justify-center bg-white" data-testid="view-loading">
         <Loader2 className="w-7 h-7 animate-spin" style={{ color: '#144a57' }} />
         <p
-          className="mt-3 text-[30px] leading-none tracking-normal text-slate-300"
+          className="mt-3 text-[16px] leading-none tracking-normal text-slate-300 md:text-[18px]"
           style={{ fontFamily: '"Comfortaa", sans-serif', fontWeight: 400 }}
         >
           Loading your itinerary...
