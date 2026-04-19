@@ -794,7 +794,7 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 
 
 @api_router.post("/pdfs/upload/initiate")
-async def initiate_pdf_upload(input: PdfUploadInitiateInput):
+async def initiate_pdf_upload(input: PdfUploadInitiateInput, request: Request):
     user = await get_current_user(request)
     if not s3_ready():
         raise HTTPException(status_code=503, detail="S3 storage is not configured")
@@ -851,7 +851,7 @@ async def initiate_pdf_upload(input: PdfUploadInitiateInput):
 
 
 @api_router.post("/pdfs/upload/complete")
-async def complete_pdf_upload(input: PdfUploadCompleteInput):
+async def complete_pdf_upload(input: PdfUploadCompleteInput, request: Request):
     user = await get_current_user(request)
     pdf = await db.pdfs.find_one({"id": input.pdf_id, "user_id": user["_id"]})
     if not pdf:
