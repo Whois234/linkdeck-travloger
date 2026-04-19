@@ -788,6 +788,47 @@ async def admin_recent_activity(request: Request, limit: int = 20):
         })
     return {"items": activity}
 
+
+@api_router.delete("/admin/recent-activity/{session_id}")
+async def delete_recent_activity_session(session_id: str, request: Request):
+    await get_current_admin(request)
+    session = await db.view_sessions.find_one({"_id": session_id})
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    await db.view_sessions.delete_one({"_id": session_id})
+    return {"message": "Session deleted"}
+
+
+@api_router.delete("/admin/pdfs/{pdf_id}")
+async def admin_delete_pdf(pdf_id: str, request: Request):
+    await get_current_admin(request)
+    pdf = await db.pdfs.find_one({"id": pdf_id})
+    if not pdf:
+        raise HTTPException(status_code=404, detail="PDF not found")
+
+    archived_at = datetime.now(timezone.utc).isoformat()
+    await db.pdfs.update_one(
+        {"id": pdf_id},
+        {"$set": {"archived": True, "archived_at": archived_at}}
+    )
+    await db.links.update_many(
+        {"pdf_id": pdf_id},
+        {"$set": {
+            "pdf_archived": True,
+            "pdf_name_snapshot": pdf.get("file_name", "Deleted PDF"),
+            "pdf_archived_at": archived_at,
+        }}
+    )
+    await db.view_sessions.update_many(
+        {"pdf_id": pdf_id},
+        {"$set": {
+            "pdf_archived": True,
+            "pdf_name_snapshot": pdf.get("file_name", "Deleted PDF"),
+            "pdf_archived_at": archived_at,
+        }}
+    )
+    return {"message": "PDF archived from admin. Existing customer links still work, and analytics remain available."}
+
 # ---- PDF ENDPOINTS ----
 UPLOAD_DIR = ROOT_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)

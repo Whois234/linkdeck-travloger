@@ -31,17 +31,6 @@ function isMobileDevice() {
     /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 }
 
-function TravlogerMark({ size = 28 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect width="40" height="40" rx="7" fill="#144a57"/>
-      <path d="M20 8 L32 14 L32 26 L20 32 L8 26 L8 14 Z" fill="none" stroke="#E8A020" strokeWidth="2"/>
-      <circle cx="20" cy="20" r="5" fill="#E8A020"/>
-      <path d="M20 8 L20 15 M20 25 L20 32 M8 14 L14 17 M26 23 L32 26 M8 26 L14 23 M26 17 L32 14" stroke="#E8A020" strokeWidth="1.5" strokeLinecap="round"/>
-    </svg>
-  );
-}
-
 function PdfPageSurface({ pageNumber, pageWidth, registerPageNode }) {
   const wrapperRef = useRef(null);
 
@@ -299,9 +288,13 @@ export default function ViewPage() {
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-white" data-testid="view-loading">
-        <TravlogerMark size={48} />
-        <Loader2 className="w-7 h-7 animate-spin mt-4" style={{ color: '#144a57' }} />
-        <p className="text-sm text-slate-400 mt-2">Loading your itinerary...</p>
+        <Loader2 className="w-7 h-7 animate-spin" style={{ color: '#144a57' }} />
+        <p
+          className="mt-3 text-[30px] leading-none tracking-normal text-slate-300"
+          style={{ fontFamily: '"Comfortaa", sans-serif', fontWeight: 400 }}
+        >
+          Loading your itinerary...
+        </p>
       </div>
     );
   }
@@ -309,8 +302,7 @@ export default function ViewPage() {
   if (error) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-white" data-testid="view-error">
-        <TravlogerMark size={48} />
-        <AlertCircle className="w-10 h-10 mt-4" style={{ color: '#dc2626' }} />
+        <AlertCircle className="w-10 h-10" style={{ color: '#dc2626' }} />
         <h2 className="text-lg font-bold mt-3" style={{ color: '#144a57' }}>
           {expired ? 'Itinerary Expired' : 'Link Not Found'}
         </h2>
@@ -332,7 +324,6 @@ export default function ViewPage() {
         className="flex items-center gap-3 px-4 md:px-5 h-12 border-b flex-shrink-0"
         style={{ backgroundColor: '#144a57', borderColor: 'rgba(232,160,32,0.25)' }}
       >
-        <TravlogerMark size={24} />
         <span className="text-sm font-semibold text-white truncate flex-1">{pdfName}</span>
         <div className="text-xs font-medium text-white/70">
           {pageCount ? `${currentPage} / ${pageCount}` : ''}

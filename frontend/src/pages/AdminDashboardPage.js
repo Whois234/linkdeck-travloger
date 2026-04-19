@@ -7,7 +7,7 @@ import { Label } from '../components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Badge } from '../components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
-import { Eye, FileText, KeyRound, LinkIcon, Loader2, LogOut, ShieldCheck, UserPlus, Users, Globe2, Monitor, Smartphone, Download } from 'lucide-react';
+import { Eye, FileText, KeyRound, LinkIcon, Loader2, LogOut, ShieldCheck, UserPlus, Users, Globe2, Monitor, Smartphone, Download, Trash2 } from 'lucide-react';
 import {
   Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip as ChartTooltip, XAxis, YAxis
 } from 'recharts';
@@ -94,6 +94,8 @@ export default function AdminDashboardPage() {
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
   const [resettingId, setResettingId] = useState('');
+  const [deletingSessionId, setDeletingSessionId] = useState('');
+  const [deletingPdfId, setDeletingPdfId] = useState('');
 
   const fetchAdminData = useCallback(async () => {
     try {
@@ -196,6 +198,37 @@ export default function AdminDashboardPage() {
     ];
     downloadCsv('travloger-admin-recent-activity.csv', rows);
     toast.success('Recent activity CSV downloaded');
+  };
+
+  const handleDeleteRecentSession = async (sessionId) => {
+    if (!sessionId) return;
+    if (!window.confirm('Delete this recent session from admin activity?')) return;
+    setDeletingSessionId(sessionId);
+    try {
+      await axios.delete(`${API}/admin/recent-activity/${sessionId}`, { withCredentials: true });
+      setRecentActivity((current) => current.filter((item) => item.session_id !== sessionId));
+      toast.success('Session deleted');
+      fetchAdminData();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to delete session');
+    } finally {
+      setDeletingSessionId('');
+    }
+  };
+
+  const handleDeleteAnalyticsPdf = async (pdfId) => {
+    if (!pdfId) return;
+    if (!window.confirm('Archive this PDF from admin analytics? Existing customer links will still work.')) return;
+    setDeletingPdfId(pdfId);
+    try {
+      await axios.delete(`${API}/admin/pdfs/${pdfId}`, { withCredentials: true });
+      toast.success('PDF archived');
+      fetchAdminData();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to archive PDF');
+    } finally {
+      setDeletingPdfId('');
+    }
   };
 
   return (
@@ -336,6 +369,7 @@ export default function AdminDashboardPage() {
                   <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Tracked Sessions</TableHead>
                   <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Total Time</TableHead>
                   <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Avg Time</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10 text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -345,6 +379,21 @@ export default function AdminDashboardPage() {
                     <TableCell className="text-sm text-slate-600">{item.sessions}</TableCell>
                     <TableCell className="text-sm text-slate-600">{formatDuration(item.total_time_seconds)}</TableCell>
                     <TableCell className="text-sm text-slate-600">{formatDuration(item.avg_time_seconds)}</TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteAnalyticsPdf(item.pdf_id)}
+                        disabled={!item.pdf_id || deletingPdfId === item.pdf_id}
+                        className="rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-40"
+                      >
+                        {deletingPdfId === item.pdf_id ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-4 h-4" />
+                        )}
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -374,12 +423,13 @@ export default function AdminDashboardPage() {
                   <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Opened At</TableHead>
                   <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Device</TableHead>
                   <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Location</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10 text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {recentActivity.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="py-10 text-center text-sm text-slate-400">
+                    <TableCell colSpan={9} className="py-10 text-center text-sm text-slate-400">
                       No recent activity yet.
                     </TableCell>
                   </TableRow>
@@ -400,10 +450,29 @@ export default function AdminDashboardPage() {
                         </div>
                       </TableCell>
                       <TableCell className="text-xs text-slate-500">
-                        <div className="flex items-center gap-2">
-                          <Globe2 className="w-4 h-4" />
-                          <span>{item.location_label || 'Unknown'}</span>
-                        </div>
+                        {item.location_label ? (
+                          <div className="flex items-center gap-2">
+                            <Globe2 className="w-4 h-4" />
+                            <span>{item.location_label}</span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-300"> </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDeleteRecentSession(item.session_id)}
+                          disabled={deletingSessionId === item.session_id}
+                          className="rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50"
+                        >
+                          {deletingSessionId === item.session_id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-4 h-4" />
+                          )}
+                        </Button>
                       </TableCell>
                     </TableRow>
                   );
