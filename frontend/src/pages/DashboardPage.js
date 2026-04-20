@@ -72,13 +72,18 @@ function downloadCsv(filename, rows) {
   URL.revokeObjectURL(url);
 }
 
+function buildTrackingLink(linkId) {
+  return `${SITE_URL}/view/${linkId}`;
+}
+
 // Format phone → wa.me link: strip non-digits, prepend 91 if 10-digit Indian number
-function toWaLink(phone) {
+function toWaLink(phone, message = '') {
   const digits = phone.replace(/\D/g, '');
-  if (digits.length === 10) return `https://wa.me/91${digits}`;
-  if (digits.length === 12 && digits.startsWith('91')) return `https://wa.me/${digits}`;
-  if (digits.length === 11 && digits.startsWith('0')) return `https://wa.me/91${digits.slice(1)}`;
-  return `https://wa.me/${digits}`;
+  const textParam = message ? `?text=${encodeURIComponent(message)}` : '';
+  if (digits.length === 10) return `https://wa.me/91${digits}${textParam}`;
+  if (digits.length === 12 && digits.startsWith('91')) return `https://wa.me/${digits}${textParam}`;
+  if (digits.length === 11 && digits.startsWith('0')) return `https://wa.me/91${digits.slice(1)}${textParam}`;
+  return `https://wa.me/${digits}${textParam}`;
 }
 
 // Travloger teal/gold logo mark as inline SVG
@@ -290,7 +295,7 @@ export default function DashboardPage() {
   };
 
   const copyLink = (linkId) => {
-    const url = `${SITE_URL}/view/${linkId}`;
+    const url = buildTrackingLink(linkId);
     navigator.clipboard.writeText(url);
     toast.success('Link copied!');
   };
@@ -717,6 +722,10 @@ export default function DashboardPage() {
                       const linkId = getLinkId(link);
                       const isExpanded = expandedLinkId === linkId;
                       const insight = insightsByLink[linkId];
+                      const trackingUrl = linkId ? buildTrackingLink(linkId) : '';
+                      const whatsappMessage = trackingUrl
+                        ? `Hi,\nHere is your Trip Itinerary link:\n${trackingUrl}\nPlease click the link to check the itinerary.`
+                        : '';
 
                       return (
                       <Fragment key={linkId || `${link.customer_phone}-${link.created_at}`}>
@@ -813,7 +822,7 @@ export default function DashboardPage() {
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <a
-                                    href={toWaLink(link.customer_phone)}
+                                    href={toWaLink(link.customer_phone, whatsappMessage)}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="wa-btn inline-flex items-center justify-center h-8 w-8 rounded-lg transition-all"
