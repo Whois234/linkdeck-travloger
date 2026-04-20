@@ -111,6 +111,7 @@ export default function DashboardPage() {
   const { user, logout } = useAuth();
   const [pdfs, setPdfs] = useState([]);
   const [archivedPdfs, setArchivedPdfs] = useState([]);
+  const [contacts, setContacts] = useState([]);
   const [links, setLinks] = useState([]);
   const [stats, setStats] = useState({ total_pdfs: 0, total_links: 0, opened_links: 0, unopened_links: 0 });
   const [uploading, setUploading] = useState(false);
@@ -137,9 +138,10 @@ export default function DashboardPage() {
       if (filterStatus !== 'all') params.status = filterStatus;
       if (searchQuery.trim()) params.search = searchQuery.trim();
       if (sortBy) params.sort = sortBy;
-      const [pdfsRes, archivedRes, linksRes, statsRes] = await Promise.all([
+      const [pdfsRes, archivedRes, contactsRes, linksRes, statsRes] = await Promise.all([
         axios.get(`${API}/pdfs`, { withCredentials: true }),
         axios.get(`${API}/pdfs/archived`, { withCredentials: true }),
+        axios.get(`${API}/contacts`, { withCredentials: true }),
         axios.get(`${API}/links`, { withCredentials: true, params }),
         axios.get(`${API}/dashboard/stats`, { withCredentials: true }),
       ]);
@@ -149,6 +151,7 @@ export default function DashboardPage() {
       }));
       setPdfs(pdfsRes.data?.data || pdfsRes.data || []);
       setArchivedPdfs(Array.isArray(archivedRes.data) ? archivedRes.data : []);
+      setContacts(Array.isArray(contactsRes.data) ? contactsRes.data : []);
       setLinks(normalizedLinks);
       setStats(statsRes.data);
     } catch (err) {
@@ -972,6 +975,51 @@ export default function DashboardPage() {
                         )}
                       </Fragment>
                     )})}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </section>
+
+          <section className="mt-8 animate-fade-in-up">
+            <div className="flex items-center gap-2 mb-4">
+              <LinkIcon className="w-5 h-5" style={{ color: 'var(--gold)' }} />
+              <h2 className="text-xl font-bold" style={{ color: 'var(--teal)' }}>Contacts</h2>
+            </div>
+            {contacts.length === 0 ? (
+              <div className="bg-white rounded-xl border p-8 text-center" style={{ borderColor: '#e5e7eb' }}>
+                <Users className="w-10 h-10 mx-auto mb-3 text-slate-200" />
+                <p className="font-semibold text-slate-500">No contacts yet</p>
+                <p className="text-xs mt-1 text-slate-400">Contacts are automatically added here when you generate a tracking link.</p>
+              </div>
+            ) : (
+              <div className="bg-white rounded-xl border overflow-x-auto" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
+                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Contact</TableHead>
+                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Phone</TableHead>
+                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Latest PDF</TableHead>
+                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Links</TableHead>
+                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Opened Links</TableHead>
+                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Total Opens</TableHead>
+                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Last Linked</TableHead>
+                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Last Opened</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {contacts.map((contact) => (
+                      <TableRow key={contact.id || `${contact.customer_phone}-${contact.created_at || ''}`} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
+                        <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>{contact.customer_name}</TableCell>
+                        <TableCell className="text-slate-600 text-sm font-mono">{contact.customer_phone}</TableCell>
+                        <TableCell className="text-xs text-slate-500 max-w-[220px] truncate">{contact.latest_pdf_name || '--'}</TableCell>
+                        <TableCell className="text-sm text-slate-600">{contact.total_links || 0}</TableCell>
+                        <TableCell className="text-sm text-slate-600">{contact.opened_links || 0}</TableCell>
+                        <TableCell className="text-sm text-slate-600">{contact.total_opens || 0}</TableCell>
+                        <TableCell className="text-xs text-slate-400">{formatDate(contact.last_link_created_at)}</TableCell>
+                        <TableCell className="text-xs text-slate-400">{formatDate(contact.latest_opened_at)}</TableCell>
+                      </TableRow>
+                    ))}
                   </TableBody>
                 </Table>
               </div>

@@ -101,6 +101,10 @@ def sanitize_filename(file_name: str) -> str:
     return safe or "document.pdf"
 
 
+def normalize_contact_phone(phone: str) -> str:
+    return "".join(ch for ch in str(phone or "") if ch.isdigit())
+
+
 def build_pdf_object_key(user_id: str, pdf_id: str, file_name: str) -> str:
     return f"{get_s3_key_prefix()}/{user_id}/{pdf_id}/{sanitize_filename(file_name)}"
 
@@ -1244,6 +1248,26 @@ async def create_link(input: LinkCreateInput, request: Request):
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     await db.links.insert_one(link_doc)
+    normalized_phone = normalize_contact_phone(input.customer_phone)
+    if normalized_phone:
+        await db.contacts.update_one(
+            {"user_id": user["_id"], "contact_phone_normalized": normalized_phone},
+            {
+                "$set": {
+                    "customer_name": input.customer_name.strip(),
+                    "customer_phone": input.customer_phone.strip(),
+                    "contact_phone_normalized": normalized_phone,
+                    "updated_at": link_doc["created_at"],
+                    "last_link_created_at": link_doc["created_at"],
+                    "latest_pdf_id": input.pdf_id,
+                    "latest_pdf_name": pdf.get("file_name", "Unknown PDF"),
+                },
+                "$setOnInsert": {
+                    "created_at": link_doc["created_at"],
+                },
+            },
+            upsert=True,
+        )
     return {
         "_id": unique_id,
         "pdf_id": input.pdf_id,
@@ -1256,6 +1280,59 @@ async def create_link(input: LinkCreateInput, request: Request):
         "created_at": link_doc["created_at"],
         "url": f"/view/{unique_id}"
     }
+
+
+@api_router.get("/contacts")
+async def list_contacts(request: Request):
+    user = await get_current_user(request)
+    contacts = await db.contacts.find({"user_id": user["_id"]}).sort("updated_at", -1).to_list(10000)
+    links = await db.links.find({"user_id": user["_id"]}).to_list(10000)
+
+    contact_stats = {}
+    for link in links:
+        phone_key = normalize_contact_phone(link.get("customer_phone", ""))
+        if not phone_key:
+            continue
+        created_at = link.get("created_at")
+        last_opened_at = link.get("last_opened_at")
+        stats = contact_stats.setdefault(phone_key, {
+            "total_links": 0,
+            "opened_links": 0,
+            "total_opens": 0,
+            "latest_link_created_at": None,
+            "latest_opened_at": None,
+            "latest_pdf_name": link.get("pdf_name_snapshot") or "Unknown PDF",
+        })
+        stats["total_links"] += 1
+        if link.get("opened") or int(link.get("open_count") or 0) > 0:
+            stats["opened_links"] += 1
+        stats["total_opens"] += int(link.get("open_count") or 0)
+        if created_at and normalize_datetime(created_at) >= normalize_datetime(stats["latest_link_created_at"]):
+            stats["latest_link_created_at"] = created_at
+            stats["latest_pdf_name"] = link.get("pdf_name_snapshot") or stats["latest_pdf_name"]
+        if last_opened_at and normalize_datetime(last_opened_at) >= normalize_datetime(stats["latest_opened_at"]):
+            stats["latest_opened_at"] = last_opened_at
+
+    items = []
+    for contact in contacts:
+        phone_key = contact.get("contact_phone_normalized") or normalize_contact_phone(contact.get("customer_phone", ""))
+        stats = contact_stats.get(phone_key, {})
+        items.append({
+            "id": str(contact.get("_id")),
+            "customer_name": contact.get("customer_name") or "Unknown Contact",
+            "customer_phone": contact.get("customer_phone") or "--",
+            "contact_phone_normalized": phone_key,
+            "created_at": contact.get("created_at"),
+            "updated_at": contact.get("updated_at"),
+            "last_link_created_at": contact.get("last_link_created_at") or stats.get("latest_link_created_at"),
+            "latest_opened_at": stats.get("latest_opened_at"),
+            "latest_pdf_name": contact.get("latest_pdf_name") or stats.get("latest_pdf_name"),
+            "total_links": stats.get("total_links", 0),
+            "opened_links": stats.get("opened_links", 0),
+            "total_opens": stats.get("total_opens", 0),
+        })
+
+    return items
 
 @api_router.get("/links")
 async def list_links(
