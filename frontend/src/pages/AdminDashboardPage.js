@@ -7,7 +7,7 @@ import { Label } from '../components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Badge } from '../components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
-import { Eye, FileText, KeyRound, LinkIcon, Loader2, LogOut, ShieldCheck, UserPlus, Users, Globe2, Monitor, Smartphone, Download, Trash2 } from 'lucide-react';
+import { Eye, FileText, KeyRound, LinkIcon, Loader2, LogOut, ShieldCheck, UserPlus, Users, Globe2, Monitor, Smartphone, Download, Trash2, RotateCcw, Archive } from 'lucide-react';
 import {
   Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip as ChartTooltip, XAxis, YAxis
 } from 'recharts';
@@ -82,6 +82,7 @@ export default function AdminDashboardPage() {
     links_by_pdf: [],
     opens_by_hour: [],
     time_by_pdf: [],
+    archived_time_by_pdf: [],
   });
   const [recentActivity, setRecentActivity] = useState([]);
   const [analyticsDays, setAnalyticsDays] = useState(30);
@@ -96,6 +97,8 @@ export default function AdminDashboardPage() {
   const [resettingId, setResettingId] = useState('');
   const [deletingSessionId, setDeletingSessionId] = useState('');
   const [deletingPdfId, setDeletingPdfId] = useState('');
+  const [reactivatingPdfId, setReactivatingPdfId] = useState('');
+  const [permanentlyDeletingPdfId, setPermanentlyDeletingPdfId] = useState('');
 
   const fetchAdminData = useCallback(async () => {
     try {
@@ -231,6 +234,35 @@ export default function AdminDashboardPage() {
     }
   };
 
+  const handleReactivatePdf = async (pdfId) => {
+    if (!pdfId) return;
+    setReactivatingPdfId(pdfId);
+    try {
+      await axios.post(`${API}/admin/pdfs/${pdfId}/reactivate`, {}, { withCredentials: true });
+      toast.success('PDF reactivated');
+      fetchAdminData();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to reactivate PDF');
+    } finally {
+      setReactivatingPdfId('');
+    }
+  };
+
+  const handlePermanentlyDeletePdf = async (pdfId) => {
+    if (!pdfId) return;
+    if (!window.confirm('Permanently delete this archived PDF? This cannot be undone.')) return;
+    setPermanentlyDeletingPdfId(pdfId);
+    try {
+      await axios.delete(`${API}/admin/pdfs/${pdfId}/permanent`, { withCredentials: true });
+      toast.success('PDF permanently deleted');
+      fetchAdminData();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to permanently delete PDF');
+    } finally {
+      setPermanentlyDeletingPdfId('');
+    }
+  };
+
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--off-white)' }}>
       <header style={{ backgroundColor: 'var(--teal)', boxShadow: '0 2px 12px rgba(20,74,87,0.18)' }} className="sticky top-0 z-50">
@@ -362,6 +394,12 @@ export default function AdminDashboardPage() {
           </div>
 
           <div className="bg-white rounded-xl border overflow-x-auto mt-4" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+            <div className="px-5 py-4 border-b" style={{ borderColor: '#f1f5f9' }}>
+              <div>
+                <h3 className="font-bold" style={{ color: 'var(--teal)' }}>Active PDFs</h3>
+                <p className="text-sm text-slate-500 mt-1">Only live PDFs stay here. Archived ones move to the separate section below.</p>
+              </div>
+            </div>
             <Table>
               <TableHeader>
                 <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
@@ -373,29 +411,110 @@ export default function AdminDashboardPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(analytics.time_by_pdf || []).map((item) => (
-                  <TableRow key={item.pdf_id || item.pdf_name} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
-                    <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>{item.pdf_name}</TableCell>
-                    <TableCell className="text-sm text-slate-600">{item.sessions}</TableCell>
-                    <TableCell className="text-sm text-slate-600">{formatDuration(item.total_time_seconds)}</TableCell>
-                    <TableCell className="text-sm text-slate-600">{formatDuration(item.avg_time_seconds)}</TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDeleteAnalyticsPdf(item.pdf_id)}
-                        disabled={!item.pdf_id || deletingPdfId === item.pdf_id}
-                        className="rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-40"
-                      >
-                        {deletingPdfId === item.pdf_id ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Trash2 className="w-4 h-4" />
-                        )}
-                      </Button>
+                {(analytics.time_by_pdf || []).length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="py-10 text-center text-sm text-slate-400">
+                      No active PDF analytics yet.
                     </TableCell>
                   </TableRow>
-                ))}
+                ) : (
+                  (analytics.time_by_pdf || []).map((item) => (
+                    <TableRow key={item.pdf_id || item.pdf_name} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
+                      <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>{item.pdf_name}</TableCell>
+                      <TableCell className="text-sm text-slate-600">{item.sessions}</TableCell>
+                      <TableCell className="text-sm text-slate-600">{formatDuration(item.total_time_seconds)}</TableCell>
+                      <TableCell className="text-sm text-slate-600">{formatDuration(item.avg_time_seconds)}</TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDeleteAnalyticsPdf(item.pdf_id)}
+                          disabled={!item.pdf_id || deletingPdfId === item.pdf_id}
+                          className="rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-40"
+                        >
+                          {deletingPdfId === item.pdf_id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-4 h-4" />
+                          )}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+
+          <div className="bg-white rounded-xl border overflow-x-auto mt-4" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+            <div className="px-5 py-4 border-b" style={{ borderColor: '#f1f5f9' }}>
+              <div className="flex items-center gap-2">
+                <Archive className="w-4 h-4" style={{ color: 'var(--gold)' }} />
+                <div>
+                  <h3 className="font-bold" style={{ color: 'var(--teal)' }}>Archived PDFs</h3>
+                  <p className="text-sm text-slate-500 mt-1">Archived PDFs leave the live list and stay here until you reactivate or permanently delete them.</p>
+                </div>
+              </div>
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">PDF</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Archived At</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Tracked Sessions</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Total Time</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Avg Time</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10 text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(analytics.archived_time_by_pdf || []).length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="py-10 text-center text-sm text-slate-400">
+                      No archived PDFs yet.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  (analytics.archived_time_by_pdf || []).map((item) => (
+                    <TableRow key={`archived-${item.pdf_id || item.pdf_name}`} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
+                      <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>{item.pdf_name}</TableCell>
+                      <TableCell className="text-xs text-slate-400">{formatDate(item.archived_at)}</TableCell>
+                      <TableCell className="text-sm text-slate-600">{item.sessions}</TableCell>
+                      <TableCell className="text-sm text-slate-600">{formatDuration(item.total_time_seconds)}</TableCell>
+                      <TableCell className="text-sm text-slate-600">{formatDuration(item.avg_time_seconds)}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleReactivatePdf(item.pdf_id)}
+                            disabled={!item.pdf_id || reactivatingPdfId === item.pdf_id || permanentlyDeletingPdfId === item.pdf_id}
+                            className="rounded-lg text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 disabled:opacity-40"
+                          >
+                            {reactivatingPdfId === item.pdf_id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <RotateCcw className="w-4 h-4" />
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handlePermanentlyDeletePdf(item.pdf_id)}
+                            disabled={!item.pdf_id || permanentlyDeletingPdfId === item.pdf_id || reactivatingPdfId === item.pdf_id}
+                            className="rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-40"
+                          >
+                            {permanentlyDeletingPdfId === item.pdf_id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-4 h-4" />
+                            )}
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </div>

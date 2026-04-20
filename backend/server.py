@@ -680,12 +680,22 @@ async def admin_analytics(
         date_filter = {"created_at": {"$gte": cutoff}}
 
     links = await db.links.find(date_filter).to_list(10000)
-    pdfs = await db.pdfs.find({}, {"_id": 0, "id": 1, "file_name": 1}).to_list(10000)
+    pdfs = await db.pdfs.find({}, {"_id": 0, "id": 1, "file_name": 1, "archived": 1, "archived_at": 1, "upload_status": 1}).to_list(10000)
     session_filter = {}
     if days and days > 0:
         session_filter = {"started_at": {"$gte": cutoff}}
     sessions = await db.view_sessions.find(session_filter).to_list(10000)
     pdf_map = {pdf["id"]: pdf.get("file_name", "Unknown PDF") for pdf in pdfs}
+    pdf_meta_map = {
+        pdf["id"]: {
+            "pdf_id": pdf["id"],
+            "pdf_name": pdf.get("file_name", "Unknown PDF"),
+            "archived": bool(pdf.get("archived")),
+            "archived_at": pdf.get("archived_at"),
+            "upload_status": pdf.get("upload_status"),
+        }
+        for pdf in pdfs
+    }
 
     def is_in_selected_range(value: Optional[str]) -> bool:
         if not value:
@@ -736,10 +746,44 @@ async def admin_analytics(
         sessions_by_pdf[pdf_id]["sessions"] += 1
         sessions_by_pdf[pdf_id]["total_time_seconds"] += int(session.get("duration_seconds") or 0)
 
-    time_by_pdf = []
+    active_time_by_pdf = []
+    archived_time_by_pdf = {
+        pdf_id: {
+            "pdf_id": pdf_id,
+            "pdf_name": meta["pdf_name"],
+            "sessions": 0,
+            "total_time_seconds": 0,
+            "avg_time_seconds": 0,
+            "archived_at": meta.get("archived_at"),
+        }
+        for pdf_id, meta in pdf_meta_map.items()
+        if meta.get("archived") and meta.get("upload_status") != "pending"
+    }
     for item in sessions_by_pdf.values():
         item["avg_time_seconds"] = round(item["total_time_seconds"] / item["sessions"]) if item["sessions"] else 0
-        time_by_pdf.append(item)
+        meta = pdf_meta_map.get(item["pdf_id"])
+        is_archived = bool(meta.get("archived")) if meta else bool(
+            next((session.get("pdf_archived") for session in sessions if session.get("pdf_id") == item["pdf_id"]), False)
+        )
+        if is_archived:
+            archived_item = archived_time_by_pdf.get(item["pdf_id"], {
+                "pdf_id": item["pdf_id"],
+                "pdf_name": item["pdf_name"],
+                "sessions": 0,
+                "total_time_seconds": 0,
+                "avg_time_seconds": 0,
+                "archived_at": None,
+            })
+            archived_item.update({
+                "pdf_name": item["pdf_name"],
+                "sessions": item["sessions"],
+                "total_time_seconds": item["total_time_seconds"],
+                "avg_time_seconds": item["avg_time_seconds"],
+                "archived_at": archived_item.get("archived_at"),
+            })
+            archived_time_by_pdf[item["pdf_id"]] = archived_item
+        else:
+            active_time_by_pdf.append(item)
 
     return {
         "summary": {
@@ -752,7 +796,8 @@ async def admin_analytics(
         },
         "links_by_pdf": sorted(links_by_pdf.values(), key=lambda item: item["links"], reverse=True),
         "opens_by_hour": [{"hour": f"{hour}:00", "opens": opens} for hour, opens in opens_by_hour.items()],
-        "time_by_pdf": sorted(time_by_pdf, key=lambda item: item["total_time_seconds"], reverse=True),
+        "time_by_pdf": sorted(active_time_by_pdf, key=lambda item: item["total_time_seconds"], reverse=True),
+        "archived_time_by_pdf": sorted(archived_time_by_pdf.values(), key=lambda item: normalize_datetime(item.get("archived_at")), reverse=True),
     }
 
 
@@ -828,6 +873,64 @@ async def admin_delete_pdf(pdf_id: str, request: Request):
         }}
     )
     return {"message": "PDF archived from admin. Existing customer links still work, and analytics remain available."}
+
+
+@api_router.post("/admin/pdfs/{pdf_id}/reactivate")
+async def admin_reactivate_pdf(pdf_id: str, request: Request):
+    await get_current_admin(request)
+    pdf = await db.pdfs.find_one({"id": pdf_id})
+    if not pdf:
+        raise HTTPException(status_code=404, detail="PDF not found")
+
+    await db.pdfs.update_one(
+        {"id": pdf_id},
+        {"$set": {"archived": False, "archived_at": None}}
+    )
+    await db.links.update_many(
+        {"pdf_id": pdf_id},
+        {"$set": {"pdf_archived": False}, "$unset": {"pdf_archived_at": ""}}
+    )
+    await db.view_sessions.update_many(
+        {"pdf_id": pdf_id},
+        {"$set": {"pdf_archived": False}, "$unset": {"pdf_archived_at": ""}}
+    )
+    return {"message": "PDF reactivated"}
+
+
+@api_router.delete("/admin/pdfs/{pdf_id}/permanent")
+async def admin_permanently_delete_pdf(pdf_id: str, request: Request):
+    await get_current_admin(request)
+    pdf = await db.pdfs.find_one({"id": pdf_id})
+    if not pdf:
+        raise HTTPException(status_code=404, detail="PDF not found")
+
+    deleted_at = datetime.now(timezone.utc).isoformat()
+    if pdf.get("storage_provider") == "s3" and pdf.get("bucket") and pdf.get("object_key") and s3_ready():
+        try:
+            get_s3_client().delete_object(Bucket=pdf["bucket"], Key=pdf["object_key"])
+        except Exception as exc:
+            logger.warning("Failed to delete S3 object for %s: %s", pdf.get("object_key"), exc)
+
+    await db.pdfs.delete_one({"id": pdf_id})
+    await db.links.update_many(
+        {"pdf_id": pdf_id},
+        {"$set": {
+            "pdf_deleted": True,
+            "pdf_archived": False,
+            "pdf_name_snapshot": pdf.get("file_name", "Deleted PDF"),
+            "pdf_deleted_at": deleted_at,
+        }, "$unset": {"pdf_archived_at": ""}}
+    )
+    await db.view_sessions.update_many(
+        {"pdf_id": pdf_id},
+        {"$set": {
+            "pdf_deleted": True,
+            "pdf_archived": False,
+            "pdf_name_snapshot": pdf.get("file_name", "Deleted PDF"),
+            "pdf_deleted_at": deleted_at,
+        }, "$unset": {"pdf_archived_at": ""}}
+    )
+    return {"message": "PDF permanently deleted"}
 
 # ---- PDF ENDPOINTS ----
 UPLOAD_DIR = ROOT_DIR / "uploads"
