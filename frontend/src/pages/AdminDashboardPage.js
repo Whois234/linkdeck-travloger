@@ -406,31 +406,37 @@ export default function AdminDashboardPage() {
                 </Badge>
               )}
             </div>
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={analytics.user_daily_activity || []}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis
-                    dataKey="date_label"
-                    tick={{ fontSize: 11 }}
-                    interval={0}
-                    angle={-12}
-                    textAnchor="end"
-                    height={70}
-                  />
-                  <YAxis allowDecimals={false} />
-                  <ChartTooltip
-                    formatter={(value, name) => [value, name === 'links_created' ? 'Links Created' : name === 'opened_links' ? 'Opened Links' : 'Total Opens']}
-                    labelFormatter={(_, payload) => {
-                      const item = payload?.[0]?.payload;
-                      return item ? `${item.date_label} · ${item.user_name}` : '';
-                    }}
-                  />
-                  <Bar dataKey="links_created" fill="#144a57" name="Links Created" radius={[6, 6, 0, 0]} />
-                  <Bar dataKey="opened_links" fill="#E8A020" name="Opened Links" radius={[6, 6, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+            {(analytics.user_daily_activity || []).length === 0 ? (
+              <div className="h-80 flex items-center justify-center text-center text-sm text-slate-400">
+                No user link activity found for the selected date range.
+              </div>
+            ) : (
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={analytics.user_daily_activity || []}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis
+                      dataKey="date_label"
+                      tick={{ fontSize: 11 }}
+                      interval={0}
+                      angle={-12}
+                      textAnchor="end"
+                      height={70}
+                    />
+                    <YAxis allowDecimals={false} />
+                    <ChartTooltip
+                      formatter={(value, name) => [value, name === 'links_created' ? 'Links Created' : name === 'opened_links' ? 'Opened Links' : 'Total Opens']}
+                      labelFormatter={(_, payload) => {
+                        const item = payload?.[0]?.payload;
+                        return item ? `${item.date_label} · ${item.user_name}` : '';
+                      }}
+                    />
+                    <Bar dataKey="links_created" fill="#144a57" name="Links Created" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="opened_links" fill="#E8A020" name="Opened Links" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </div>
 
           <div className="bg-white rounded-xl border overflow-x-auto mt-4" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>

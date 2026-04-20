@@ -680,7 +680,7 @@ async def admin_analytics(
         date_filter = {"created_at": {"$gte": cutoff}}
 
     links = await db.links.find(date_filter).to_list(10000)
-    users = await db.users.find({}, {"_id": 0, "id": 1, "name": 1, "email": 1}).to_list(10000)
+    users = await db.users.find({}, {"name": 1, "email": 1}).to_list(10000)
     pdfs = await db.pdfs.find({}, {"_id": 0, "id": 1, "file_name": 1, "archived": 1, "archived_at": 1, "upload_status": 1}).to_list(10000)
     session_filter = {}
     if days and days > 0:
@@ -688,7 +688,7 @@ async def admin_analytics(
     sessions = await db.view_sessions.find(session_filter).to_list(10000)
     pdf_map = {pdf["id"]: pdf.get("file_name", "Unknown PDF") for pdf in pdfs}
     user_map = {
-        user["id"]: user.get("name") or user.get("email") or "Unknown User"
+        str(user["_id"]): user.get("name") or user.get("email") or "Unknown User"
         for user in users
     }
     pdf_meta_map = {
