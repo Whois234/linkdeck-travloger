@@ -12,7 +12,7 @@ import { toast } from 'sonner';
 import {
   Upload, Link2, Copy, Trash2, FileText, ExternalLink, LogOut, Search, Filter,
   CheckCircle, XCircle, Eye, Loader2, FileUp, LinkIcon, MapPin, ArrowUpDown,
-  Smartphone, Monitor, Globe2, Archive, Download, ChevronDown, ChevronUp
+  Smartphone, Monitor, Globe2, Archive, Download, ChevronDown, ChevronUp, Users
 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -138,22 +138,44 @@ export default function DashboardPage() {
       if (filterStatus !== 'all') params.status = filterStatus;
       if (searchQuery.trim()) params.search = searchQuery.trim();
       if (sortBy) params.sort = sortBy;
-      const [pdfsRes, archivedRes, contactsRes, linksRes, statsRes] = await Promise.all([
+      const [pdfsRes, archivedRes, contactsRes, linksRes, statsRes] = await Promise.allSettled([
         axios.get(`${API}/pdfs`, { withCredentials: true }),
         axios.get(`${API}/pdfs/archived`, { withCredentials: true }),
         axios.get(`${API}/contacts`, { withCredentials: true }),
         axios.get(`${API}/links`, { withCredentials: true, params }),
         axios.get(`${API}/dashboard/stats`, { withCredentials: true }),
       ]);
-      const normalizedLinks = (Array.isArray(linksRes.data) ? linksRes.data : []).map((link) => ({
+
+      const pdfsData = pdfsRes.status === 'fulfilled'
+        ? (pdfsRes.value.data?.data || pdfsRes.value.data || [])
+        : [];
+      const archivedData = archivedRes.status === 'fulfilled'
+        ? (Array.isArray(archivedRes.value.data) ? archivedRes.value.data : [])
+        : [];
+      const contactsData = contactsRes.status === 'fulfilled'
+        ? (Array.isArray(contactsRes.value.data) ? contactsRes.value.data : [])
+        : [];
+      const linksData = linksRes.status === 'fulfilled'
+        ? (Array.isArray(linksRes.value.data) ? linksRes.value.data : [])
+        : [];
+      const statsData = statsRes.status === 'fulfilled'
+        ? statsRes.value.data
+        : { total_pdfs: 0, total_links: 0, opened_links: 0, unopened_links: 0 };
+
+      if (contactsRes.status === 'rejected') {
+        console.warn('Contacts endpoint unavailable, continuing without contacts.', contactsRes.reason);
+      }
+
+      const normalizedLinks = linksData.map((link) => ({
         ...link,
         _id: getLinkId(link),
       }));
-      setPdfs(pdfsRes.data?.data || pdfsRes.data || []);
-      setArchivedPdfs(Array.isArray(archivedRes.data) ? archivedRes.data : []);
-      setContacts(Array.isArray(contactsRes.data) ? contactsRes.data : []);
+
+      setPdfs(pdfsData);
+      setArchivedPdfs(archivedData);
+      setContacts(contactsData);
       setLinks(normalizedLinks);
-      setStats(statsRes.data);
+      setStats(statsData);
     } catch (err) {
       if (err.response?.status === 401) return;
       toast.error('Failed to load data');
