@@ -83,6 +83,7 @@ export default function AdminDashboardPage() {
     opens_by_hour: [],
     time_by_pdf: [],
     archived_time_by_pdf: [],
+    user_daily_activity: [],
   });
   const [recentActivity, setRecentActivity] = useState([]);
   const [analyticsDays, setAnalyticsDays] = useState(30);
@@ -390,6 +391,45 @@ export default function AdminDashboardPage() {
                   </LineChart>
                 </ResponsiveContainer>
               </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl border p-5 mt-4" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+              <div>
+                <h3 className="font-bold" style={{ color: 'var(--teal)' }}>User Link Creation By Day</h3>
+                <p className="text-sm text-slate-500 mt-1">See which user created how many links on a given day and how many of those links were opened.</p>
+              </div>
+              {analyticsDays === -1 && (
+                <Badge className="rounded-full" style={{ backgroundColor: 'rgba(20,74,87,0.08)', color: 'var(--teal)' }}>
+                  Custom range applied
+                </Badge>
+              )}
+            </div>
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={analytics.user_daily_activity || []}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis
+                    dataKey="date_label"
+                    tick={{ fontSize: 11 }}
+                    interval={0}
+                    angle={-12}
+                    textAnchor="end"
+                    height={70}
+                  />
+                  <YAxis allowDecimals={false} />
+                  <ChartTooltip
+                    formatter={(value, name) => [value, name === 'links_created' ? 'Links Created' : name === 'opened_links' ? 'Opened Links' : 'Total Opens']}
+                    labelFormatter={(_, payload) => {
+                      const item = payload?.[0]?.payload;
+                      return item ? `${item.date_label} · ${item.user_name}` : '';
+                    }}
+                  />
+                  <Bar dataKey="links_created" fill="#144a57" name="Links Created" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="opened_links" fill="#E8A020" name="Opened Links" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           </div>
 

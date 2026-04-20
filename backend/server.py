@@ -680,12 +680,17 @@ async def admin_analytics(
         date_filter = {"created_at": {"$gte": cutoff}}
 
     links = await db.links.find(date_filter).to_list(10000)
+    users = await db.users.find({}, {"_id": 0, "id": 1, "name": 1, "email": 1}).to_list(10000)
     pdfs = await db.pdfs.find({}, {"_id": 0, "id": 1, "file_name": 1, "archived": 1, "archived_at": 1, "upload_status": 1}).to_list(10000)
     session_filter = {}
     if days and days > 0:
         session_filter = {"started_at": {"$gte": cutoff}}
     sessions = await db.view_sessions.find(session_filter).to_list(10000)
     pdf_map = {pdf["id"]: pdf.get("file_name", "Unknown PDF") for pdf in pdfs}
+    user_map = {
+        user["id"]: user.get("name") or user.get("email") or "Unknown User"
+        for user in users
+    }
     pdf_meta_map = {
         pdf["id"]: {
             "pdf_id": pdf["id"],
@@ -807,6 +812,33 @@ async def admin_analytics(
         else:
             active_time_by_pdf.append(item)
 
+    user_daily_activity = {}
+    for link in links:
+        created_at = link.get("created_at")
+        user_id = link.get("user_id")
+        if not created_at or not user_id:
+            continue
+        try:
+            created_dt = datetime.fromisoformat(created_at).astimezone(timezone.utc)
+        except Exception:
+            continue
+        day_label = created_dt.strftime("%d %b")
+        activity_key = (created_dt.date().isoformat(), user_id)
+        if activity_key not in user_daily_activity:
+            user_daily_activity[activity_key] = {
+                "date": created_dt.date().isoformat(),
+                "date_label": day_label,
+                "user_id": user_id,
+                "user_name": user_map.get(user_id, "Unknown User"),
+                "links_created": 0,
+                "opened_links": 0,
+                "total_opens": 0,
+            }
+        user_daily_activity[activity_key]["links_created"] += 1
+        if link.get("opened") or int(link.get("open_count") or 0) > 0:
+            user_daily_activity[activity_key]["opened_links"] += 1
+        user_daily_activity[activity_key]["total_opens"] += int(link.get("open_count") or 0)
+
     return {
         "summary": {
             "total_links": len(links),
@@ -820,6 +852,11 @@ async def admin_analytics(
         "opens_by_hour": [{"hour": f"{hour}:00", "opens": opens} for hour, opens in opens_by_hour.items()],
         "time_by_pdf": sorted(active_time_by_pdf, key=lambda item: item["total_time_seconds"], reverse=True),
         "archived_time_by_pdf": sorted(archived_time_by_pdf.values(), key=lambda item: normalize_datetime(item.get("archived_at")), reverse=True),
+        "user_daily_activity": sorted(
+            user_daily_activity.values(),
+            key=lambda item: (item["date"], item["user_name"]),
+            reverse=True,
+        ),
     }
 
 
