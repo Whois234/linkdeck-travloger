@@ -724,7 +724,7 @@ export default function DashboardPage() {
                       const insight = insightsByLink[linkId];
                       const trackingUrl = linkId ? buildTrackingLink(linkId) : '';
                       const whatsappMessage = trackingUrl
-                        ? `Hi,\nHere is your Trip Itinerary link:\n${trackingUrl}\nPlease click the link to check the itinerary.`
+                        ? `Hi,\n\nYour itinerary is ready ✨\n\n${trackingUrl}\n\nGive it a quick look—slots and prices may change soon, so we can finalize once you confirm 👍`
                         : '';
 
                       return (
