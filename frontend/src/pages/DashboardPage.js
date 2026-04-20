@@ -118,6 +118,8 @@ export default function DashboardPage() {
   const [filterStatus, setFilterStatus] = useState('all');
   const [sortBy, setSortBy] = useState('recently_created');
   const [searchQuery, setSearchQuery] = useState('');
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
   const [expandedLinkId, setExpandedLinkId] = useState('');
   const [insightsByLink, setInsightsByLink] = useState({});
   const [insightsLoading, setInsightsLoading] = useState(false);
@@ -259,6 +261,22 @@ export default function DashboardPage() {
       toast.error('Failed to archive PDF');
     }
   };
+
+  const filteredLinks = (Array.isArray(links) ? links : []).filter((link) => {
+    if (!customStartDate && !customEndDate) return true;
+    if (!link?.created_at) return false;
+    const createdAt = new Date(link.created_at);
+    if (Number.isNaN(createdAt.getTime())) return false;
+    if (customStartDate) {
+      const start = new Date(`${customStartDate}T00:00:00`);
+      if (createdAt < start) return false;
+    }
+    if (customEndDate) {
+      const end = new Date(`${customEndDate}T23:59:59`);
+      if (createdAt > end) return false;
+    }
+    return true;
+  });
 
   const handleDeleteLink = async (linkId) => {
     if (!window.confirm('Delete this link?')) return;
@@ -642,10 +660,36 @@ export default function DashboardPage() {
                   <SelectItem value="most_opened">Most Opens</SelectItem>
                 </SelectContent>
               </Select>
+              <Input
+                type="date"
+                value={customStartDate}
+                onChange={(e) => setCustomStartDate(e.target.value)}
+                className="w-[150px] rounded-lg border-slate-200 text-sm"
+                aria-label="Start date filter"
+              />
+              <Input
+                type="date"
+                value={customEndDate}
+                onChange={(e) => setCustomEndDate(e.target.value)}
+                className="w-[150px] rounded-lg border-slate-200 text-sm"
+                aria-label="End date filter"
+              />
+              {(customStartDate || customEndDate) && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setCustomStartDate('');
+                    setCustomEndDate('');
+                  }}
+                  className="rounded-lg border-slate-200 text-slate-600"
+                >
+                  Clear
+                </Button>
+              )}
             </div>
 
             {/* Links Table */}
-            {links.length === 0 ? (
+            {filteredLinks.length === 0 ? (
               <div className="bg-white rounded-xl border p-12 text-center" style={{ borderColor: '#e5e7eb' }}>
                 <Link2 className="w-12 h-12 mx-auto mb-3 text-slate-200" />
                 <p className="font-semibold text-slate-500">No links found</p>
@@ -669,7 +713,7 @@ export default function DashboardPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(Array.isArray(links) ? links : []).map((link) => {
+                    {filteredLinks.map((link) => {
                       const linkId = getLinkId(link);
                       const isExpanded = expandedLinkId === linkId;
                       const insight = insightsByLink[linkId];
