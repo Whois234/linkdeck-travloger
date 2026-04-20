@@ -3,6 +3,8 @@ from pathlib import Path
 import ipaddress
 import logging
 import os
+import re
+import secrets
 import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Optional
@@ -21,6 +23,7 @@ from botocore.exceptions import ClientError
 import bcrypt
 from jose import jwt
 import requests
+from bson import ObjectId
 from pydantic import BaseModel, Field
 
 # Configure logging
@@ -1630,6 +1633,713 @@ async def dashboard_stats(request: Request):
         "unopened_links": total_links - opened_links
     }
 
+# ---- TRIPDECK — HELPERS ----
+
+def _slugify(text: str) -> str:
+    slug = text.lower().strip()
+    slug = re.sub(r"[^\w\s-]", "", slug)
+    slug = re.sub(r"[\s_]+", "-", slug)
+    slug = re.sub(r"-+", "-", slug)
+    return slug.strip("-") or "tripdeck"
+
+
+async def _make_unique_slug(title: str) -> str:
+    base = _slugify(title)
+    for _ in range(10):
+        suffix = secrets.token_hex(3)
+        candidate = f"{base}-{suffix}"
+        if not await db.tripdecks.find_one({"slug": candidate}):
+            return candidate
+    return f"td-{secrets.token_hex(6)}"
+
+
+def _serialize(doc: dict) -> dict:
+    if not isinstance(doc, dict):
+        return doc
+    out = {}
+    for k, v in doc.items():
+        if isinstance(v, ObjectId):
+            out[k] = str(v)
+        elif isinstance(v, list):
+            out[k] = [
+                _serialize(item) if isinstance(item, dict) else (str(item) if isinstance(item, ObjectId) else item)
+                for item in v
+            ]
+        elif isinstance(v, dict):
+            out[k] = _serialize(v)
+        else:
+            out[k] = v
+    return out
+
+
+def _serialize_response(r: dict) -> dict:
+    s = _serialize(r)
+    s.pop("pdf_access_token", None)
+    s.pop("pdf_access_token_expires_at", None)
+    return s
+
+
+# ---- TRIPDECK PYDANTIC MODELS ----
+
+class DestinationInput(BaseModel):
+    name: str
+    duration: str
+    hero_image_url: str
+    pdf_id: str
+    form_schema_id: str
+    order: int = 0
+
+
+class TripDeckCreateInput(BaseModel):
+    title: str
+    description: Optional[str] = None
+
+
+class TripDeckUpdateInput(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+
+
+class DestinationUpdateInput(BaseModel):
+    name: Optional[str] = None
+    duration: Optional[str] = None
+    hero_image_url: Optional[str] = None
+    pdf_id: Optional[str] = None
+    form_schema_id: Optional[str] = None
+    order: Optional[int] = None
+
+
+class ReorderInput(BaseModel):
+    destination_ids: list[str]
+
+
+class FormFieldInput(BaseModel):
+    label: str
+    field_type: str
+    placeholder: Optional[str] = None
+    options: list[str] = Field(default_factory=list)
+    is_required: bool = True
+    order: int = 0
+
+
+class FormSchemaCreateInput(BaseModel):
+    name: str
+    fields: list[FormFieldInput] = Field(default_factory=list)
+
+
+class FormSchemaUpdateInput(BaseModel):
+    name: Optional[str] = None
+    fields: Optional[list[FormFieldInput]] = None
+
+
+class FormSubmitInput(BaseModel):
+    responses: dict
+    customer_name: str
+    customer_phone: str
+    customer_email: Optional[str] = None
+
+
+# ---- TRIPDECK CRUD ----
+
+@api_router.post("/tripdeck")
+async def create_tripdeck(input: TripDeckCreateInput, request: Request):
+    user = await get_current_user(request)
+    if not input.title or not input.title.strip():
+        raise HTTPException(status_code=400, detail="TripDeck title is required")
+    now = datetime.now(timezone.utc).isoformat()
+    slug = await _make_unique_slug(input.title)
+    doc = {
+        "user_id": user["_id"],
+        "title": input.title.strip(),
+        "description": (input.description or "").strip() or None,
+        "slug": slug,
+        "status": "active",
+        "destinations": [],
+        "total_opens": 0,
+        "created_at": now,
+        "updated_at": now,
+    }
+    result = await db.tripdecks.insert_one(doc)
+    doc["_id"] = result.inserted_id
+    return _serialize(doc)
+
+
+@api_router.get("/tripdeck")
+async def list_tripdecks(request: Request):
+    user = await get_current_user(request)
+    docs = await db.tripdecks.find({"user_id": user["_id"]}).sort("created_at", -1).to_list(1000)
+    result = []
+    for doc in docs:
+        serialized = _serialize(doc)
+        tripdeck_id = str(doc["_id"])
+        serialized["form_response_count"] = await db.form_responses.count_documents({"tripdeck_id": tripdeck_id})
+        serialized["destination_count"] = len(doc.get("destinations", []))
+        result.append(serialized)
+    return result
+
+
+@api_router.get("/tripdeck/{tripdeck_id}")
+async def get_tripdeck(tripdeck_id: str, request: Request):
+    user = await get_current_user(request)
+    try:
+        oid = ObjectId(tripdeck_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid TripDeck ID")
+    doc = await db.tripdecks.find_one({"_id": oid, "user_id": user["_id"]})
+    if not doc:
+        raise HTTPException(status_code=404, detail="TripDeck not found")
+    serialized = _serialize(doc)
+    serialized["form_response_count"] = await db.form_responses.count_documents({"tripdeck_id": tripdeck_id})
+    return serialized
+
+
+@api_router.put("/tripdeck/{tripdeck_id}")
+async def update_tripdeck(tripdeck_id: str, input: TripDeckUpdateInput, request: Request):
+    user = await get_current_user(request)
+    try:
+        oid = ObjectId(tripdeck_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid TripDeck ID")
+    doc = await db.tripdecks.find_one({"_id": oid, "user_id": user["_id"]})
+    if not doc:
+        raise HTTPException(status_code=404, detail="TripDeck not found")
+    updates = {"updated_at": datetime.now(timezone.utc).isoformat()}
+    if input.title is not None:
+        if not input.title.strip():
+            raise HTTPException(status_code=400, detail="Title cannot be empty")
+        updates["title"] = input.title.strip()
+    if input.description is not None:
+        updates["description"] = input.description.strip() or None
+    if input.status is not None:
+        if input.status not in {"active", "archived"}:
+            raise HTTPException(status_code=400, detail="Status must be 'active' or 'archived'")
+        updates["status"] = input.status
+    await db.tripdecks.update_one({"_id": oid}, {"$set": updates})
+    updated = await db.tripdecks.find_one({"_id": oid})
+    return _serialize(updated)
+
+
+@api_router.delete("/tripdeck/{tripdeck_id}")
+async def delete_tripdeck(tripdeck_id: str, request: Request):
+    user = await get_current_user(request)
+    try:
+        oid = ObjectId(tripdeck_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid TripDeck ID")
+    doc = await db.tripdecks.find_one({"_id": oid, "user_id": user["_id"]})
+    if not doc:
+        raise HTTPException(status_code=404, detail="TripDeck not found")
+    await db.tripdecks.delete_one({"_id": oid})
+    await db.form_responses.delete_many({"tripdeck_id": tripdeck_id})
+    return {"message": "TripDeck deleted"}
+
+
+# ---- DESTINATION MANAGEMENT ----
+
+@api_router.post("/tripdeck/{tripdeck_id}/destination")
+async def add_destination(tripdeck_id: str, input: DestinationInput, request: Request):
+    user = await get_current_user(request)
+    try:
+        oid = ObjectId(tripdeck_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid TripDeck ID")
+    doc = await db.tripdecks.find_one({"_id": oid, "user_id": user["_id"]})
+    if not doc:
+        raise HTTPException(status_code=404, detail="TripDeck not found")
+    pdf = await db.pdfs.find_one({"id": input.pdf_id, "user_id": user["_id"], "upload_status": {"$ne": "pending"}})
+    if not pdf:
+        raise HTTPException(status_code=404, detail="PDF not found")
+    try:
+        schema_oid = ObjectId(input.form_schema_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid form schema ID")
+    schema = await db.form_schemas.find_one({"_id": schema_oid, "user_id": user["_id"]})
+    if not schema:
+        raise HTTPException(status_code=404, detail="Form schema not found")
+    dest = {
+        "_id": ObjectId(),
+        "name": input.name.strip(),
+        "duration": input.duration.strip(),
+        "hero_image_url": input.hero_image_url.strip(),
+        "pdf_id": input.pdf_id,
+        "form_schema_id": input.form_schema_id,
+        "order": input.order,
+    }
+    now = datetime.now(timezone.utc).isoformat()
+    await db.tripdecks.update_one(
+        {"_id": oid},
+        {"$push": {"destinations": dest}, "$set": {"updated_at": now}}
+    )
+    return _serialize(dest)
+
+
+@api_router.put("/tripdeck/{tripdeck_id}/destination/{dest_id}")
+async def update_destination(tripdeck_id: str, dest_id: str, input: DestinationUpdateInput, request: Request):
+    user = await get_current_user(request)
+    try:
+        oid = ObjectId(tripdeck_id)
+        dest_oid = ObjectId(dest_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid ID")
+    doc = await db.tripdecks.find_one({"_id": oid, "user_id": user["_id"]})
+    if not doc:
+        raise HTTPException(status_code=404, detail="TripDeck not found")
+    dest = next((d for d in doc.get("destinations", []) if d.get("_id") == dest_oid), None)
+    if not dest:
+        raise HTTPException(status_code=404, detail="Destination not found")
+    update_fields: dict = {}
+    if input.name is not None:
+        update_fields["destinations.$.name"] = input.name.strip()
+    if input.duration is not None:
+        update_fields["destinations.$.duration"] = input.duration.strip()
+    if input.hero_image_url is not None:
+        update_fields["destinations.$.hero_image_url"] = input.hero_image_url.strip()
+    if input.pdf_id is not None:
+        pdf = await db.pdfs.find_one({"id": input.pdf_id, "user_id": user["_id"], "upload_status": {"$ne": "pending"}})
+        if not pdf:
+            raise HTTPException(status_code=404, detail="PDF not found")
+        update_fields["destinations.$.pdf_id"] = input.pdf_id
+    if input.form_schema_id is not None:
+        try:
+            schema_oid = ObjectId(input.form_schema_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid form schema ID")
+        schema = await db.form_schemas.find_one({"_id": schema_oid, "user_id": user["_id"]})
+        if not schema:
+            raise HTTPException(status_code=404, detail="Form schema not found")
+        update_fields["destinations.$.form_schema_id"] = input.form_schema_id
+    if input.order is not None:
+        update_fields["destinations.$.order"] = input.order
+    if update_fields:
+        update_fields["updated_at"] = datetime.now(timezone.utc).isoformat()
+        await db.tripdecks.update_one(
+            {"_id": oid, "destinations._id": dest_oid},
+            {"$set": update_fields}
+        )
+    updated = await db.tripdecks.find_one({"_id": oid})
+    updated_dest = next((d for d in updated.get("destinations", []) if d.get("_id") == dest_oid), None)
+    return _serialize(updated_dest) if updated_dest else {}
+
+
+@api_router.delete("/tripdeck/{tripdeck_id}/destination/{dest_id}")
+async def remove_destination(tripdeck_id: str, dest_id: str, request: Request):
+    user = await get_current_user(request)
+    try:
+        oid = ObjectId(tripdeck_id)
+        dest_oid = ObjectId(dest_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid ID")
+    doc = await db.tripdecks.find_one({"_id": oid, "user_id": user["_id"]})
+    if not doc:
+        raise HTTPException(status_code=404, detail="TripDeck not found")
+    now = datetime.now(timezone.utc).isoformat()
+    await db.tripdecks.update_one(
+        {"_id": oid},
+        {"$pull": {"destinations": {"_id": dest_oid}}, "$set": {"updated_at": now}}
+    )
+    return {"message": "Destination removed"}
+
+
+@api_router.put("/tripdeck/{tripdeck_id}/destinations/reorder")
+async def reorder_destinations(tripdeck_id: str, input: ReorderInput, request: Request):
+    user = await get_current_user(request)
+    try:
+        oid = ObjectId(tripdeck_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid TripDeck ID")
+    doc = await db.tripdecks.find_one({"_id": oid, "user_id": user["_id"]})
+    if not doc:
+        raise HTTPException(status_code=404, detail="TripDeck not found")
+    dest_map = {str(d["_id"]): d for d in doc.get("destinations", [])}
+    reordered = []
+    for idx, dest_id_str in enumerate(input.destination_ids):
+        if dest_id_str not in dest_map:
+            raise HTTPException(status_code=400, detail=f"Destination {dest_id_str} not found in this TripDeck")
+        dest = dict(dest_map[dest_id_str])
+        dest["order"] = idx
+        reordered.append(dest)
+    now = datetime.now(timezone.utc).isoformat()
+    await db.tripdecks.update_one(
+        {"_id": oid},
+        {"$set": {"destinations": reordered, "updated_at": now}}
+    )
+    return _serialize({"destinations": reordered})
+
+
+# ---- FORM SCHEMA CRUD ----
+
+_VALID_FIELD_TYPES = {"text", "phone", "email", "dropdown", "date", "number"}
+
+
+@api_router.post("/form-schema")
+async def create_form_schema(input: FormSchemaCreateInput, request: Request):
+    user = await get_current_user(request)
+    if not input.name or not input.name.strip():
+        raise HTTPException(status_code=400, detail="Form schema name is required")
+    for field in input.fields:
+        if field.field_type not in _VALID_FIELD_TYPES:
+            raise HTTPException(status_code=400, detail=f"Invalid field_type '{field.field_type}'")
+    now = datetime.now(timezone.utc).isoformat()
+    doc = {
+        "user_id": user["_id"],
+        "name": input.name.strip(),
+        "fields": [
+            {
+                "_id": ObjectId(),
+                "label": f.label.strip(),
+                "field_type": f.field_type,
+                "placeholder": f.placeholder or None,
+                "options": f.options if f.field_type == "dropdown" else [],
+                "is_required": f.is_required,
+                "order": f.order,
+            }
+            for f in input.fields
+        ],
+        "created_at": now,
+        "updated_at": now,
+    }
+    result = await db.form_schemas.insert_one(doc)
+    doc["_id"] = result.inserted_id
+    return _serialize(doc)
+
+
+@api_router.get("/form-schema")
+async def list_form_schemas(request: Request):
+    user = await get_current_user(request)
+    docs = await db.form_schemas.find({"user_id": user["_id"]}).sort("created_at", -1).to_list(1000)
+    return [_serialize(d) for d in docs]
+
+
+@api_router.get("/form-schema/{schema_id}")
+async def get_form_schema(schema_id: str, request: Request):
+    user = await get_current_user(request)
+    try:
+        oid = ObjectId(schema_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid schema ID")
+    doc = await db.form_schemas.find_one({"_id": oid, "user_id": user["_id"]})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Form schema not found")
+    return _serialize(doc)
+
+
+@api_router.put("/form-schema/{schema_id}")
+async def update_form_schema(schema_id: str, input: FormSchemaUpdateInput, request: Request):
+    user = await get_current_user(request)
+    try:
+        oid = ObjectId(schema_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid schema ID")
+    doc = await db.form_schemas.find_one({"_id": oid, "user_id": user["_id"]})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Form schema not found")
+    updates = {"updated_at": datetime.now(timezone.utc).isoformat()}
+    if input.name is not None:
+        if not input.name.strip():
+            raise HTTPException(status_code=400, detail="Name cannot be empty")
+        updates["name"] = input.name.strip()
+    if input.fields is not None:
+        for field in input.fields:
+            if field.field_type not in _VALID_FIELD_TYPES:
+                raise HTTPException(status_code=400, detail=f"Invalid field_type '{field.field_type}'")
+        updates["fields"] = [
+            {
+                "_id": ObjectId(),
+                "label": f.label.strip(),
+                "field_type": f.field_type,
+                "placeholder": f.placeholder or None,
+                "options": f.options if f.field_type == "dropdown" else [],
+                "is_required": f.is_required,
+                "order": f.order,
+            }
+            for f in input.fields
+        ]
+    await db.form_schemas.update_one({"_id": oid}, {"$set": updates})
+    updated = await db.form_schemas.find_one({"_id": oid})
+    return _serialize(updated)
+
+
+@api_router.delete("/form-schema/{schema_id}")
+async def delete_form_schema(schema_id: str, request: Request):
+    user = await get_current_user(request)
+    try:
+        oid = ObjectId(schema_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid schema ID")
+    doc = await db.form_schemas.find_one({"_id": oid, "user_id": user["_id"]})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Form schema not found")
+    await db.form_schemas.delete_one({"_id": oid})
+    return {"message": "Form schema deleted"}
+
+
+# ---- PUBLIC TRIPDECK ENDPOINTS ----
+
+@api_router.get("/public/tripdeck/{slug}")
+async def get_public_tripdeck(slug: str, request: Request):
+    doc = await db.tripdecks.find_one({"slug": slug, "status": "active"})
+    if not doc:
+        raise HTTPException(status_code=404, detail="TripDeck not found")
+    await db.tripdecks.update_one({"_id": doc["_id"]}, {"$inc": {"total_opens": 1}})
+    serialized = _serialize(doc)
+    public_destinations = []
+    for dest in serialized.get("destinations", []):
+        pdf = await db.pdfs.find_one({"id": dest.get("pdf_id")})
+        pdf_available = bool(pdf and not pdf.get("archived") and pdf.get("upload_status") == "ready")
+        schema = None
+        if dest.get("form_schema_id"):
+            try:
+                schema_doc = await db.form_schemas.find_one({"_id": ObjectId(dest["form_schema_id"])})
+                if schema_doc:
+                    schema = _serialize(schema_doc)
+            except Exception:
+                pass
+        public_destinations.append({
+            "_id": dest["_id"],
+            "name": dest.get("name"),
+            "duration": dest.get("duration"),
+            "hero_image_url": dest.get("hero_image_url"),
+            "pdf_available": pdf_available,
+            "form_schema": schema,
+            "order": dest.get("order", 0),
+        })
+    public_destinations.sort(key=lambda d: d.get("order", 0))
+    return {
+        "_id": serialized["_id"],
+        "title": serialized.get("title"),
+        "description": serialized.get("description"),
+        "slug": serialized.get("slug"),
+        "destinations": public_destinations,
+    }
+
+
+@api_router.post("/public/tripdeck/{slug}/destination/{dest_id}/submit")
+async def submit_lead_form(slug: str, dest_id: str, input: FormSubmitInput, request: Request):
+    doc = await db.tripdecks.find_one({"slug": slug, "status": "active"})
+    if not doc:
+        raise HTTPException(status_code=404, detail="TripDeck not found")
+    try:
+        dest_oid = ObjectId(dest_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid destination ID")
+    dest = next((d for d in doc.get("destinations", []) if d.get("_id") == dest_oid), None)
+    if not dest:
+        raise HTTPException(status_code=404, detail="Destination not found")
+    pdf = await db.pdfs.find_one({"id": dest.get("pdf_id")})
+    if not pdf or pdf.get("archived") or pdf.get("upload_status") != "ready":
+        raise HTTPException(status_code=410, detail="This itinerary is no longer available")
+    tripdeck_id = str(doc["_id"])
+    user_agent = request.headers.get("user-agent", "")
+    client_ip = get_client_ip(request)
+    location = get_location_snapshot(request)
+    if not location.get("city") or not location.get("region"):
+        ip_lookup = await lookup_ip_geolocation(client_ip)
+        if ip_lookup.get("label"):
+            location = merge_location_data(location, ip_lookup)
+    pdf_access_token = secrets.token_urlsafe(32)
+    token_expires_at = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+    now = datetime.now(timezone.utc).isoformat()
+    response_doc = {
+        "tripdeck_id": tripdeck_id,
+        "destination_id": dest_id,
+        "form_schema_id": dest.get("form_schema_id"),
+        "responses": input.responses,
+        "customer_name": input.customer_name.strip(),
+        "customer_phone": input.customer_phone.strip(),
+        "customer_email": (input.customer_email or "").strip() or None,
+        "ip_address": client_ip,
+        "device": infer_device_type(user_agent, False),
+        "browser": infer_browser(user_agent),
+        "location": location.get("label") or None,
+        "pdf_access_token": pdf_access_token,
+        "pdf_access_token_expires_at": token_expires_at,
+        "submitted_at": now,
+    }
+    await db.form_responses.insert_one(response_doc)
+    return {
+        "success": True,
+        "pdf_access_token": pdf_access_token,
+        "expires_at": token_expires_at,
+        "message": "Form submitted successfully",
+    }
+
+
+@api_router.get("/public/tripdeck/{slug}/destination/{dest_id}/pdf")
+async def get_tripdeck_pdf(slug: str, dest_id: str, token: str, request: Request):
+    if not token:
+        raise HTTPException(status_code=401, detail="Access token required")
+    doc = await db.tripdecks.find_one({"slug": slug})
+    if not doc:
+        raise HTTPException(status_code=404, detail="TripDeck not found")
+    try:
+        dest_oid = ObjectId(dest_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid destination ID")
+    dest = next((d for d in doc.get("destinations", []) if d.get("_id") == dest_oid), None)
+    if not dest:
+        raise HTTPException(status_code=404, detail="Destination not found")
+    tripdeck_id = str(doc["_id"])
+    form_response = await db.form_responses.find_one({
+        "tripdeck_id": tripdeck_id,
+        "destination_id": dest_id,
+        "pdf_access_token": token,
+    })
+    if not form_response:
+        raise HTTPException(status_code=403, detail="Invalid or expired access token")
+    expires_at = form_response.get("pdf_access_token_expires_at")
+    if expires_at:
+        try:
+            expiry_dt = datetime.fromisoformat(expires_at).astimezone(timezone.utc)
+            if datetime.now(timezone.utc) > expiry_dt:
+                raise HTTPException(status_code=403, detail="Access token has expired. Please submit the form again.")
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+    pdf = await db.pdfs.find_one({"id": dest.get("pdf_id")}, {"_id": 0})
+    if not pdf or pdf.get("archived"):
+        raise HTTPException(status_code=410, detail="This itinerary is no longer available")
+    pdf_url = resolve_pdf_url(pdf, request)
+    if not pdf_url:
+        raise HTTPException(status_code=404, detail="PDF file is missing")
+    try:
+        upstream = requests.get(pdf_url, stream=True, timeout=60)
+        upstream.raise_for_status()
+    except Exception as exc:
+        logger.error("Error streaming TripDeck PDF: %s", exc)
+        raise HTTPException(status_code=404, detail="PDF file is missing")
+    response_headers = inline_pdf_headers(pdf.get("file_name", "document.pdf"))
+    content_length = upstream.headers.get("Content-Length")
+    if content_length:
+        response_headers["Content-Length"] = content_length
+    return StreamingResponse(
+        upstream.iter_content(chunk_size=1024 * 64),
+        media_type="application/pdf",
+        headers=response_headers,
+    )
+
+
+# ---- FORM RESPONSES (agent views) ----
+
+@api_router.get("/tripdeck/{tripdeck_id}/responses")
+async def get_tripdeck_responses(tripdeck_id: str, request: Request):
+    user = await get_current_user(request)
+    try:
+        oid = ObjectId(tripdeck_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid TripDeck ID")
+    doc = await db.tripdecks.find_one({"_id": oid, "user_id": user["_id"]})
+    if not doc:
+        raise HTTPException(status_code=404, detail="TripDeck not found")
+    responses = await db.form_responses.find({"tripdeck_id": tripdeck_id}).sort("submitted_at", -1).to_list(5000)
+    return [_serialize_response(r) for r in responses]
+
+
+@api_router.get("/tripdeck/{tripdeck_id}/destination/{dest_id}/responses")
+async def get_destination_responses(tripdeck_id: str, dest_id: str, request: Request):
+    user = await get_current_user(request)
+    try:
+        oid = ObjectId(tripdeck_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid TripDeck ID")
+    doc = await db.tripdecks.find_one({"_id": oid, "user_id": user["_id"]})
+    if not doc:
+        raise HTTPException(status_code=404, detail="TripDeck not found")
+    responses = await db.form_responses.find(
+        {"tripdeck_id": tripdeck_id, "destination_id": dest_id}
+    ).sort("submitted_at", -1).to_list(5000)
+    return [_serialize_response(r) for r in responses]
+
+
+@api_router.get("/tripdeck/{tripdeck_id}/responses/export")
+async def export_tripdeck_responses(tripdeck_id: str, request: Request):
+    user = await get_current_user(request)
+    try:
+        oid = ObjectId(tripdeck_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid TripDeck ID")
+    doc = await db.tripdecks.find_one({"_id": oid, "user_id": user["_id"]})
+    if not doc:
+        raise HTTPException(status_code=404, detail="TripDeck not found")
+    responses = await db.form_responses.find({"tripdeck_id": tripdeck_id}).sort("submitted_at", -1).to_list(10000)
+    dest_map = {str(d["_id"]): d.get("name", "Unknown") for d in doc.get("destinations", [])}
+    all_labels: list[str] = []
+    seen: set[str] = set()
+    for r in responses:
+        for label in (r.get("responses") or {}).keys():
+            if label not in seen:
+                all_labels.append(label)
+                seen.add(label)
+    headers = ["Submitted At", "Destination", "Customer Name", "Customer Phone", "Customer Email", "Device", "Browser", "Location"] + all_labels
+    rows = [headers]
+    for r in responses:
+        dest_name = dest_map.get(r.get("destination_id"), "Unknown Destination")
+        base = [
+            r.get("submitted_at", ""),
+            dest_name,
+            r.get("customer_name", ""),
+            r.get("customer_phone", ""),
+            r.get("customer_email") or "",
+            r.get("device", ""),
+            r.get("browser", ""),
+            r.get("location") or "",
+        ]
+        field_values = [(r.get("responses") or {}).get(label, "") for label in all_labels]
+        rows.append(base + field_values)
+
+    def _csv_cell(value) -> str:
+        s = "" if value is None else str(value)
+        if any(ch in s for ch in [",", '"', "\n"]):
+            s = '"' + s.replace('"', '""') + '"'
+        return s
+
+    csv_content = "\n".join(",".join(_csv_cell(cell) for cell in row) for row in rows)
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="tripdeck-responses-{tripdeck_id}.csv"'},
+    )
+
+
+# ---- TRIPDECK ANALYTICS ----
+
+@api_router.get("/tripdeck/{tripdeck_id}/analytics")
+async def get_tripdeck_analytics(tripdeck_id: str, request: Request):
+    user = await get_current_user(request)
+    try:
+        oid = ObjectId(tripdeck_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid TripDeck ID")
+    doc = await db.tripdecks.find_one({"_id": oid, "user_id": user["_id"]})
+    if not doc:
+        raise HTTPException(status_code=404, detail="TripDeck not found")
+    tripdeck_id_str = str(doc["_id"])
+    responses = await db.form_responses.find({"tripdeck_id": tripdeck_id_str}).to_list(10000)
+    total_opens = doc.get("total_opens", 0)
+    total_submissions = len(responses)
+    dest_stats = {}
+    for dest in doc.get("destinations", []):
+        dest_id_str = str(dest["_id"])
+        dest_stats[dest_id_str] = {
+            "destination_id": dest_id_str,
+            "destination_name": dest.get("name"),
+            "form_submissions": 0,
+        }
+    for r in responses:
+        dest_id_str = r.get("destination_id")
+        if dest_id_str in dest_stats:
+            dest_stats[dest_id_str]["form_submissions"] += 1
+    return {
+        "tripdeck_id": tripdeck_id_str,
+        "title": doc.get("title"),
+        "total_opens": total_opens,
+        "total_submissions": total_submissions,
+        "conversion_rate": round(total_submissions / total_opens * 100, 1) if total_opens else 0,
+        "destination_stats": list(dest_stats.values()),
+    }
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -1654,6 +2364,12 @@ async def startup():
     await db.pdfs.create_index("id", unique=True)
     await db.links.create_index("user_id")
     await db.pdfs.create_index("user_id")
+    await db.tripdecks.create_index("slug", unique=True)
+    await db.tripdecks.create_index("user_id")
+    await db.form_schemas.create_index("user_id")
+    await db.form_responses.create_index("tripdeck_id")
+    await db.form_responses.create_index([("tripdeck_id", 1), ("destination_id", 1)])
+    await db.form_responses.create_index("pdf_access_token")
     # Seed admin
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@travloger.in")
     admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
