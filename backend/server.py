@@ -2144,6 +2144,8 @@ async def submit_lead_form(slug: str, dest_id: str, input: FormSubmitInput, requ
         "tripdeck_id": tripdeck_id,
         "destination_id": dest_id,
         "form_schema_id": dest.get("form_schema_id"),
+        "user_id": doc.get("user_id"),
+        "pdf_id": dest.get("pdf_id"),
         "responses": input.responses,
         "customer_name": input.customer_name.strip(),
         "customer_phone": input.customer_phone.strip(),
@@ -2157,6 +2159,33 @@ async def submit_lead_form(slug: str, dest_id: str, input: FormSubmitInput, requ
         "submitted_at": now,
     }
     await db.form_responses.insert_one(response_doc)
+    normalized_phone = normalize_contact_phone(input.customer_phone)
+    if normalized_phone and doc.get("user_id"):
+        await db.contacts.update_one(
+            {
+                "user_id": doc.get("user_id"),
+                "customer_phone": normalized_phone,
+            },
+            {
+                "$set": {
+                    "customer_name": input.customer_name.strip(),
+                    "latest_pdf_name": pdf.get("file_name"),
+                    "latest_pdf_id": dest.get("pdf_id"),
+                    "latest_opened_at": now,
+                    "latest_tripdeck_id": tripdeck_id,
+                    "latest_tripdeck_slug": slug,
+                    "updated_at": now,
+                },
+                "$setOnInsert": {
+                    "created_at": now,
+                    "source": "tripdeck",
+                },
+                "$inc": {
+                    "total_submissions": 1,
+                },
+            },
+            upsert=True,
+        )
     return {
         "success": True,
         "pdf_access_token": pdf_access_token,
