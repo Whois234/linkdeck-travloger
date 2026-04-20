@@ -712,11 +712,34 @@ async def admin_analytics(
         except Exception:
             return False
 
+    pdf_state_by_id = {
+        pdf_id: ("archived" if meta.get("archived") else "active")
+        for pdf_id, meta in pdf_meta_map.items()
+    }
+    for link in links:
+        pdf_id = link.get("pdf_id")
+        if not pdf_id:
+            continue
+        if link.get("pdf_deleted"):
+            pdf_state_by_id[pdf_id] = "deleted"
+        elif link.get("pdf_archived") and pdf_state_by_id.get(pdf_id) != "deleted":
+            pdf_state_by_id[pdf_id] = "archived"
+    for session in sessions:
+        pdf_id = session.get("pdf_id")
+        if not pdf_id:
+            continue
+        if session.get("pdf_deleted"):
+            pdf_state_by_id[pdf_id] = "deleted"
+        elif session.get("pdf_archived") and pdf_state_by_id.get(pdf_id) != "deleted":
+            pdf_state_by_id[pdf_id] = "archived"
+
     links_by_pdf = {}
     opens_by_hour = {str(hour).zfill(2): 0 for hour in range(24)}
 
     for link in links:
         pdf_id = link.get("pdf_id")
+        if pdf_state_by_id.get(pdf_id) in {"archived", "deleted"}:
+            continue
         pdf_name = get_link_pdf_name(link, pdf_map)
         if pdf_id not in links_by_pdf:
             links_by_pdf[pdf_id] = {"pdf_id": pdf_id, "pdf_name": pdf_name, "links": 0, "opens": 0}
@@ -761,11 +784,10 @@ async def admin_analytics(
     }
     for item in sessions_by_pdf.values():
         item["avg_time_seconds"] = round(item["total_time_seconds"] / item["sessions"]) if item["sessions"] else 0
-        meta = pdf_meta_map.get(item["pdf_id"])
-        is_archived = bool(meta.get("archived")) if meta else bool(
-            next((session.get("pdf_archived") for session in sessions if session.get("pdf_id") == item["pdf_id"]), False)
-        )
-        if is_archived:
+        pdf_state = pdf_state_by_id.get(item["pdf_id"], "active")
+        if pdf_state == "deleted":
+            continue
+        if pdf_state == "archived":
             archived_item = archived_time_by_pdf.get(item["pdf_id"], {
                 "pdf_id": item["pdf_id"],
                 "pdf_name": item["pdf_name"],
