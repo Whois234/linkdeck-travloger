@@ -79,6 +79,21 @@ function GateField({ field, value, onChange, error }) {
       />
     );
   }
+  if (field.field_type === 'select') {
+    const options = Array.isArray(field.options) ? field.options : [];
+    return (
+      <select
+        value={value || ''}
+        onChange={(e) => onChange(e.target.value)}
+        className={style}
+      >
+        <option value="">{field.placeholder || '— Select an option —'}</option>
+        {options.map((opt, i) => (
+          <option key={i} value={opt}>{opt}</option>
+        ))}
+      </select>
+    );
+  }
   const inputType = field.field_type === 'email' ? 'email'
     : field.field_type === 'phone' ? 'tel'
     : field.field_type === 'number' ? 'number'

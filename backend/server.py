@@ -2266,6 +2266,117 @@ async def create_gate_link(input: GateLinkCreateInput, request: Request):
     }
 
 
+@api_router.get("/leads")
+async def get_leads(request: Request):
+    """Return all unique leads (deduplicated by phone+email) across all gate links."""
+    user = await get_current_user(request)
+
+    links = await db.links.find(
+        {"user_id": user["_id"], "gate_enabled": True}
+    ).to_list(1000)
+
+    if not links:
+        return []
+
+    link_map = {link["_id"]: link for link in links}
+    link_ids = list(link_map.keys())
+
+    all_subs = await db.gate_submissions.find(
+        {"link_id": {"$in": link_ids}}
+    ).sort("submitted_at", -1).to_list(10000)
+
+    leads_map: dict = {}
+
+    for sub in all_subs:
+        link = link_map.get(sub.get("link_id"), {})
+        gate_schema = link.get("gate_schema", [])
+        form_data = sub.get("form_data", {})
+
+        phone_val = None
+        email_val = None
+        name_val = None
+
+        for field in gate_schema:
+            label = field.get("label", "")
+            val = (form_data.get(label) or "").strip()
+            ftype = field.get("field_type", "text")
+            if ftype == "phone" and val and not phone_val:
+                phone_val = val
+            elif ftype == "email" and val and not email_val:
+                email_val = val.lower()
+            elif ftype in ("text",) and val and not name_val:
+                name_val = val
+
+        id_parts = []
+        if phone_val:
+            id_parts.append(f"p:{phone_val}")
+        if email_val:
+            id_parts.append(f"e:{email_val}")
+        if not id_parts:
+            id_parts = [f"{k}:{v}" for k, v in sorted(form_data.items()) if v]
+        identity_key = "|".join(sorted(id_parts)) if id_parts else f"anon:{str(sub['_id'])}"
+
+        session = {
+            "id": str(sub["_id"]),
+            "link_id": sub.get("link_id"),
+            "pdf_name": link.get("pdf_name_snapshot", "Unknown PDF"),
+            "submitted_at": sub.get("submitted_at"),
+            "device_type": sub.get("device_type"),
+            "browser": sub.get("browser"),
+            "os": sub.get("os"),
+            "location_label": sub.get("location_label"),
+            "time_spent_seconds": sub.get("time_spent_seconds", 0),
+            "form_data": form_data,
+        }
+
+        if identity_key not in leads_map:
+            leads_map[identity_key] = {
+                "identity_key": identity_key,
+                "name": name_val or "Unknown",
+                "phone": phone_val,
+                "email": email_val,
+                "last_seen": sub.get("submitted_at"),
+                "first_seen": sub.get("submitted_at"),
+                "sessions": [],
+                "pdfs_accessed": [],
+            }
+
+        lead = leads_map[identity_key]
+        lead["sessions"].append(session)
+
+        if name_val and lead["name"] == "Unknown":
+            lead["name"] = name_val
+        if phone_val and not lead["phone"]:
+            lead["phone"] = phone_val
+        if email_val and not lead["email"]:
+            lead["email"] = email_val
+
+        pdf_name = link.get("pdf_name_snapshot", "Unknown PDF")
+        if pdf_name not in lead["pdfs_accessed"]:
+            lead["pdfs_accessed"].append(pdf_name)
+
+        sub_at = sub.get("submitted_at")
+        if sub_at and lead["first_seen"] and sub_at < lead["first_seen"]:
+            lead["first_seen"] = sub_at
+
+    result = []
+    for lead in leads_map.values():
+        result.append({
+            "identity_key": lead["identity_key"],
+            "name": lead["name"],
+            "phone": lead["phone"],
+            "email": lead["email"],
+            "first_seen": lead["first_seen"],
+            "last_seen": lead["last_seen"],
+            "session_count": len(lead["sessions"]),
+            "pdfs_accessed": lead["pdfs_accessed"],
+            "sessions": lead["sessions"],
+        })
+
+    result.sort(key=lambda l: l.get("last_seen") or "", reverse=True)
+    return result
+
+
 # ---- DASHBOARD STATS ----
 @api_router.get("/dashboard/stats")
 async def dashboard_stats(request: Request):
