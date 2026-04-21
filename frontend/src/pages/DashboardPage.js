@@ -208,8 +208,8 @@ export default function DashboardPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const moduleAccess = user?.module_access || { dashboard: 'edit', pdfs: 'edit', contacts: 'edit' };
-  const visibleModules = USER_MODULES.filter((module) => moduleAccess[module.key] && moduleAccess[module.key] !== 'none');
+  const moduleAccess = user?.module_access || {};
+  const visibleModules = USER_MODULES.filter((module) => moduleAccess[module.key] !== 'none');
   useEffect(() => {
     if (!visibleModules.find((module) => module.key === activeModule)) {
       setActiveModule(visibleModules[0]?.key || 'dashboard');

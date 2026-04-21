@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/ui/button';
@@ -31,6 +32,7 @@ import {
   Upload,
   UserPlus,
   Users,
+  Map,
 } from 'lucide-react';
 import {
   Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip as ChartTooltip, XAxis, YAxis
@@ -103,10 +105,12 @@ const MODULES = [
   { key: 'recent_activity', label: 'Recent Activity', icon: Globe2 },
   { key: 'pdfs', label: 'PDFs', icon: FileText },
   { key: 'users', label: 'Users', icon: ShieldCheck },
+  { key: 'tripdeck', label: 'TripDeck', icon: Map, href: '/tripdeck' },
 ];
 
 export default function AdminDashboardPage() {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [users, setUsers] = useState([]);
   const [contacts, setContacts] = useState([]);
   const [folders, setFolders] = useState([]);
@@ -243,7 +247,12 @@ export default function AdminDashboardPage() {
   };
 
   const goToModule = (key) => {
-    setActiveModule(key);
+    const module = MODULES.find((m) => m.key === key);
+    if (module?.href) {
+      navigate(module.href);
+    } else {
+      setActiveModule(key);
+    }
     setNavOpen(false);
   };
 
