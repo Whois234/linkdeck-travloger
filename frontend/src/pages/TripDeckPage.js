@@ -3,9 +3,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 import {
-  ArrowLeft, Map, Plus, Search, ExternalLink, Edit2, Archive,
-  Trash2, Loader2, RotateCcw, Link2, Copy, Check, Eye,
-  ShieldCheck, X, ChevronDown, ChevronUp,
+  ArrowLeft, Map, Plus, Search, ExternalLink, Edit2,
+  Trash2, Loader2, Link2, Copy, Check, Eye,
+  ShieldCheck, X,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -44,7 +44,6 @@ const FIELD_TYPES = [
   { value: 'textarea', label: 'Long Text' },
 ];
 
-// ── Schema builder ────────────────────────────────────────────────────────────
 function SchemaBuilder({ fields, onChange }) {
   const update = (id, key, val) =>
     onChange(fields.map((f) => (f.id === id ? { ...f, [key]: val } : f)));
@@ -108,12 +107,9 @@ function SchemaBuilder({ fields, onChange }) {
   );
 }
 
-// ── Submissions table ─────────────────────────────────────────────────────────
 function SubmissionsTable({ submissions, schema }) {
   if (!submissions.length) {
-    return (
-      <p className="py-10 text-center text-sm text-slate-400">No submissions yet.</p>
-    );
+    return <p className="py-10 text-center text-sm text-slate-400">No submissions yet.</p>;
   }
   const formKeys = schema.map((f) => f.label);
   return (
@@ -152,19 +148,17 @@ function SubmissionsTable({ submissions, schema }) {
   );
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
 export default function TripDeckPage() {
   const navigate = useNavigate();
 
-  // TripDeck state
-  const [tripdecks, setTripdecks] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [creating, setCreating] = useState(false);
+  // New TripDeck dialog
   const [newTitle, setNewTitle] = useState('');
   const [newDialogOpen, setNewDialogOpen] = useState(false);
-  const [deletingId, setDeletingId] = useState(null);
-  const [archivingId, setArchivingId] = useState(null);
+  const [creating, setCreating] = useState(false);
+
+  // TripDecks list
+  const [tripdecks, setTripdecks] = useState([]);
+  const [tripdecksLoading, setTripdecksLoading] = useState(true);
 
   // Gate links state
   const [gateLinks, setGateLinks] = useState([]);
@@ -188,19 +182,35 @@ export default function TripDeckPage() {
   const [editSchema, setEditSchema] = useState([]);
   const [savingSchema, setSavingSchema] = useState(false);
 
-  // Copy link feedback
   const [copiedId, setCopiedId] = useState(null);
   const [deletingGateId, setDeletingGateId] = useState(null);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  const handleCreate = async (e) => {
+    e.preventDefault();
+    if (!newTitle.trim()) return;
+    setCreating(true);
+    try {
+      const res = await axios.post(`${API}/tripdeck`, { title: newTitle.trim(), description: '' }, { withCredentials: true });
+      toast.success('TripDeck created');
+      setNewDialogOpen(false);
+      setNewTitle('');
+      navigate(`/tripdeck/${res.data._id}`);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to create TripDeck');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const loadTripdecks = useCallback(async () => {
+    setTripdecksLoading(true);
     try {
       const res = await axios.get(`${API}/tripdeck`, { withCredentials: true });
       setTripdecks(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Failed to load TripDecks');
     } finally {
-      setLoading(false);
+      setTripdecksLoading(false);
     }
   }, []);
 
@@ -221,59 +231,7 @@ export default function TripDeckPage() {
     }
   }, []);
 
-  useEffect(() => {
-    loadData();
-    loadGateData();
-  }, [loadData, loadGateData]);
-
-  // ── TripDeck actions ──────────────────────────────────────────────────────
-
-  const handleCreate = async (e) => {
-    e.preventDefault();
-    if (!newTitle.trim()) return;
-    setCreating(true);
-    try {
-      const res = await axios.post(`${API}/tripdeck`, { title: newTitle.trim(), description: '' }, { withCredentials: true });
-      toast.success('TripDeck created');
-      setNewDialogOpen(false);
-      setNewTitle('');
-      navigate(`/tripdeck/${res.data._id}`);
-    } catch (err) {
-      toast.error(err.response?.data?.detail || 'Failed to create TripDeck');
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  const handleArchiveToggle = async (td) => {
-    setArchivingId(td._id);
-    const newStatus = td.status === 'archived' ? 'active' : 'archived';
-    try {
-      await axios.put(`${API}/tripdeck/${td._id}`, { status: newStatus }, { withCredentials: true });
-      toast.success(newStatus === 'archived' ? 'TripDeck archived' : 'TripDeck restored');
-      await loadData();
-    } catch (err) {
-      toast.error(err.response?.data?.detail || 'Failed to update TripDeck');
-    } finally {
-      setArchivingId(null);
-    }
-  };
-
-  const handleDelete = async (td) => {
-    if (!window.confirm(`Delete "${td.title}"? This will remove all destinations and responses and cannot be undone.`)) return;
-    setDeletingId(td._id);
-    try {
-      await axios.delete(`${API}/tripdeck/${td._id}`, { withCredentials: true });
-      toast.success('TripDeck deleted');
-      setTripdecks((prev) => prev.filter((t) => t._id !== td._id));
-    } catch (err) {
-      toast.error(err.response?.data?.detail || 'Failed to delete TripDeck');
-    } finally {
-      setDeletingId(null);
-    }
-  };
-
-  // ── Gate link actions ─────────────────────────────────────────────────────
+  useEffect(() => { loadTripdecks(); loadGateData(); }, [loadTripdecks, loadGateData]);
 
   const handleCreateGateLink = async (e) => {
     e.preventDefault();
@@ -284,7 +242,9 @@ export default function TripDeckPage() {
     try {
       await axios.post(`${API}/gate-links`, {
         pdf_id: newGatePdfId,
-        gate_schema: validFields.map(({ label, field_type, required, placeholder }) => ({ label: label.trim(), field_type, required, placeholder: placeholder || '' })),
+        gate_schema: validFields.map(({ label, field_type, required, placeholder }) => ({
+          label: label.trim(), field_type, required, placeholder: placeholder || '',
+        })),
       }, { withCredentials: true });
       toast.success('Gate link created');
       setNewGateDialogOpen(false);
@@ -319,9 +279,7 @@ export default function TripDeckPage() {
   };
 
   const handleOpenEditSchema = (link) => {
-    setEditSchema(
-      (link.gate_schema || []).map((f) => ({ ...f, id: Date.now() + Math.random() }))
-    );
+    setEditSchema((link.gate_schema || []).map((f) => ({ ...f, id: Date.now() + Math.random() })));
     setEditSchemaDialog({ open: true, link });
   };
 
@@ -331,7 +289,9 @@ export default function TripDeckPage() {
     setSavingSchema(true);
     try {
       await axios.patch(`${API}/links/${editSchemaDialog.link._id}/gate`, {
-        gate_schema: validFields.map(({ label, field_type, required, placeholder }) => ({ label: label.trim(), field_type, required, placeholder: placeholder || '' })),
+        gate_schema: validFields.map(({ label, field_type, required, placeholder }) => ({
+          label: label.trim(), field_type, required, placeholder: placeholder || '',
+        })),
       }, { withCredentials: true });
       toast.success('Form schema saved');
       setEditSchemaDialog({ open: false, link: null });
@@ -357,88 +317,16 @@ export default function TripDeckPage() {
     }
   };
 
-  // ── Filtering ─────────────────────────────────────────────────────────────
-
-  const filtered = tripdecks.filter((td) =>
-    !searchQuery.trim() ||
-    [td.title, td.description].filter(Boolean).some((v) =>
-      v.toLowerCase().includes(searchQuery.trim().toLowerCase())
-    )
-  );
-  const activeList = filtered.filter((td) => td.status !== 'archived');
-  const archivedList = filtered.filter((td) => td.status === 'archived');
-
   const filteredGateLinks = gateLinks.filter((g) =>
     !gateSearchQuery.trim() ||
     g.pdf_name.toLowerCase().includes(gateSearchQuery.trim().toLowerCase())
-  );
-
-  // ── TripDeck table ────────────────────────────────────────────────────────
-
-  const TripDeckTable = ({ rows, archived }) => (
-    <Table>
-      <TableHeader>
-        <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
-          <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Title</TableHead>
-          <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Destinations</TableHead>
-          <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Responses</TableHead>
-          <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Opens</TableHead>
-          <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Created</TableHead>
-          <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Actions</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {rows.length === 0 ? (
-          <TableRow>
-            <TableCell colSpan={6} className="py-10 text-center text-sm text-slate-400">
-              {archived ? 'No archived TripDecks.' : searchQuery ? 'No TripDecks match your search.' : 'No active TripDecks yet. Click "New TripDeck" to get started.'}
-            </TableCell>
-          </TableRow>
-        ) : (
-          rows.map((td) => (
-            <TableRow key={td._id} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
-              <TableCell>
-                {archived ? (
-                  <span className="font-semibold text-slate-500">{td.title || 'Untitled'}</span>
-                ) : (
-                  <button onClick={() => navigate(`/tripdeck/${td._id}`)} className="font-semibold text-left hover:underline" style={{ color: 'var(--teal)' }}>
-                    {td.title || 'Untitled'}
-                  </button>
-                )}
-                {td.description && <p className="text-xs text-slate-400 mt-0.5 max-w-xs truncate">{td.description}</p>}
-              </TableCell>
-              <TableCell className="text-sm text-slate-600">{td.destination_count ?? td.destinations?.length ?? 0}</TableCell>
-              <TableCell className="text-sm text-slate-600">{td.form_response_count ?? 0}</TableCell>
-              <TableCell className="text-sm text-slate-600">{td.total_opens ?? 0}</TableCell>
-              <TableCell className="text-xs text-slate-400">{formatDate(td.created_at)}</TableCell>
-              <TableCell>
-                <div className="flex items-center gap-1">
-                  {!archived && (
-                    <>
-                      <button onClick={() => navigate(`/tripdeck/${td._id}`)} className="p-1.5 rounded hover:bg-slate-100 text-slate-500" title="Open builder"><Edit2 className="w-4 h-4" /></button>
-                      <a href={`${SITE_URL}/deck/${td.slug}`} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded hover:bg-slate-100 text-slate-500" title="View public page"><ExternalLink className="w-4 h-4" /></a>
-                    </>
-                  )}
-                  <button onClick={() => handleArchiveToggle(td)} disabled={archivingId === td._id} className="p-1.5 rounded hover:bg-slate-100 text-slate-500" title={archived ? 'Restore' : 'Archive'}>
-                    {archivingId === td._id ? <Loader2 className="w-4 h-4 animate-spin" /> : archived ? <RotateCcw className="w-4 h-4" /> : <Archive className="w-4 h-4" />}
-                  </button>
-                  <button onClick={() => handleDelete(td)} disabled={deletingId === td._id} className="p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-red-600" title="Delete">
-                    {deletingId === td._id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                  </button>
-                </div>
-              </TableCell>
-            </TableRow>
-          ))
-        )}
-      </TableBody>
-    </Table>
   );
 
   return (
     <div className="min-h-screen bg-[var(--off-white)] px-5 py-8 md:px-10">
       <div className="mx-auto max-w-6xl space-y-6">
 
-        {/* ── Header ── */}
+        {/* Header */}
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <Link to="/" className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-slate-700">
@@ -448,7 +336,9 @@ export default function TripDeckPage() {
               <Map className="h-5 w-5" style={{ color: 'var(--gold)' }} />
               <h1 className="text-2xl font-bold" style={{ color: 'var(--teal)' }}>TripDecks</h1>
             </div>
-            <p className="mt-1 text-sm text-slate-500">Lead-gated multi-destination pages that unlock itinerary PDFs after form submit.</p>
+            <p className="mt-1 text-sm text-slate-500">
+              Lead-gated multi-destination pages that unlock itinerary PDFs after form submit.
+            </p>
           </div>
           <Dialog open={newDialogOpen} onOpenChange={setNewDialogOpen}>
             <DialogTrigger asChild>
@@ -475,41 +365,55 @@ export default function TripDeckPage() {
           </Dialog>
         </div>
 
-        {/* ── Search ── */}
-        <div className="relative max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <Input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search TripDecks..." className="pl-10 rounded-lg border-slate-200" />
-        </div>
-
-        {/* ── Active TripDecks ── */}
+        {/* TripDecks List */}
         <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
-          <div className="px-5 py-4 border-b" style={{ borderColor: '#f1f5f9' }}>
-            <div className="flex items-center gap-2">
-              <Map className="w-4 h-4" style={{ color: 'var(--gold)' }} />
-              <div>
-                <h3 className="font-bold" style={{ color: 'var(--teal)' }}>Active TripDecks</h3>
-                <p className="text-sm text-slate-500 mt-1">Live pages currently accepting lead submissions.</p>
-              </div>
+          <div className="px-5 py-4 border-b flex items-center gap-2" style={{ borderColor: '#f1f5f9' }}>
+            <Map className="w-4 h-4" style={{ color: 'var(--teal)' }} />
+            <div>
+              <h3 className="font-bold" style={{ color: 'var(--teal)' }}>Your TripDecks</h3>
+              <p className="text-sm text-slate-500 mt-1">Multi-destination lead pages. Click to open the builder.</p>
             </div>
           </div>
-          {loading ? <div className="flex items-center justify-center py-14"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div> : <TripDeckTable rows={activeList} archived={false} />}
+          {tripdecksLoading ? (
+            <div className="flex items-center justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
+          ) : tripdecks.length === 0 ? (
+            <div className="py-10 text-center text-sm text-slate-400">No TripDecks yet. Click "New TripDeck" above to get started.</div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Title</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Destinations</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Responses</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Created</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {tripdecks.map((td) => (
+                  <TableRow key={td._id} className="border-b hover:bg-slate-50 cursor-pointer" style={{ borderColor: '#f1f5f9' }} onClick={() => navigate(`/tripdeck/${td._id}`)}>
+                    <TableCell className="font-semibold text-sm" style={{ color: 'var(--teal)' }}>{td.title}</TableCell>
+                    <TableCell className="text-sm text-slate-600">{(td.destinations || []).length}</TableCell>
+                    <TableCell className="text-sm text-slate-600">{td.form_response_count || 0}</TableCell>
+                    <TableCell className="text-xs text-slate-400">{formatDate(td.created_at)}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                        <a href={`${SITE_URL}/deck/${td.slug}`} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded hover:bg-slate-100 text-slate-500" title="Preview public page">
+                          <ExternalLink className="w-4 h-4" />
+                        </a>
+                        <button onClick={() => navigate(`/tripdeck/${td._id}`)} className="p-1.5 rounded hover:bg-slate-100 text-slate-500" title="Open builder">
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </div>
 
-        {/* ── Archived TripDecks ── */}
-        <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
-          <div className="px-5 py-4 border-b" style={{ borderColor: '#f1f5f9' }}>
-            <div className="flex items-center gap-2">
-              <Archive className="w-4 h-4" style={{ color: 'var(--gold)' }} />
-              <div>
-                <h3 className="font-bold" style={{ color: 'var(--teal)' }}>Archived TripDecks</h3>
-                <p className="text-sm text-slate-500 mt-1">Paused or retired pages — restore to make them live again.</p>
-              </div>
-            </div>
-          </div>
-          <TripDeckTable rows={archivedList} archived={true} />
-        </div>
-
-        {/* ── Gate Links section ── */}
+        {/* Gated PDF Links */}
         <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
           <div className="px-5 py-4 border-b flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3" style={{ borderColor: '#f1f5f9' }}>
             <div className="flex items-center gap-2">
@@ -561,7 +465,6 @@ export default function TripDeckPage() {
             </Dialog>
           </div>
 
-          {/* Gate link search */}
           <div className="px-5 py-3 border-b" style={{ borderColor: '#f1f5f9' }}>
             <div className="relative max-w-xs">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -632,26 +535,21 @@ export default function TripDeckPage() {
         </div>
       </div>
 
-      {/* ── Submissions dialog ── */}
+      {/* Submissions dialog */}
       <Dialog open={submissionsDialog.open} onOpenChange={(o) => { if (!o) setSubmissionsDialog({ open: false, link: null }); }}>
         <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>
-              Submissions — {submissionsDialog.link?.pdf_name}
-            </DialogTitle>
+            <DialogTitle>Submissions — {submissionsDialog.link?.pdf_name}</DialogTitle>
           </DialogHeader>
           {submissionsLoading ? (
             <div className="flex items-center justify-center py-14"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
           ) : (
-            <SubmissionsTable
-              submissions={submissions}
-              schema={submissionsDialog.link?.gate_schema || []}
-            />
+            <SubmissionsTable submissions={submissions} schema={submissionsDialog.link?.gate_schema || []} />
           )}
         </DialogContent>
       </Dialog>
 
-      {/* ── Edit schema dialog ── */}
+      {/* Edit schema dialog */}
       <Dialog open={editSchemaDialog.open} onOpenChange={(o) => { if (!o) setEditSchemaDialog({ open: false, link: null }); }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
