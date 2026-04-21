@@ -13,6 +13,7 @@ import {
   Download,
   Eye,
   FileText,
+  FolderOpen,
   Globe2,
   KeyRound,
   LayoutDashboard,
@@ -23,9 +24,11 @@ import {
   Monitor,
   Pencil,
   RotateCcw,
+  Search,
   ShieldCheck,
   Smartphone,
   Trash2,
+  Upload,
   UserPlus,
   Users,
 } from 'lucide-react';
@@ -97,6 +100,7 @@ function TravlogerMark({ size = 32 }) {
 const MODULES = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { key: 'contacts', label: 'Contacts', icon: Users },
+  { key: 'recent_activity', label: 'Recent Activity', icon: Globe2 },
   { key: 'pdfs', label: 'PDFs', icon: FileText },
   { key: 'users', label: 'Users', icon: ShieldCheck },
 ];
@@ -105,6 +109,8 @@ export default function AdminDashboardPage() {
   const { user, logout } = useAuth();
   const [users, setUsers] = useState([]);
   const [contacts, setContacts] = useState([]);
+  const [folders, setFolders] = useState([]);
+  const [archivedFolders, setArchivedFolders] = useState([]);
   const [stats, setStats] = useState({ total_users: 0, total_pdfs: 0, total_links: 0, opened_links: 0 });
   const [analytics, setAnalytics] = useState({
     summary: {},
@@ -126,17 +132,40 @@ export default function AdminDashboardPage() {
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
+  const [newUserRole, setNewUserRole] = useState('user');
+  const [newUserActive, setNewUserActive] = useState(true);
+  const [newUserModuleAccess, setNewUserModuleAccess] = useState({ dashboard: 'edit', pdfs: 'edit', contacts: 'edit' });
   const [resettingId, setResettingId] = useState('');
+  const [updatingUserId, setUpdatingUserId] = useState('');
+  const [deletingUserId, setDeletingUserId] = useState('');
   const [deletingSessionId, setDeletingSessionId] = useState('');
   const [deletingPdfId, setDeletingPdfId] = useState('');
   const [reactivatingPdfId, setReactivatingPdfId] = useState('');
   const [permanentlyDeletingPdfId, setPermanentlyDeletingPdfId] = useState('');
+  const [archivingFolderId, setArchivingFolderId] = useState('');
+  const [reactivatingFolderId, setReactivatingFolderId] = useState('');
+  const [deletingFolderId, setDeletingFolderId] = useState('');
   const [contactDialogOpen, setContactDialogOpen] = useState(false);
   const [editingContact, setEditingContact] = useState(null);
   const [contactName, setContactName] = useState('');
   const [contactPhone, setContactPhone] = useState('');
+  const [contactSearch, setContactSearch] = useState('');
+  const [pdfSearch, setPdfSearch] = useState('');
   const [savingContact, setSavingContact] = useState(false);
   const [deletingContactId, setDeletingContactId] = useState('');
+  const [userDialogOpen, setUserDialogOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+  const [editUserName, setEditUserName] = useState('');
+  const [editUserRole, setEditUserRole] = useState('user');
+  const [editUserActive, setEditUserActive] = useState(true);
+  const [editModuleAccess, setEditModuleAccess] = useState({ dashboard: 'edit', pdfs: 'edit', contacts: 'edit' });
+  const [folderDialogOpen, setFolderDialogOpen] = useState(false);
+  const [editingFolder, setEditingFolder] = useState(null);
+  const [folderName, setFolderName] = useState('');
+  const [savingFolder, setSavingFolder] = useState(false);
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [uploadFolderId, setUploadFolderId] = useState('__none__');
+  const [uploading, setUploading] = useState(false);
 
   const fetchAdminData = useCallback(async () => {
     try {
@@ -144,10 +173,10 @@ export default function AdminDashboardPage() {
         ? { days: 0, start_date: customStartDate || undefined, end_date: customEndDate || undefined }
         : { days: analyticsDays };
 
-      const [usersRes, statsRes, contactsRes, analyticsRes, activityRes] = await Promise.all([
+      const [usersRes, statsRes, contactsRes, analyticsRes, activityRes, foldersRes, archivedFoldersRes] = await Promise.all([
         axios.get(`${API}/admin/users`, { withCredentials: true }),
         axios.get(`${API}/admin/stats`, { withCredentials: true }),
-        axios.get(`${API}/admin/contacts`, { withCredentials: true }),
+        axios.get(`${API}/admin/contacts`, { withCredentials: true, params: contactSearch ? { search: contactSearch } : undefined }),
         axios.get(`${API}/admin/analytics`, {
           withCredentials: true,
           params: analyticsParams,
@@ -156,6 +185,8 @@ export default function AdminDashboardPage() {
           withCredentials: true,
           params: { limit: 12 },
         }),
+        axios.get(`${API}/folders`, { withCredentials: true }),
+        axios.get(`${API}/folders`, { withCredentials: true, params: { status: 'archived' } }),
       ]);
 
       setUsers(usersRes.data || []);
@@ -163,12 +194,14 @@ export default function AdminDashboardPage() {
       setContacts(contactsRes.data || []);
       setAnalytics(analyticsRes.data || {});
       setRecentActivity(activityRes.data?.items || []);
+      setFolders(Array.isArray(foldersRes.data) ? foldersRes.data : []);
+      setArchivedFolders(Array.isArray(archivedFoldersRes.data) ? archivedFoldersRes.data : []);
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Failed to load admin dashboard');
     } finally {
       setLoading(false);
     }
-  }, [analyticsDays, customStartDate, customEndDate]);
+  }, [analyticsDays, customStartDate, customEndDate, contactSearch]);
 
   useEffect(() => {
     fetchAdminData();
@@ -176,6 +209,33 @@ export default function AdminDashboardPage() {
 
   const userCount = useMemo(() => users.length, [users]);
   const contactCount = useMemo(() => contacts.length, [contacts]);
+  const filteredContacts = useMemo(() => {
+    const needle = contactSearch.trim().toLowerCase();
+    if (!needle) return contacts;
+    return contacts.filter((contact) =>
+      [contact.customer_name, contact.customer_phone, contact.user_name, contact.latest_pdf_name]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(needle))
+    );
+  }, [contacts, contactSearch]);
+
+  const activePdfItems = useMemo(() => {
+    const needle = pdfSearch.trim().toLowerCase();
+    const items = analytics.time_by_pdf || [];
+    if (!needle) return items;
+    return items.filter((item) =>
+      [item.pdf_name, item.folder_name].filter(Boolean).some((value) => String(value).toLowerCase().includes(needle))
+    );
+  }, [analytics.time_by_pdf, pdfSearch]);
+
+  const archivedPdfItems = useMemo(() => {
+    const needle = pdfSearch.trim().toLowerCase();
+    const items = analytics.archived_time_by_pdf || [];
+    if (!needle) return items;
+    return items.filter((item) =>
+      [item.pdf_name, item.folder_name].filter(Boolean).some((value) => String(value).toLowerCase().includes(needle))
+    );
+  }, [analytics.archived_time_by_pdf, pdfSearch]);
 
   const getDeviceIcon = (deviceType) => {
     if (deviceType === 'Mobile' || deviceType === 'Tablet') return Smartphone;
@@ -195,12 +255,18 @@ export default function AdminDashboardPage() {
         name: newUserName,
         email: newUserEmail,
         password: newUserPassword,
+        role: newUserRole,
+        active: newUserActive,
+        module_access: newUserModuleAccess,
       }, { withCredentials: true });
       toast.success('User created with temporary password');
       setCreateOpen(false);
       setNewUserName('');
       setNewUserEmail('');
       setNewUserPassword('');
+      setNewUserRole('user');
+      setNewUserActive(true);
+      setNewUserModuleAccess({ dashboard: 'edit', pdfs: 'edit', contacts: 'edit' });
       fetchAdminData();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Failed to create user');
@@ -349,6 +415,176 @@ export default function AdminDashboardPage() {
     }
   };
 
+  const openEditUser = (item) => {
+    setEditingUser(item);
+    setEditUserName(item.name || '');
+    setEditUserRole(item.role || 'user');
+    setEditUserActive(item.active !== false);
+    setEditModuleAccess(item.module_access || { dashboard: 'edit', pdfs: 'edit', contacts: 'edit' });
+    setUserDialogOpen(true);
+  };
+
+  const handleSaveUser = async (e) => {
+    e.preventDefault();
+    if (!editingUser?.id) return;
+    setUpdatingUserId(editingUser.id);
+    try {
+      await axios.put(`${API}/admin/users/${editingUser.id}`, {
+        name: editUserName,
+        role: editUserRole,
+        active: editUserActive,
+        module_access: editModuleAccess,
+      }, { withCredentials: true });
+      toast.success('User updated');
+      setUserDialogOpen(false);
+      setEditingUser(null);
+      fetchAdminData();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to update user');
+    } finally {
+      setUpdatingUserId('');
+    }
+  };
+
+  const handleDeleteUser = async (userId) => {
+    if (!userId || !window.confirm('Delete this user account?')) return;
+    setDeletingUserId(userId);
+    try {
+      await axios.delete(`${API}/admin/users/${userId}`, { withCredentials: true });
+      toast.success('User deleted');
+      fetchAdminData();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to delete user');
+    } finally {
+      setDeletingUserId('');
+    }
+  };
+
+  const handleToggleUserActive = async (item) => {
+    if (!item?.id) return;
+    const nextActive = !(item.active !== false);
+    const label = nextActive ? 'reactivate' : 'deactivate';
+    if (!window.confirm(`${label.charAt(0).toUpperCase() + label.slice(1)} ${item.email}?`)) return;
+    setUpdatingUserId(item.id);
+    try {
+      await axios.put(`${API}/admin/users/${item.id}`, { active: nextActive }, { withCredentials: true });
+      toast.success(nextActive ? 'User reactivated' : 'User deactivated');
+      fetchAdminData();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || `Failed to ${label} user`);
+    } finally {
+      setUpdatingUserId('');
+    }
+  };
+
+  const openFolderDialog = (folder = null) => {
+    setEditingFolder(folder);
+    setFolderName(folder?.name || '');
+    setFolderDialogOpen(true);
+  };
+
+  const handleSaveFolder = async (e) => {
+    e.preventDefault();
+    setSavingFolder(true);
+    try {
+      if (editingFolder?.id) {
+        await axios.put(`${API}/admin/folders/${editingFolder.id}`, { name: folderName }, { withCredentials: true });
+        toast.success('Folder updated');
+      } else {
+        await axios.post(`${API}/admin/folders`, { name: folderName }, { withCredentials: true });
+        toast.success('Folder created');
+      }
+      setFolderDialogOpen(false);
+      setEditingFolder(null);
+      setFolderName('');
+      fetchAdminData();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to save folder');
+    } finally {
+      setSavingFolder(false);
+    }
+  };
+
+  const handleArchiveFolder = async (folderId) => {
+    if (!folderId || !window.confirm('Archive this folder and all PDFs inside it?')) return;
+    setArchivingFolderId(folderId);
+    try {
+      await axios.delete(`${API}/admin/folders/${folderId}`, { withCredentials: true });
+      toast.success('Folder archived');
+      fetchAdminData();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to archive folder');
+    } finally {
+      setArchivingFolderId('');
+    }
+  };
+
+  const handleReactivateFolder = async (folderId) => {
+    if (!folderId) return;
+    setReactivatingFolderId(folderId);
+    try {
+      await axios.post(`${API}/admin/folders/${folderId}/reactivate`, {}, { withCredentials: true });
+      toast.success('Folder reactivated');
+      fetchAdminData();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to reactivate folder');
+    } finally {
+      setReactivatingFolderId('');
+    }
+  };
+
+  const handleDeleteFolder = async (folderId) => {
+    if (!folderId || !window.confirm('Permanently delete this folder? PDFs will move out of the folder.')) return;
+    setDeletingFolderId(folderId);
+    try {
+      await axios.delete(`${API}/admin/folders/${folderId}/permanent`, { withCredentials: true });
+      toast.success('Folder deleted');
+      fetchAdminData();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to delete folder');
+    } finally {
+      setDeletingFolderId('');
+    }
+  };
+
+  const handleUploadPdf = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const isPdf = file.name.toLowerCase().endsWith('.pdf') && (!file.type || file.type === 'application/pdf');
+    if (!isPdf) {
+      toast.error('Only PDF files are allowed');
+      e.target.value = '';
+      return;
+    }
+    setUploading(true);
+    try {
+      const initiateRes = await axios.post(`${API}/pdfs/upload/initiate`, {
+        file_name: file.name,
+        file_size: file.size,
+        content_type: file.type || 'application/pdf',
+        folder_id: uploadFolderId === '__none__' ? null : uploadFolderId,
+      }, { withCredentials: true });
+      const { id, upload_url, upload_fields } = initiateRes.data;
+      const formData = new FormData();
+      Object.entries(upload_fields || {}).forEach(([key, value]) => formData.append(key, value));
+      formData.append('file', file);
+      const uploadResponse = await fetch(upload_url, { method: 'POST', body: formData });
+      if (!uploadResponse.ok) {
+        throw new Error((await uploadResponse.text()) || `Upload failed with ${uploadResponse.status}`);
+      }
+      await axios.post(`${API}/pdfs/upload/complete`, { pdf_id: id }, { withCredentials: true });
+      toast.success('PDF uploaded');
+      setUploadDialogOpen(false);
+      setUploadFolderId('__none__');
+      fetchAdminData();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || err.message || 'Failed to upload PDF');
+    } finally {
+      setUploading(false);
+      e.target.value = '';
+    }
+  };
+
   const renderStatsGrid = () => (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
       {[
@@ -493,82 +729,6 @@ export default function AdminDashboardPage() {
           )}
         </div>
 
-        <div className="bg-white rounded-xl border overflow-x-auto mt-4" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
-          <div className="px-5 py-4 border-b" style={{ borderColor: '#f1f5f9' }}>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h3 className="font-bold" style={{ color: 'var(--teal)' }}>Recent Activity</h3>
-                <p className="text-sm text-slate-500 mt-1">Latest customer opens with session order, watch time, device, and approximate location.</p>
-              </div>
-              <Button variant="outline" onClick={exportRecentActivityCsv} className="rounded-lg border-slate-200 text-slate-600">
-                <Download className="w-4 h-4 mr-2" /> Export CSV
-              </Button>
-            </div>
-          </div>
-          <Table>
-            <TableHeader>
-              <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
-                <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Customer</TableHead>
-                <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Phone</TableHead>
-                <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">PDF</TableHead>
-                <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Session</TableHead>
-                <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Time Spent</TableHead>
-                <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Opened At</TableHead>
-                <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Device</TableHead>
-                <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Location</TableHead>
-                <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10 text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {recentActivity.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={9} className="py-10 text-center text-sm text-slate-400">
-                    No recent activity yet.
-                  </TableCell>
-                </TableRow>
-              ) : recentActivity.map((item) => {
-                const DeviceIcon = getDeviceIcon(item.device_type);
-                return (
-                  <TableRow key={item.session_id} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
-                    <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>{item.customer_name}</TableCell>
-                    <TableCell className="text-sm text-slate-600">{item.customer_phone}</TableCell>
-                    <TableCell className="text-sm text-slate-500 max-w-[220px] truncate">{item.pdf_name}</TableCell>
-                    <TableCell className="text-sm text-slate-600">{formatSessionOrdinal(item.session_number)} session</TableCell>
-                    <TableCell className="text-sm text-slate-600">{formatDuration(item.duration_seconds)}</TableCell>
-                    <TableCell className="text-xs text-slate-400">{formatDate(item.started_at)}</TableCell>
-                    <TableCell className="text-xs text-slate-500">
-                      <div className="flex items-center gap-2">
-                        <DeviceIcon className="w-4 h-4" />
-                        <span>{item.device_type} · {item.platform}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-xs text-slate-500">
-                      {item.location_label ? (
-                        <div className="flex items-center gap-2">
-                          <Globe2 className="w-4 h-4" />
-                          <span>{item.location_label}</span>
-                        </div>
-                      ) : (
-                        <span className="text-slate-300"> </span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDeleteRecentSession(item.session_id)}
-                        disabled={deletingSessionId === item.session_id}
-                        className="rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50"
-                      >
-                        {deletingSessionId === item.session_id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
       </section>
     </>
   );
@@ -583,6 +743,15 @@ export default function AdminDashboardPage() {
         <Badge className="rounded-full" style={{ backgroundColor: 'rgba(20,74,87,0.08)', color: 'var(--teal)' }}>
           {contactCount} contacts
         </Badge>
+      </div>
+      <div className="relative max-w-sm mb-4">
+        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+        <Input
+          value={contactSearch}
+          onChange={(e) => setContactSearch(e.target.value)}
+          placeholder="Search contacts, owner, phone, or PDF..."
+          className="pl-9 rounded-lg border-slate-200"
+        />
       </div>
       <div className="bg-white rounded-xl border overflow-x-auto" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
         <Table>
@@ -601,13 +770,13 @@ export default function AdminDashboardPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {contacts.length === 0 ? (
+            {filteredContacts.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={10} className="py-10 text-center text-sm text-slate-400">
                   No contacts available yet.
                 </TableCell>
               </TableRow>
-            ) : contacts.map((contact) => (
+            ) : filteredContacts.map((contact) => (
               <TableRow key={contact.id} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
                 <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>{contact.customer_name}</TableCell>
                 <TableCell className="text-sm text-slate-600">{contact.customer_phone}</TableCell>
@@ -650,18 +819,280 @@ export default function AdminDashboardPage() {
     </section>
   );
 
+  const renderRecentActivityModule = () => (
+    <section className="bg-white rounded-xl border overflow-x-auto" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+      <div className="px-5 py-4 border-b" style={{ borderColor: '#f1f5f9' }}>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h3 className="font-bold" style={{ color: 'var(--teal)' }}>Recent Activity</h3>
+            <p className="text-sm text-slate-500 mt-1">Latest customer opens with session order, watch time, device, and approximate location.</p>
+          </div>
+          <Button variant="outline" onClick={exportRecentActivityCsv} className="rounded-lg border-slate-200 text-slate-600">
+            <Download className="w-4 h-4 mr-2" /> Export CSV
+          </Button>
+        </div>
+      </div>
+      <Table>
+        <TableHeader>
+          <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
+            <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Customer</TableHead>
+            <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Phone</TableHead>
+            <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">PDF</TableHead>
+            <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Session</TableHead>
+            <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Time Spent</TableHead>
+            <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Opened At</TableHead>
+            <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Device</TableHead>
+            <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Location</TableHead>
+            <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10 text-right">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {recentActivity.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={9} className="py-10 text-center text-sm text-slate-400">
+                No recent activity yet.
+              </TableCell>
+            </TableRow>
+          ) : recentActivity.map((item) => {
+            const DeviceIcon = getDeviceIcon(item.device_type);
+            return (
+              <TableRow key={item.session_id} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
+                <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>{item.customer_name}</TableCell>
+                <TableCell className="text-sm text-slate-600">{item.customer_phone}</TableCell>
+                <TableCell className="text-sm text-slate-500 max-w-[220px] truncate">{item.pdf_name}</TableCell>
+                <TableCell className="text-sm text-slate-600">{formatSessionOrdinal(item.session_number)} session</TableCell>
+                <TableCell className="text-sm text-slate-600">{formatDuration(item.duration_seconds)}</TableCell>
+                <TableCell className="text-xs text-slate-400">{formatDate(item.started_at)}</TableCell>
+                <TableCell className="text-xs text-slate-500">
+                  <div className="flex items-center gap-2">
+                    <DeviceIcon className="w-4 h-4" />
+                    <span>{item.device_type} · {item.platform}</span>
+                  </div>
+                </TableCell>
+                <TableCell className="text-xs text-slate-500">
+                  {item.location_label ? (
+                    <div className="flex items-center gap-2">
+                      <Globe2 className="w-4 h-4" />
+                      <span>{item.location_label}</span>
+                    </div>
+                  ) : <span className="text-slate-300"> </span>}
+                </TableCell>
+                <TableCell className="text-right">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDeleteRecentSession(item.session_id)}
+                    disabled={deletingSessionId === item.session_id}
+                    className="rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50"
+                  >
+                    {deletingSessionId === item.session_id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  </Button>
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </section>
+  );
+
   const renderPdfsModule = () => (
     <section className="space-y-4">
-      <div>
-        <h2 className="text-xl font-bold" style={{ color: 'var(--teal)' }}>PDFs</h2>
-        <p className="text-sm text-slate-500 mt-1">Manage active and archived PDFs from one place.</p>
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-bold" style={{ color: 'var(--teal)' }}>PDFs</h2>
+          <p className="text-sm text-slate-500 mt-1">Manage folders, active PDFs, and archived PDFs from one place.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => openFolderDialog()} className="rounded-lg border-slate-200 text-slate-600">
+            <FolderOpen className="w-4 h-4 mr-2" /> Create Folder
+          </Button>
+          <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="rounded-lg text-white font-semibold" style={{ backgroundColor: 'var(--teal)' }}>
+                <Upload className="w-4 h-4 mr-2" /> Upload PDF
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="rounded-xl border" style={{ borderColor: '#e5e7eb' }}>
+              <DialogHeader>
+                <DialogTitle className="font-bold text-xl" style={{ color: 'var(--teal)' }}>Upload PDF</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 pt-2">
+                <div>
+                  <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Folder</Label>
+                  <select
+                    value={uploadFolderId}
+                    onChange={(e) => setUploadFolderId(e.target.value)}
+                    className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-600"
+                  >
+                    <option value="__none__">No folder</option>
+                    {folders.map((folder) => (
+                      <option key={folder.id} value={folder.id}>{folder.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <label className="flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-10 cursor-pointer transition-colors hover:border-[var(--teal)]" style={{ borderColor: '#cbd5e1' }}>
+                  <Upload className="w-10 h-10 mb-3" style={{ color: 'var(--teal)' }} />
+                  <span className="font-semibold text-sm" style={{ color: 'var(--teal)' }}>
+                    {uploading ? 'Uploading...' : 'Click to select PDF'}
+                  </span>
+                  <span className="text-xs mt-1 text-slate-400">Max 100MB</span>
+                  <input type="file" accept=".pdf" onChange={handleUploadPdf} className="hidden" disabled={uploading} />
+                </label>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[
+            { label: 'Active Folders', value: folders.length, accent: 'var(--teal)' },
+            { label: 'Archived Folders', value: archivedFolders.length, accent: '#b45309' },
+            { label: 'Active PDFs', value: activePdfItems.length, accent: '#0369a1' },
+            { label: 'Archived PDFs', value: archivedPdfItems.length, accent: '#64748b' },
+          ].map((item) => (
+            <div key={item.label} className="bg-white rounded-xl border p-4" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">{item.label}</div>
+              <div className="mt-2 text-2xl font-black" style={{ color: item.accent }}>{item.value}</div>
+            </div>
+          ))}
+        </div>
+        <div className="bg-white rounded-xl border p-4 flex items-center" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+          <div className="relative w-full">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <Input
+              value={pdfSearch}
+              onChange={(e) => setPdfSearch(e.target.value)}
+              placeholder="Search folders or PDFs..."
+              className="pl-9 rounded-lg border-slate-200"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="grid xl:grid-cols-[1.2fr_0.95fr] gap-4">
+        <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+          <div className="px-5 py-4 border-b" style={{ borderColor: '#f1f5f9' }}>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="font-bold" style={{ color: 'var(--teal)' }}>Folders</h3>
+                <p className="text-sm text-slate-500 mt-1">Group PDFs by destination or campaign.</p>
+              </div>
+              <Badge className="rounded-full" style={{ backgroundColor: 'rgba(20,74,87,0.08)', color: 'var(--teal)' }}>
+                {folders.length} active
+              </Badge>
+            </div>
+          </div>
+          <Table>
+            <TableHeader>
+              <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
+                <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Folder</TableHead>
+                <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Active PDFs</TableHead>
+                <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Archived PDFs</TableHead>
+                <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10 text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {folders.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="py-10 text-center text-sm text-slate-400">No folders created yet.</TableCell>
+                </TableRow>
+              ) : folders.filter((folder) => !pdfSearch || folder.name.toLowerCase().includes(pdfSearch.toLowerCase())).map((folder) => (
+                <TableRow key={folder.id} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
+                  <TableCell>
+                    <div className="font-semibold" style={{ color: 'var(--teal)' }}>{folder.name}</div>
+                    <div className="text-[11px] text-slate-400 mt-1">Shared to users automatically</div>
+                  </TableCell>
+                  <TableCell>
+                    <span className="inline-flex min-w-7 items-center justify-center rounded-full px-2 py-0.5 text-xs font-bold" style={{ backgroundColor: 'rgba(20,74,87,0.08)', color: 'var(--teal)' }}>
+                      {folder.active_pdfs || 0}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <span className="inline-flex min-w-7 items-center justify-center rounded-full px-2 py-0.5 text-xs font-bold" style={{ backgroundColor: '#fef3c7', color: '#b45309' }}>
+                      {folder.archived_pdfs || 0}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      <Button variant="ghost" size="sm" onClick={() => openFolderDialog(folder)} className="rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100">
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => handleArchiveFolder(folder.id)} disabled={archivingFolderId === folder.id} className="rounded-lg text-amber-500 hover:text-amber-700 hover:bg-amber-50">
+                        {archivingFolderId === folder.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Archive className="w-4 h-4" />}
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => handleDeleteFolder(folder.id)} disabled={deletingFolderId === folder.id} className="rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50">
+                        {deletingFolderId === folder.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+
+        <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+          <div className="px-5 py-4 border-b" style={{ borderColor: '#f1f5f9' }}>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="font-bold" style={{ color: 'var(--teal)' }}>Archived Folders</h3>
+                <p className="text-sm text-slate-500 mt-1">Reactivate or permanently delete archived folders.</p>
+              </div>
+              <Badge className="rounded-full" style={{ backgroundColor: '#fef3c7', color: '#b45309' }}>
+                {archivedFolders.length} archived
+              </Badge>
+            </div>
+          </div>
+          <Table>
+            <TableHeader>
+              <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
+                <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Folder</TableHead>
+                <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Archived At</TableHead>
+                <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10 text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {archivedFolders.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={3} className="py-10 text-center text-sm text-slate-400">No archived folders yet.</TableCell>
+                </TableRow>
+              ) : archivedFolders.filter((folder) => !pdfSearch || folder.name.toLowerCase().includes(pdfSearch.toLowerCase())).map((folder) => (
+                <TableRow key={`archived-${folder.id}`} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
+                  <TableCell>
+                    <div className="font-semibold" style={{ color: 'var(--teal)' }}>{folder.name}</div>
+                    <div className="text-[11px] text-slate-400 mt-1">Use reactivate to bring this back live</div>
+                  </TableCell>
+                  <TableCell className="text-xs text-slate-400 whitespace-nowrap">{formatDate(folder.archived_at)}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      <Button variant="ghost" size="sm" onClick={() => handleReactivateFolder(folder.id)} disabled={reactivatingFolderId === folder.id} className="rounded-lg text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50">
+                        {reactivatingFolderId === folder.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => handleDeleteFolder(folder.id)} disabled={deletingFolderId === folder.id} className="rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50">
+                        {deletingFolderId === folder.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl border overflow-x-auto" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
         <div className="px-5 py-4 border-b" style={{ borderColor: '#f1f5f9' }}>
-          <div>
-            <h3 className="font-bold" style={{ color: 'var(--teal)' }}>Active PDFs</h3>
-            <p className="text-sm text-slate-500 mt-1">Only live PDFs stay here. Archived ones move to the separate section below.</p>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="font-bold" style={{ color: 'var(--teal)' }}>Active PDFs</h3>
+              <p className="text-sm text-slate-500 mt-1">Only live PDFs stay here. Archived ones move to the separate section below.</p>
+            </div>
+            <Badge className="rounded-full" style={{ backgroundColor: 'rgba(14,165,233,0.08)', color: '#0369a1' }}>
+              {activePdfItems.length} live
+            </Badge>
           </div>
         </div>
         <Table>
@@ -675,14 +1106,17 @@ export default function AdminDashboardPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {(analytics.time_by_pdf || []).length === 0 ? (
+            {activePdfItems.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="py-10 text-center text-sm text-slate-400">No active PDF analytics yet.</TableCell>
               </TableRow>
             ) : (
-              (analytics.time_by_pdf || []).map((item) => (
+              activePdfItems.map((item) => (
                 <TableRow key={item.pdf_id || item.pdf_name} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
-                  <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>{item.pdf_name}</TableCell>
+                  <TableCell>
+                    <div className="font-semibold" style={{ color: 'var(--teal)' }}>{item.pdf_name}</div>
+                    <div className="text-xs text-slate-400">{item.folder_name || 'Unfoldered'}</div>
+                  </TableCell>
                   <TableCell className="text-sm text-slate-600">{item.sessions}</TableCell>
                   <TableCell className="text-sm text-slate-600">{formatDuration(item.total_time_seconds)}</TableCell>
                   <TableCell className="text-sm text-slate-600">{formatDuration(item.avg_time_seconds)}</TableCell>
@@ -706,12 +1140,17 @@ export default function AdminDashboardPage() {
 
       <div className="bg-white rounded-xl border overflow-x-auto" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
         <div className="px-5 py-4 border-b" style={{ borderColor: '#f1f5f9' }}>
-          <div className="flex items-center gap-2">
-            <Archive className="w-4 h-4" style={{ color: 'var(--gold)' }} />
-            <div>
-              <h3 className="font-bold" style={{ color: 'var(--teal)' }}>Archived PDFs</h3>
-              <p className="text-sm text-slate-500 mt-1">Archived PDFs stay here until you reactivate or permanently delete them.</p>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Archive className="w-4 h-4" style={{ color: 'var(--gold)' }} />
+              <div>
+                <h3 className="font-bold" style={{ color: 'var(--teal)' }}>Archived PDFs</h3>
+                <p className="text-sm text-slate-500 mt-1">Archived PDFs stay here until you reactivate or permanently delete them.</p>
+              </div>
             </div>
+            <Badge className="rounded-full" style={{ backgroundColor: '#f1f5f9', color: '#64748b' }}>
+              {archivedPdfItems.length} archived
+            </Badge>
           </div>
         </div>
         <Table>
@@ -726,14 +1165,17 @@ export default function AdminDashboardPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {(analytics.archived_time_by_pdf || []).length === 0 ? (
+            {archivedPdfItems.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="py-10 text-center text-sm text-slate-400">No archived PDFs yet.</TableCell>
               </TableRow>
             ) : (
-              (analytics.archived_time_by_pdf || []).map((item) => (
+              archivedPdfItems.map((item) => (
                 <TableRow key={`archived-${item.pdf_id || item.pdf_name}`} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
-                  <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>{item.pdf_name}</TableCell>
+                  <TableCell>
+                    <div className="font-semibold" style={{ color: 'var(--teal)' }}>{item.pdf_name}</div>
+                    <div className="text-xs text-slate-400">{item.folder_name || 'Unfoldered'}</div>
+                  </TableCell>
                   <TableCell className="text-xs text-slate-400">{formatDate(item.archived_at)}</TableCell>
                   <TableCell className="text-sm text-slate-600">{item.sessions}</TableCell>
                   <TableCell className="text-sm text-slate-600">{formatDuration(item.total_time_seconds)}</TableCell>
@@ -806,6 +1248,36 @@ export default function AdminDashboardPage() {
                   <Input value={newUserPassword} onChange={e => setNewUserPassword(e.target.value)} placeholder="Enter temporary password" className="mt-1.5 rounded-lg border-slate-200" required />
                   <p className="text-xs text-slate-400 mt-1">Share this password with the user. They can log in with it immediately.</p>
                 </div>
+                <div>
+                  <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Role</Label>
+                  <select value={newUserRole} onChange={(e) => setNewUserRole(e.target.value)} className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-600">
+                    <option value="user">User</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </div>
+                <div>
+                  <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Status</Label>
+                  <select value={newUserActive ? 'active' : 'inactive'} onChange={(e) => setNewUserActive(e.target.value === 'active')} className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-600">
+                    <option value="active">Active</option>
+                    <option value="inactive">Deactivated</option>
+                  </select>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  {['dashboard', 'pdfs', 'contacts'].map((moduleKey) => (
+                    <div key={`new-${moduleKey}`}>
+                      <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">{moduleKey}</Label>
+                      <select
+                        value={newUserModuleAccess[moduleKey] || 'none'}
+                        onChange={(e) => setNewUserModuleAccess((current) => ({ ...current, [moduleKey]: e.target.value }))}
+                        className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-600"
+                      >
+                        <option value="none">Hidden</option>
+                        <option value="view">View</option>
+                        <option value="edit">Edit</option>
+                      </select>
+                    </div>
+                  ))}
+                </div>
                 <Button type="submit" disabled={creating} className="w-full rounded-lg font-bold text-white" style={{ backgroundColor: 'var(--teal)' }}>
                   {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Create User'}
                 </Button>
@@ -823,6 +1295,8 @@ export default function AdminDashboardPage() {
               <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Email</TableHead>
               <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Name</TableHead>
               <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Role</TableHead>
+              <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Status</TableHead>
+              <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Module Access</TableHead>
               <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Password</TableHead>
               <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Created</TableHead>
               <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10 text-right">Actions</TableHead>
@@ -839,19 +1313,50 @@ export default function AdminDashboardPage() {
                     {item.role}
                   </Badge>
                 </TableCell>
+                <TableCell>
+                  <Badge className="rounded-full" style={{ backgroundColor: item.active ? '#dcfce7' : '#fee2e2', color: item.active ? '#16a34a' : '#dc2626' }}>
+                    {item.active ? 'Active' : 'Deactivated'}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-xs text-slate-500">
+                  {Object.entries(item.module_access || {}).map(([key, value]) => `${key}:${value}`).join(' · ')}
+                </TableCell>
                 <TableCell className="text-sm text-slate-500">{item.password_status}</TableCell>
                 <TableCell className="text-xs text-slate-400">{formatDate(item.created_at)}</TableCell>
                 <TableCell className="text-right">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleResetPassword(item)}
-                    disabled={resettingId === item.id}
-                    className="rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100"
-                  >
-                    {resettingId === item.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4 mr-1.5" />}
-                    Reset
-                  </Button>
+                  <div className="flex items-center justify-end gap-2">
+                    <Button variant="ghost" size="sm" onClick={() => openEditUser(item)} className="rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100">
+                      <Pencil className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleToggleUserActive(item)}
+                      disabled={updatingUserId === item.id}
+                      className={`rounded-lg ${item.active ? 'text-amber-500 hover:text-amber-700 hover:bg-amber-50' : 'text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50'}`}
+                    >
+                      {updatingUserId === item.id ? <Loader2 className="w-4 h-4 animate-spin" /> : item.active ? <Archive className="w-4 h-4" /> : <RotateCcw className="w-4 h-4" />}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleResetPassword(item)}
+                      disabled={resettingId === item.id}
+                      className="rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100"
+                    >
+                      {resettingId === item.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4 mr-1.5" />}
+                      Reset
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDeleteUser(item.id)}
+                      disabled={deletingUserId === item.id}
+                      className="rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50"
+                    >
+                      {deletingUserId === item.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
@@ -942,6 +1447,7 @@ export default function AdminDashboardPage() {
       <main className="max-w-[1400px] mx-auto px-5 md:px-10 py-8">
         {activeModule === 'dashboard' && renderDashboardModule()}
         {activeModule === 'contacts' && renderContactsModule()}
+        {activeModule === 'recent_activity' && renderRecentActivityModule()}
         {activeModule === 'pdfs' && renderPdfsModule()}
         {activeModule === 'users' && renderUsersModule()}
       </main>
@@ -964,6 +1470,70 @@ export default function AdminDashboardPage() {
             </div>
             <Button type="submit" disabled={savingContact} className="w-full rounded-lg font-bold text-white" style={{ backgroundColor: 'var(--teal)' }}>
               {savingContact ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save Contact'}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={userDialogOpen} onOpenChange={setUserDialogOpen}>
+        <DialogContent className="rounded-xl border" style={{ borderColor: '#e5e7eb' }}>
+          <DialogHeader>
+            <DialogTitle className="font-bold text-xl" style={{ color: 'var(--teal)' }}>Edit User</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSaveUser} className="space-y-4 pt-2">
+            <div>
+              <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Name</Label>
+              <Input value={editUserName} onChange={(e) => setEditUserName(e.target.value)} className="mt-1.5 rounded-lg border-slate-200" required />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Role</Label>
+                <select value={editUserRole} onChange={(e) => setEditUserRole(e.target.value)} className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-600">
+                  <option value="user">User</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+              <div>
+                <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Status</Label>
+                <select value={editUserActive ? 'active' : 'inactive'} onChange={(e) => setEditUserActive(e.target.value === 'active')} className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-600">
+                  <option value="active">Active</option>
+                  <option value="inactive">Deactivated</option>
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              {['dashboard', 'pdfs', 'contacts'].map((moduleKey) => (
+                <div key={moduleKey}>
+                  <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">{moduleKey}</Label>
+                  <select
+                    value={editModuleAccess[moduleKey] || 'none'}
+                    onChange={(e) => setEditModuleAccess((current) => ({ ...current, [moduleKey]: e.target.value }))}
+                    className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-600"
+                  >
+                    <option value="none">Hidden</option>
+                    <option value="view">View</option>
+                    <option value="edit">Edit</option>
+                  </select>
+                </div>
+              ))}
+            </div>
+            <Button type="submit" disabled={updatingUserId === editingUser?.id} className="w-full rounded-lg font-bold text-white" style={{ backgroundColor: 'var(--teal)' }}>
+              {updatingUserId === editingUser?.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save User'}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={folderDialogOpen} onOpenChange={setFolderDialogOpen}>
+        <DialogContent className="rounded-xl border" style={{ borderColor: '#e5e7eb' }}>
+          <DialogHeader>
+            <DialogTitle className="font-bold text-xl" style={{ color: 'var(--teal)' }}>{editingFolder ? 'Edit Folder' : 'Create Folder'}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSaveFolder} className="space-y-4 pt-2">
+            <div>
+              <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Folder Name</Label>
+              <Input value={folderName} onChange={(e) => setFolderName(e.target.value)} className="mt-1.5 rounded-lg border-slate-200" required />
+            </div>
+            <Button type="submit" disabled={savingFolder} className="w-full rounded-lg font-bold text-white" style={{ backgroundColor: 'var(--teal)' }}>
+              {savingFolder ? <Loader2 className="w-4 h-4 animate-spin" /> : editingFolder ? 'Save Folder' : 'Create Folder'}
             </Button>
           </form>
         </DialogContent>

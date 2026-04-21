@@ -401,7 +401,67 @@ def build_page_breakdown(raw_page_durations: Optional[dict]) -> list[dict]:
 def get_jwt_secret():
     return os.environ["JWT_SECRET"]
 
-# Object Storage config
+DEFAULT_MODULE_ACCESS = {
+    "dashboard": "edit",
+    "pdfs": "edit",
+    "contacts": "edit",
+}
+
+
+def normalize_module_access(value: Optional[dict]) -> dict:
+    normalized = dict(DEFAULT_MODULE_ACCESS)
+    if isinstance(value, dict):
+        for key in DEFAULT_MODULE_ACCESS:
+            candidate = value.get(key)
+            if candidate in {"none", "view", "edit"}:
+                normalized[key] = candidate
+    return normalized
+
+
+def serialize_user_payload(user: dict) -> dict:
+    return {
+        "id": str(user["_id"]),
+        "email": user.get("email", ""),
+        "name": user.get("name", ""),
+        "role": user.get("role", "user"),
+        "active": bool(user.get("active", True)),
+        "module_access": normalize_module_access(user.get("module_access")),
+    }
+
+
+async def get_admin_user_ids() -> list[str]:
+    admin_docs = await db.users.find({"role": "admin"}, {"_id": 1}).to_list(1000)
+    return [str(item["_id"]) for item in admin_docs]
+
+
+async def get_accessible_pdf_query(user: dict) -> dict:
+    base_query = {"archived": {"$ne": True}, "upload_status": {"$ne": "pending"}}
+    if user.get("role") == "admin":
+        return base_query
+    admin_user_ids = await get_admin_user_ids()
+    return {
+        **base_query,
+        "$or": [
+            {"user_id": user["_id"]},
+            {"user_id": {"$in": admin_user_ids}},
+            {"shared_with_users": True},
+        ],
+    }
+
+
+async def get_accessible_folder_query(user: dict) -> dict:
+    base_query = {"archived": {"$ne": True}}
+    if user.get("role") == "admin":
+        return base_query
+    admin_user_ids = await get_admin_user_ids()
+    return {
+        **base_query,
+        "$or": [
+            {"user_id": user["_id"]},
+            {"user_id": {"$in": admin_user_ids}},
+            {"shared_with_users": True},
+        ],
+    }
 
 
 
@@ -440,8 +500,11 @@ async def get_current_user(request: Request) -> dict:
         user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
+        if user.get("active", True) is False:
+            raise HTTPException(status_code=403, detail="User is deactivated")
         user["_id"] = str(user["_id"])
         user.pop("password_hash", None)
+        user["module_access"] = normalize_module_access(user.get("module_access"))
         return user
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
@@ -474,6 +537,7 @@ class PdfUploadInitiateInput(BaseModel):
     file_name: str
     file_size: int
     content_type: str = "application/pdf"
+    folder_id: Optional[str] = None
 
 class PdfUploadCompleteInput(BaseModel):
     pdf_id: str
@@ -482,13 +546,29 @@ class AdminCreateUserInput(BaseModel):
     email: str
     password: str
     name: str = "User"
+    role: str = "user"
+    active: bool = True
+    module_access: Optional[dict] = None
 
 class AdminResetPasswordInput(BaseModel):
     password: str
 
+class AdminUserUpdateInput(BaseModel):
+    name: Optional[str] = None
+    role: Optional[str] = None
+    active: Optional[bool] = None
+    module_access: Optional[dict] = None
+
 class AdminContactUpdateInput(BaseModel):
     customer_name: str
     customer_phone: str
+
+class FolderCreateInput(BaseModel):
+    name: str
+
+
+class FolderUpdateInput(BaseModel):
+    name: Optional[str] = None
 
 class ViewSessionStartInput(BaseModel):
     screen_width: Optional[int] = None
@@ -519,6 +599,8 @@ async def register(input: RegisterInput, response: Response):
         "password_hash": hashed,
         "name": input.name,
         "role": "user",
+        "active": True,
+        "module_access": dict(DEFAULT_MODULE_ACCESS),
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     result = await db.users.insert_one(user_doc)
@@ -528,7 +610,7 @@ async def register(input: RegisterInput, response: Response):
     is_https = "https" in os.environ.get("FRONTEND_URL", "")
     response.set_cookie(key="access_token", value=access_token, httponly=True, secure=is_https, samesite="none", max_age=3600, path="/")
     response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=is_https, samesite="none", max_age=604800, path="/")
-    return {"id": user_id, "email": email, "name": input.name, "role": "user", "access_token": access_token}
+    return {**serialize_user_payload({"_id": user_id, **user_doc}), "access_token": access_token}
 
 @api_router.post("/auth/login")
 async def login(input: LoginInput, request: Request, response: Response):
@@ -538,13 +620,15 @@ async def login(input: LoginInput, request: Request, response: Response):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     if not verify_password(input.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    if user.get("active", True) is False:
+        raise HTTPException(status_code=403, detail="User is deactivated")
     user_id = str(user["_id"])
     access_token = create_access_token(user_id, email)
     refresh_token = create_refresh_token(user_id)
     is_https = "https" in os.environ.get("FRONTEND_URL", "")
     response.set_cookie(key="access_token", value=access_token, httponly=True, secure=is_https, samesite="none", max_age=3600, path="/")
     response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=is_https, samesite="none", max_age=604800, path="/")
-    return {"id": user_id, "email": email, "name": user.get("name", ""), "role": user.get("role", "user"), "access_token": access_token}
+    return {**serialize_user_payload(user), "access_token": access_token}
 
 @api_router.post("/auth/logout")
 async def logout(response: Response):
@@ -555,7 +639,7 @@ async def logout(response: Response):
 @api_router.get("/auth/me")
 async def get_me(request: Request):
     user = await get_current_user(request)
-    return {"id": user["_id"], "email": user["email"], "name": user.get("name", ""), "role": user.get("role", "user")}
+    return serialize_user_payload(user)
 
 @api_router.post("/auth/refresh")
 async def refresh_token(request: Request, response: Response):
@@ -596,6 +680,8 @@ async def list_users(request: Request):
             "email": user.get("email", ""),
             "name": user.get("name", ""),
             "role": user.get("role", "user"),
+            "active": bool(user.get("active", True)),
+            "module_access": normalize_module_access(user.get("module_access")),
             "created_at": user.get("created_at"),
             "password_status": "Password Set" if user.get("password_hash") else "No Password"
         }
@@ -614,11 +700,14 @@ async def admin_create_user(input: AdminCreateUserInput, request: Request):
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
+    role = input.role if input.role in {"admin", "user"} else "user"
     user_doc = {
         "email": email,
         "password_hash": hash_password(input.password),
         "name": input.name.strip() or "User",
-        "role": "user",
+        "role": role,
+        "active": bool(input.active),
+        "module_access": normalize_module_access(input.module_access),
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     result = await db.users.insert_one(user_doc)
@@ -627,9 +716,70 @@ async def admin_create_user(input: AdminCreateUserInput, request: Request):
         "email": user_doc["email"],
         "name": user_doc["name"],
         "role": user_doc["role"],
+        "active": bool(input.active),
+        "module_access": normalize_module_access(input.module_access),
         "created_at": user_doc["created_at"],
         "password_status": "Password Set"
     }
+
+
+@api_router.put("/admin/users/{user_id}")
+async def admin_update_user(user_id: str, input: AdminUserUpdateInput, request: Request):
+    admin = await get_current_admin(request)
+    try:
+        object_id = ObjectId(user_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid user ID")
+
+    user = await db.users.find_one({"_id": object_id})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if str(user["_id"]) == admin["_id"] and input.active is False:
+        raise HTTPException(status_code=400, detail="You cannot deactivate your own admin account")
+
+    updates = {}
+    if input.name is not None:
+        updates["name"] = input.name.strip() or user.get("name") or "User"
+    if input.role is not None:
+        if input.role not in {"admin", "user"}:
+            raise HTTPException(status_code=400, detail="Role must be admin or user")
+        updates["role"] = input.role
+    if input.active is not None:
+        updates["active"] = bool(input.active)
+    if input.module_access is not None:
+        updates["module_access"] = normalize_module_access(input.module_access)
+
+    if updates:
+        await db.users.update_one({"_id": object_id}, {"$set": updates})
+
+    updated = await db.users.find_one({"_id": object_id})
+    return {
+        "id": str(updated["_id"]),
+        "email": updated.get("email", ""),
+        "name": updated.get("name", ""),
+        "role": updated.get("role", "user"),
+        "active": bool(updated.get("active", True)),
+        "module_access": normalize_module_access(updated.get("module_access")),
+        "created_at": updated.get("created_at"),
+        "password_status": "Password Set" if updated.get("password_hash") else "No Password",
+    }
+
+
+@api_router.delete("/admin/users/{user_id}")
+async def admin_delete_user(user_id: str, request: Request):
+    admin = await get_current_admin(request)
+    try:
+        object_id = ObjectId(user_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid user ID")
+
+    if user_id == admin["_id"]:
+        raise HTTPException(status_code=400, detail="You cannot delete your own admin account")
+
+    result = await db.users.delete_one({"_id": object_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"message": "User deleted"}
 
 
 @api_router.post("/admin/users/{user_id}/reset-password")
@@ -654,7 +804,7 @@ async def admin_reset_password(user_id: str, input: AdminResetPasswordInput, req
 
 
 @api_router.get("/admin/contacts")
-async def admin_list_contacts(request: Request):
+async def admin_list_contacts(request: Request, search: Optional[str] = None):
     await get_current_admin(request)
     contacts = await db.contacts.find({}).sort("updated_at", -1).to_list(10000)
     users = await db.users.find({}, {"name": 1, "email": 1}).to_list(10000)
@@ -718,6 +868,15 @@ async def admin_list_contacts(request: Request):
             "opened_links": stats.get("opened_links", 0),
             "total_opens": stats.get("total_opens", 0),
         })
+    if search:
+        needle = search.strip().lower()
+        items = [
+            item for item in items
+            if needle in (item.get("customer_name") or "").lower()
+            or needle in (item.get("customer_phone") or "").lower()
+            or needle in (item.get("user_name") or "").lower()
+            or needle in (item.get("latest_pdf_name") or "").lower()
+        ]
     return items
 
 
@@ -805,7 +964,7 @@ async def admin_analytics(
 
     links = await db.links.find(date_filter).to_list(10000)
     users = await db.users.find({}, {"name": 1, "email": 1}).to_list(10000)
-    pdfs = await db.pdfs.find({}, {"_id": 0, "id": 1, "file_name": 1, "archived": 1, "archived_at": 1, "upload_status": 1}).to_list(10000)
+    pdfs = await db.pdfs.find({}, {"_id": 0, "id": 1, "file_name": 1, "archived": 1, "archived_at": 1, "upload_status": 1, "folder_id": 1, "folder_name": 1}).to_list(10000)
     session_filter = {}
     if days and days > 0:
         session_filter = {"started_at": {"$gte": cutoff}}
@@ -819,6 +978,8 @@ async def admin_analytics(
         pdf["id"]: {
             "pdf_id": pdf["id"],
             "pdf_name": pdf.get("file_name", "Unknown PDF"),
+            "folder_id": pdf.get("folder_id"),
+            "folder_name": pdf.get("folder_name"),
             "archived": bool(pdf.get("archived")),
             "archived_at": pdf.get("archived_at"),
             "upload_status": pdf.get("upload_status"),
@@ -894,7 +1055,14 @@ async def admin_analytics(
         pdf_id = session.get("pdf_id")
         pdf_name = get_session_pdf_name(session, pdf_map)
         if pdf_id not in sessions_by_pdf:
-            sessions_by_pdf[pdf_id] = {"pdf_id": pdf_id, "pdf_name": pdf_name, "sessions": 0, "total_time_seconds": 0}
+            sessions_by_pdf[pdf_id] = {
+                "pdf_id": pdf_id,
+                "pdf_name": pdf_name,
+                "folder_id": pdf_meta_map.get(pdf_id, {}).get("folder_id"),
+                "folder_name": pdf_meta_map.get(pdf_id, {}).get("folder_name"),
+                "sessions": 0,
+                "total_time_seconds": 0,
+            }
         sessions_by_pdf[pdf_id]["sessions"] += 1
         sessions_by_pdf[pdf_id]["total_time_seconds"] += int(session.get("duration_seconds") or 0)
 
@@ -903,6 +1071,8 @@ async def admin_analytics(
         pdf_id: {
             "pdf_id": pdf_id,
             "pdf_name": meta["pdf_name"],
+            "folder_id": meta.get("folder_id"),
+            "folder_name": meta.get("folder_name"),
             "sessions": 0,
             "total_time_seconds": 0,
             "avg_time_seconds": 0,
@@ -920,6 +1090,8 @@ async def admin_analytics(
             archived_item = archived_time_by_pdf.get(item["pdf_id"], {
                 "pdf_id": item["pdf_id"],
                 "pdf_name": item["pdf_name"],
+                "folder_id": item.get("folder_id"),
+                "folder_name": item.get("folder_name"),
                 "sessions": 0,
                 "total_time_seconds": 0,
                 "avg_time_seconds": 0,
@@ -1115,6 +1287,113 @@ async def admin_permanently_delete_pdf(pdf_id: str, request: Request):
     )
     return {"message": "PDF permanently deleted"}
 
+
+@api_router.get("/folders")
+async def list_folders(request: Request, status: Optional[str] = "active"):
+    user = await get_current_user(request)
+    query = await get_accessible_folder_query(user)
+    if status == "archived":
+        query["archived"] = True
+        query.pop("$or", None) if user.get("role") == "admin" else None
+        if user.get("role") != "admin":
+            admin_user_ids = await get_admin_user_ids()
+            query = {
+                "archived": True,
+                "$or": [
+                    {"user_id": user["_id"]},
+                    {"user_id": {"$in": admin_user_ids}},
+                    {"shared_with_users": True},
+                ],
+            }
+    elif status != "all":
+        query["archived"] = {"$ne": True}
+    folders = await db.pdf_folders.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    pdfs = await db.pdfs.find({"upload_status": {"$ne": "pending"}}, {"_id": 0, "id": 1, "folder_id": 1, "archived": 1}).to_list(5000)
+    counts = {}
+    for pdf in pdfs:
+        folder_id = pdf.get("folder_id")
+        if not folder_id:
+            continue
+        bucket = counts.setdefault(folder_id, {"active_pdfs": 0, "archived_pdfs": 0})
+        if pdf.get("archived"):
+            bucket["archived_pdfs"] += 1
+        else:
+            bucket["active_pdfs"] += 1
+    return [{**folder, **counts.get(folder["id"], {"active_pdfs": 0, "archived_pdfs": 0})} for folder in folders]
+
+
+@api_router.post("/admin/folders")
+async def create_folder(input: FolderCreateInput, request: Request):
+    admin = await get_current_admin(request)
+    name = (input.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Folder name is required")
+    now = datetime.now(timezone.utc).isoformat()
+    folder = {
+        "id": str(uuid.uuid4()),
+        "name": name,
+        "user_id": admin["_id"],
+        "shared_with_users": True,
+        "archived": False,
+        "archived_at": None,
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.pdf_folders.insert_one(folder)
+    return folder
+
+
+@api_router.put("/admin/folders/{folder_id}")
+async def update_folder(folder_id: str, input: FolderUpdateInput, request: Request):
+    await get_current_admin(request)
+    folder = await db.pdf_folders.find_one({"id": folder_id})
+    if not folder:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    updates = {"updated_at": datetime.now(timezone.utc).isoformat()}
+    if input.name is not None:
+        name = input.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Folder name is required")
+        updates["name"] = name
+    await db.pdf_folders.update_one({"id": folder_id}, {"$set": updates})
+    return {"message": "Folder updated"}
+
+
+@api_router.delete("/admin/folders/{folder_id}")
+async def archive_folder(folder_id: str, request: Request):
+    await get_current_admin(request)
+    folder = await db.pdf_folders.find_one({"id": folder_id})
+    if not folder:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    archived_at = datetime.now(timezone.utc).isoformat()
+    await db.pdf_folders.update_one({"id": folder_id}, {"$set": {"archived": True, "archived_at": archived_at, "updated_at": archived_at}})
+    await db.pdfs.update_many({"folder_id": folder_id}, {"$set": {"archived": True, "archived_at": archived_at, "updated_at": archived_at}})
+    await db.links.update_many({"folder_id": folder_id}, {"$set": {"folder_archived": True}})
+    return {"message": "Folder archived"}
+
+
+@api_router.post("/admin/folders/{folder_id}/reactivate")
+async def reactivate_folder(folder_id: str, request: Request):
+    await get_current_admin(request)
+    folder = await db.pdf_folders.find_one({"id": folder_id})
+    if not folder:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    now = datetime.now(timezone.utc).isoformat()
+    await db.pdf_folders.update_one({"id": folder_id}, {"$set": {"archived": False, "archived_at": None, "updated_at": now}})
+    await db.pdfs.update_many({"folder_id": folder_id}, {"$set": {"archived": False, "archived_at": None, "updated_at": now}})
+    return {"message": "Folder reactivated"}
+
+
+@api_router.delete("/admin/folders/{folder_id}/permanent")
+async def permanently_delete_folder(folder_id: str, request: Request):
+    await get_current_admin(request)
+    folder = await db.pdf_folders.find_one({"id": folder_id})
+    if not folder:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    await db.pdf_folders.delete_one({"id": folder_id})
+    await db.pdfs.update_many({"folder_id": folder_id}, {"$unset": {"folder_id": "", "folder_name": ""}, "$set": {"updated_at": datetime.now(timezone.utc).isoformat()}})
+    return {"message": "Folder permanently deleted"}
+
 # ---- PDF ENDPOINTS ----
 UPLOAD_DIR = ROOT_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -1123,10 +1402,17 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 @api_router.post("/pdfs/upload/initiate")
 async def initiate_pdf_upload(input: PdfUploadInitiateInput, request: Request):
     user = await get_current_user(request)
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can upload PDFs")
     if not s3_ready():
         raise HTTPException(status_code=503, detail="S3 storage is not configured")
 
     validate_pdf_upload(input.file_name, input.file_size, input.content_type)
+    folder = None
+    if input.folder_id:
+        folder = await db.pdf_folders.find_one({"id": input.folder_id, "archived": {"$ne": True}})
+        if not folder:
+            raise HTTPException(status_code=404, detail="Folder not found")
 
     file_id = str(uuid.uuid4())
     object_key = build_pdf_object_key(user["_id"], file_id, input.file_name)
@@ -1146,6 +1432,10 @@ async def initiate_pdf_upload(input: PdfUploadInitiateInput, request: Request):
         "upload_status": "pending",
         "archived": False,
         "archived_at": None,
+        "folder_id": folder.get("id") if folder else None,
+        "folder_name": folder.get("name") if folder else None,
+        "managed_by_admin": True,
+        "shared_with_users": True,
         "created_at": now,
         "updated_at": now,
     }
@@ -1214,6 +1504,8 @@ async def complete_pdf_upload(input: PdfUploadCompleteInput, request: Request):
     return {
         "id": pdf["id"],
         "file_name": pdf["file_name"],
+        "folder_id": pdf.get("folder_id"),
+        "folder_name": pdf.get("folder_name"),
         "file_size": content_length,
         "link_count": 0,
         "created_at": pdf["created_at"],
@@ -1241,10 +1533,8 @@ async def get_uploaded_pdf(filename: str):
 @api_router.get("/pdfs")
 async def list_pdfs(request: Request):
     user = await get_current_user(request)
-    pdfs = await db.pdfs.find(
-        {"user_id": user["_id"], "archived": {"$ne": True}, "upload_status": {"$ne": "pending"}},
-        {"_id": 0}
-    ).sort("created_at", -1).to_list(1000)
+    query = await get_accessible_pdf_query(user)
+    pdfs = await db.pdfs.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
     # Add link count for each PDF
     for pdf in pdfs:
         link_count = await db.links.count_documents({"pdf_id": pdf["id"]})
@@ -1347,7 +1637,8 @@ async def delete_pdf(pdf_id: str, request: Request):
 @api_router.post("/links")
 async def create_link(input: LinkCreateInput, request: Request):
     user = await get_current_user(request)
-    pdf = await db.pdfs.find_one({"id": input.pdf_id, "user_id": user["_id"], "upload_status": {"$ne": "pending"}})
+    accessible_query = await get_accessible_pdf_query(user)
+    pdf = await db.pdfs.find_one({"id": input.pdf_id, **accessible_query})
     if not pdf:
         raise HTTPException(status_code=404, detail="PDF not found")
     if pdf.get("archived"):
@@ -1360,6 +1651,8 @@ async def create_link(input: LinkCreateInput, request: Request):
         "customer_name": input.customer_name,
         "customer_phone": input.customer_phone,
         "pdf_name_snapshot": pdf.get("file_name", "Unknown PDF"),
+        "folder_id": pdf.get("folder_id"),
+        "folder_name": pdf.get("folder_name"),
         "pdf_deleted": False,
         "pdf_archived": bool(pdf.get("archived")),
         "opened": False,
@@ -1740,7 +2033,7 @@ async def heartbeat_view_session(unique_id: str, input: ViewSessionHeartbeatInpu
 @api_router.get("/dashboard/stats")
 async def dashboard_stats(request: Request):
     user = await get_current_user(request)
-    total_pdfs = await db.pdfs.count_documents({"user_id": user["_id"], "archived": {"$ne": True}, "upload_status": {"$ne": "pending"}})
+    total_pdfs = await db.pdfs.count_documents(await get_accessible_pdf_query(user))
     total_links = await db.links.count_documents({"user_id": user["_id"]})
     opened_links = await db.links.count_documents({"user_id": user["_id"], "opened": True})
     return {

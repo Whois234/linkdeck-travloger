@@ -1,23 +1,29 @@
-import { Fragment, useState, useEffect, useCallback } from 'react';
+import { Fragment, useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '../components/ui/sheet';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
 import { toast } from 'sonner';
 import {
-  Upload, Link2, Copy, Trash2, FileText, ExternalLink, LogOut, Search, Filter,
-  CheckCircle, XCircle, Eye, Loader2, FileUp, LinkIcon, MapPin, ArrowUpDown,
+  Link2, Copy, Trash2, FileText, ExternalLink, LogOut, Search, Filter,
+  CheckCircle, XCircle, Eye, Loader2, LinkIcon, MapPin, ArrowUpDown,
   Smartphone, Monitor, Globe2, Archive, Download, ChevronDown, ChevronUp,
-  LayoutGrid, Plus, Users
+  Users, Menu, FolderOpen
 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const SITE_URL = process.env.REACT_APP_SITE_URL || window.location.origin;
+const USER_MODULES = [
+  { key: 'dashboard', label: 'Dashboard', icon: Link2 },
+  { key: 'pdfs', label: 'PDFs', icon: FolderOpen },
+  { key: 'contacts', label: 'Contacts', icon: Users },
+];
 
 function formatDuration(seconds) {
   const value = Number(seconds || 0);
@@ -112,16 +118,17 @@ export default function DashboardPage() {
   const { user, logout } = useAuth();
   const [pdfs, setPdfs] = useState([]);
   const [archivedPdfs, setArchivedPdfs] = useState([]);
+  const [folders, setFolders] = useState([]);
+  const [archivedFolders, setArchivedFolders] = useState([]);
   const [contacts, setContacts] = useState([]);
   const [links, setLinks] = useState([]);
   const [stats, setStats] = useState({ total_pdfs: 0, total_links: 0, opened_links: 0, unopened_links: 0 });
-  const [uploading, setUploading] = useState(false);
-  const [uploadOpen, setUploadOpen] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
   const [selectedPdf, setSelectedPdf] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [creatingLink, setCreatingLink] = useState(false);
+  const [selectedFolder, setSelectedFolder] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [sortBy, setSortBy] = useState('recently_created');
   const [searchQuery, setSearchQuery] = useState('');
@@ -132,11 +139,8 @@ export default function DashboardPage() {
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [selectedSessionDetail, setSelectedSessionDetail] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [tripdecks, setTripdecks] = useState([]);
-  const [tripdeckOpen, setTripdeckOpen] = useState(false);
-  const [tripdeckTitle, setTripdeckTitle] = useState('');
-  const [tripdeckDescription, setTripdeckDescription] = useState('');
-  const [creatingTripDeck, setCreatingTripDeck] = useState(false);
+  const [activeModule, setActiveModule] = useState('dashboard');
+  const [navOpen, setNavOpen] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -144,13 +148,14 @@ export default function DashboardPage() {
       if (filterStatus !== 'all') params.status = filterStatus;
       if (searchQuery.trim()) params.search = searchQuery.trim();
       if (sortBy) params.sort = sortBy;
-      const [pdfsRes, archivedRes, contactsRes, linksRes, statsRes, tripdecksRes] = await Promise.allSettled([
+      const [pdfsRes, archivedRes, foldersRes, archivedFoldersRes, contactsRes, linksRes, statsRes] = await Promise.allSettled([
         axios.get(`${API}/pdfs`, { withCredentials: true }),
         axios.get(`${API}/pdfs/archived`, { withCredentials: true }),
+        axios.get(`${API}/folders`, { withCredentials: true }),
+        axios.get(`${API}/folders`, { withCredentials: true, params: { status: 'archived' } }),
         axios.get(`${API}/contacts`, { withCredentials: true }),
         axios.get(`${API}/links`, { withCredentials: true, params }),
         axios.get(`${API}/dashboard/stats`, { withCredentials: true }),
-        axios.get(`${API}/tripdeck`, { withCredentials: true }),
       ]);
 
       const pdfsData = pdfsRes.status === 'fulfilled'
@@ -158,6 +163,12 @@ export default function DashboardPage() {
         : [];
       const archivedData = archivedRes.status === 'fulfilled'
         ? (Array.isArray(archivedRes.value.data) ? archivedRes.value.data : [])
+        : [];
+      const foldersData = foldersRes.status === 'fulfilled'
+        ? (Array.isArray(foldersRes.value.data) ? foldersRes.value.data : [])
+        : [];
+      const archivedFoldersData = archivedFoldersRes.status === 'fulfilled'
+        ? (Array.isArray(archivedFoldersRes.value.data) ? archivedFoldersRes.value.data : [])
         : [];
       const contactsData = contactsRes.status === 'fulfilled'
         ? (Array.isArray(contactsRes.value.data) ? contactsRes.value.data : [])
@@ -168,15 +179,8 @@ export default function DashboardPage() {
       const statsData = statsRes.status === 'fulfilled'
         ? statsRes.value.data
         : { total_pdfs: 0, total_links: 0, opened_links: 0, unopened_links: 0 };
-      const tripdecksData = tripdecksRes.status === 'fulfilled'
-        ? (Array.isArray(tripdecksRes.value.data) ? tripdecksRes.value.data : [])
-        : [];
-
       if (contactsRes.status === 'rejected') {
         console.warn('Contacts endpoint unavailable, continuing without contacts.', contactsRes.reason);
-      }
-      if (tripdecksRes.status === 'rejected') {
-        console.warn('TripDeck endpoint unavailable, continuing without TripDecks.', tripdecksRes.reason);
       }
 
       const normalizedLinks = linksData.map((link) => ({
@@ -186,10 +190,11 @@ export default function DashboardPage() {
 
       setPdfs(pdfsData);
       setArchivedPdfs(archivedData);
+      setFolders(foldersData);
+      setArchivedFolders(archivedFoldersData);
       setContacts(contactsData);
       setLinks(normalizedLinks);
       setStats(statsData);
-      setTripdecks(tripdecksData);
     } catch (err) {
       if (err.response?.status === 401) return;
       toast.error('Failed to load data');
@@ -200,78 +205,43 @@ export default function DashboardPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const handleUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const isPdf = file.name.toLowerCase().endsWith('.pdf') && (!file.type || file.type === 'application/pdf');
-    if (!isPdf) {
-      toast.error('Only PDF files are allowed');
-      e.target.value = '';
+  const moduleAccess = user?.module_access || { dashboard: 'edit', pdfs: 'edit', contacts: 'edit' };
+  const visibleModules = USER_MODULES.filter((module) => moduleAccess[module.key] && moduleAccess[module.key] !== 'none');
+  useEffect(() => {
+    if (!visibleModules.find((module) => module.key === activeModule)) {
+      setActiveModule(visibleModules[0]?.key || 'dashboard');
+    }
+  }, [activeModule, visibleModules]);
+
+  useEffect(() => {
+    if (!selectedFolder) {
+      setSelectedPdf('');
       return;
     }
-    if (file.size > 100 * 1024 * 1024) {
-      toast.error('File too large. Max 100MB.');
-      e.target.value = '';
-      return;
+    if (selectedPdf && !availablePdfsForLink.some((pdf) => pdf.id === selectedPdf)) {
+      setSelectedPdf('');
     }
-    setUploading(true);
-    try {
-      const initiateRes = await axios.post(`${API}/pdfs/upload/initiate`, {
-        file_name: file.name,
-        file_size: file.size,
-        content_type: file.type || 'application/pdf',
-      }, {
-        withCredentials: true,
-      });
-      const { id, upload_url, upload_fields, upload_method, content_type } = initiateRes.data;
+  }, [selectedFolder, selectedPdf, availablePdfsForLink]);
 
-      if ((upload_method || '').toLowerCase() === 'post' && upload_fields) {
-        const formData = new FormData();
-        Object.entries(upload_fields).forEach(([key, value]) => {
-          formData.append(key, value);
-        });
-        formData.append('file', file);
-        const uploadResponse = await fetch(upload_url, {
-          method: 'POST',
-          body: formData,
-        });
-        if (!uploadResponse.ok) {
-          const responseText = await uploadResponse.text();
-          throw new Error(responseText || `S3 upload failed with status ${uploadResponse.status}`);
-        }
-      } else {
-        await axios.put(upload_url, file, {
-          headers: {
-            'Content-Type': content_type || 'application/pdf',
-          },
-        });
-      }
+  const availablePdfsForLink = useMemo(() => (
+    !selectedFolder
+      ? []
+      : pdfs.filter((pdf) => (pdf.folder_id || '__none__') === selectedFolder)
+  ), [pdfs, selectedFolder]);
 
-      await axios.post(`${API}/pdfs/upload/complete`, {
-        pdf_id: id,
-      }, {
-        withCredentials: true,
-      });
-
-      toast.success('PDF uploaded successfully');
-      setUploadOpen(false);
-      await fetchData();
-
-    } catch (err) {
-      const detail = err.response?.data?.detail
-        || err.message
-        || 'Upload failed';
-      toast.error(detail.slice(0, 180));
-    } finally {
-      setUploading(false);
-      e.target.value = '';
-    }
-  };
-
+  const activeFoldersWithPdfs = folders.map((folder) => ({
+    ...folder,
+    pdfs: pdfs.filter((pdf) => pdf.folder_id === folder.id),
+  }));
+  const uncategorizedPdfs = pdfs.filter((pdf) => !pdf.folder_id);
+  const archivedFoldersWithPdfs = archivedFolders.map((folder) => ({
+    ...folder,
+    pdfs: archivedPdfs.filter((pdf) => pdf.folder_id === folder.id),
+  }));
 
   const handleCreateLink = async (e) => {
     e.preventDefault();
-    if (!selectedPdf || !customerName.trim() || !customerPhone.trim()) {
+    if (!selectedFolder || !selectedPdf || !customerName.trim() || !customerPhone.trim()) {
       toast.error('All fields are required');
       return;
     }
@@ -287,70 +257,12 @@ export default function DashboardPage() {
       setCustomerName('');
       setCustomerPhone('');
       setSelectedPdf('');
+      setSelectedFolder('');
       fetchData();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Failed to create link');
     } finally {
       setCreatingLink(false);
-    }
-  };
-
-  const handleCreateTripDeck = async (e) => {
-    e.preventDefault();
-    if (!tripdeckTitle.trim()) {
-      toast.error('TripDeck title is required');
-      return;
-    }
-    setCreatingTripDeck(true);
-    try {
-      await axios.post(`${API}/tripdeck`, {
-        title: tripdeckTitle.trim(),
-        description: tripdeckDescription.trim() || undefined,
-      }, { withCredentials: true });
-      toast.success('TripDeck created');
-      setTripdeckOpen(false);
-      setTripdeckTitle('');
-      setTripdeckDescription('');
-      await fetchData();
-    } catch (err) {
-      toast.error(err.response?.data?.detail || 'Failed to create TripDeck');
-    } finally {
-      setCreatingTripDeck(false);
-    }
-  };
-
-  const handleArchiveTripDeck = async (id, currentStatus) => {
-    const nextStatus = currentStatus === 'archived' ? 'active' : 'archived';
-    const label = currentStatus === 'archived' ? 'reactivate' : 'archive';
-    if (!window.confirm(`${label.charAt(0).toUpperCase() + label.slice(1)} this TripDeck?`)) return;
-    try {
-      await axios.put(`${API}/tripdeck/${id}`, { status: nextStatus }, { withCredentials: true });
-      toast.success(`TripDeck ${currentStatus === 'archived' ? 'reactivated' : 'archived'}`);
-      await fetchData();
-    } catch (err) {
-      toast.error(err.response?.data?.detail || `Failed to ${label} TripDeck`);
-    }
-  };
-
-  const handleDeleteTripDeck = async (id) => {
-    if (!window.confirm('Permanently delete this TripDeck? This cannot be undone.')) return;
-    try {
-      await axios.delete(`${API}/tripdeck/${id}`, { withCredentials: true });
-      toast.success('TripDeck deleted');
-      await fetchData();
-    } catch (err) {
-      toast.error(err.response?.data?.detail || 'Failed to delete TripDeck');
-    }
-  };
-
-  const handleDeletePdf = async (pdfId) => {
-    if (!window.confirm('Archive this PDF? It will be removed from active PDFs, but customers can still open the existing link and your analytics will stay available.')) return;
-    try {
-      await axios.delete(`${API}/pdfs/${pdfId}`, { withCredentials: true });
-      toast.success('PDF archived');
-      fetchData();
-    } catch {
-      toast.error('Failed to archive PDF');
     }
   };
 
@@ -491,6 +403,242 @@ export default function DashboardPage() {
     );
   }
 
+  const activeModuleTitle = USER_MODULES.find((module) => module.key === activeModule)?.label || 'Dashboard';
+  const linkableFolders = [
+    ...activeFoldersWithPdfs.filter((folder) => folder.pdfs.length > 0),
+    ...(uncategorizedPdfs.length > 0
+      ? [{ id: '__none__', name: 'Unfoldered PDFs', pdfs: uncategorizedPdfs }]
+      : []),
+  ];
+  const filteredActiveFolders = activeFoldersWithPdfs.filter((folder) =>
+    !searchQuery.trim() || folder.name.toLowerCase().includes(searchQuery.trim().toLowerCase())
+  );
+  const filteredArchivedFolders = archivedFoldersWithPdfs.filter((folder) =>
+    !searchQuery.trim() || folder.name.toLowerCase().includes(searchQuery.trim().toLowerCase())
+  );
+
+  const renderUserPdfsModule = () => (
+    <section className="space-y-6">
+      <div>
+        <h2 className="text-xl font-bold" style={{ color: 'var(--teal)' }}>PDF Library</h2>
+        <p className="text-sm text-slate-500 mt-1">All itineraries are organized by admin-managed folders. Use this space to browse active and archived content.</p>
+      </div>
+
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+        <Input
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search folders or PDFs..."
+          className="pl-10 rounded-lg border-slate-200"
+        />
+      </div>
+
+      <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+        <div className="px-5 py-4 border-b" style={{ borderColor: '#f1f5f9' }}>
+          <div className="flex items-center gap-2">
+            <FolderOpen className="w-4 h-4" style={{ color: 'var(--gold)' }} />
+            <div>
+              <h3 className="font-bold" style={{ color: 'var(--teal)' }}>Folders</h3>
+              <p className="text-sm text-slate-500 mt-1">Active folders and the PDFs available inside them.</p>
+            </div>
+          </div>
+        </div>
+        <Table>
+          <TableHeader>
+            <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
+              <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Folder</TableHead>
+              <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">PDFs</TableHead>
+              <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Count</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filteredActiveFolders.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={3} className="py-10 text-center text-sm text-slate-400">No active folders yet.</TableCell>
+              </TableRow>
+            ) : (
+              filteredActiveFolders.map((folder) => (
+                <TableRow key={folder.id} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
+                  <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>{folder.name}</TableCell>
+                  <TableCell className="text-sm text-slate-500">{folder.pdfs.map((pdf) => pdf.file_name).join(', ') || '--'}</TableCell>
+                  <TableCell className="text-sm text-slate-600">{folder.pdfs.length}</TableCell>
+                </TableRow>
+              ))
+            )}
+            {uncategorizedPdfs.length > 0 && (!searchQuery.trim() || 'Unfoldered PDFs'.toLowerCase().includes(searchQuery.trim().toLowerCase())) && (
+              <TableRow className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
+                <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>Unfoldered PDFs</TableCell>
+                <TableCell className="text-sm text-slate-500">{uncategorizedPdfs.map((pdf) => pdf.file_name).join(', ')}</TableCell>
+                <TableCell className="text-sm text-slate-600">{uncategorizedPdfs.length}</TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+        <div className="px-5 py-4 border-b" style={{ borderColor: '#f1f5f9' }}>
+          <h3 className="font-bold" style={{ color: 'var(--teal)' }}>Active PDFs</h3>
+          <p className="text-sm text-slate-500 mt-1">Live PDFs shared by admin and available for link creation.</p>
+        </div>
+        <Table>
+          <TableHeader>
+            <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
+              <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">PDF</TableHead>
+              <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Folder</TableHead>
+              <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Size</TableHead>
+              <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Uploaded</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {pdfs.filter((pdf) => !searchQuery.trim() || [pdf.file_name, pdf.folder_name].filter(Boolean).some((v) => v.toLowerCase().includes(searchQuery.trim().toLowerCase()))).length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={4} className="py-10 text-center text-sm text-slate-400">No active PDFs found.</TableCell>
+              </TableRow>
+            ) : (
+              pdfs
+                .filter((pdf) => !searchQuery.trim() || [pdf.file_name, pdf.folder_name].filter(Boolean).some((v) => v.toLowerCase().includes(searchQuery.trim().toLowerCase())))
+                .map((pdf) => (
+                  <TableRow key={pdf.id} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
+                    <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>{pdf.file_name}</TableCell>
+                    <TableCell className="text-sm text-slate-500">{pdf.folder_name || 'Unfoldered'}</TableCell>
+                    <TableCell className="text-sm text-slate-600">{formatFileSize(pdf.file_size)}</TableCell>
+                    <TableCell className="text-xs text-slate-400">{formatDate(pdf.created_at)}</TableCell>
+                  </TableRow>
+                ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+        <div className="px-5 py-4 border-b" style={{ borderColor: '#f1f5f9' }}>
+          <div className="flex items-center gap-2">
+            <Archive className="w-4 h-4" style={{ color: 'var(--gold)' }} />
+            <div>
+              <h3 className="font-bold" style={{ color: 'var(--teal)' }}>Archived Folders</h3>
+              <p className="text-sm text-slate-500 mt-1">Archived folders and the PDFs they contain.</p>
+            </div>
+          </div>
+        </div>
+        <Table>
+          <TableHeader>
+            <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
+              <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Folder</TableHead>
+              <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">PDFs</TableHead>
+              <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Archived PDFs</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filteredArchivedFolders.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={3} className="py-10 text-center text-sm text-slate-400">No archived folders yet.</TableCell>
+              </TableRow>
+            ) : (
+              filteredArchivedFolders.map((folder) => (
+                <TableRow key={folder.id} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
+                  <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>{folder.name}</TableCell>
+                  <TableCell className="text-sm text-slate-500">{folder.pdfs.map((pdf) => pdf.file_name).join(', ') || '--'}</TableCell>
+                  <TableCell className="text-sm text-slate-600">{folder.pdfs.length || folder.archived_pdfs || 0}</TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+        <div className="px-5 py-4 border-b" style={{ borderColor: '#f1f5f9' }}>
+          <div className="flex items-center gap-2">
+            <Archive className="w-4 h-4" style={{ color: 'var(--gold)' }} />
+            <div>
+              <h3 className="font-bold" style={{ color: 'var(--teal)' }}>Archived PDFs</h3>
+              <p className="text-sm text-slate-500 mt-1">Old itineraries stay here with their analytics.</p>
+            </div>
+          </div>
+        </div>
+        <Table>
+          <TableHeader>
+            <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
+              <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">PDF</TableHead>
+              <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Folder</TableHead>
+              <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Archived At</TableHead>
+              <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Sessions</TableHead>
+              <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Total Time</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {archivedPdfs.filter((pdf) => !searchQuery.trim() || [pdf.pdf_name, pdf.folder_name].filter(Boolean).some((v) => v.toLowerCase().includes(searchQuery.trim().toLowerCase()))).length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="py-10 text-center text-sm text-slate-400">No archived PDFs yet.</TableCell>
+              </TableRow>
+            ) : (
+              archivedPdfs
+                .filter((pdf) => !searchQuery.trim() || [pdf.pdf_name, pdf.folder_name].filter(Boolean).some((v) => v.toLowerCase().includes(searchQuery.trim().toLowerCase())))
+                .map((pdf) => (
+                  <TableRow key={`${pdf.pdf_id || pdf.pdf_name}-${pdf.pdf_deleted_at || pdf.archived_at || ''}`} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
+                    <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>{pdf.pdf_name}</TableCell>
+                    <TableCell className="text-sm text-slate-500">{pdf.folder_name || 'Unfoldered'}</TableCell>
+                    <TableCell className="text-xs text-slate-400">{formatDate(pdf.pdf_deleted_at || pdf.archived_at)}</TableCell>
+                    <TableCell className="text-sm text-slate-600">{pdf.tracked_sessions || 0}</TableCell>
+                    <TableCell className="text-sm text-slate-600">{formatDuration(pdf.total_time_seconds)}</TableCell>
+                  </TableRow>
+                ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+    </section>
+  );
+
+  const renderUserContactsModule = () => (
+    <section className="space-y-4">
+      <div>
+        <h2 className="text-xl font-bold" style={{ color: 'var(--teal)' }}>Contacts</h2>
+        <p className="text-sm text-slate-500 mt-1">Contacts are created automatically when you generate a tracking link.</p>
+      </div>
+      {contacts.length === 0 ? (
+        <div className="bg-white rounded-xl border p-8 text-center" style={{ borderColor: '#e5e7eb' }}>
+          <Users className="w-10 h-10 mx-auto mb-3 text-slate-200" />
+          <p className="font-semibold text-slate-500">No contacts yet</p>
+          <p className="text-xs mt-1 text-slate-400">Generate your first tracking link to start building contacts.</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border overflow-x-auto" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+          <Table>
+            <TableHeader>
+              <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
+                <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Contact</TableHead>
+                <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Phone</TableHead>
+                <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Latest PDF</TableHead>
+                <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Links</TableHead>
+                <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Opened Links</TableHead>
+                <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Total Opens</TableHead>
+                <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Last Linked</TableHead>
+                <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Last Opened</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {contacts.map((contact) => (
+                <TableRow key={contact.id || `${contact.customer_phone}-${contact.created_at || ''}`} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
+                  <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>{contact.customer_name}</TableCell>
+                  <TableCell className="text-slate-600 text-sm font-mono">{contact.customer_phone}</TableCell>
+                  <TableCell className="text-xs text-slate-500 max-w-[220px] truncate">{contact.latest_pdf_name || '--'}</TableCell>
+                  <TableCell className="text-sm text-slate-600">{contact.total_links || 0}</TableCell>
+                  <TableCell className="text-sm text-slate-600">{contact.opened_links || 0}</TableCell>
+                  <TableCell className="text-sm text-slate-600">{contact.total_opens || 0}</TableCell>
+                  <TableCell className="text-xs text-slate-400">{formatDate(contact.last_link_created_at)}</TableCell>
+                  <TableCell className="text-xs text-slate-400">{formatDate(contact.latest_opened_at)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </section>
+  );
+
   return (
     <TooltipProvider>
       <div className="min-h-screen" style={{ backgroundColor: 'var(--off-white)' }} data-testid="dashboard-page">
@@ -501,13 +649,52 @@ export default function DashboardPage() {
 
             {/* Brand */}
             <div className="flex items-center gap-3">
+              <Sheet open={navOpen} onOpenChange={setNavOpen}>
+                <SheetTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-10 w-10 p-0 rounded-lg text-white hover:bg-white/10 hover:text-white">
+                    <Menu className="w-5 h-5" />
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="left" className="border-r border-slate-200 bg-white px-0">
+                  <SheetHeader className="px-5 pb-2">
+                    <SheetTitle className="flex items-center gap-3" style={{ color: 'var(--teal)' }}>
+                      <TravlogerMark size={30} />
+                      <span>User Modules</span>
+                    </SheetTitle>
+                  </SheetHeader>
+                  <div className="px-3 py-3 space-y-1">
+                    {visibleModules.map((module) => {
+                      const Icon = module.icon;
+                      const isActive = activeModule === module.key;
+                      return (
+                        <button
+                          key={module.key}
+                          type="button"
+                          onClick={() => {
+                            setActiveModule(module.key);
+                            setNavOpen(false);
+                          }}
+                          className="w-full flex items-center gap-3 rounded-xl px-4 py-3 text-left transition-colors"
+                          style={{
+                            backgroundColor: isActive ? 'rgba(20,74,87,0.08)' : 'transparent',
+                            color: isActive ? 'var(--teal)' : '#475569',
+                          }}
+                        >
+                          <Icon className="w-4 h-4" />
+                          <span className="font-semibold">{module.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </SheetContent>
+              </Sheet>
               <TravlogerMark size={36} />
               <div className="leading-tight">
                 <div className="text-white font-bold text-base tracking-tight" style={{ fontFamily: 'DM Sans, sans-serif' }}>
                   LinkDeck
                 </div>
                 <div className="text-xs font-medium tracking-widest uppercase" style={{ color: 'var(--gold)' }}>
-                  by Travloger
+                  {activeModuleTitle}
                 </div>
               </div>
             </div>
@@ -536,12 +723,10 @@ export default function DashboardPage() {
 
         <main className="max-w-[1400px] mx-auto px-5 md:px-10 py-8">
           {/* ── STATS ── */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          <div className="grid grid-cols-2 md:grid-cols-2 gap-4 mb-8">
             {[
               { label: 'Total PDFs',  value: stats.total_pdfs,     icon: FileText,    accent: 'var(--teal)' },
               { label: 'Total Links', value: stats.total_links,    icon: LinkIcon,    accent: '#475569' },
-              { label: 'Opened',      value: stats.opened_links,   icon: CheckCircle, accent: '#16a34a' },
-              { label: 'Not Opened',  value: stats.unopened_links, icon: XCircle,     accent: '#dc2626' },
             ].map((s, i) => (
               <div key={i}
                 className="bg-white rounded-xl p-5 border animate-fade-in-up"
@@ -557,278 +742,10 @@ export default function DashboardPage() {
             ))}
           </div>
 
-          {/* ── PDFs SECTION ── */}
-          <section className="mb-8 animate-fade-in-up" style={{ animationDelay: '300ms' }}>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold" style={{ color: 'var(--teal)' }}>Your PDFs</h2>
-              <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
-                <DialogTrigger asChild>
-                  <Button
-                    className="font-semibold text-white rounded-lg flex items-center gap-2"
-                    style={{ backgroundColor: 'var(--teal)' }}
-                    data-testid="upload-pdf-button"
-                  >
-                    <Upload className="w-4 h-4" /> Upload PDF
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="rounded-xl border" style={{ borderColor: '#e5e7eb' }}>
-                  <DialogHeader>
-                    <DialogTitle className="font-bold text-xl" style={{ color: 'var(--teal)' }}>Upload Itinerary PDF</DialogTitle>
-                  </DialogHeader>
-                  <div className="py-4">
-                    <label className="flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-10 cursor-pointer transition-colors hover:border-[var(--teal)]"
-                      style={{ borderColor: '#cbd5e1' }}>
-                      <FileUp className="w-10 h-10 mb-3" style={{ color: 'var(--teal)' }} />
-                      <span className="font-semibold text-sm" style={{ color: 'var(--teal)' }}>
-                        {uploading ? 'Uploading...' : 'Click to select PDF'}
-                      </span>
-                      <span className="text-xs mt-1 text-slate-400">Max 100MB</span>
-                      <input type="file" accept=".pdf" onChange={handleUpload} className="hidden" disabled={uploading} data-testid="upload-file-input" />
-                    </label>
-                  </div>
-                </DialogContent>
-              </Dialog>
-            </div>
-
-            {pdfs.length === 0 ? (
-              <div className="bg-white rounded-xl border p-12 text-center" style={{ borderColor: '#e5e7eb' }}>
-                <FileText className="w-12 h-12 mx-auto mb-3" style={{ color: '#cbd5e1' }} />
-                <p className="font-semibold text-slate-500">No PDFs uploaded yet</p>
-                <p className="text-xs mt-1 text-slate-400">Upload your first itinerary PDF to get started</p>
-              </div>
-            ) : (
-              <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
-                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">File Name</TableHead>
-                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Size</TableHead>
-                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Links</TableHead>
-                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Uploaded</TableHead>
-                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10 text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {(Array.isArray(pdfs) ? pdfs : []).map((pdf) => (
-                      <TableRow key={pdf.id} className="border-b hover:bg-slate-50 transition-colors" style={{ borderColor: '#f1f5f9' }} data-testid={`pdf-row-${pdf.id}`}>
-                        <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>
-                          <div className="flex items-center gap-2">
-                            <FileText className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--gold)' }} />
-                            <span className="truncate max-w-[220px]">{pdf.file_name}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-slate-500 text-sm">{formatFileSize(pdf.file_size)}</TableCell>
-                        <TableCell>
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold"
-                            style={{ backgroundColor: 'rgba(20,74,87,0.08)', color: 'var(--teal)' }}>
-                            {pdf.link_count} links
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-slate-400 text-xs">{formatDate(pdf.created_at)}</TableCell>
-                        <TableCell className="text-right">
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button variant="ghost" size="sm" onClick={() => handleDeletePdf(pdf.id)}
-                                className="h-8 w-8 p-0 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50"
-                                data-testid={`delete-pdf-${pdf.id}`}>
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent><p>Archive PDF</p></TooltipContent>
-                          </Tooltip>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </section>
-
-          {/* ── TRIPDECK SECTION ── */}
-          <section className="mb-8 animate-fade-in-up" style={{ animationDelay: '340ms' }}>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <LayoutGrid className="w-5 h-5" style={{ color: 'var(--gold)' }} />
-                <h2 className="text-xl font-bold" style={{ color: 'var(--teal)' }}>TripDecks</h2>
-              </div>
-              <Dialog open={tripdeckOpen} onOpenChange={setTripdeckOpen}>
-                <DialogTrigger asChild>
-                  <Button
-                    className="font-semibold text-white rounded-lg flex items-center gap-2"
-                    style={{ backgroundColor: 'var(--gold)' }}
-                    data-testid="create-tripdeck-button"
-                  >
-                    <Plus className="w-4 h-4" /> Create TripDeck
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="rounded-xl border" style={{ borderColor: '#e5e7eb' }}>
-                  <DialogHeader>
-                    <div className="flex items-center gap-3 mb-1">
-                      <LayoutGrid className="w-6 h-6" style={{ color: 'var(--gold)' }} />
-                      <DialogTitle className="font-bold text-xl" style={{ color: 'var(--teal)' }}>Create TripDeck</DialogTitle>
-                    </div>
-                  </DialogHeader>
-                  <form onSubmit={handleCreateTripDeck} className="space-y-4 pt-1">
-                    <div>
-                      <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Title <span className="text-red-400">*</span></Label>
-                      <Input
-                        value={tripdeckTitle}
-                        onChange={(e) => setTripdeckTitle(e.target.value)}
-                        placeholder="e.g. April Gokarna Batch"
-                        className="mt-1.5 rounded-lg border-slate-200 focus:ring-2"
-                        style={{ '--tw-ring-color': 'var(--teal)' }}
-                        data-testid="tripdeck-title-input"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Description <span className="text-slate-300 font-normal normal-case">(optional)</span></Label>
-                      <Input
-                        value={tripdeckDescription}
-                        onChange={(e) => setTripdeckDescription(e.target.value)}
-                        placeholder="A short description for your branded multi-destination page"
-                        className="mt-1.5 rounded-lg border-slate-200"
-                        data-testid="tripdeck-description-input"
-                      />
-                    </div>
-                    <Button
-                      type="submit"
-                      className="w-full rounded-lg font-bold h-11 text-white"
-                      style={{ backgroundColor: 'var(--gold)' }}
-                      disabled={creatingTripDeck}
-                      data-testid="create-tripdeck-submit"
-                    >
-                      {creatingTripDeck ? <Loader2 className="w-4 h-4 animate-spin" /> : '✦ Create TripDeck'}
-                    </Button>
-                  </form>
-                </DialogContent>
-              </Dialog>
-            </div>
-
-            {tripdecks.length === 0 ? (
-              <div className="bg-white rounded-xl border p-12 text-center" style={{ borderColor: '#e5e7eb' }}>
-                <LayoutGrid className="w-12 h-12 mx-auto mb-3" style={{ color: '#cbd5e1' }} />
-                <p className="font-semibold text-slate-500">No TripDecks yet</p>
-                <p className="text-xs mt-1 text-slate-400">Create your first branded multi-destination landing page with form-gated PDFs.</p>
-              </div>
-            ) : (
-              <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
-                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Title</TableHead>
-                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10 text-center">Destinations</TableHead>
-                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10 text-center">Opens</TableHead>
-                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10 text-center">Responses</TableHead>
-                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Status</TableHead>
-                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Created</TableHead>
-                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10 text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {tripdecks.map((td) => (
-                      <TableRow key={td._id || td.id} className="border-b hover:bg-slate-50 transition-colors" style={{ borderColor: '#f1f5f9' }} data-testid={`tripdeck-row-${td._id || td.id}`}>
-                        <TableCell>
-                          <div className="font-semibold truncate max-w-[240px]" style={{ color: 'var(--teal)' }}>{td.title}</div>
-                          <div className="text-[11px] text-slate-400 mt-0.5 font-mono truncate max-w-[240px]">/{td.slug}</div>
-                          {td.description && (
-                            <div className="text-xs text-slate-400 mt-0.5 truncate max-w-[240px]">{td.description}</div>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <span className="inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-black"
-                            style={{ backgroundColor: 'rgba(20,74,87,0.08)', color: 'var(--teal)' }}>
-                            {td.destination_count ?? td.destinations?.length ?? 0}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <span className="inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-black"
-                            style={{ backgroundColor: 'rgba(20,74,87,0.08)', color: 'var(--teal)' }}>
-                            {td.total_opens ?? td.view_count ?? 0}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <span className="inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-black"
-                            style={{ backgroundColor: (td.form_response_count ?? td.response_count ?? 0) > 0 ? 'rgba(232,160,32,0.12)' : '#f1f5f9', color: (td.form_response_count ?? td.response_count ?? 0) > 0 ? 'var(--gold)' : '#94a3b8' }}>
-                            {td.form_response_count ?? td.response_count ?? 0}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          {td.status === 'active' ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold"
-                              style={{ backgroundColor: '#dcfce7', color: '#16a34a' }}>
-                              Active
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold"
-                              style={{ backgroundColor: '#fef3c7', color: '#b45309' }}>
-                              Archived
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-slate-400 text-xs">{formatDate(td.created_at)}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <a
-                                  href={`${SITE_URL}/tripdeck/${td._id || td.id}`}
-                                  className="inline-flex items-center justify-center h-8 w-8 rounded-lg transition-colors text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-                                  data-testid={`configure-tripdeck-${td._id || td.id}`}
-                                >
-                                  <LayoutGrid className="w-4 h-4" />
-                                </a>
-                              </TooltipTrigger>
-                              <TooltipContent><p>Open builder</p></TooltipContent>
-                            </Tooltip>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <a
-                                  href={`${SITE_URL}/deck/${td.slug}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center justify-center h-8 w-8 rounded-lg transition-colors text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-                                  data-testid={`view-tripdeck-${td._id || td.id}`}
-                                >
-                                  <ExternalLink className="w-4 h-4" />
-                                </a>
-                              </TooltipTrigger>
-                              <TooltipContent><p>View public page</p></TooltipContent>
-                            </Tooltip>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm"
-                                  onClick={() => handleArchiveTripDeck(td._id || td.id, td.status)}
-                                  className="h-8 w-8 p-0 rounded-lg text-amber-400 hover:text-amber-600 hover:bg-amber-50"
-                                  data-testid={`archive-tripdeck-${td._id || td.id}`}>
-                                  <Archive className="w-4 h-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent><p>{td.status === 'archived' ? 'Reactivate' : 'Archive'}</p></TooltipContent>
-                            </Tooltip>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm"
-                                  onClick={() => handleDeleteTripDeck(td._id || td.id)}
-                                  className="h-8 w-8 p-0 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50"
-                                  data-testid={`delete-tripdeck-${td._id || td.id}`}>
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent><p>Delete TripDeck</p></TooltipContent>
-                            </Tooltip>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </section>
+          {activeModule === 'pdfs' && renderUserPdfsModule()}
 
           {/* ── LINKS SECTION ── */}
+          {activeModule === 'dashboard' && (
           <section className="animate-fade-in-up" style={{ animationDelay: '380ms' }}>
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
               <h2 className="text-xl font-bold" style={{ color: 'var(--teal)' }}>Tracking Links</h2>
@@ -845,7 +762,7 @@ export default function DashboardPage() {
                     <Button
                       className="font-semibold text-white rounded-lg flex items-center gap-2"
                       style={{ backgroundColor: 'var(--gold)' }}
-                      disabled={pdfs.length === 0}
+                      disabled={linkableFolders.length === 0}
                       data-testid="generate-link-button"
                     >
                       <Link2 className="w-4 h-4" /> Generate Link
@@ -862,13 +779,26 @@ export default function DashboardPage() {
                     </DialogHeader>
                     <form onSubmit={handleCreateLink} className="space-y-4 pt-1">
                       <div>
-                        <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Select Itinerary PDF</Label>
-                        <Select value={selectedPdf} onValueChange={setSelectedPdf}>
-                          <SelectTrigger className="mt-1.5 rounded-lg border-slate-200" data-testid="select-pdf-trigger">
-                            <SelectValue placeholder="Choose a PDF" />
+                        <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Select Folder</Label>
+                        <Select value={selectedFolder} onValueChange={setSelectedFolder}>
+                          <SelectTrigger className="mt-1.5 rounded-lg border-slate-200">
+                            <SelectValue placeholder="Choose a folder" />
                           </SelectTrigger>
                           <SelectContent className="rounded-xl">
-                            {(Array.isArray(pdfs) ? pdfs : []).map(pdf => (
+                            {linkableFolders.map((folder) => (
+                              <SelectItem key={folder.id} value={folder.id} className="rounded-lg">{folder.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Select Itinerary PDF</Label>
+                        <Select value={selectedPdf} onValueChange={setSelectedPdf} disabled={!selectedFolder}>
+                          <SelectTrigger className="mt-1.5 rounded-lg border-slate-200" data-testid="select-pdf-trigger">
+                            <SelectValue placeholder={selectedFolder ? "Choose a PDF" : "Choose a folder first"} />
+                          </SelectTrigger>
+                          <SelectContent className="rounded-xl">
+                            {availablePdfsForLink.map(pdf => (
                               <SelectItem key={pdf.id} value={pdf.id} className="rounded-lg">{pdf.file_name}</SelectItem>
                             ))}
                           </SelectContent>
@@ -969,7 +899,7 @@ export default function DashboardPage() {
                 <Link2 className="w-12 h-12 mx-auto mb-3 text-slate-200" />
                 <p className="font-semibold text-slate-500">No links found</p>
                 <p className="text-xs mt-1 text-slate-400">
-                  {pdfs.length === 0 ? 'Upload a PDF first, then generate links' : 'Generate your first tracking link'}
+                  {linkableFolders.length === 0 ? 'Admin needs to add PDFs before links can be generated' : 'Generate your first tracking link'}
                 </p>
               </div>
             ) : (
@@ -1247,94 +1177,9 @@ export default function DashboardPage() {
               </div>
             )}
           </section>
+          )}
 
-          <section className="mt-8 animate-fade-in-up">
-            <div className="flex items-center gap-2 mb-4">
-              <LinkIcon className="w-5 h-5" style={{ color: 'var(--gold)' }} />
-              <h2 className="text-xl font-bold" style={{ color: 'var(--teal)' }}>Contacts</h2>
-            </div>
-            {contacts.length === 0 ? (
-              <div className="bg-white rounded-xl border p-8 text-center" style={{ borderColor: '#e5e7eb' }}>
-                <Users className="w-10 h-10 mx-auto mb-3 text-slate-200" />
-                <p className="font-semibold text-slate-500">No contacts yet</p>
-                <p className="text-xs mt-1 text-slate-400">Contacts are automatically added here when you generate a tracking link.</p>
-              </div>
-            ) : (
-              <div className="bg-white rounded-xl border overflow-x-auto" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
-                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Contact</TableHead>
-                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Phone</TableHead>
-                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Latest PDF</TableHead>
-                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Links</TableHead>
-                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Opened Links</TableHead>
-                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Total Opens</TableHead>
-                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Last Linked</TableHead>
-                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Last Opened</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {contacts.map((contact) => (
-                      <TableRow key={contact.id || `${contact.customer_phone}-${contact.created_at || ''}`} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
-                        <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>{contact.customer_name}</TableCell>
-                        <TableCell className="text-slate-600 text-sm font-mono">{contact.customer_phone}</TableCell>
-                        <TableCell className="text-xs text-slate-500 max-w-[220px] truncate">{contact.latest_pdf_name || '--'}</TableCell>
-                        <TableCell className="text-sm text-slate-600">{contact.total_links || 0}</TableCell>
-                        <TableCell className="text-sm text-slate-600">{contact.opened_links || 0}</TableCell>
-                        <TableCell className="text-sm text-slate-600">{contact.total_opens || 0}</TableCell>
-                        <TableCell className="text-xs text-slate-400">{formatDate(contact.last_link_created_at)}</TableCell>
-                        <TableCell className="text-xs text-slate-400">{formatDate(contact.latest_opened_at)}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </section>
-
-          <section className="mt-8 animate-fade-in-up">
-            <div className="flex items-center gap-2 mb-4">
-              <Archive className="w-5 h-5" style={{ color: 'var(--gold)' }} />
-              <h2 className="text-xl font-bold" style={{ color: 'var(--teal)' }}>Archived PDFs</h2>
-            </div>
-            {archivedPdfs.length === 0 ? (
-              <div className="bg-white rounded-xl border p-8 text-center" style={{ borderColor: '#e5e7eb' }}>
-                <Archive className="w-10 h-10 mx-auto mb-3 text-slate-200" />
-                <p className="font-semibold text-slate-500">No archived PDFs yet</p>
-                <p className="text-xs mt-1 text-slate-400">Archived itineraries stay here with their customer analytics and old public links.</p>
-              </div>
-            ) : (
-              <div className="bg-white rounded-xl border overflow-x-auto" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
-                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">PDF</TableHead>
-                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Archived At</TableHead>
-                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Links</TableHead>
-                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Opens</TableHead>
-                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Sessions</TableHead>
-                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Total Time</TableHead>
-                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Last Opened</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {archivedPdfs.map((pdf) => (
-                      <TableRow key={`${pdf.pdf_id || pdf.pdf_name}-${pdf.pdf_deleted_at || ''}`} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
-                        <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>{pdf.pdf_name}</TableCell>
-                        <TableCell className="text-xs text-slate-400">{formatDate(pdf.pdf_deleted_at)}</TableCell>
-                        <TableCell className="text-sm text-slate-600">{pdf.link_count || 0}</TableCell>
-                        <TableCell className="text-sm text-slate-600">{pdf.total_opens || 0}</TableCell>
-                        <TableCell className="text-sm text-slate-600">{pdf.tracked_sessions || 0}</TableCell>
-                        <TableCell className="text-sm text-slate-600">{formatDuration(pdf.total_time_seconds)}</TableCell>
-                        <TableCell className="text-xs text-slate-400">{formatDate(pdf.latest_opened_at)}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </section>
+          {activeModule === 'contacts' && renderUserContactsModule()}
 
           <Dialog open={Boolean(selectedSessionDetail)} onOpenChange={(open) => {
             if (!open) setSelectedSessionDetail(null);
