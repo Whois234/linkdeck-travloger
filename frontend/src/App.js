@@ -7,6 +7,7 @@ import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
 import ViewPage from "./pages/ViewPage";
+import TripDeckPage from "./pages/TripDeckPage";
 import TripDeckBuilderPage from "./pages/TripDeckBuilderPage";
 import PublicTripDeckPage from "./pages/PublicTripDeckPage";
 import { Button } from "./components/ui/button";
@@ -95,6 +96,7 @@ function App() {
           <Routes>
             <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
             <Route path="/" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
+            <Route path="/tripdeck" element={<ProtectedRoute><TripDeckPage /></ProtectedRoute>} />
             <Route path="/tripdeck/:tripdeckId" element={<ProtectedRoute><TripDeckBuilderPage /></ProtectedRoute>} />
             <Route path="/deck/:slug" element={<PublicTripDeckPage />} />
             <Route path="/view/:uniqueId" element={<ViewPage />} />
