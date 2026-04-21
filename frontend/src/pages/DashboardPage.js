@@ -213,6 +213,12 @@ export default function DashboardPage() {
     }
   }, [activeModule, visibleModules]);
 
+  const availablePdfsForLink = useMemo(() => (
+    !selectedFolder
+      ? []
+      : pdfs.filter((pdf) => (pdf.folder_id || '__none__') === selectedFolder)
+  ), [pdfs, selectedFolder]);
+
   useEffect(() => {
     if (!selectedFolder) {
       setSelectedPdf('');
@@ -222,12 +228,6 @@ export default function DashboardPage() {
       setSelectedPdf('');
     }
   }, [selectedFolder, selectedPdf, availablePdfsForLink]);
-
-  const availablePdfsForLink = useMemo(() => (
-    !selectedFolder
-      ? []
-      : pdfs.filter((pdf) => (pdf.folder_id || '__none__') === selectedFolder)
-  ), [pdfs, selectedFolder]);
 
   const activeFoldersWithPdfs = folders.map((folder) => ({
     ...folder,
