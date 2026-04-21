@@ -61,6 +61,40 @@ function PdfPageSurface({ pageNumber, pageWidth, registerPageNode }) {
   );
 }
 
+// ── Gate form field renderer ──────────────────────────────────────────────────
+function GateField({ field, value, onChange, error }) {
+  const base = 'w-full rounded-lg border px-3 py-2.5 text-sm text-slate-700 outline-none focus:ring-2 transition';
+  const style = error
+    ? `${base} border-red-300 focus:ring-red-200`
+    : `${base} border-slate-200 focus:ring-[#144a57]/20 focus:border-[#144a57]`;
+
+  if (field.field_type === 'textarea') {
+    return (
+      <textarea
+        rows={3}
+        value={value || ''}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={field.placeholder || ''}
+        className={style}
+      />
+    );
+  }
+  const inputType = field.field_type === 'email' ? 'email'
+    : field.field_type === 'phone' ? 'tel'
+    : field.field_type === 'number' ? 'number'
+    : field.field_type === 'date' ? 'date'
+    : 'text';
+  return (
+    <input
+      type={inputType}
+      value={value || ''}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={field.placeholder || ''}
+      className={style}
+    />
+  );
+}
+
 export default function ViewPage() {
   const { uniqueId } = useParams();
   const [pdfUrl, setPdfUrl] = useState(null);
@@ -73,6 +107,19 @@ export default function ViewPage() {
   const [pageCount, setPageCount] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageWidth, setPageWidth] = useState(0);
+
+  // Gate state
+  const [gateVisible, setGateVisible] = useState(false);
+  const [gateSchema, setGateSchema] = useState([]);
+  const [gatePdfName, setGatePdfName] = useState('');
+  const [gateFormData, setGateFormData] = useState({});
+  const [gateSubmitting, setGateSubmitting] = useState(false);
+  const [gateErrors, setGateErrors] = useState({});
+  const [gateSubmitError, setGateSubmitError] = useState('');
+  const gateTokenRef = useRef(null);
+  // Ref so gate submit handler can call the PDF load function without stale closures
+  const loadPdfContentRef = useRef(null);
+
   const tracked = useRef(false);
   const sessionId = useRef(null);
   const sessionStartedAt = useRef(null);
@@ -137,6 +184,13 @@ export default function ViewPage() {
     } catch {
       // Tracking should never interrupt the customer viewing experience.
     }
+    // Gate heartbeat: update time_spent_seconds on the gate submission
+    if (gateTokenRef.current) {
+      axios.post(`${API}/view/${uniqueId}/gate/heartbeat`, {
+        access_token: gateTokenRef.current,
+        duration_seconds: durationSeconds,
+      }).catch(() => {});
+    }
   }, [buildPageDurationPayload, uniqueId]);
 
   const sendHeartbeatBeacon = useCallback(() => {
@@ -154,6 +208,13 @@ export default function ViewPage() {
       `${API}/view/${uniqueId}/session/heartbeat`,
       new Blob([payload], { type: 'application/json' })
     );
+    // Gate beacon
+    if (gateTokenRef.current) {
+      navigator.sendBeacon(
+        `${API}/view/${uniqueId}/gate/heartbeat`,
+        new Blob([JSON.stringify({ access_token: gateTokenRef.current, duration_seconds: durationSeconds })], { type: 'application/json' })
+      );
+    }
   }, [buildPageDurationPayload, uniqueId]);
 
   useEffect(() => {
@@ -173,7 +234,8 @@ export default function ViewPage() {
   }, [pdfUrl, sendHeartbeatBeacon, useNativeFallback]);
 
   useEffect(() => {
-    const loadPdf = async () => {
+    // Core PDF content loader — extracted so it can be called after gate passes too.
+    const loadPdfContent = async () => {
       try {
         if (!tracked.current) {
           tracked.current = true;
@@ -207,7 +269,42 @@ export default function ViewPage() {
       }
     };
 
-    loadPdf();
+    loadPdfContentRef.current = loadPdfContent;
+
+    const init = async () => {
+      // Check gate first; on failure fall through to normal load.
+      try {
+        const gateRes = await axios.get(`${API}/view/${uniqueId}/gate`);
+        if (gateRes.data.enabled) {
+          setGateSchema(gateRes.data.schema || []);
+          setGatePdfName(gateRes.data.pdf_name || '');
+
+          const storedToken = localStorage.getItem(`gate_token_${uniqueId}`);
+          if (storedToken) {
+            const verifyRes = await axios.post(`${API}/view/${uniqueId}/gate/verify`, {
+              access_token: storedToken,
+            });
+            if (verifyRes.data.valid) {
+              gateTokenRef.current = storedToken;
+              await loadPdfContent();
+              return;
+            }
+            localStorage.removeItem(`gate_token_${uniqueId}`);
+          }
+
+          // No valid token — show gate form.
+          setGateVisible(true);
+          setLoading(false);
+          return;
+        }
+      } catch {
+        // Gate endpoint unavailable — proceed without gate.
+      }
+
+      await loadPdfContent();
+    };
+
+    init();
 
     const handleFinalHeartbeat = () => sendHeartbeatBeacon();
     const handleVisibilityChange = () => {
@@ -284,6 +381,112 @@ export default function ViewPage() {
     () => Array.from({ length: pageCount }, (_, index) => index + 1),
     [pageCount]
   );
+
+  // ── Gate form submit ────────────────────────────────────────────────────────
+  const handleGateSubmit = async (e) => {
+    e.preventDefault();
+    setGateSubmitError('');
+
+    const errors = {};
+    gateSchema.forEach((field) => {
+      if (field.required && !gateFormData[field.label]?.trim()) {
+        errors[field.label] = 'Required';
+      }
+    });
+    if (Object.keys(errors).length) {
+      setGateErrors(errors);
+      return;
+    }
+
+    setGateSubmitting(true);
+    try {
+      const res = await axios.post(`${API}/view/${uniqueId}/gate/submit`, {
+        form_data: gateFormData,
+        screen_width: window.innerWidth,
+        screen_height: window.innerHeight,
+        is_mobile: isMobileDevice(),
+      });
+      const token = res.data.access_token;
+      localStorage.setItem(`gate_token_${uniqueId}`, token);
+      gateTokenRef.current = token;
+      setGateVisible(false);
+      setLoading(true);
+      await loadPdfContentRef.current?.();
+    } catch {
+      setGateSubmitError('Something went wrong. Please try again.');
+    } finally {
+      setGateSubmitting(false);
+    }
+  };
+
+  // ── Gate form overlay ───────────────────────────────────────────────────────
+  if (gateVisible) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#edf1f6] px-4 py-10">
+        <div className="w-full max-w-md rounded-2xl bg-white shadow-[0_4px_24px_rgba(20,74,87,0.12)] overflow-hidden">
+          <div className="px-6 py-5 border-b" style={{ borderColor: '#f1f5f9', backgroundColor: '#144a57' }}>
+            <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'rgba(255,255,255,0.6)' }}>
+              Your Itinerary
+            </p>
+            <h2 className="text-lg font-bold text-white mt-0.5 truncate">
+              {gatePdfName || 'Exclusive Itinerary'}
+            </h2>
+            <p className="text-sm mt-1" style={{ color: 'rgba(255,255,255,0.7)' }}>
+              Please fill in your details to access this document.
+            </p>
+          </div>
+          <form onSubmit={handleGateSubmit} className="px-6 py-6 space-y-4">
+            {gateSchema.length === 0 ? (
+              <p className="text-sm text-slate-400 text-center py-4">No fields configured.</p>
+            ) : (
+              gateSchema.map((field, i) => (
+                <div key={i}>
+                  <label className="block text-xs font-bold uppercase tracking-wider mb-1.5" style={{ color: '#144a57' }}>
+                    {field.label}
+                    {field.required && <span className="ml-1 text-red-500">*</span>}
+                  </label>
+                  <GateField
+                    field={field}
+                    value={gateFormData[field.label] || ''}
+                    onChange={(val) => {
+                      setGateFormData((prev) => ({ ...prev, [field.label]: val }));
+                      if (gateErrors[field.label]) {
+                        setGateErrors((prev) => { const n = { ...prev }; delete n[field.label]; return n; });
+                      }
+                    }}
+                    error={gateErrors[field.label]}
+                  />
+                  {gateErrors[field.label] && (
+                    <p className="mt-1 text-xs text-red-500">{gateErrors[field.label]}</p>
+                  )}
+                </div>
+              ))
+            )}
+            {gateSubmitError && (
+              <p className="text-sm text-red-500 text-center">{gateSubmitError}</p>
+            )}
+            <button
+              type="submit"
+              disabled={gateSubmitting}
+              className="w-full flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold text-white transition-opacity disabled:opacity-60"
+              style={{ backgroundColor: '#144a57' }}
+            >
+              {gateSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
+              {gateSubmitting ? 'Submitting...' : 'View Itinerary'}
+            </button>
+          </form>
+          <div className="px-6 pb-5 text-center">
+            <p className="text-xs text-slate-400">
+              Powered by{' '}
+              <a href="https://travloger.in" className="underline" style={{ color: '#E8A020' }}>
+                Travloger
+              </a>
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

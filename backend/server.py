@@ -1,5 +1,6 @@
 from dotenv import load_dotenv
 from pathlib import Path
+import hashlib
 import ipaddress
 import logging
 import os
@@ -582,6 +583,26 @@ class ViewSessionHeartbeatInput(BaseModel):
     current_page: Optional[int] = None
     total_pages: Optional[int] = None
     page_durations: dict[str, int] = Field(default_factory=dict)
+
+class GateLinkCreateInput(BaseModel):
+    pdf_id: str
+    gate_schema: list = Field(default_factory=list)
+
+class GateSubmitInput(BaseModel):
+    form_data: dict
+    screen_width: Optional[int] = None
+    screen_height: Optional[int] = None
+    is_mobile: Optional[bool] = False
+
+class GateVerifyInput(BaseModel):
+    access_token: str
+
+class GateHeartbeatInput(BaseModel):
+    access_token: str
+    duration_seconds: int
+
+class GateSchemaUpdateInput(BaseModel):
+    gate_schema: list
 
 # Create app
 app = FastAPI()
@@ -2029,6 +2050,190 @@ async def heartbeat_view_session(unique_id: str, input: ViewSessionHeartbeatInpu
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Session not found")
     return {"tracked": True}
+
+# ---- GATE (TRIPDECK LEAD CAPTURE) ----
+
+@api_router.get("/view/{unique_id}/gate")
+async def get_gate_config(unique_id: str):
+    link = await db.links.find_one({"_id": unique_id})
+    if not link:
+        raise HTTPException(status_code=404, detail="Link not found")
+    if not link.get("gate_enabled"):
+        return {"enabled": False}
+    return {
+        "enabled": True,
+        "schema": link.get("gate_schema", []),
+        "pdf_name": link.get("pdf_name_snapshot", ""),
+    }
+
+
+@api_router.post("/view/{unique_id}/gate/submit")
+async def submit_gate_form(unique_id: str, input: GateSubmitInput, request: Request):
+    link = await db.links.find_one({"_id": unique_id})
+    if not link:
+        raise HTTPException(status_code=404, detail="Link not found")
+    if not link.get("gate_enabled"):
+        raise HTTPException(status_code=400, detail="Gate not enabled for this link")
+    pdf = await db.pdfs.find_one({"id": link.get("pdf_id")})
+    if not pdf:
+        raise HTTPException(status_code=410, detail="PDF no longer available")
+
+    user_agent = request.headers.get("user-agent", "")
+    client_ip = get_client_ip(request)
+    location = get_location_snapshot(request)
+    if not location.get("city") or not location.get("region"):
+        ip_lookup = await lookup_ip_geolocation(client_ip)
+        if ip_lookup.get("label"):
+            location = merge_location_data(location, ip_lookup)
+
+    access_token = str(uuid.uuid4())
+    device_fingerprint = hashlib.md5(f"{client_ip}:{user_agent}".encode()).hexdigest()
+    now = datetime.now(timezone.utc).isoformat()
+
+    await db.gate_submissions.insert_one({
+        "link_id": unique_id,
+        "user_id": link.get("user_id"),
+        "form_data": input.form_data,
+        "access_token": access_token,
+        "device_fingerprint": device_fingerprint,
+        "ip_address": client_ip,
+        "device_type": infer_device_type(user_agent, input.is_mobile or False),
+        "browser": infer_browser(user_agent),
+        "os": infer_platform(user_agent),
+        "city": location.get("city"),
+        "region": location.get("region"),
+        "country": location.get("country"),
+        "location_label": location.get("label"),
+        "submitted_at": now,
+        "last_seen_at": now,
+        "time_spent_seconds": 0,
+    })
+    return {"access_token": access_token}
+
+
+@api_router.post("/view/{unique_id}/gate/verify")
+async def verify_gate_access(unique_id: str, input: GateVerifyInput):
+    link = await db.links.find_one({"_id": unique_id})
+    if not link or not link.get("gate_enabled"):
+        return {"valid": True}
+    sub = await db.gate_submissions.find_one(
+        {"link_id": unique_id, "access_token": input.access_token}
+    )
+    return {"valid": bool(sub)}
+
+
+@api_router.post("/view/{unique_id}/gate/heartbeat")
+async def gate_heartbeat(unique_id: str, input: GateHeartbeatInput):
+    duration = max(0, min(int(input.duration_seconds or 0), 24 * 60 * 60))
+    await db.gate_submissions.update_one(
+        {"link_id": unique_id, "access_token": input.access_token},
+        {"$set": {
+            "time_spent_seconds": duration,
+            "last_seen_at": datetime.now(timezone.utc).isoformat(),
+        }},
+    )
+    return {"tracked": True}
+
+
+@api_router.get("/links/{link_id}/gate-submissions")
+async def get_gate_submissions(link_id: str, request: Request):
+    user = await get_current_user(request)
+    link = await db.links.find_one({"_id": link_id, "user_id": user["_id"]})
+    if not link:
+        raise HTTPException(status_code=404, detail="Link not found")
+    subs = await db.gate_submissions.find({"link_id": link_id}).sort("submitted_at", -1).to_list(1000)
+    return [
+        {
+            "id": str(s["_id"]),
+            "form_data": s.get("form_data", {}),
+            "ip_address": s.get("ip_address"),
+            "device_type": s.get("device_type"),
+            "browser": s.get("browser"),
+            "os": s.get("os"),
+            "location_label": s.get("location_label"),
+            "city": s.get("city"),
+            "region": s.get("region"),
+            "country": s.get("country"),
+            "submitted_at": s.get("submitted_at"),
+            "time_spent_seconds": s.get("time_spent_seconds", 0),
+        }
+        for s in subs
+    ]
+
+
+@api_router.patch("/links/{link_id}/gate")
+async def update_gate_schema(link_id: str, input: GateSchemaUpdateInput, request: Request):
+    user = await get_current_user(request)
+    link = await db.links.find_one({"_id": link_id, "user_id": user["_id"]})
+    if not link:
+        raise HTTPException(status_code=404, detail="Link not found")
+    await db.links.update_one({"_id": link_id}, {"$set": {"gate_schema": input.gate_schema}})
+    return {"message": "Gate schema updated"}
+
+
+@api_router.get("/gate-links")
+async def list_gate_links(request: Request):
+    user = await get_current_user(request)
+    links = await db.links.find(
+        {"user_id": user["_id"], "gate_enabled": True}
+    ).sort("created_at", -1).to_list(1000)
+    result = []
+    for link in links:
+        link_id = link["_id"]
+        submission_count = await db.gate_submissions.count_documents({"link_id": link_id})
+        result.append({
+            "_id": link_id,
+            "pdf_name": link.get("pdf_name_snapshot", "Unknown PDF"),
+            "pdf_id": link.get("pdf_id"),
+            "gate_schema": link.get("gate_schema", []),
+            "submission_count": submission_count,
+            "open_count": link.get("open_count", 0),
+            "created_at": link.get("created_at"),
+        })
+    return result
+
+
+@api_router.post("/gate-links")
+async def create_gate_link(input: GateLinkCreateInput, request: Request):
+    user = await get_current_user(request)
+    accessible_query = await get_accessible_pdf_query(user)
+    pdf = await db.pdfs.find_one({"id": input.pdf_id, **accessible_query})
+    if not pdf:
+        raise HTTPException(status_code=404, detail="PDF not found")
+    if pdf.get("archived"):
+        raise HTTPException(status_code=400, detail="Archived PDFs cannot be used for gate links")
+    unique_id = str(uuid.uuid4())[:8]
+    now = datetime.now(timezone.utc).isoformat()
+    link_doc = {
+        "_id": unique_id,
+        "pdf_id": input.pdf_id,
+        "user_id": user["_id"],
+        "customer_name": "",
+        "customer_phone": "",
+        "pdf_name_snapshot": pdf.get("file_name", "Unknown PDF"),
+        "folder_id": pdf.get("folder_id"),
+        "folder_name": pdf.get("folder_name"),
+        "pdf_deleted": False,
+        "pdf_archived": bool(pdf.get("archived")),
+        "opened": False,
+        "open_count": 0,
+        "last_opened_at": None,
+        "gate_enabled": True,
+        "gate_schema": input.gate_schema,
+        "created_at": now,
+    }
+    await db.links.insert_one(link_doc)
+    return {
+        "_id": unique_id,
+        "pdf_name": pdf["file_name"],
+        "pdf_id": input.pdf_id,
+        "gate_schema": input.gate_schema,
+        "submission_count": 0,
+        "open_count": 0,
+        "created_at": now,
+        "url": f"/view/{unique_id}",
+    }
+
 
 # ---- DASHBOARD STATS ----
 @api_router.get("/dashboard/stats")
