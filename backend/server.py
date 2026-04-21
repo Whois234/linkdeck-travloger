@@ -1130,6 +1130,24 @@ async def admin_analytics(
         else:
             active_time_by_pdf.append(item)
 
+    # Include active PDFs that have 0 sessions (e.g. gate-only PDFs never opened via direct links)
+    tracked_pdf_ids = {item["pdf_id"] for item in active_time_by_pdf}
+    for pdf_id, meta in pdf_meta_map.items():
+        if (
+            not meta.get("archived")
+            and meta.get("upload_status") != "pending"
+            and pdf_id not in tracked_pdf_ids
+        ):
+            active_time_by_pdf.append({
+                "pdf_id": pdf_id,
+                "pdf_name": meta["pdf_name"],
+                "folder_id": meta.get("folder_id"),
+                "folder_name": meta.get("folder_name"),
+                "sessions": 0,
+                "total_time_seconds": 0,
+                "avg_time_seconds": 0,
+            })
+
     user_daily_activity = {}
     for link in links:
         created_at = link.get("created_at")
