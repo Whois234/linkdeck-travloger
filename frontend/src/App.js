@@ -12,6 +12,7 @@ import TripDeckBuilderPage from "./pages/TripDeckBuilderPage";
 import PublicTripDeckPage from "./pages/PublicTripDeckPage";
 import GateLinkResponsesPage from "./pages/GateLinkResponsesPage";
 import LeadsPage from "./pages/LeadsPage";
+import GateAnalyticsPage from "./pages/GateAnalyticsPage";
 import { Button } from "./components/ui/button";
 import { Loader2 } from "lucide-react";
 
@@ -101,6 +102,7 @@ function App() {
             <Route path="/tripdeck" element={<ProtectedRoute><TripDeckPage /></ProtectedRoute>} />
             <Route path="/tripdeck/responses/:linkId" element={<ProtectedRoute><GateLinkResponsesPage /></ProtectedRoute>} />
             <Route path="/tripdeck/leads" element={<ProtectedRoute><LeadsPage /></ProtectedRoute>} />
+            <Route path="/tripdeck/analytics" element={<ProtectedRoute><GateAnalyticsPage /></ProtectedRoute>} />
             <Route path="/tripdeck/:tripdeckId" element={<ProtectedRoute><TripDeckBuilderPage /></ProtectedRoute>} />
             <Route path="/deck/:slug" element={<PublicTripDeckPage />} />
             <Route path="/view/:uniqueId" element={<ViewPage />} />

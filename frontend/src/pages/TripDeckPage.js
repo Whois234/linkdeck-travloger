@@ -7,7 +7,7 @@ import {
   Trash2, Loader2, Link2, Copy, Check, Eye,
   ShieldCheck, X, Archive, RotateCcw, ArrowUpDown,
   CalendarDays, Filter, ChevronDown, ChevronRight,
-  Users,
+  Users, BarChart2,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -403,6 +403,15 @@ export default function TripDeckPage() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {/* Analytics button */}
+            <Button
+              variant="outline"
+              className="rounded-lg border-slate-200 text-slate-700 hover:bg-slate-50"
+              onClick={() => navigate('/tripdeck/analytics')}
+            >
+              <BarChart2 className="mr-2 h-4 w-4" /> Analytics
+            </Button>
+
             {/* Leads button */}
             <Button
               variant="outline"

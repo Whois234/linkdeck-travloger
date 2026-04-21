@@ -2377,6 +2377,152 @@ async def get_leads(request: Request):
     return result
 
 
+class DeleteLeadInput(BaseModel):
+    session_ids: list
+
+
+@api_router.delete("/leads")
+async def delete_lead(input: DeleteLeadInput, request: Request):
+    """Delete all gate submissions for a given lead (by session IDs)."""
+    user = await get_current_user(request)
+    if not input.session_ids:
+        raise HTTPException(status_code=400, detail="No session IDs provided")
+
+    link_ids = [
+        link["_id"]
+        for link in await db.links.find(
+            {"user_id": user["_id"], "gate_enabled": True}, {"_id": 1}
+        ).to_list(1000)
+    ]
+
+    valid_ids = [ObjectId(sid) for sid in input.session_ids if ObjectId.is_valid(sid)]
+    result = await db.gate_submissions.delete_many({
+        "_id": {"$in": valid_ids},
+        "link_id": {"$in": link_ids},
+    })
+    return {"deleted": result.deleted_count}
+
+
+@api_router.get("/gate-analytics")
+async def get_gate_analytics(request: Request):
+    """Return aggregated analytics across all gate links for the user."""
+    user = await get_current_user(request)
+
+    links = await db.links.find(
+        {"user_id": user["_id"], "gate_enabled": True}
+    ).to_list(1000)
+
+    if not links:
+        return {
+            "total_submissions": 0, "total_opens": 0, "total_links": 0,
+            "pdfs": [], "regions": [], "countries": [], "devices": [],
+            "os": [], "browsers": [], "hourly": [], "day_of_week": [],
+            "daily_trend": [], "avg_time_spent": 0,
+        }
+
+    link_map = {link["_id"]: link for link in links}
+    link_ids = list(link_map.keys())
+
+    all_subs = await db.gate_submissions.find(
+        {"link_id": {"$in": link_ids}}
+    ).to_list(10000)
+
+    total_submissions = len(all_subs)
+    total_opens = sum(link.get("open_count", 0) for link in links)
+
+    pdf_stats: dict = {}
+    country_stats: dict = {}
+    city_stats: dict = {}
+    device_stats: dict = {}
+    os_stats: dict = {}
+    browser_stats: dict = {}
+    hour_stats: dict = {str(h): 0 for h in range(24)}
+    dow_stats: dict = {str(d): 0 for d in range(7)}
+    daily_stats: dict = {}
+    total_time = 0
+
+    DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+    for sub in all_subs:
+        link = link_map.get(sub.get("link_id"), {})
+        pdf_name = link.get("pdf_name_snapshot", "Unknown PDF")
+
+        if pdf_name not in pdf_stats:
+            pdf_stats[pdf_name] = {
+                "name": pdf_name,
+                "submissions": 0,
+                "opens": link.get("open_count", 0),
+                "total_time": 0,
+            }
+        pdf_stats[pdf_name]["submissions"] += 1
+        pdf_stats[pdf_name]["total_time"] += sub.get("time_spent_seconds", 0)
+
+        country = (sub.get("country") or "Unknown").strip() or "Unknown"
+        country_stats[country] = country_stats.get(country, 0) + 1
+
+        city_raw = sub.get("city") or ""
+        region_raw = sub.get("region") or ""
+        city_label = ", ".join(filter(None, [city_raw, region_raw])) or "Unknown"
+        city_stats[city_label] = city_stats.get(city_label, 0) + 1
+
+        device = (sub.get("device_type") or "Unknown").strip()
+        device_stats[device] = device_stats.get(device, 0) + 1
+
+        os_name = (sub.get("os") or "Unknown").strip()
+        os_stats[os_name] = os_stats.get(os_name, 0) + 1
+
+        browser = (sub.get("browser") or "Unknown").strip()
+        browser_stats[browser] = browser_stats.get(browser, 0) + 1
+
+        time_spent = sub.get("time_spent_seconds", 0) or 0
+        total_time += time_spent
+
+        submitted_at = sub.get("submitted_at")
+        if submitted_at:
+            try:
+                dt = datetime.fromisoformat(submitted_at.replace("Z", "+00:00"))
+                hour_stats[str(dt.hour)] = hour_stats.get(str(dt.hour), 0) + 1
+                dow_stats[str(dt.weekday())] = dow_stats.get(str(dt.weekday()), 0) + 1
+                day_str = dt.strftime("%Y-%m-%d")
+                daily_stats[day_str] = daily_stats.get(day_str, 0) + 1
+            except Exception:
+                pass
+
+    for p in pdf_stats.values():
+        p["avg_time"] = round(p["total_time"] / p["submissions"]) if p["submissions"] else 0
+
+    return {
+        "total_submissions": total_submissions,
+        "total_opens": total_opens,
+        "total_links": len(links),
+        "avg_time_spent": round(total_time / total_submissions) if total_submissions else 0,
+        "pdfs": sorted(pdf_stats.values(), key=lambda x: x["submissions"], reverse=True),
+        "countries": sorted(
+            [{"name": k, "count": v} for k, v in country_stats.items()],
+            key=lambda x: x["count"], reverse=True
+        )[:15],
+        "cities": sorted(
+            [{"name": k, "count": v} for k, v in city_stats.items()],
+            key=lambda x: x["count"], reverse=True
+        )[:15],
+        "devices": [{"name": k, "count": v} for k, v in device_stats.items()],
+        "os": sorted(
+            [{"name": k, "count": v} for k, v in os_stats.items()],
+            key=lambda x: x["count"], reverse=True
+        ),
+        "browsers": sorted(
+            [{"name": k, "count": v} for k, v in browser_stats.items()],
+            key=lambda x: x["count"], reverse=True
+        ),
+        "hourly": [{"hour": h, "label": f"{h:02d}:00", "count": hour_stats.get(str(h), 0)} for h in range(24)],
+        "day_of_week": [{"day": d, "label": DAY_NAMES[d], "count": dow_stats.get(str(d), 0)} for d in range(7)],
+        "daily_trend": sorted(
+            [{"date": k, "count": v} for k, v in daily_stats.items()],
+            key=lambda x: x["date"]
+        )[-30:],
+    }
+
+
 # ---- DASHBOARD STATS ----
 @api_router.get("/dashboard/stats")
 async def dashboard_stats(request: Request):

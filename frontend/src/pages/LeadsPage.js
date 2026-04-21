@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import {
   ArrowLeft, Search, Loader2, Download, Users,
   ArrowUpDown, CalendarDays, ChevronDown, ChevronRight,
-  Phone, Mail, FileText, Clock,
+  Phone, Mail, FileText, Clock, Trash2,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -122,6 +122,7 @@ export default function LeadsPage() {
   const [dateFilter, setDateFilter] = useState({ preset: 'all', from: '', to: '' });
 
   const [expandedKey, setExpandedKey] = useState(null);
+  const [deletingKey, setDeletingKey] = useState(null);
 
   const loadLeads = useCallback(async () => {
     setLoading(true);
@@ -136,6 +137,23 @@ export default function LeadsPage() {
   }, []);
 
   useEffect(() => { loadLeads(); }, [loadLeads]);
+
+  const handleDeleteLead = async (lead, e) => {
+    e.stopPropagation();
+    if (!window.confirm(`Delete all ${lead.session_count} submission(s) for "${lead.name}"? This cannot be undone.`)) return;
+    setDeletingKey(lead.identity_key);
+    try {
+      const sessionIds = (lead.sessions || []).map((s) => s.id);
+      await axios.delete(`${API}/leads`, { data: { session_ids: sessionIds }, withCredentials: true });
+      toast.success('Lead deleted');
+      setLeads((prev) => prev.filter((l) => l.identity_key !== lead.identity_key));
+      if (expandedKey === lead.identity_key) setExpandedKey(null);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to delete lead');
+    } finally {
+      setDeletingKey(null);
+    }
+  };
 
   const visibleLeads = (() => {
     let list = [...leads];
@@ -254,8 +272,9 @@ export default function LeadsPage() {
                     <th className="text-left text-xs font-bold uppercase tracking-wider text-slate-500 h-10 px-4">Email</th>
                     <th className="text-left text-xs font-bold uppercase tracking-wider text-slate-500 h-10 px-4">Sessions</th>
                     <th className="text-left text-xs font-bold uppercase tracking-wider text-slate-500 h-10 px-4">PDFs Accessed</th>
-                    <th className="text-left text-xs font-bold uppercase tracking-wider text-slate-500 h-10 px-4">First Seen</th>
+                    <th className="text-left text-xs font-bold uppercase tracking-wider text-slate-500 h-10 px-4">Created</th>
                     <th className="text-left text-xs font-bold uppercase tracking-wider text-slate-500 h-10 px-4">Last Seen</th>
+                    <th className="text-left text-xs font-bold uppercase tracking-wider text-slate-500 h-10 px-4"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -308,14 +327,32 @@ export default function LeadsPage() {
                               ))}
                             </div>
                           </td>
-                          <td className="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">{formatDate(lead.first_seen)}</td>
-                          <td className="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">{formatDate(lead.last_seen)}</td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="text-xs text-slate-600">{formatDate(lead.first_seen)}</div>
+                            <div className="text-[10px] text-slate-400 mt-0.5">{lead.first_seen ? new Date(lead.first_seen).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '--'}</div>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="text-xs text-slate-600">{formatDate(lead.last_seen)}</div>
+                            <div className="text-[10px] text-slate-400 mt-0.5">{lead.last_seen ? new Date(lead.last_seen).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '--'}</div>
+                          </td>
+                          <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              onClick={(e) => handleDeleteLead(lead, e)}
+                              disabled={deletingKey === lead.identity_key}
+                              className="p-1.5 rounded hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors"
+                              title="Delete lead"
+                            >
+                              {deletingKey === lead.identity_key
+                                ? <Loader2 className="w-4 h-4 animate-spin" />
+                                : <Trash2 className="w-4 h-4" />}
+                            </button>
+                          </td>
                         </tr>
 
                         {/* Expanded sessions for this lead */}
                         {isExpanded && (
                           <tr style={{ borderColor: '#f1f5f9' }}>
-                            <td colSpan={8} className="p-0 bg-slate-50 border-b" style={{ borderColor: '#e2e8f0' }}>
+                            <td colSpan={9} className="p-0 bg-slate-50 border-b" style={{ borderColor: '#e2e8f0' }}>
                               <div className="px-8 py-4">
                                 <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
                                   All sessions — {lead.session_count} total
