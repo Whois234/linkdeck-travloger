@@ -1,4 +1,5 @@
 import { Fragment, useState, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
 import { Button } from '../components/ui/button';
@@ -14,7 +15,7 @@ import {
   Link2, Copy, Trash2, FileText, ExternalLink, LogOut, Search, Filter,
   CheckCircle, XCircle, Eye, Loader2, LinkIcon, MapPin, ArrowUpDown,
   Smartphone, Monitor, Globe2, Archive, Download, ChevronDown, ChevronUp,
-  Users, Menu, FolderOpen
+  Users, Menu, FolderOpen, Map
 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -23,6 +24,7 @@ const USER_MODULES = [
   { key: 'dashboard', label: 'Dashboard', icon: Link2 },
   { key: 'pdfs', label: 'PDFs', icon: FolderOpen },
   { key: 'contacts', label: 'Contacts', icon: Users },
+  { key: 'tripdeck', label: 'TripDeck', icon: Map, href: '/tripdeck' },
 ];
 
 function formatDuration(seconds) {
@@ -116,6 +118,7 @@ function WhatsAppIcon({ size = 16 }) {
 
 export default function DashboardPage() {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [pdfs, setPdfs] = useState([]);
   const [archivedPdfs, setArchivedPdfs] = useState([]);
   const [folders, setFolders] = useState([]);
@@ -671,7 +674,11 @@ export default function DashboardPage() {
                           key={module.key}
                           type="button"
                           onClick={() => {
-                            setActiveModule(module.key);
+                            if (module.href) {
+                              navigate(module.href);
+                            } else {
+                              setActiveModule(module.key);
+                            }
                             setNavOpen(false);
                           }}
                           className="w-full flex items-center gap-3 rounded-xl px-4 py-3 text-left transition-colors"
