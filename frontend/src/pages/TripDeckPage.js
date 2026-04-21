@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { toast } from 'sonner';
 import {
-  ArrowLeft, Map, Plus, Search, ExternalLink, Edit2,
+  ArrowLeft, Plus, Search, ExternalLink, Edit2,
   Trash2, Loader2, Link2, Copy, Check, Eye,
-  ShieldCheck, X,
+  ShieldCheck, X, Archive, RotateCcw, ArrowUpDown,
+  CalendarDays, Filter,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -13,6 +14,7 @@ import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { Badge } from '../components/ui/badge';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const SITE_URL = process.env.REACT_APP_SITE_URL || window.location.origin;
@@ -20,15 +22,6 @@ const SITE_URL = process.env.REACT_APP_SITE_URL || window.location.origin;
 function formatDate(dateStr) {
   if (!dateStr) return '--';
   return new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-}
-
-function formatDuration(seconds) {
-  if (!seconds) return '--';
-  const s = Number(seconds);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  const rem = s % 60;
-  return rem > 0 ? `${m}m ${rem}s` : `${m}m`;
 }
 
 function newSchemaField() {
@@ -41,6 +34,7 @@ const FIELD_TYPES = [
   { value: 'email', label: 'Email' },
   { value: 'number', label: 'Number' },
   { value: 'date', label: 'Date' },
+  { value: 'select', label: 'Dropdown' },
   { value: 'textarea', label: 'Long Text' },
 ];
 
@@ -68,7 +62,7 @@ function SchemaBuilder({ fields, onChange }) {
           </div>
           <div className="flex items-center gap-2 pl-7">
             <Select value={field.field_type} onValueChange={(v) => update(field.id, 'field_type', v)}>
-              <SelectTrigger className="h-8 text-xs rounded-lg border-slate-200 w-32">
+              <SelectTrigger className="h-8 text-xs rounded-lg border-slate-200 w-36">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -107,64 +101,84 @@ function SchemaBuilder({ fields, onChange }) {
   );
 }
 
-function SubmissionsTable({ submissions, schema }) {
-  if (!submissions.length) {
-    return <p className="py-10 text-center text-sm text-slate-400">No submissions yet.</p>;
+function applyDateFilter(items, dateField, dateFilter) {
+  if (dateFilter.preset === 'all') return items;
+  const now = new Date();
+  let from, to;
+  if (dateFilter.preset === 'today') {
+    from = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    to = new Date(from.getTime() + 86400000);
+  } else if (dateFilter.preset === 'week') {
+    from = new Date(now.getTime() - 7 * 86400000);
+    to = new Date(now.getTime() + 86400000);
+  } else if (dateFilter.preset === 'month') {
+    from = new Date(now.getTime() - 30 * 86400000);
+    to = new Date(now.getTime() + 86400000);
+  } else if (dateFilter.preset === 'custom') {
+    from = dateFilter.from ? new Date(dateFilter.from) : null;
+    to = dateFilter.to ? new Date(new Date(dateFilter.to).getTime() + 86400000) : null;
   }
-  const formKeys = schema.map((f) => f.label);
+  return items.filter((item) => {
+    const d = new Date(item[dateField]);
+    if (from && d < from) return false;
+    if (to && d >= to) return false;
+    return true;
+  });
+}
+
+function DateFilterBar({ dateFilter, setDateFilter }) {
   return (
-    <div className="overflow-x-auto">
-      <Table>
-        <TableHeader>
-          <TableRow className="hover:bg-transparent" style={{ backgroundColor: '#f8fafc' }}>
-            {formKeys.map((k) => (
-              <TableHead key={k} className="text-xs font-bold uppercase tracking-wider text-slate-500 h-9 whitespace-nowrap">{k}</TableHead>
-            ))}
-            <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-9">Device</TableHead>
-            <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-9">Location</TableHead>
-            <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-9">Time Spent</TableHead>
-            <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-9">Submitted</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {submissions.map((s) => (
-            <TableRow key={s.id} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
-              {formKeys.map((k) => (
-                <TableCell key={k} className="text-sm text-slate-700 max-w-[180px] truncate">
-                  {s.form_data?.[k] || '--'}
-                </TableCell>
-              ))}
-              <TableCell className="text-xs text-slate-500 whitespace-nowrap">
-                {[s.device_type, s.browser, s.os].filter(Boolean).join(' · ') || '--'}
-              </TableCell>
-              <TableCell className="text-xs text-slate-500 whitespace-nowrap">{s.location_label || '--'}</TableCell>
-              <TableCell className="text-xs text-slate-600">{formatDuration(s.time_spent_seconds)}</TableCell>
-              <TableCell className="text-xs text-slate-400 whitespace-nowrap">{formatDate(s.submitted_at)}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+    <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
+        <CalendarDays className="w-3.5 h-3.5" /> Date
+      </div>
+      <Select
+        value={dateFilter.preset}
+        onValueChange={(v) => setDateFilter({ preset: v, from: '', to: '' })}
+      >
+        <SelectTrigger className="h-8 text-xs rounded-lg border-slate-200 w-32">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All time</SelectItem>
+          <SelectItem value="today">Today</SelectItem>
+          <SelectItem value="week">Last 7 days</SelectItem>
+          <SelectItem value="month">Last 30 days</SelectItem>
+          <SelectItem value="custom">Custom range</SelectItem>
+        </SelectContent>
+      </Select>
+      {dateFilter.preset === 'custom' && (
+        <>
+          <Input
+            type="date"
+            value={dateFilter.from}
+            onChange={(e) => setDateFilter((p) => ({ ...p, from: e.target.value }))}
+            className="h-8 text-xs rounded-lg border-slate-200 w-36"
+          />
+          <span className="text-xs text-slate-400">to</span>
+          <Input
+            type="date"
+            value={dateFilter.to}
+            onChange={(e) => setDateFilter((p) => ({ ...p, to: e.target.value }))}
+            className="h-8 text-xs rounded-lg border-slate-200 w-36"
+          />
+        </>
+      )}
     </div>
   );
 }
 
 export default function TripDeckPage() {
-  const navigate = useNavigate();
-
-  // New TripDeck dialog
-  const [newTitle, setNewTitle] = useState('');
-  const [newDialogOpen, setNewDialogOpen] = useState(false);
-  const [creating, setCreating] = useState(false);
-
-  // TripDecks list
-  const [tripdecks, setTripdecks] = useState([]);
-  const [tripdecksLoading, setTripdecksLoading] = useState(true);
-
   // Gate links state
   const [gateLinks, setGateLinks] = useState([]);
   const [gateLinksLoading, setGateLinksLoading] = useState(true);
   const [pdfs, setPdfs] = useState([]);
-  const [gateSearchQuery, setGateSearchQuery] = useState('');
+
+  // Filters
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState('newest');
+  const [dateFilter, setDateFilter] = useState({ preset: 'all', from: '', to: '' });
+  const [showArchived, setShowArchived] = useState(false);
 
   // Create gate link dialog
   const [newGateDialogOpen, setNewGateDialogOpen] = useState(false);
@@ -172,47 +186,15 @@ export default function TripDeckPage() {
   const [newGateSchema, setNewGateSchema] = useState([newSchemaField()]);
   const [creatingGate, setCreatingGate] = useState(false);
 
-  // Submissions dialog
-  const [submissionsDialog, setSubmissionsDialog] = useState({ open: false, link: null });
-  const [submissions, setSubmissions] = useState([]);
-  const [submissionsLoading, setSubmissionsLoading] = useState(false);
-
   // Edit schema dialog
   const [editSchemaDialog, setEditSchemaDialog] = useState({ open: false, link: null });
   const [editSchema, setEditSchema] = useState([]);
   const [savingSchema, setSavingSchema] = useState(false);
 
+  // Action states
   const [copiedId, setCopiedId] = useState(null);
   const [deletingGateId, setDeletingGateId] = useState(null);
-
-  const handleCreate = async (e) => {
-    e.preventDefault();
-    if (!newTitle.trim()) return;
-    setCreating(true);
-    try {
-      const res = await axios.post(`${API}/tripdeck`, { title: newTitle.trim(), description: '' }, { withCredentials: true });
-      toast.success('TripDeck created');
-      setNewDialogOpen(false);
-      setNewTitle('');
-      navigate(`/tripdeck/${res.data._id}`);
-    } catch (err) {
-      toast.error(err.response?.data?.detail || 'Failed to create TripDeck');
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  const loadTripdecks = useCallback(async () => {
-    setTripdecksLoading(true);
-    try {
-      const res = await axios.get(`${API}/tripdeck`, { withCredentials: true });
-      setTripdecks(Array.isArray(res.data) ? res.data : []);
-    } catch (err) {
-      toast.error(err.response?.data?.detail || 'Failed to load TripDecks');
-    } finally {
-      setTripdecksLoading(false);
-    }
-  }, []);
+  const [archivingId, setArchivingId] = useState(null);
 
   const loadGateData = useCallback(async () => {
     setGateLinksLoading(true);
@@ -231,7 +213,7 @@ export default function TripDeckPage() {
     }
   }, []);
 
-  useEffect(() => { loadTripdecks(); loadGateData(); }, [loadTripdecks, loadGateData]);
+  useEffect(() => { loadGateData(); }, [loadGateData]);
 
   const handleCreateGateLink = async (e) => {
     e.preventDefault();
@@ -264,20 +246,6 @@ export default function TripDeckPage() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const handleViewSubmissions = async (link) => {
-    setSubmissionsDialog({ open: true, link });
-    setSubmissionsLoading(true);
-    setSubmissions([]);
-    try {
-      const res = await axios.get(`${API}/links/${link._id}/gate-submissions`, { withCredentials: true });
-      setSubmissions(Array.isArray(res.data) ? res.data : []);
-    } catch (err) {
-      toast.error(err.response?.data?.detail || 'Failed to load submissions');
-    } finally {
-      setSubmissionsLoading(false);
-    }
-  };
-
   const handleOpenEditSchema = (link) => {
     setEditSchema((link.gate_schema || []).map((f) => ({ ...f, id: Date.now() + Math.random() })));
     setEditSchemaDialog({ open: true, link });
@@ -303,6 +271,22 @@ export default function TripDeckPage() {
     }
   };
 
+  const handleArchiveToggle = async (link) => {
+    setArchivingId(link._id);
+    try {
+      const res = await axios.patch(`${API}/links/${link._id}/archive`, {}, { withCredentials: true });
+      const archived = res.data.archived;
+      toast.success(archived ? 'Gate link archived' : 'Gate link restored');
+      setGateLinks((prev) =>
+        prev.map((g) => (g._id === link._id ? { ...g, gate_archived: archived } : g))
+      );
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to update gate link');
+    } finally {
+      setArchivingId(null);
+    }
+  };
+
   const handleDeleteGateLink = async (link) => {
     if (!window.confirm(`Delete gate link for "${link.pdf_name}"? All submissions will be lost.`)) return;
     setDeletingGateId(link._id);
@@ -317,10 +301,39 @@ export default function TripDeckPage() {
     }
   };
 
-  const filteredGateLinks = gateLinks.filter((g) =>
-    !gateSearchQuery.trim() ||
-    g.pdf_name.toLowerCase().includes(gateSearchQuery.trim().toLowerCase())
-  );
+  const openResponsesPage = (gl) => {
+    window.open(`/tripdeck/responses/${gl._id}`, '_blank');
+  };
+
+  const openPdfPreview = (gl) => {
+    window.open(`${process.env.REACT_APP_BACKEND_URL}/api/view/${gl._id}/pdf`, '_blank');
+  };
+
+  // Filter + sort
+  const visibleLinks = (() => {
+    let list = gateLinks.filter((g) => !!g.gate_archived === showArchived);
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      list = list.filter((g) => g.pdf_name.toLowerCase().includes(q));
+    }
+
+    list = applyDateFilter(list, 'created_at', dateFilter);
+
+    list = [...list].sort((a, b) => {
+      if (sortBy === 'oldest') return new Date(a.created_at) - new Date(b.created_at);
+      if (sortBy === 'submissions') return (b.submission_count || 0) - (a.submission_count || 0);
+      if (sortBy === 'opens') return (b.open_count || 0) - (a.open_count || 0);
+      if (sortBy === 'name_asc') return a.pdf_name.localeCompare(b.pdf_name);
+      if (sortBy === 'name_desc') return b.pdf_name.localeCompare(a.pdf_name);
+      return new Date(b.created_at) - new Date(a.created_at); // newest
+    });
+
+    return list;
+  })();
+
+  const archivedCount = gateLinks.filter((g) => g.gate_archived).length;
+  const activeCount = gateLinks.filter((g) => !g.gate_archived).length;
 
   return (
     <div className="min-h-screen bg-[var(--off-white)] px-5 py-8 md:px-10">
@@ -333,31 +346,52 @@ export default function TripDeckPage() {
               <ArrowLeft className="h-4 w-4" /> Back to dashboard
             </Link>
             <div className="mt-3 flex items-center gap-2">
-              <Map className="h-5 w-5" style={{ color: 'var(--gold)' }} />
-              <h1 className="text-2xl font-bold" style={{ color: 'var(--teal)' }}>TripDecks</h1>
+              <ShieldCheck className="h-5 w-5" style={{ color: 'var(--gold)' }} />
+              <h1 className="text-2xl font-bold" style={{ color: 'var(--teal)' }}>Gated PDF Links</h1>
             </div>
             <p className="mt-1 text-sm text-slate-500">
-              Lead-gated multi-destination pages that unlock itinerary PDFs after form submit.
+              Lead-gated PDF pages — visitors fill a form before accessing the document.
             </p>
           </div>
-          <Dialog open={newDialogOpen} onOpenChange={setNewDialogOpen}>
+
+          <Dialog
+            open={newGateDialogOpen}
+            onOpenChange={(o) => { setNewGateDialogOpen(o); if (!o) { setNewGatePdfId(''); setNewGateSchema([newSchemaField()]); } }}
+          >
             <DialogTrigger asChild>
-              <Button className="rounded-lg text-white" style={{ backgroundColor: 'var(--teal)' }}>
-                <Plus className="mr-2 h-4 w-4" /> New TripDeck
+              <Button className="rounded-lg text-white shrink-0" style={{ backgroundColor: 'var(--teal)' }}>
+                <Link2 className="mr-2 h-4 w-4" /> New Gate Link
               </Button>
             </DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>New TripDeck</DialogTitle></DialogHeader>
-              <form onSubmit={handleCreate} className="space-y-4 pt-2">
+            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+              <DialogHeader><DialogTitle>New Gated PDF Link</DialogTitle></DialogHeader>
+              <form onSubmit={handleCreateGateLink} className="space-y-5 pt-2">
                 <div>
-                  <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Title</Label>
-                  <Input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="e.g. Europe Summer Tour" className="mt-2 rounded-lg border-slate-200" autoFocus />
+                  <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Select PDF</Label>
+                  <Select value={newGatePdfId} onValueChange={setNewGatePdfId}>
+                    <SelectTrigger className="mt-2 rounded-lg border-slate-200">
+                      <SelectValue placeholder="Choose a PDF..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {pdfs.length === 0 ? (
+                        <SelectItem value="_none" disabled>No active PDFs available</SelectItem>
+                      ) : (
+                        pdfs.map((pdf) => (
+                          <SelectItem key={pdf.id} value={pdf.id}>{pdf.file_name}</SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
                 </div>
-                <div className="flex justify-end gap-2">
-                  <Button type="button" variant="outline" onClick={() => { setNewDialogOpen(false); setNewTitle(''); }}>Cancel</Button>
-                  <Button type="submit" disabled={creating || !newTitle.trim()} className="text-white" style={{ backgroundColor: 'var(--teal)' }}>
-                    {creating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
-                    Create & Open Builder
+                <div>
+                  <Label className="text-xs font-bold uppercase tracking-wider text-slate-500 block mb-2">Form Fields</Label>
+                  <SchemaBuilder fields={newGateSchema} onChange={setNewGateSchema} />
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button type="button" variant="outline" onClick={() => setNewGateDialogOpen(false)}>Cancel</Button>
+                  <Button type="submit" disabled={creatingGate || !newGatePdfId} className="text-white" style={{ backgroundColor: 'var(--teal)' }}>
+                    {creatingGate ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Link2 className="mr-2 h-4 w-4" />}
+                    Create Gate Link
                   </Button>
                 </div>
               </form>
@@ -365,115 +399,81 @@ export default function TripDeckPage() {
           </Dialog>
         </div>
 
-        {/* TripDecks List */}
-        <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
-          <div className="px-5 py-4 border-b flex items-center gap-2" style={{ borderColor: '#f1f5f9' }}>
-            <Map className="w-4 h-4" style={{ color: 'var(--teal)' }} />
-            <div>
-              <h3 className="font-bold" style={{ color: 'var(--teal)' }}>Your TripDecks</h3>
-              <p className="text-sm text-slate-500 mt-1">Multi-destination lead pages. Click to open the builder.</p>
+        {/* Filters bar */}
+        <div className="bg-white rounded-xl border px-5 py-4 space-y-3" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+          <div className="flex flex-wrap gap-3 items-center">
+            {/* Search */}
+            <div className="relative flex-1 min-w-[180px] max-w-xs">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by PDF name..."
+                className="pl-10 h-9 rounded-lg border-slate-200 text-sm"
+              />
             </div>
+
+            {/* Sort */}
+            <div className="flex items-center gap-1.5">
+              <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+              <Select value={sortBy} onValueChange={setSortBy}>
+                <SelectTrigger className="h-9 text-sm rounded-lg border-slate-200 w-44">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="newest">Newest first</SelectItem>
+                  <SelectItem value="oldest">Oldest first</SelectItem>
+                  <SelectItem value="submissions">Most submissions</SelectItem>
+                  <SelectItem value="opens">Most opens</SelectItem>
+                  <SelectItem value="name_asc">Name A → Z</SelectItem>
+                  <SelectItem value="name_desc">Name Z → A</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Archived toggle */}
+            <button
+              onClick={() => setShowArchived((v) => !v)}
+              className={`flex items-center gap-1.5 h-9 px-3 rounded-lg border text-sm font-medium transition-colors ${
+                showArchived
+                  ? 'border-amber-400 bg-amber-50 text-amber-700'
+                  : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+              }`}
+            >
+              <Archive className="w-3.5 h-3.5" />
+              Archived
+              {archivedCount > 0 && (
+                <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">{archivedCount}</Badge>
+              )}
+            </button>
           </div>
-          {tripdecksLoading ? (
-            <div className="flex items-center justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
-          ) : tripdecks.length === 0 ? (
-            <div className="py-10 text-center text-sm text-slate-400">No TripDecks yet. Click "New TripDeck" above to get started.</div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
-                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Title</TableHead>
-                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Destinations</TableHead>
-                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Responses</TableHead>
-                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Created</TableHead>
-                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {tripdecks.map((td) => (
-                  <TableRow key={td._id} className="border-b hover:bg-slate-50 cursor-pointer" style={{ borderColor: '#f1f5f9' }} onClick={() => navigate(`/tripdeck/${td._id}`)}>
-                    <TableCell className="font-semibold text-sm" style={{ color: 'var(--teal)' }}>{td.title}</TableCell>
-                    <TableCell className="text-sm text-slate-600">{(td.destinations || []).length}</TableCell>
-                    <TableCell className="text-sm text-slate-600">{td.form_response_count || 0}</TableCell>
-                    <TableCell className="text-xs text-slate-400">{formatDate(td.created_at)}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                        <a href={`${SITE_URL}/deck/${td.slug}`} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded hover:bg-slate-100 text-slate-500" title="Preview public page">
-                          <ExternalLink className="w-4 h-4" />
-                        </a>
-                        <button onClick={() => navigate(`/tripdeck/${td._id}`)} className="p-1.5 rounded hover:bg-slate-100 text-slate-500" title="Open builder">
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
+
+          {/* Date filter row */}
+          <DateFilterBar dateFilter={dateFilter} setDateFilter={setDateFilter} />
         </div>
 
-        {/* Gated PDF Links */}
+        {/* Gate Links Table */}
         <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
-          <div className="px-5 py-4 border-b flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3" style={{ borderColor: '#f1f5f9' }}>
+          <div className="px-5 py-3 border-b flex items-center justify-between" style={{ borderColor: '#f1f5f9' }}>
             <div className="flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4" style={{ color: 'var(--gold)' }} />
-              <div>
-                <h3 className="font-bold" style={{ color: 'var(--teal)' }}>Gated PDF Links</h3>
-                <p className="text-sm text-slate-500 mt-1">PDF links with a lead capture form — visitors fill the form before accessing the document.</p>
-              </div>
+              <Filter className="w-4 h-4 text-slate-400" />
+              <span className="text-sm font-semibold text-slate-600">
+                {showArchived ? 'Archived' : 'Active'} gate links
+              </span>
+              <Badge variant="outline" className="text-xs">{visibleLinks.length}</Badge>
             </div>
-            <Dialog open={newGateDialogOpen} onOpenChange={(o) => { setNewGateDialogOpen(o); if (!o) { setNewGatePdfId(''); setNewGateSchema([newSchemaField()]); } }}>
-              <DialogTrigger asChild>
-                <Button className="shrink-0 rounded-lg text-white text-sm" style={{ backgroundColor: 'var(--teal)' }}>
-                  <Link2 className="mr-2 h-4 w-4" /> New Gate Link
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-                <DialogHeader><DialogTitle>New Gated PDF Link</DialogTitle></DialogHeader>
-                <form onSubmit={handleCreateGateLink} className="space-y-5 pt-2">
-                  <div>
-                    <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Select PDF</Label>
-                    <Select value={newGatePdfId} onValueChange={setNewGatePdfId}>
-                      <SelectTrigger className="mt-2 rounded-lg border-slate-200">
-                        <SelectValue placeholder="Choose a PDF..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {pdfs.length === 0 ? (
-                          <SelectItem value="_none" disabled>No active PDFs available</SelectItem>
-                        ) : (
-                          pdfs.map((pdf) => (
-                            <SelectItem key={pdf.id} value={pdf.id}>{pdf.file_name}</SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label className="text-xs font-bold uppercase tracking-wider text-slate-500 block mb-2">Form Fields</Label>
-                    <SchemaBuilder fields={newGateSchema} onChange={setNewGateSchema} />
-                  </div>
-                  <div className="flex justify-end gap-2 pt-2">
-                    <Button type="button" variant="outline" onClick={() => setNewGateDialogOpen(false)}>Cancel</Button>
-                    <Button type="submit" disabled={creatingGate || !newGatePdfId} className="text-white" style={{ backgroundColor: 'var(--teal)' }}>
-                      {creatingGate ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Link2 className="mr-2 h-4 w-4" />}
-                      Create Gate Link
-                    </Button>
-                  </div>
-                </form>
-              </DialogContent>
-            </Dialog>
-          </div>
-
-          <div className="px-5 py-3 border-b" style={{ borderColor: '#f1f5f9' }}>
-            <div className="relative max-w-xs">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <Input value={gateSearchQuery} onChange={(e) => setGateSearchQuery(e.target.value)} placeholder="Search gate links..." className="pl-10 h-9 rounded-lg border-slate-200 text-sm" />
-            </div>
+            {showArchived && archivedCount === 0 && (
+              <span className="text-xs text-slate-400">No archived links</span>
+            )}
+            {!showArchived && activeCount === 0 && (
+              <span className="text-xs text-slate-400">No active links — create one above</span>
+            )}
           </div>
 
           {gateLinksLoading ? (
-            <div className="flex items-center justify-center py-14"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+            </div>
           ) : (
             <Table>
               <TableHeader>
@@ -487,22 +487,40 @@ export default function TripDeckPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredGateLinks.length === 0 ? (
+                {visibleLinks.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="py-10 text-center text-sm text-slate-400">
-                      {gateSearchQuery ? 'No gate links match your search.' : 'No gate links yet. Click "New Gate Link" to get started.'}
+                    <TableCell colSpan={6} className="py-12 text-center text-sm text-slate-400">
+                      {searchQuery
+                        ? 'No gate links match your search.'
+                        : showArchived
+                        ? 'No archived gate links.'
+                        : 'No gate links yet. Click "New Gate Link" to get started.'}
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredGateLinks.map((gl) => (
+                  visibleLinks.map((gl) => (
                     <TableRow key={gl._id} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
-                      <TableCell className="font-semibold text-sm" style={{ color: 'var(--teal)' }}>{gl.pdf_name}</TableCell>
+                      {/* PDF name — click opens responses page */}
+                      <TableCell>
+                        <button
+                          onClick={() => openResponsesPage(gl)}
+                          className="font-semibold text-sm text-left hover:underline"
+                          style={{ color: 'var(--teal)' }}
+                          title="Click to view responses"
+                        >
+                          {gl.pdf_name}
+                        </button>
+                        {gl.gate_archived && (
+                          <span className="ml-2 text-[10px] font-bold uppercase tracking-wider text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full">Archived</span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-sm text-slate-600">{(gl.gate_schema || []).length}</TableCell>
                       <TableCell>
                         <button
-                          onClick={() => handleViewSubmissions(gl)}
+                          onClick={() => openResponsesPage(gl)}
                           className="flex items-center gap-1 text-sm font-semibold hover:underline"
                           style={{ color: (gl.submission_count || 0) > 0 ? 'var(--teal)' : '#94a3b8' }}
+                          title="View responses"
                         >
                           <Eye className="w-3.5 h-3.5" />
                           {gl.submission_count || 0}
@@ -511,17 +529,61 @@ export default function TripDeckPage() {
                       <TableCell className="text-sm text-slate-600">{gl.open_count || 0}</TableCell>
                       <TableCell className="text-xs text-slate-400">{formatDate(gl.created_at)}</TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-1">
-                          <button onClick={() => handleCopyGateLink(gl._id)} className="p-1.5 rounded hover:bg-slate-100 text-slate-500" title="Copy shareable link">
+                        <div className="flex items-center gap-0.5">
+                          {/* Copy shareable link */}
+                          <button
+                            onClick={() => handleCopyGateLink(gl._id)}
+                            className="p-1.5 rounded hover:bg-slate-100 text-slate-500"
+                            title="Copy shareable link"
+                          >
                             {copiedId === gl._id ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
                           </button>
-                          <a href={`${SITE_URL}/view/${gl._id}`} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded hover:bg-slate-100 text-slate-500" title="Preview gate">
+                          {/* Preview PDF */}
+                          <button
+                            onClick={() => openPdfPreview(gl)}
+                            className="p-1.5 rounded hover:bg-slate-100 text-slate-500"
+                            title="Preview PDF"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          {/* Preview gate page */}
+                          <a
+                            href={`${SITE_URL}/view/${gl._id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1.5 rounded hover:bg-slate-100 text-slate-500"
+                            title="Preview gate page"
+                          >
                             <ExternalLink className="w-4 h-4" />
                           </a>
-                          <button onClick={() => handleOpenEditSchema(gl)} className="p-1.5 rounded hover:bg-slate-100 text-slate-500" title="Edit form fields">
+                          {/* Edit form schema */}
+                          <button
+                            onClick={() => handleOpenEditSchema(gl)}
+                            className="p-1.5 rounded hover:bg-slate-100 text-slate-500"
+                            title="Edit form fields"
+                          >
                             <Edit2 className="w-4 h-4" />
                           </button>
-                          <button onClick={() => handleDeleteGateLink(gl)} disabled={deletingGateId === gl._id} className="p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-red-600" title="Delete">
+                          {/* Archive / Restore */}
+                          <button
+                            onClick={() => handleArchiveToggle(gl)}
+                            disabled={archivingId === gl._id}
+                            className="p-1.5 rounded hover:bg-slate-100 text-slate-500"
+                            title={gl.gate_archived ? 'Restore' : 'Archive'}
+                          >
+                            {archivingId === gl._id
+                              ? <Loader2 className="w-4 h-4 animate-spin" />
+                              : gl.gate_archived
+                              ? <RotateCcw className="w-4 h-4" />
+                              : <Archive className="w-4 h-4" />}
+                          </button>
+                          {/* Delete */}
+                          <button
+                            onClick={() => handleDeleteGateLink(gl)}
+                            disabled={deletingGateId === gl._id}
+                            className="p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-red-600"
+                            title="Delete"
+                          >
                             {deletingGateId === gl._id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                           </button>
                         </div>
@@ -534,20 +596,6 @@ export default function TripDeckPage() {
           )}
         </div>
       </div>
-
-      {/* Submissions dialog */}
-      <Dialog open={submissionsDialog.open} onOpenChange={(o) => { if (!o) setSubmissionsDialog({ open: false, link: null }); }}>
-        <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Submissions — {submissionsDialog.link?.pdf_name}</DialogTitle>
-          </DialogHeader>
-          {submissionsLoading ? (
-            <div className="flex items-center justify-center py-14"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
-          ) : (
-            <SubmissionsTable submissions={submissions} schema={submissionsDialog.link?.gate_schema || []} />
-          )}
-        </DialogContent>
-      </Dialog>
 
       {/* Edit schema dialog */}
       <Dialog open={editSchemaDialog.open} onOpenChange={(o) => { if (!o) setEditSchemaDialog({ open: false, link: null }); }}>

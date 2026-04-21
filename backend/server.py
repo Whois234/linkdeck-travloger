@@ -2171,6 +2171,17 @@ async def update_gate_schema(link_id: str, input: GateSchemaUpdateInput, request
     return {"message": "Gate schema updated"}
 
 
+@api_router.patch("/links/{link_id}/archive")
+async def toggle_gate_link_archive(link_id: str, request: Request):
+    user = await get_current_user(request)
+    link = await db.links.find_one({"_id": link_id, "user_id": user["_id"]})
+    if not link:
+        raise HTTPException(status_code=404, detail="Link not found")
+    new_status = not bool(link.get("gate_archived"))
+    await db.links.update_one({"_id": link_id}, {"$set": {"gate_archived": new_status}})
+    return {"archived": new_status}
+
+
 @api_router.get("/gate-links")
 async def list_gate_links(request: Request):
     user = await get_current_user(request)
@@ -2189,8 +2200,28 @@ async def list_gate_links(request: Request):
             "submission_count": submission_count,
             "open_count": link.get("open_count", 0),
             "created_at": link.get("created_at"),
+            "gate_archived": bool(link.get("gate_archived")),
         })
     return result
+
+
+@api_router.get("/gate-links/{link_id}")
+async def get_gate_link(link_id: str, request: Request):
+    user = await get_current_user(request)
+    link = await db.links.find_one({"_id": link_id, "user_id": user["_id"], "gate_enabled": True})
+    if not link:
+        raise HTTPException(status_code=404, detail="Link not found")
+    submission_count = await db.gate_submissions.count_documents({"link_id": link_id})
+    return {
+        "_id": link_id,
+        "pdf_name": link.get("pdf_name_snapshot", "Unknown PDF"),
+        "pdf_id": link.get("pdf_id"),
+        "gate_schema": link.get("gate_schema", []),
+        "submission_count": submission_count,
+        "open_count": link.get("open_count", 0),
+        "created_at": link.get("created_at"),
+        "gate_archived": bool(link.get("gate_archived")),
+    }
 
 
 @api_router.post("/gate-links")
