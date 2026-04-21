@@ -486,6 +486,10 @@ class AdminCreateUserInput(BaseModel):
 class AdminResetPasswordInput(BaseModel):
     password: str
 
+class AdminContactUpdateInput(BaseModel):
+    customer_name: str
+    customer_phone: str
+
 class ViewSessionStartInput(BaseModel):
     screen_width: Optional[int] = None
     screen_height: Optional[int] = None
@@ -647,6 +651,119 @@ async def admin_reset_password(user_id: str, input: AdminResetPasswordInput, req
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="User not found")
     return {"message": "Password reset successfully"}
+
+
+@api_router.get("/admin/contacts")
+async def admin_list_contacts(request: Request):
+    await get_current_admin(request)
+    contacts = await db.contacts.find({}).sort("updated_at", -1).to_list(10000)
+    users = await db.users.find({}, {"name": 1, "email": 1}).to_list(10000)
+    links = await db.links.find({}).to_list(10000)
+
+    user_map = {
+        str(user["_id"]): {
+            "user_name": user.get("name") or "Unknown User",
+            "user_email": user.get("email") or "--",
+        }
+        for user in users
+    }
+
+    contact_stats = {}
+    for link in links:
+        user_id = link.get("user_id")
+        phone_key = normalize_contact_phone(link.get("customer_phone", ""))
+        if not phone_key or not user_id:
+            continue
+        key = (user_id, phone_key)
+        created_at = link.get("created_at")
+        last_opened_at = link.get("last_opened_at")
+        stats = contact_stats.setdefault(key, {
+            "total_links": 0,
+            "opened_links": 0,
+            "total_opens": 0,
+            "latest_link_created_at": None,
+            "latest_opened_at": None,
+            "latest_pdf_name": link.get("pdf_name_snapshot") or "Unknown PDF",
+        })
+        stats["total_links"] += 1
+        if link.get("opened") or int(link.get("open_count") or 0) > 0:
+            stats["opened_links"] += 1
+        stats["total_opens"] += int(link.get("open_count") or 0)
+        if created_at and normalize_datetime(created_at) >= normalize_datetime(stats["latest_link_created_at"]):
+            stats["latest_link_created_at"] = created_at
+            stats["latest_pdf_name"] = link.get("pdf_name_snapshot") or stats["latest_pdf_name"]
+        if last_opened_at and normalize_datetime(last_opened_at) >= normalize_datetime(stats["latest_opened_at"]):
+            stats["latest_opened_at"] = last_opened_at
+
+    items = []
+    for contact in contacts:
+        user_id = contact.get("user_id")
+        phone_key = contact.get("contact_phone_normalized") or normalize_contact_phone(contact.get("customer_phone", ""))
+        stats = contact_stats.get((user_id, phone_key), {})
+        owner = user_map.get(user_id, {"user_name": "Unknown User", "user_email": "--"})
+        items.append({
+            "id": str(contact.get("_id")),
+            "user_id": user_id,
+            "user_name": owner["user_name"],
+            "user_email": owner["user_email"],
+            "customer_name": contact.get("customer_name") or "Unknown Contact",
+            "customer_phone": contact.get("customer_phone") or "--",
+            "contact_phone_normalized": phone_key,
+            "created_at": contact.get("created_at"),
+            "updated_at": contact.get("updated_at"),
+            "last_link_created_at": contact.get("last_link_created_at") or stats.get("latest_link_created_at"),
+            "latest_opened_at": contact.get("latest_opened_at") or stats.get("latest_opened_at"),
+            "latest_pdf_name": contact.get("latest_pdf_name") or stats.get("latest_pdf_name"),
+            "total_links": stats.get("total_links", 0),
+            "opened_links": stats.get("opened_links", 0),
+            "total_opens": stats.get("total_opens", 0),
+        })
+    return items
+
+
+@api_router.put("/admin/contacts/{contact_id}")
+async def admin_update_contact(contact_id: str, input: AdminContactUpdateInput, request: Request):
+    await get_current_admin(request)
+    customer_name = input.customer_name.strip()
+    customer_phone = input.customer_phone.strip()
+    normalized_phone = normalize_contact_phone(customer_phone)
+    if not customer_name:
+        raise HTTPException(status_code=400, detail="Contact name is required")
+    if not normalized_phone:
+        raise HTTPException(status_code=400, detail="Valid contact phone is required")
+    try:
+        object_id = ObjectId(contact_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid contact ID")
+
+    existing = await db.contacts.find_one({"_id": object_id})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Contact not found")
+
+    await db.contacts.update_one(
+        {"_id": object_id},
+        {"$set": {
+            "customer_name": customer_name,
+            "customer_phone": customer_phone,
+            "contact_phone_normalized": normalized_phone,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }}
+    )
+    return {"message": "Contact updated"}
+
+
+@api_router.delete("/admin/contacts/{contact_id}")
+async def admin_delete_contact(contact_id: str, request: Request):
+    await get_current_admin(request)
+    try:
+        object_id = ObjectId(contact_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid contact ID")
+
+    result = await db.contacts.delete_one({"_id": object_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    return {"message": "Contact deleted"}
 
 
 @api_router.get("/admin/stats")
