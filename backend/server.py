@@ -405,6 +405,7 @@ DEFAULT_MODULE_ACCESS = {
     "dashboard": "edit",
     "pdfs": "edit",
     "contacts": "edit",
+    "tripdeck": "edit",
 }
 
 

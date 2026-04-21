@@ -138,7 +138,7 @@ export default function AdminDashboardPage() {
   const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserRole, setNewUserRole] = useState('user');
   const [newUserActive, setNewUserActive] = useState(true);
-  const [newUserModuleAccess, setNewUserModuleAccess] = useState({ dashboard: 'edit', pdfs: 'edit', contacts: 'edit' });
+  const [newUserModuleAccess, setNewUserModuleAccess] = useState({ dashboard: 'edit', pdfs: 'edit', contacts: 'edit', tripdeck: 'edit' });
   const [resettingId, setResettingId] = useState('');
   const [updatingUserId, setUpdatingUserId] = useState('');
   const [deletingUserId, setDeletingUserId] = useState('');
@@ -429,7 +429,7 @@ export default function AdminDashboardPage() {
     setEditUserName(item.name || '');
     setEditUserRole(item.role || 'user');
     setEditUserActive(item.active !== false);
-    setEditModuleAccess(item.module_access || { dashboard: 'edit', pdfs: 'edit', contacts: 'edit' });
+    setEditModuleAccess({ dashboard: 'edit', pdfs: 'edit', contacts: 'edit', tripdeck: 'edit', ...item.module_access });
     setUserDialogOpen(true);
   };
 
@@ -1271,8 +1271,8 @@ export default function AdminDashboardPage() {
                     <option value="inactive">Deactivated</option>
                   </select>
                 </div>
-                <div className="grid grid-cols-3 gap-3">
-                  {['dashboard', 'pdfs', 'contacts'].map((moduleKey) => (
+                <div className="grid grid-cols-4 gap-3">
+                  {['dashboard', 'pdfs', 'contacts', 'tripdeck'].map((moduleKey) => (
                     <div key={`new-${moduleKey}`}>
                       <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">{moduleKey}</Label>
                       <select
@@ -1509,8 +1509,8 @@ export default function AdminDashboardPage() {
                 </select>
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-3">
-              {['dashboard', 'pdfs', 'contacts'].map((moduleKey) => (
+            <div className="grid grid-cols-4 gap-3">
+              {['dashboard', 'pdfs', 'contacts', 'tripdeck'].map((moduleKey) => (
                 <div key={moduleKey}>
                   <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">{moduleKey}</Label>
                   <select
