@@ -1421,7 +1421,49 @@ async def list_folders(request: Request, status: Optional[str] = "active"):
             bucket["archived_pdfs"] += 1
         else:
             bucket["active_pdfs"] += 1
-    return [{**folder, **counts.get(folder["id"], {"active_pdfs": 0, "archived_pdfs": 0})} for folder in folders]
+    user_id_str = str(user["_id"])
+    return [{**folder, **counts.get(folder["id"], {"active_pdfs": 0, "archived_pdfs": 0}), "is_mine": str(folder.get("user_id", "")) == user_id_str} for folder in folders]
+
+
+@api_router.post("/folders")
+async def create_user_folder(input: FolderCreateInput, request: Request):
+    user = await get_current_user(request)
+    module_access = normalize_module_access(user.get("module_access"))
+    if user.get("role") != "admin" and module_access.get("pdfs") != "edit":
+        raise HTTPException(status_code=403, detail="You don't have permission to create folders")
+    name = (input.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Folder name is required")
+    now = datetime.now(timezone.utc).isoformat()
+    folder = {
+        "id": str(uuid.uuid4()),
+        "name": name,
+        "user_id": user["_id"],
+        "shared_with_users": False,
+        "archived": False,
+        "archived_at": None,
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.pdf_folders.insert_one(folder)
+    folder.pop("_id", None)
+    return {**folder, "user_id": str(user["_id"]), "is_mine": True, "active_pdfs": 0, "archived_pdfs": 0}
+
+
+@api_router.delete("/folders/{folder_id}")
+async def archive_user_folder(folder_id: str, request: Request):
+    user = await get_current_user(request)
+    folder = await db.pdf_folders.find_one({"id": folder_id})
+    if not folder:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    # Allow owner or admin
+    if user.get("role") != "admin" and folder.get("user_id") != user["_id"]:
+        raise HTTPException(status_code=403, detail="You don't have permission to archive this folder")
+    archived_at = datetime.now(timezone.utc).isoformat()
+    await db.pdf_folders.update_one({"id": folder_id}, {"$set": {"archived": True, "archived_at": archived_at, "updated_at": archived_at}})
+    await db.pdfs.update_many({"folder_id": folder_id}, {"$set": {"archived": True, "archived_at": archived_at, "updated_at": archived_at}})
+    await db.links.update_many({"folder_id": folder_id}, {"$set": {"folder_archived": True}})
+    return {"message": "Folder archived"}
 
 
 @api_router.post("/admin/folders")
@@ -1505,8 +1547,10 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 @api_router.post("/pdfs/upload/initiate")
 async def initiate_pdf_upload(input: PdfUploadInitiateInput, request: Request):
     user = await get_current_user(request)
-    if user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can upload PDFs")
+    module_access = normalize_module_access(user.get("module_access"))
+    is_admin = user.get("role") == "admin"
+    if not is_admin and module_access.get("pdfs") != "edit":
+        raise HTTPException(status_code=403, detail="You don't have permission to upload PDFs")
     if not s3_ready():
         raise HTTPException(status_code=503, detail="S3 storage is not configured")
 
@@ -1537,8 +1581,8 @@ async def initiate_pdf_upload(input: PdfUploadInitiateInput, request: Request):
         "archived_at": None,
         "folder_id": folder.get("id") if folder else None,
         "folder_name": folder.get("name") if folder else None,
-        "managed_by_admin": True,
-        "shared_with_users": True,
+        "managed_by_admin": is_admin,
+        "shared_with_users": is_admin,
         "created_at": now,
         "updated_at": now,
     }
@@ -1638,8 +1682,10 @@ async def list_pdfs(request: Request):
     user = await get_current_user(request)
     query = await get_accessible_pdf_query(user)
     pdfs = await db.pdfs.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
-    # Add link count for each PDF
+    user_id_str = str(user["_id"])
+    # Add link count and ownership flag for each PDF
     for pdf in pdfs:
+        pdf["is_mine"] = str(pdf.get("user_id", "")) == user_id_str
         link_count = await db.links.count_documents({"pdf_id": pdf["id"]})
         pdf["link_count"] = link_count
     return pdfs

@@ -5,7 +5,7 @@ import axios from 'axios';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '../components/ui/sheet';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
@@ -15,7 +15,7 @@ import {
   Link2, Copy, Trash2, FileText, ExternalLink, LogOut, Search, Filter,
   CheckCircle, XCircle, Eye, Loader2, LinkIcon, MapPin, ArrowUpDown,
   Smartphone, Monitor, Globe2, Archive, Download, ChevronDown, ChevronUp,
-  Users, Menu, FolderOpen, Map
+  Users, Menu, FolderOpen, Map, Upload, Plus
 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -144,6 +144,13 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [activeModule, setActiveModule] = useState('dashboard');
   const [navOpen, setNavOpen] = useState(false);
+  const [createFolderOpen, setCreateFolderOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadFolderId, setUploadFolderId] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [uploadFileKey, setUploadFileKey] = useState(0);
 
   const fetchData = useCallback(async () => {
     try {
@@ -211,6 +218,7 @@ export default function DashboardPage() {
   const moduleAccess = user?.module_access || {};
   const visibleModules = USER_MODULES.filter((module) => moduleAccess[module.key] !== 'none');
   const canEditDashboard = moduleAccess.dashboard === 'edit';
+  const canEditPdfs = moduleAccess.pdfs === 'edit';
   useEffect(() => {
     if (!visibleModules.find((module) => module.key === activeModule)) {
       setActiveModule(visibleModules[0]?.key || 'dashboard');
@@ -294,6 +302,92 @@ export default function DashboardPage() {
       fetchData();
     } catch {
       toast.error('Failed to delete link');
+    }
+  };
+
+  const openLinkDialogForPdf = (pdf) => {
+    const folderId = pdf.folder_id || '__none__';
+    setSelectedFolder(folderId);
+    setSelectedPdf(pdf.id);
+    setLinkOpen(true);
+  };
+
+  const handleCreateFolder = async (e) => {
+    e.preventDefault();
+    if (!newFolderName.trim()) { toast.error('Folder name is required'); return; }
+    setCreatingFolder(true);
+    try {
+      await axios.post(`${API}/folders`, { name: newFolderName.trim() }, { withCredentials: true });
+      toast.success('Folder created');
+      setCreateFolderOpen(false);
+      setNewFolderName('');
+      fetchData();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to create folder');
+    } finally {
+      setCreatingFolder(false);
+    }
+  };
+
+  const handleArchiveFolder = async (folderId, folderName) => {
+    if (!window.confirm(`Archive folder "${folderName}"? All PDFs inside will also be archived.`)) return;
+    try {
+      await axios.delete(`${API}/folders/${folderId}`, { withCredentials: true });
+      toast.success('Folder archived');
+      fetchData();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to archive folder');
+    }
+  };
+
+  const handleArchivePdf = async (pdfId) => {
+    if (!window.confirm('Archive this PDF? Existing tracking links will still work.')) return;
+    try {
+      await axios.delete(`${API}/pdfs/${pdfId}`, { withCredentials: true });
+      toast.success('PDF archived');
+      fetchData();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to archive PDF');
+    }
+  };
+
+  const handleUploadPdf = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const isPdf = file.name.toLowerCase().endsWith('.pdf') && (!file.type || file.type === 'application/pdf');
+    if (!isPdf) {
+      toast.error('Only PDF files are allowed');
+      setUploadFileKey((k) => k + 1);
+      return;
+    }
+    setUploading(true);
+    try {
+      const folderId = uploadFolderId && uploadFolderId !== '__none__' ? uploadFolderId : null;
+      const initiateRes = await axios.post(`${API}/pdfs/upload/initiate`, {
+        file_name: file.name,
+        file_size: file.size,
+        content_type: file.type || 'application/pdf',
+        folder_id: folderId,
+      }, { withCredentials: true });
+      const { id, upload_url, upload_fields } = initiateRes.data;
+      const formData = new FormData();
+      Object.entries(upload_fields || {}).forEach(([key, value]) => formData.append(key, value));
+      formData.append('file', file);
+      const uploadResponse = await fetch(upload_url, { method: 'POST', body: formData });
+      if (!uploadResponse.ok) {
+        throw new Error((await uploadResponse.text()) || `Upload failed with status ${uploadResponse.status}`);
+      }
+      await axios.post(`${API}/pdfs/upload/complete`, { pdf_id: id }, { withCredentials: true });
+      toast.success('PDF uploaded successfully');
+      setUploadOpen(false);
+      setUploadFolderId('');
+      setUploadFileKey((k) => k + 1);
+      fetchData();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || err.message || 'Failed to upload PDF');
+    } finally {
+      setUploading(false);
+      setUploadFileKey((k) => k + 1);
     }
   };
 
@@ -439,7 +533,7 @@ export default function DashboardPage() {
       </div>
 
       <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
-        <div className="px-5 py-4 border-b" style={{ borderColor: '#f1f5f9' }}>
+        <div className="px-5 py-4 border-b flex items-center justify-between gap-4" style={{ borderColor: '#f1f5f9' }}>
           <div className="flex items-center gap-2">
             <FolderOpen className="w-4 h-4" style={{ color: 'var(--gold)' }} />
             <div>
@@ -447,6 +541,15 @@ export default function DashboardPage() {
               <p className="text-sm text-slate-500 mt-1">Active folders and the PDFs available inside them.</p>
             </div>
           </div>
+          {canEditPdfs && (
+            <Button
+              className="font-semibold text-white rounded-lg flex items-center gap-2 text-sm shrink-0"
+              style={{ backgroundColor: 'var(--teal)' }}
+              onClick={() => setCreateFolderOpen(true)}
+            >
+              <Plus className="w-4 h-4" /> New Folder
+            </Button>
+          )}
         </div>
         <Table>
           <TableHeader>
@@ -454,12 +557,13 @@ export default function DashboardPage() {
               <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Folder</TableHead>
               <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">PDFs</TableHead>
               <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Count</TableHead>
+              {canEditPdfs && <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Action</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredActiveFolders.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={3} className="py-10 text-center text-sm text-slate-400">No active folders yet.</TableCell>
+                <TableCell colSpan={canEditPdfs ? 4 : 3} className="py-10 text-center text-sm text-slate-400">No active folders yet.</TableCell>
               </TableRow>
             ) : (
               filteredActiveFolders.map((folder) => (
@@ -467,6 +571,20 @@ export default function DashboardPage() {
                   <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>{folder.name}</TableCell>
                   <TableCell className="text-sm text-slate-500">{folder.pdfs.map((pdf) => pdf.file_name).join(', ') || '--'}</TableCell>
                   <TableCell className="text-sm text-slate-600">{folder.pdfs.length}</TableCell>
+                  {canEditPdfs && (
+                    <TableCell>
+                      {folder.is_mine && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleArchiveFolder(folder.id, folder.name)}
+                          className="rounded-lg text-xs h-7 flex items-center gap-1 text-red-400 hover:text-red-600 hover:bg-red-50"
+                        >
+                          <Trash2 className="w-3 h-3" /> Archive
+                        </Button>
+                      )}
+                    </TableCell>
+                  )}
                 </TableRow>
               ))
             )}
@@ -475,6 +593,7 @@ export default function DashboardPage() {
                 <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>Unfoldered PDFs</TableCell>
                 <TableCell className="text-sm text-slate-500">{uncategorizedPdfs.map((pdf) => pdf.file_name).join(', ')}</TableCell>
                 <TableCell className="text-sm text-slate-600">{uncategorizedPdfs.length}</TableCell>
+                {canEditPdfs && <TableCell />}
               </TableRow>
             )}
           </TableBody>
@@ -482,9 +601,32 @@ export default function DashboardPage() {
       </div>
 
       <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
-        <div className="px-5 py-4 border-b" style={{ borderColor: '#f1f5f9' }}>
-          <h3 className="font-bold" style={{ color: 'var(--teal)' }}>Active PDFs</h3>
-          <p className="text-sm text-slate-500 mt-1">Live PDFs shared by admin and available for link creation.</p>
+        <div className="px-5 py-4 border-b flex items-center justify-between gap-4" style={{ borderColor: '#f1f5f9' }}>
+          <div>
+            <h3 className="font-bold" style={{ color: 'var(--teal)' }}>Active PDFs</h3>
+            <p className="text-sm text-slate-500 mt-1">Live PDFs available for link creation.</p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {canEditPdfs && (
+              <Button
+                className="font-semibold text-white rounded-lg flex items-center gap-2 text-sm"
+                style={{ backgroundColor: 'var(--teal)' }}
+                onClick={() => setUploadOpen(true)}
+              >
+                <Upload className="w-4 h-4" /> Upload PDF
+              </Button>
+            )}
+            {canEditDashboard && (
+              <Button
+                className="font-semibold text-white rounded-lg flex items-center gap-2 text-sm"
+                style={{ backgroundColor: 'var(--gold)' }}
+                disabled={linkableFolders.length === 0}
+                onClick={() => setLinkOpen(true)}
+              >
+                <Link2 className="w-4 h-4" /> Generate Link
+              </Button>
+            )}
+          </div>
         </div>
         <Table>
           <TableHeader>
@@ -493,12 +635,13 @@ export default function DashboardPage() {
               <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Folder</TableHead>
               <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Size</TableHead>
               <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Uploaded</TableHead>
+              {(canEditDashboard || canEditPdfs) && <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Action</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
             {pdfs.filter((pdf) => !searchQuery.trim() || [pdf.file_name, pdf.folder_name].filter(Boolean).some((v) => v.toLowerCase().includes(searchQuery.trim().toLowerCase()))).length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="py-10 text-center text-sm text-slate-400">No active PDFs found.</TableCell>
+                <TableCell colSpan={(canEditDashboard || canEditPdfs) ? 5 : 4} className="py-10 text-center text-sm text-slate-400">No active PDFs found.</TableCell>
               </TableRow>
             ) : (
               pdfs
@@ -509,6 +652,33 @@ export default function DashboardPage() {
                     <TableCell className="text-sm text-slate-500">{pdf.folder_name || 'Unfoldered'}</TableCell>
                     <TableCell className="text-sm text-slate-600">{formatFileSize(pdf.file_size)}</TableCell>
                     <TableCell className="text-xs text-slate-400">{formatDate(pdf.created_at)}</TableCell>
+                    {(canEditDashboard || canEditPdfs) && (
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          {canEditDashboard && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openLinkDialogForPdf(pdf)}
+                              className="rounded-lg text-xs h-7 flex items-center gap-1"
+                              style={{ color: 'var(--teal)', borderColor: 'var(--teal)' }}
+                            >
+                              <Link2 className="w-3 h-3" /> Create Link
+                            </Button>
+                          )}
+                          {canEditPdfs && pdf.is_mine && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleArchivePdf(pdf.id)}
+                              className="rounded-lg text-xs h-7 flex items-center gap-1 text-red-400 hover:text-red-600 hover:bg-red-50"
+                            >
+                              <Archive className="w-3 h-3" /> Archive
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))
             )}
@@ -765,79 +935,17 @@ export default function DashboardPage() {
                 >
                   <Download className="w-4 h-4 mr-2" /> Export CSV
                 </Button>
-                {canEditDashboard && <Dialog open={linkOpen} onOpenChange={setLinkOpen}>
-                  <DialogTrigger asChild>
-                    <Button
-                      className="font-semibold text-white rounded-lg flex items-center gap-2"
-                      style={{ backgroundColor: 'var(--gold)' }}
-                      disabled={linkableFolders.length === 0}
-                      data-testid="generate-link-button"
-                    >
-                      <Link2 className="w-4 h-4" /> Generate Link
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="rounded-xl border" style={{ borderColor: '#e5e7eb' }}>
-                    <DialogHeader>
-                      <div className="flex items-center gap-3 mb-1">
-                        <TravlogerMark size={28} />
-                        <DialogTitle className="font-bold text-xl" style={{ color: 'var(--teal)' }}>
-                          Create Tracking Link
-                        </DialogTitle>
-                      </div>
-                    </DialogHeader>
-                    <form onSubmit={handleCreateLink} className="space-y-4 pt-1">
-                      <div>
-                        <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Select Folder</Label>
-                        <Select value={selectedFolder} onValueChange={setSelectedFolder}>
-                          <SelectTrigger className="mt-1.5 rounded-lg border-slate-200">
-                            <SelectValue placeholder="Choose a folder" />
-                          </SelectTrigger>
-                          <SelectContent className="rounded-xl">
-                            {linkableFolders.map((folder) => (
-                              <SelectItem key={folder.id} value={folder.id} className="rounded-lg">{folder.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div>
-                        <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Select Itinerary PDF</Label>
-                        <Select value={selectedPdf} onValueChange={setSelectedPdf} disabled={!selectedFolder}>
-                          <SelectTrigger className="mt-1.5 rounded-lg border-slate-200" data-testid="select-pdf-trigger">
-                            <SelectValue placeholder={selectedFolder ? "Choose a PDF" : "Choose a folder first"} />
-                          </SelectTrigger>
-                          <SelectContent className="rounded-xl">
-                            {availablePdfsForLink.map(pdf => (
-                              <SelectItem key={pdf.id} value={pdf.id} className="rounded-lg">{pdf.file_name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div>
-                        <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Customer Name</Label>
-                        <Input value={customerName} onChange={e => setCustomerName(e.target.value)}
-                          placeholder="e.g. Rahul Sharma"
-                          className="mt-1.5 rounded-lg border-slate-200 focus:ring-2"
-                          style={{ '--tw-ring-color': 'var(--teal)' }}
-                          data-testid="customer-name-input" required />
-                      </div>
-                      <div>
-                        <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Customer WhatsApp Number</Label>
-                        <Input value={customerPhone} onChange={e => setCustomerPhone(e.target.value)}
-                          placeholder="e.g. 8328046859"
-                          className="mt-1.5 rounded-lg border-slate-200"
-                          data-testid="customer-phone-input" required />
-                        <p className="text-xs text-slate-400 mt-1">Enter 10-digit Indian number — WhatsApp link auto-generates</p>
-                      </div>
-                      <Button type="submit"
-                        className="w-full rounded-lg font-bold h-11 text-white"
-                        style={{ backgroundColor: 'var(--teal)' }}
-                        disabled={creatingLink}
-                        data-testid="create-link-submit">
-                        {creatingLink ? <Loader2 className="w-4 h-4 animate-spin" /> : '✦ Create Tracking Link'}
-                      </Button>
-                    </form>
-                  </DialogContent>
-                </Dialog>}
+                {canEditDashboard && (
+                  <Button
+                    className="font-semibold text-white rounded-lg flex items-center gap-2"
+                    style={{ backgroundColor: 'var(--gold)' }}
+                    disabled={linkableFolders.length === 0}
+                    onClick={() => setLinkOpen(true)}
+                    data-testid="generate-link-button"
+                  >
+                    <Link2 className="w-4 h-4" /> Generate Link
+                  </Button>
+                )}
               </div>
             </div>
 
@@ -1190,6 +1298,159 @@ export default function DashboardPage() {
           )}
 
           {activeModule === 'contacts' && renderUserContactsModule()}
+
+          {/* ── CREATE FOLDER DIALOG ── */}
+          <Dialog open={createFolderOpen} onOpenChange={setCreateFolderOpen}>
+            <DialogContent className="rounded-xl border max-w-sm" style={{ borderColor: '#e5e7eb' }}>
+              <DialogHeader>
+                <DialogTitle className="font-bold text-lg" style={{ color: 'var(--teal)' }}>
+                  Create New Folder
+                </DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleCreateFolder} className="space-y-4 pt-1">
+                <div>
+                  <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Folder Name</Label>
+                  <Input
+                    value={newFolderName}
+                    onChange={(e) => setNewFolderName(e.target.value)}
+                    placeholder="e.g. Kerala Tour Packages"
+                    className="mt-1.5 rounded-lg border-slate-200"
+                    required
+                  />
+                </div>
+                <Button
+                  type="submit"
+                  className="w-full rounded-lg font-bold h-10 text-white"
+                  style={{ backgroundColor: 'var(--teal)' }}
+                  disabled={creatingFolder}
+                >
+                  {creatingFolder ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Create Folder'}
+                </Button>
+              </form>
+            </DialogContent>
+          </Dialog>
+
+          {/* ── UPLOAD PDF DIALOG ── */}
+          <Dialog open={uploadOpen} onOpenChange={(open) => { if (!uploading) setUploadOpen(open); }}>
+            <DialogContent className="rounded-xl border" style={{ borderColor: '#e5e7eb' }}>
+              <DialogHeader>
+                <DialogTitle className="font-bold text-lg" style={{ color: 'var(--teal)' }}>
+                  Upload PDF
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 pt-1">
+                <div>
+                  <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Folder (optional)</Label>
+                  <Select value={uploadFolderId} onValueChange={setUploadFolderId}>
+                    <SelectTrigger className="mt-1.5 rounded-lg border-slate-200">
+                      <SelectValue placeholder="No folder (unfoldered)" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      <SelectItem value="__none__" className="rounded-lg">No folder</SelectItem>
+                      {[...folders, ...archivedFolders.filter(() => false)].map((folder) => (
+                        <SelectItem key={folder.id} value={folder.id} className="rounded-lg">{folder.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">PDF File</Label>
+                  <label
+                    htmlFor="pdf-upload-input"
+                    className="mt-1.5 flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed cursor-pointer py-8 transition-colors hover:bg-slate-50"
+                    style={{ borderColor: uploading ? 'var(--teal)' : '#cbd5e1' }}
+                  >
+                    {uploading ? (
+                      <>
+                        <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--teal)' }} />
+                        <span className="text-sm text-slate-500">Uploading…</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-8 h-8 text-slate-300" />
+                        <span className="text-sm font-semibold text-slate-500">Click to choose a PDF</span>
+                        <span className="text-xs text-slate-400">Max 100 MB</span>
+                      </>
+                    )}
+                    <input
+                      id="pdf-upload-input"
+                      key={uploadFileKey}
+                      type="file"
+                      accept=".pdf,application/pdf"
+                      onChange={handleUploadPdf}
+                      className="hidden"
+                      disabled={uploading}
+                    />
+                  </label>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* ── GENERATE LINK DIALOG — always mounted so it works from any module ── */}
+          <Dialog open={linkOpen} onOpenChange={setLinkOpen}>
+            <DialogContent className="rounded-xl border" style={{ borderColor: '#e5e7eb' }}>
+              <DialogHeader>
+                <div className="flex items-center gap-3 mb-1">
+                  <TravlogerMark size={28} />
+                  <DialogTitle className="font-bold text-xl" style={{ color: 'var(--teal)' }}>
+                    Create Tracking Link
+                  </DialogTitle>
+                </div>
+              </DialogHeader>
+              <form onSubmit={handleCreateLink} className="space-y-4 pt-1">
+                <div>
+                  <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Select Folder</Label>
+                  <Select value={selectedFolder} onValueChange={setSelectedFolder}>
+                    <SelectTrigger className="mt-1.5 rounded-lg border-slate-200">
+                      <SelectValue placeholder="Choose a folder" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      {linkableFolders.map((folder) => (
+                        <SelectItem key={folder.id} value={folder.id} className="rounded-lg">{folder.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Select Itinerary PDF</Label>
+                  <Select value={selectedPdf} onValueChange={setSelectedPdf} disabled={!selectedFolder}>
+                    <SelectTrigger className="mt-1.5 rounded-lg border-slate-200" data-testid="select-pdf-trigger">
+                      <SelectValue placeholder={selectedFolder ? 'Choose a PDF' : 'Choose a folder first'} />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      {availablePdfsForLink.map((pdf) => (
+                        <SelectItem key={pdf.id} value={pdf.id} className="rounded-lg">{pdf.file_name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Customer Name</Label>
+                  <Input value={customerName} onChange={(e) => setCustomerName(e.target.value)}
+                    placeholder="e.g. Rahul Sharma"
+                    className="mt-1.5 rounded-lg border-slate-200 focus:ring-2"
+                    style={{ '--tw-ring-color': 'var(--teal)' }}
+                    data-testid="customer-name-input" required />
+                </div>
+                <div>
+                  <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">Customer WhatsApp Number</Label>
+                  <Input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)}
+                    placeholder="e.g. 8328046859"
+                    className="mt-1.5 rounded-lg border-slate-200"
+                    data-testid="customer-phone-input" required />
+                  <p className="text-xs text-slate-400 mt-1">Enter 10-digit Indian number — WhatsApp link auto-generates</p>
+                </div>
+                <Button type="submit"
+                  className="w-full rounded-lg font-bold h-11 text-white"
+                  style={{ backgroundColor: 'var(--teal)' }}
+                  disabled={creatingLink}
+                  data-testid="create-link-submit">
+                  {creatingLink ? <Loader2 className="w-4 h-4 animate-spin" /> : '✦ Create Tracking Link'}
+                </Button>
+              </form>
+            </DialogContent>
+          </Dialog>
 
           <Dialog open={Boolean(selectedSessionDetail)} onOpenChange={(open) => {
             if (!open) setSelectedSessionDetail(null);
