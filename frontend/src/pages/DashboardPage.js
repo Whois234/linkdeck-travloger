@@ -210,6 +210,7 @@ export default function DashboardPage() {
 
   const moduleAccess = user?.module_access || {};
   const visibleModules = USER_MODULES.filter((module) => moduleAccess[module.key] !== 'none');
+  const canEditDashboard = moduleAccess.dashboard === 'edit';
   useEffect(() => {
     if (!visibleModules.find((module) => module.key === activeModule)) {
       setActiveModule(visibleModules[0]?.key || 'dashboard');
@@ -764,7 +765,7 @@ export default function DashboardPage() {
                 >
                   <Download className="w-4 h-4 mr-2" /> Export CSV
                 </Button>
-                <Dialog open={linkOpen} onOpenChange={setLinkOpen}>
+                {canEditDashboard && <Dialog open={linkOpen} onOpenChange={setLinkOpen}>
                   <DialogTrigger asChild>
                     <Button
                       className="font-semibold text-white rounded-lg flex items-center gap-2"
@@ -836,7 +837,7 @@ export default function DashboardPage() {
                       </Button>
                     </form>
                   </DialogContent>
-                </Dialog>
+                </Dialog>}
               </div>
             </div>
 
@@ -1073,6 +1074,7 @@ export default function DashboardPage() {
                                 <TooltipContent><p>Preview link</p></TooltipContent>
                               </Tooltip>
 
+                              {canEditDashboard && (
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <Button variant="ghost" size="sm" onClick={() => handleDeleteLink(linkId)}
@@ -1084,6 +1086,7 @@ export default function DashboardPage() {
                                 </TooltipTrigger>
                                 <TooltipContent><p>Delete link</p></TooltipContent>
                               </Tooltip>
+                              )}
 
                             </div>
                           </TableCell>

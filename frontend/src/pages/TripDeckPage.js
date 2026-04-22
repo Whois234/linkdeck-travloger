@@ -1,5 +1,6 @@
 import { Fragment, useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
 import { toast } from 'sonner';
 import {
@@ -198,6 +199,9 @@ function DateFilterBar({ dateFilter, setDateFilter }) {
 
 export default function TripDeckPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  // admins always have full access; regular users need 'edit' permission on tripdeck module
+  const canEdit = user?.role === 'admin' || user?.module_access?.tripdeck === 'edit';
 
   // Gate links
   const [gateLinks, setGateLinks] = useState([]);
@@ -421,8 +425,8 @@ export default function TripDeckPage() {
               <Users className="mr-2 h-4 w-4" /> Leads
             </Button>
 
-            {/* New Gate Link */}
-            <Dialog
+            {/* New Gate Link — only visible to users with edit access */}
+            {canEdit && <Dialog
               open={newGateDialogOpen}
               onOpenChange={(o) => { setNewGateDialogOpen(o); if (!o) { setNewGatePdfId(''); setNewGateSchema([newSchemaField()]); } }}
             >
@@ -464,7 +468,7 @@ export default function TripDeckPage() {
                   </div>
                 </form>
               </DialogContent>
-            </Dialog>
+            </Dialog>}
           </div>
         </div>
 
@@ -585,6 +589,7 @@ export default function TripDeckPage() {
                               <a href={`${SITE_URL}/view/${gl._id}`} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded hover:bg-slate-100 text-slate-500" title="Preview gate page">
                                 <ExternalLink className="w-4 h-4" />
                               </a>
+                              {canEdit && <>
                               <button onClick={() => handleOpenEditSchema(gl)} className="p-1.5 rounded hover:bg-slate-100 text-slate-500" title="Edit form fields">
                                 <Edit2 className="w-4 h-4" />
                               </button>
@@ -594,6 +599,7 @@ export default function TripDeckPage() {
                               <button onClick={() => handleDeleteGateLink(gl)} disabled={deletingGateId === gl._id} className="p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-red-600" title="Delete">
                                 {deletingGateId === gl._id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                               </button>
+                              </>}
                             </div>
                           </TableCell>
                         </TableRow>

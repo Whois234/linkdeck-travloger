@@ -1380,6 +1380,7 @@ async def create_folder(input: FolderCreateInput, request: Request):
         "updated_at": now,
     }
     await db.pdf_folders.insert_one(folder)
+    folder.pop("_id", None)   # insert_one adds ObjectId _id in-place; strip before JSON response
     return folder
 
 

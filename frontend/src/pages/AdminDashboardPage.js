@@ -1271,21 +1271,24 @@ export default function AdminDashboardPage() {
                     <option value="inactive">Deactivated</option>
                   </select>
                 </div>
-                <div className="grid grid-cols-4 gap-3">
-                  {['dashboard', 'pdfs', 'contacts', 'tripdeck'].map((moduleKey) => (
-                    <div key={`new-${moduleKey}`}>
-                      <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">{moduleKey}</Label>
-                      <select
-                        value={newUserModuleAccess[moduleKey] || 'none'}
-                        onChange={(e) => setNewUserModuleAccess((current) => ({ ...current, [moduleKey]: e.target.value }))}
-                        className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-600"
-                      >
-                        <option value="none">Hidden</option>
-                        <option value="view">View</option>
-                        <option value="edit">Edit</option>
-                      </select>
-                    </div>
-                  ))}
+                <div>
+                  <Label className="text-xs font-bold uppercase tracking-wider text-slate-500 block mb-2">Module Access</Label>
+                  <div className="grid grid-cols-4 gap-3">
+                    {['dashboard', 'pdfs', 'contacts', 'tripdeck'].map((moduleKey) => (
+                      <div key={`new-${moduleKey}`}>
+                        <Label className="text-xs font-medium text-slate-500 capitalize">{moduleKey}</Label>
+                        <select
+                          value={newUserModuleAccess[moduleKey] || 'none'}
+                          onChange={(e) => setNewUserModuleAccess((current) => ({ ...current, [moduleKey]: e.target.value }))}
+                          className="mt-1 h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-600"
+                        >
+                          <option value="none">Hidden</option>
+                          <option value="view">View only</option>
+                          <option value="edit">Full edit</option>
+                        </select>
+                      </div>
+                    ))}
+                  </div>
                 </div>
                 <Button type="submit" disabled={creating} className="w-full rounded-lg font-bold text-white" style={{ backgroundColor: 'var(--teal)' }}>
                   {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Create User'}
@@ -1509,21 +1512,27 @@ export default function AdminDashboardPage() {
                 </select>
               </div>
             </div>
-            <div className="grid grid-cols-4 gap-3">
-              {['dashboard', 'pdfs', 'contacts', 'tripdeck'].map((moduleKey) => (
-                <div key={moduleKey}>
-                  <Label className="text-xs font-bold uppercase tracking-wider text-slate-500">{moduleKey}</Label>
-                  <select
-                    value={editModuleAccess[moduleKey] || 'none'}
-                    onChange={(e) => setEditModuleAccess((current) => ({ ...current, [moduleKey]: e.target.value }))}
-                    className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-600"
-                  >
-                    <option value="none">Hidden</option>
-                    <option value="view">View</option>
-                    <option value="edit">Edit</option>
-                  </select>
-                </div>
-              ))}
+            <div>
+              <Label className="text-xs font-bold uppercase tracking-wider text-slate-500 block mb-2">Module Access</Label>
+              <div className="grid grid-cols-4 gap-3">
+                {['dashboard', 'pdfs', 'contacts', 'tripdeck'].map((moduleKey) => (
+                  <div key={moduleKey}>
+                    <Label className="text-xs font-medium text-slate-500 capitalize">{moduleKey}</Label>
+                    <select
+                      value={editModuleAccess[moduleKey] || 'none'}
+                      onChange={(e) => setEditModuleAccess((current) => ({ ...current, [moduleKey]: e.target.value }))}
+                      className="mt-1 h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-600"
+                    >
+                      <option value="none">Hidden</option>
+                      <option value="view">View only</option>
+                      <option value="edit">Full edit</option>
+                    </select>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-2 text-[11px] text-slate-400">
+                ⓘ Changes take effect the next time the user refreshes or re-logs in.
+              </p>
             </div>
             <Button type="submit" disabled={updatingUserId === editingUser?.id} className="w-full rounded-lg font-bold text-white" style={{ backgroundColor: 'var(--teal)' }}>
               {updatingUserId === editingUser?.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save User'}
