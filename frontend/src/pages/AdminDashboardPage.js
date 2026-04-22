@@ -154,6 +154,8 @@ export default function AdminDashboardPage() {
   const [contactName, setContactName] = useState('');
   const [contactPhone, setContactPhone] = useState('');
   const [contactSearch, setContactSearch] = useState('');
+  const [contactDetailOpen, setContactDetailOpen] = useState(false);
+  const [detailContact, setDetailContact] = useState(null);
   const [pdfSearch, setPdfSearch] = useState('');
   const [savingContact, setSavingContact] = useState(false);
   const [deletingContactId, setDeletingContactId] = useState('');
@@ -380,6 +382,11 @@ export default function AdminDashboardPage() {
     ];
     downloadCsv('travloger-admin-recent-activity.csv', rows);
     toast.success('Recent activity CSV downloaded');
+  };
+
+  const openContactDetail = (contact) => {
+    setDetailContact(contact);
+    setContactDetailOpen(true);
   };
 
   const openEditContact = (contact) => {
@@ -787,7 +794,15 @@ export default function AdminDashboardPage() {
               </TableRow>
             ) : filteredContacts.map((contact) => (
               <TableRow key={contact.id} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
-                <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>{contact.customer_name}</TableCell>
+                <TableCell>
+                  <button
+                    onClick={() => openContactDetail(contact)}
+                    className="font-semibold text-left hover:underline"
+                    style={{ color: 'var(--teal)' }}
+                  >
+                    {contact.customer_name}
+                  </button>
+                </TableCell>
                 <TableCell className="text-sm text-slate-600">{contact.customer_phone}</TableCell>
                 <TableCell>
                   <div className="text-sm text-slate-600">{contact.user_name}</div>
@@ -1486,6 +1501,99 @@ export default function AdminDashboardPage() {
           </form>
         </DialogContent>
       </Dialog>
+      {/* Contact Detail Modal */}
+      <Dialog open={contactDetailOpen} onOpenChange={setContactDetailOpen}>
+        <DialogContent className="rounded-xl border max-w-md" style={{ borderColor: '#e5e7eb' }}>
+          <DialogHeader>
+            <DialogTitle className="font-bold text-xl" style={{ color: 'var(--teal)' }}>Contact Details</DialogTitle>
+          </DialogHeader>
+          {detailContact && (
+            <div className="space-y-5 pt-1">
+              {/* Avatar + name + phone */}
+              <div className="flex items-center gap-4 p-4 rounded-xl" style={{ backgroundColor: 'rgba(20,74,87,0.06)' }}>
+                <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-xl shrink-0" style={{ backgroundColor: 'var(--teal)' }}>
+                  {(detailContact.customer_name || '?')[0].toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <div className="font-bold text-slate-800 text-lg truncate">{detailContact.customer_name}</div>
+                  <div className="text-sm text-slate-500">{detailContact.customer_phone}</div>
+                  {detailContact.customer_phone && (
+                    <a
+                      href={`https://wa.me/${detailContact.customer_phone.replace(/\D/g, '')}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs font-semibold mt-1 inline-flex items-center gap-1"
+                      style={{ color: '#16a34a' }}
+                    >
+                      Open WhatsApp →
+                    </a>
+                  )}
+                </div>
+              </div>
+
+              {/* Owner */}
+              <div>
+                <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Assigned To</div>
+                <div className="text-sm font-semibold text-slate-700">{detailContact.user_name}</div>
+                <div className="text-xs text-slate-400">{detailContact.user_email}</div>
+              </div>
+
+              {/* Stats row */}
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { label: 'Links Created', value: detailContact.total_links || 0, color: 'var(--teal)' },
+                  { label: 'Links Opened', value: detailContact.opened_links || 0, color: '#4a90d9' },
+                  { label: 'Total Opens', value: detailContact.total_opens || 0, color: 'var(--gold)' },
+                ].map((s) => (
+                  <div key={s.label} className="rounded-xl p-3 text-center" style={{ backgroundColor: '#f8fafc', border: '1px solid #e5e7eb' }}>
+                    <div className="text-2xl font-bold" style={{ color: s.color }}>{s.value}</div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">{s.label}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Latest PDF */}
+              <div>
+                <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Latest PDF</div>
+                <div className="text-sm text-slate-700 truncate">{detailContact.latest_pdf_name || '--'}</div>
+              </div>
+
+              {/* Timestamps */}
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                {[
+                  { label: 'Last Linked', value: detailContact.last_link_created_at },
+                  { label: 'Last Opened', value: detailContact.latest_opened_at },
+                  { label: 'Contact Created', value: detailContact.created_at },
+                ].map((t) => (
+                  <div key={t.label}>
+                    <div className="text-[11px] text-slate-400">{t.label}</div>
+                    <div className="text-xs font-medium text-slate-600">{t.value ? formatDate(t.value) : '--'}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex gap-2 pt-1">
+                <Button
+                  variant="outline"
+                  className="flex-1 rounded-lg border-slate-200 text-slate-600"
+                  onClick={() => { setContactDetailOpen(false); openEditContact(detailContact); }}
+                >
+                  <Pencil className="w-3.5 h-3.5 mr-1.5" /> Edit
+                </Button>
+                <Button
+                  variant="outline"
+                  className="flex-1 rounded-lg text-red-500 border-red-200 hover:bg-red-50"
+                  onClick={() => { setContactDetailOpen(false); handleDeleteContact(detailContact.id); }}
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Delete
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={userDialogOpen} onOpenChange={setUserDialogOpen}>
         <DialogContent className="rounded-xl border" style={{ borderColor: '#e5e7eb' }}>
           <DialogHeader>
