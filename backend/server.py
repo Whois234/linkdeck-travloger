@@ -947,6 +947,54 @@ async def admin_delete_contact(contact_id: str, request: Request):
     return {"message": "Contact deleted"}
 
 
+@api_router.get("/admin/contacts/{contact_id}/links")
+async def admin_contact_links(contact_id: str, request: Request):
+    """Return all links + per-link session history for a specific contact."""
+    await get_current_admin(request)
+    try:
+        contact_oid = ObjectId(contact_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid contact ID")
+
+    contact = await db.contacts.find_one({"_id": contact_oid})
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+
+    user_id = contact.get("user_id")
+    phone_normalized = contact.get("contact_phone_normalized") or normalize_contact_phone(contact.get("customer_phone", ""))
+
+    all_links = await db.links.find({"user_id": user_id}).sort("created_at", -1).to_list(1000)
+
+    result = []
+    for link in all_links:
+        link_phone = normalize_contact_phone(link.get("customer_phone", ""))
+        if link_phone != phone_normalized:
+            continue
+        link_id = str(link.get("_id"))
+        sessions = await db.view_sessions.find({"link_id": link_id}).sort("started_at", 1).to_list(500)
+        session_list = []
+        for i, s in enumerate(sessions):
+            session_list.append({
+                "session_number": i + 1,
+                "started_at": s.get("started_at"),
+                "duration_seconds": int(s.get("duration_seconds") or 0),
+                "device_type": s.get("device_type") or infer_device_type(s.get("user_agent", ""), bool(s.get("is_mobile"))),
+                "browser": s.get("browser") or infer_browser(s.get("user_agent", "")),
+                "os": s.get("platform") or infer_platform(s.get("user_agent", "")),
+                "location_label": s.get("location_label"),
+            })
+        result.append({
+            "id": link_id,
+            "pdf_name": link.get("pdf_name_snapshot") or "Unknown PDF",
+            "open_count": int(link.get("open_count") or 0),
+            "opened": bool(link.get("opened")),
+            "created_at": link.get("created_at"),
+            "last_opened_at": link.get("last_opened_at"),
+            "sessions": session_list,
+        })
+    return result
+
+
 @api_router.get("/admin/stats")
 async def admin_stats(request: Request):
     await get_current_admin(request)
@@ -1201,6 +1249,8 @@ async def admin_recent_activity(request: Request, limit: int = 20):
     await get_current_admin(request)
     pdfs = await db.pdfs.find({}, {"_id": 0, "id": 1, "file_name": 1}).to_list(10000)
     pdf_map = {pdf["id"]: pdf.get("file_name", "Unknown PDF") for pdf in pdfs}
+    users = await db.users.find({}, {"name": 1, "email": 1}).to_list(10000)
+    user_map = {str(u["_id"]): u.get("name") or u.get("email") or "Unknown" for u in users}
     sessions = await db.view_sessions.find({}).sort("started_at", -1).to_list(max(1, min(limit, 100)))
     link_ids = list({session.get("link_id") for session in sessions if session.get("link_id")})
     all_sessions_for_links = await db.view_sessions.find({"link_id": {"$in": link_ids}}).sort("started_at", 1).to_list(10000) if link_ids else []
@@ -1208,9 +1258,20 @@ async def admin_recent_activity(request: Request, limit: int = 20):
     for session in all_sessions_for_links:
         sessions_by_link.setdefault(session.get("link_id"), []).append(session)
 
+    # Fetch link owner info: link_id (string) → user_id
+    link_oids = []
+    for lid in link_ids:
+        try:
+            link_oids.append(ObjectId(lid))
+        except Exception:
+            pass
+    links_data = await db.links.find({"_id": {"$in": link_oids}}, {"user_id": 1}).to_list(1000) if link_oids else []
+    link_user_map = {str(lnk["_id"]): str(lnk.get("user_id", "")) for lnk in links_data}
+
     activity = []
     for session in sessions:
         per_link_sessions = sessions_by_link.get(session.get("link_id"), [])
+        link_user_id = link_user_map.get(session.get("link_id"), "")
         activity.append({
             "session_id": session.get("_id"),
             "link_id": session.get("link_id"),
@@ -1225,6 +1286,7 @@ async def admin_recent_activity(request: Request, limit: int = 20):
             "browser": session.get("browser") or infer_browser(session.get("user_agent", "")),
             "location_label": session.get("location_label"),
             "location_source": session.get("location_source"),
+            "owner_name": user_map.get(link_user_id, "--"),
         })
     return {"items": activity}
 

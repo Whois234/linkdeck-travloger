@@ -156,6 +156,9 @@ export default function AdminDashboardPage() {
   const [contactSearch, setContactSearch] = useState('');
   const [contactDetailOpen, setContactDetailOpen] = useState(false);
   const [detailContact, setDetailContact] = useState(null);
+  const [contactLinks, setContactLinks] = useState([]);
+  const [contactLinksLoading, setContactLinksLoading] = useState(false);
+  const [contactActiveView, setContactActiveView] = useState(null); // null | 'links' | 'sessions'
   const [pdfSearch, setPdfSearch] = useState('');
   const [savingContact, setSavingContact] = useState(false);
   const [deletingContactId, setDeletingContactId] = useState('');
@@ -384,9 +387,20 @@ export default function AdminDashboardPage() {
     toast.success('Recent activity CSV downloaded');
   };
 
-  const openContactDetail = (contact) => {
+  const openContactDetail = async (contact) => {
     setDetailContact(contact);
+    setContactLinks([]);
+    setContactActiveView(null);
     setContactDetailOpen(true);
+    setContactLinksLoading(true);
+    try {
+      const res = await axios.get(`${API}/admin/contacts/${contact.id}/links`, { withCredentials: true });
+      setContactLinks(Array.isArray(res.data) ? res.data : []);
+    } catch {
+      // non-critical, modal still works
+    } finally {
+      setContactLinksLoading(false);
+    }
   };
 
   const openEditContact = (contact) => {
@@ -861,6 +875,7 @@ export default function AdminDashboardPage() {
           <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
             <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Customer</TableHead>
             <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Phone</TableHead>
+            <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Owner</TableHead>
             <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">PDF</TableHead>
             <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Session</TableHead>
             <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Time Spent</TableHead>
@@ -873,7 +888,7 @@ export default function AdminDashboardPage() {
         <TableBody>
           {recentActivity.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={9} className="py-10 text-center text-sm text-slate-400">
+              <TableCell colSpan={10} className="py-10 text-center text-sm text-slate-400">
                 No recent activity yet.
               </TableCell>
             </TableRow>
@@ -883,6 +898,7 @@ export default function AdminDashboardPage() {
               <TableRow key={item.session_id} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
                 <TableCell className="font-semibold" style={{ color: 'var(--teal)' }}>{item.customer_name}</TableCell>
                 <TableCell className="text-sm text-slate-600">{item.customer_phone}</TableCell>
+                <TableCell className="text-sm text-slate-500">{item.owner_name || '--'}</TableCell>
                 <TableCell className="text-sm text-slate-500 max-w-[220px] truncate">{item.pdf_name}</TableCell>
                 <TableCell className="text-sm text-slate-600">{formatSessionOrdinal(item.session_number)} session</TableCell>
                 <TableCell className="text-sm text-slate-600">{formatDuration(item.duration_seconds)}</TableCell>
@@ -1502,8 +1518,8 @@ export default function AdminDashboardPage() {
         </DialogContent>
       </Dialog>
       {/* Contact Detail Modal */}
-      <Dialog open={contactDetailOpen} onOpenChange={setContactDetailOpen}>
-        <DialogContent className="rounded-xl border max-w-md" style={{ borderColor: '#e5e7eb' }}>
+      <Dialog open={contactDetailOpen} onOpenChange={(o) => { setContactDetailOpen(o); if (!o) setContactActiveView(null); }}>
+        <DialogContent className="rounded-xl border max-w-lg max-h-[88vh] overflow-y-auto" style={{ borderColor: '#e5e7eb' }}>
           <DialogHeader>
             <DialogTitle className="font-bold text-xl" style={{ color: 'var(--teal)' }}>Contact Details</DialogTitle>
           </DialogHeader>
@@ -1518,13 +1534,7 @@ export default function AdminDashboardPage() {
                   <div className="font-bold text-slate-800 text-lg truncate">{detailContact.customer_name}</div>
                   <div className="text-sm text-slate-500">{detailContact.customer_phone}</div>
                   {detailContact.customer_phone && (
-                    <a
-                      href={`https://wa.me/${detailContact.customer_phone.replace(/\D/g, '')}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs font-semibold mt-1 inline-flex items-center gap-1"
-                      style={{ color: '#16a34a' }}
-                    >
+                    <a href={`https://wa.me/${detailContact.customer_phone.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold mt-1 inline-flex items-center gap-1" style={{ color: '#16a34a' }}>
                       Open WhatsApp →
                     </a>
                   )}
@@ -1538,19 +1548,98 @@ export default function AdminDashboardPage() {
                 <div className="text-xs text-slate-400">{detailContact.user_email}</div>
               </div>
 
-              {/* Stats row */}
+              {/* Clickable stat cards */}
               <div className="grid grid-cols-3 gap-3">
                 {[
-                  { label: 'Links Created', value: detailContact.total_links || 0, color: 'var(--teal)' },
-                  { label: 'Links Opened', value: detailContact.opened_links || 0, color: '#4a90d9' },
-                  { label: 'Total Opens', value: detailContact.total_opens || 0, color: 'var(--gold)' },
+                  { label: 'Links Created', value: detailContact.total_links || 0, color: 'var(--teal)', view: 'links' },
+                  { label: 'Links Opened', value: detailContact.opened_links || 0, color: '#4a90d9', view: 'sessions' },
+                  { label: 'Total Opens', value: detailContact.total_opens || 0, color: 'var(--gold)', view: 'sessions' },
                 ].map((s) => (
-                  <div key={s.label} className="rounded-xl p-3 text-center" style={{ backgroundColor: '#f8fafc', border: '1px solid #e5e7eb' }}>
+                  <button
+                    key={s.label}
+                    onClick={() => setContactActiveView(contactActiveView === s.view ? null : s.view)}
+                    className="rounded-xl p-3 text-center transition-all hover:opacity-90 active:scale-95"
+                    style={{
+                      backgroundColor: contactActiveView === s.view ? `${s.color}15` : '#f8fafc',
+                      border: `1px solid ${contactActiveView === s.view ? s.color : '#e5e7eb'}`,
+                    }}
+                  >
                     <div className="text-2xl font-bold" style={{ color: s.color }}>{s.value}</div>
                     <div className="text-[11px] text-slate-500 mt-0.5">{s.label}</div>
-                  </div>
+                    <div className="text-[10px] mt-1" style={{ color: s.color }}>
+                      {contactActiveView === s.view ? '▲ hide' : '▼ details'}
+                    </div>
+                  </button>
                 ))}
               </div>
+
+              {/* Links detail panel */}
+              {contactActiveView === 'links' && (
+                <div className="rounded-xl border overflow-hidden" style={{ borderColor: '#e2e8f0' }}>
+                  <div className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-500" style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                    PDFs & Links Shared
+                  </div>
+                  {contactLinksLoading ? (
+                    <div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-slate-400" /></div>
+                  ) : contactLinks.length === 0 ? (
+                    <p className="text-sm text-slate-400 text-center py-6">No links created yet.</p>
+                  ) : (
+                    <div className="divide-y" style={{ borderColor: '#f1f5f9' }}>
+                      {contactLinks.map((link) => (
+                        <div key={link.id} className="px-4 py-3">
+                          <div className="font-semibold text-sm text-slate-700 truncate">{link.pdf_name}</div>
+                          <div className="flex items-center gap-3 mt-1 flex-wrap">
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${link.opened ? 'bg-green-50 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                              {link.opened ? `✓ Opened ${link.open_count}×` : 'Not opened yet'}
+                            </span>
+                            <span className="text-xs text-slate-400">Shared {formatDate(link.created_at)}</span>
+                            {link.last_opened_at && <span className="text-xs text-slate-400">Last: {formatDate(link.last_opened_at)}</span>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Sessions detail panel */}
+              {contactActiveView === 'sessions' && (
+                <div className="rounded-xl border overflow-hidden" style={{ borderColor: '#e2e8f0' }}>
+                  <div className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-500" style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                    All Sessions
+                  </div>
+                  {contactLinksLoading ? (
+                    <div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-slate-400" /></div>
+                  ) : contactLinks.every((l) => l.sessions.length === 0) ? (
+                    <p className="text-sm text-slate-400 text-center py-6">No sessions recorded yet.</p>
+                  ) : (
+                    <div className="divide-y max-h-64 overflow-y-auto" style={{ borderColor: '#f1f5f9' }}>
+                      {contactLinks.flatMap((link) =>
+                        link.sessions.map((s) => (
+                          <div key={`${link.id}-s${s.session_number}`} className="px-4 py-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-bold text-slate-600">
+                                {formatSessionOrdinal(s.session_number)} session
+                              </span>
+                              <span className="text-xs font-semibold" style={{ color: 'var(--teal)' }}>
+                                {formatDuration(s.duration_seconds)}
+                              </span>
+                            </div>
+                            <div className="text-xs text-slate-500 mt-0.5 truncate">{link.pdf_name}</div>
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-[11px] text-slate-400">
+                              {s.device_type && <span>{s.device_type}</span>}
+                              {s.browser && <span>· {s.browser}</span>}
+                              {s.os && <span>· {s.os}</span>}
+                              {s.location_label && <span>· {s.location_label}</span>}
+                              {s.started_at && <span>· {formatDate(s.started_at)}</span>}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Latest PDF */}
               <div>
@@ -1574,18 +1663,10 @@ export default function AdminDashboardPage() {
 
               {/* Action buttons */}
               <div className="flex gap-2 pt-1">
-                <Button
-                  variant="outline"
-                  className="flex-1 rounded-lg border-slate-200 text-slate-600"
-                  onClick={() => { setContactDetailOpen(false); openEditContact(detailContact); }}
-                >
+                <Button variant="outline" className="flex-1 rounded-lg border-slate-200 text-slate-600" onClick={() => { setContactDetailOpen(false); openEditContact(detailContact); }}>
                   <Pencil className="w-3.5 h-3.5 mr-1.5" /> Edit
                 </Button>
-                <Button
-                  variant="outline"
-                  className="flex-1 rounded-lg text-red-500 border-red-200 hover:bg-red-50"
-                  onClick={() => { setContactDetailOpen(false); handleDeleteContact(detailContact.id); }}
-                >
+                <Button variant="outline" className="flex-1 rounded-lg text-red-500 border-red-200 hover:bg-red-50" onClick={() => { setContactDetailOpen(false); handleDeleteContact(detailContact.id); }}>
                   <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Delete
                 </Button>
               </div>
