@@ -125,6 +125,8 @@ export default function AdminDashboardPage() {
     user_daily_activity: [],
   });
   const [recentActivity, setRecentActivity] = useState([]);
+  const [activityTotal, setActivityTotal] = useState(0);
+  const [activityLimit, setActivityLimit] = useState(20);
   const [analyticsDays, setAnalyticsDays] = useState(30);
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
@@ -192,7 +194,7 @@ export default function AdminDashboardPage() {
         }),
         axios.get(`${API}/admin/recent-activity`, {
           withCredentials: true,
-          params: { limit: 12 },
+          params: { limit: activityLimit === 'all' ? 9999 : activityLimit },
         }),
         axios.get(`${API}/folders`, { withCredentials: true }),
         axios.get(`${API}/folders`, { withCredentials: true, params: { status: 'archived' } }),
@@ -203,6 +205,7 @@ export default function AdminDashboardPage() {
       setContacts(contactsRes.data || []);
       setAnalytics(analyticsRes.data || {});
       setRecentActivity(activityRes.data?.items || []);
+      setActivityTotal(activityRes.data?.total || 0);
       setFolders(Array.isArray(foldersRes.data) ? foldersRes.data : []);
       setArchivedFolders(Array.isArray(archivedFoldersRes.data) ? archivedFoldersRes.data : []);
     } catch (err) {
@@ -210,7 +213,7 @@ export default function AdminDashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [analyticsDays, customStartDate, customEndDate, contactSearch]);
+  }, [analyticsDays, customStartDate, customEndDate, contactSearch, activityLimit]);
 
   useEffect(() => {
     fetchAdminData();
@@ -863,11 +866,35 @@ export default function AdminDashboardPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h3 className="font-bold" style={{ color: 'var(--teal)' }}>Recent Activity</h3>
-            <p className="text-sm text-slate-500 mt-1">Latest customer opens with session order, watch time, device, and approximate location.</p>
+            <p className="text-sm text-slate-500 mt-1">
+              Latest customer opens with session order, watch time, device, and approximate location.
+            </p>
+            <p className="text-xs font-semibold mt-1" style={{ color: 'var(--teal)' }}>
+              {activityTotal > 0 && (
+                <>Total: <span className="font-black">{activityTotal.toLocaleString('en-IN')}</span> opens · showing {recentActivity.length}</>
+              )}
+            </p>
           </div>
-          <Button variant="outline" onClick={exportRecentActivityCsv} className="rounded-lg border-slate-200 text-slate-600">
-            <Download className="w-4 h-4 mr-2" /> Export CSV
-          </Button>
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1.5">
+              <label className="text-xs font-semibold text-slate-500 whitespace-nowrap">Rows:</label>
+              <select
+                value={activityLimit}
+                onChange={(e) => setActivityLimit(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                className="text-sm rounded-lg border border-slate-200 px-2 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2"
+                style={{ '--tw-ring-color': 'var(--teal)' }}
+              >
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={200}>200</option>
+                <option value="all">All</option>
+              </select>
+            </div>
+            <Button variant="outline" onClick={exportRecentActivityCsv} className="rounded-lg border-slate-200 text-slate-600">
+              <Download className="w-4 h-4 mr-2" /> Export CSV
+            </Button>
+          </div>
         </div>
       </div>
       <Table>

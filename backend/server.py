@@ -1251,21 +1251,16 @@ async def admin_recent_activity(request: Request, limit: int = 20):
     pdf_map = {pdf["id"]: pdf.get("file_name", "Unknown PDF") for pdf in pdfs}
     users = await db.users.find({}, {"name": 1, "email": 1}).to_list(10000)
     user_map = {str(u["_id"]): u.get("name") or u.get("email") or "Unknown" for u in users}
-    sessions = await db.view_sessions.find({}).sort("started_at", -1).to_list(max(1, min(limit, 100)))
+    total = await db.view_sessions.count_documents({})
+    sessions = await db.view_sessions.find({}).sort("started_at", -1).to_list(max(1, min(limit, 9999)))
     link_ids = list({session.get("link_id") for session in sessions if session.get("link_id")})
-    all_sessions_for_links = await db.view_sessions.find({"link_id": {"$in": link_ids}}).sort("started_at", 1).to_list(10000) if link_ids else []
+    all_sessions_for_links = await db.view_sessions.find({"link_id": {"$in": link_ids}}).sort("started_at", 1).to_list(50000) if link_ids else []
     sessions_by_link = {}
     for session in all_sessions_for_links:
         sessions_by_link.setdefault(session.get("link_id"), []).append(session)
 
-    # Fetch link owner info: link_id (string) → user_id
-    link_oids = []
-    for lid in link_ids:
-        try:
-            link_oids.append(ObjectId(lid))
-        except Exception:
-            pass
-    links_data = await db.links.find({"_id": {"$in": link_oids}}, {"user_id": 1}).to_list(1000) if link_oids else []
+    # Links have string _ids (short UUIDs like "a1b2c3d4"), not ObjectIds — query directly
+    links_data = await db.links.find({"_id": {"$in": link_ids}}, {"user_id": 1}).to_list(5000) if link_ids else []
     link_user_map = {str(lnk["_id"]): str(lnk.get("user_id", "")) for lnk in links_data}
 
     activity = []
@@ -1288,7 +1283,7 @@ async def admin_recent_activity(request: Request, limit: int = 20):
             "location_source": session.get("location_source"),
             "owner_name": user_map.get(link_user_id, "--"),
         })
-    return {"items": activity}
+    return {"items": activity, "total": total}
 
 
 @api_router.delete("/admin/recent-activity/{session_id}")
