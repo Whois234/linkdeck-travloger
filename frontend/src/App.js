@@ -99,6 +99,11 @@ function App() {
           <Routes>
             <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
             <Route path="/" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
+            <Route path="/dashboard" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
+            <Route path="/pdfs" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
+            <Route path="/contacts" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
+            <Route path="/users" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
+            <Route path="/recent-activity" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
             <Route path="/tripdeck" element={<ProtectedRoute><TripDeckPage /></ProtectedRoute>} />
             <Route path="/tripdeck/responses/:linkId" element={<ProtectedRoute><GateLinkResponsesPage /></ProtectedRoute>} />
             <Route path="/tripdeck/leads" element={<ProtectedRoute><LeadsPage /></ProtectedRoute>} />

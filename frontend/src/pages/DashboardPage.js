@@ -1,5 +1,5 @@
 import { Fragment, useState, useEffect, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
 import { Button } from '../components/ui/button';
@@ -21,10 +21,10 @@ import {
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const SITE_URL = process.env.REACT_APP_SITE_URL || window.location.origin;
 const USER_MODULES = [
-  { key: 'dashboard', label: 'Dashboard', icon: Link2 },
-  { key: 'pdfs', label: 'PDFs', icon: FolderOpen },
-  { key: 'contacts', label: 'Contacts', icon: Users },
-  { key: 'tripdeck', label: 'TripDeck', icon: Map, href: '/tripdeck' },
+  { key: 'dashboard', label: 'Dashboard', icon: Link2,      path: '/dashboard' },
+  { key: 'pdfs',      label: 'PDFs',      icon: FolderOpen, path: '/pdfs' },
+  { key: 'contacts',  label: 'Contacts',  icon: Users,      path: '/contacts' },
+  { key: 'tripdeck',  label: 'TripDeck',  icon: Map,        href: '/tripdeck' },
 ];
 
 function formatDuration(seconds) {
@@ -119,6 +119,7 @@ function WhatsAppIcon({ size = 16 }) {
 export default function DashboardPage() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const [pdfs, setPdfs] = useState([]);
   const [archivedPdfs, setArchivedPdfs] = useState([]);
   const [folders, setFolders] = useState([]);
@@ -142,7 +143,6 @@ export default function DashboardPage() {
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [selectedSessionDetail, setSelectedSessionDetail] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [activeModule, setActiveModule] = useState('dashboard');
   const [navOpen, setNavOpen] = useState(false);
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
@@ -219,11 +219,13 @@ export default function DashboardPage() {
   const visibleModules = USER_MODULES.filter((module) => moduleAccess[module.key] !== 'none');
   const canEditDashboard = moduleAccess.dashboard === 'edit';
   const canEditPdfs = moduleAccess.pdfs === 'edit';
+  const activeModule = USER_MODULES.find((m) => m.path === pathname)?.key || 'dashboard';
   useEffect(() => {
-    if (!visibleModules.find((module) => module.key === activeModule)) {
-      setActiveModule(visibleModules[0]?.key || 'dashboard');
+    if (!loading && visibleModules.length > 0 && !visibleModules.find((m) => m.key === activeModule)) {
+      const first = visibleModules[0];
+      navigate(first.path || first.href || '/dashboard', { replace: true });
     }
-  }, [activeModule, visibleModules]);
+  }, [activeModule, visibleModules, loading, navigate]);
 
   const availablePdfsForLink = useMemo(() => (
     !selectedFolder
@@ -845,11 +847,7 @@ export default function DashboardPage() {
                           key={module.key}
                           type="button"
                           onClick={() => {
-                            if (module.href) {
-                              navigate(module.href);
-                            } else {
-                              setActiveModule(module.key);
-                            }
+                            navigate(module.href || module.path || '/dashboard');
                             setNavOpen(false);
                           }}
                           className="w-full flex items-center gap-3 rounded-xl px-4 py-3 text-left transition-colors"

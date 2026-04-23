@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/ui/button';
@@ -100,17 +100,19 @@ function TravlogerMark({ size = 32 }) {
 }
 
 const MODULES = [
-  { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { key: 'contacts', label: 'Contacts', icon: Users },
-  { key: 'recent_activity', label: 'Recent Activity', icon: Globe2 },
-  { key: 'pdfs', label: 'PDFs', icon: FileText },
-  { key: 'users', label: 'Users', icon: ShieldCheck },
-  { key: 'tripdeck', label: 'TripDeck', icon: Map, href: '/tripdeck' },
+  { key: 'dashboard',       label: 'Dashboard',       icon: LayoutDashboard, path: '/dashboard' },
+  { key: 'contacts',        label: 'Contacts',         icon: Users,           path: '/contacts' },
+  { key: 'recent_activity', label: 'Recent Activity',  icon: Globe2,          path: '/recent-activity' },
+  { key: 'pdfs',            label: 'PDFs',             icon: FileText,        path: '/pdfs' },
+  { key: 'users',           label: 'Users',            icon: ShieldCheck,     path: '/users' },
+  { key: 'tripdeck',        label: 'TripDeck',         icon: Map,             href: '/tripdeck' },
 ];
 
 export default function AdminDashboardPage() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const activeModule = MODULES.find((m) => m.path === pathname)?.key || 'dashboard';
   const [users, setUsers] = useState([]);
   const [contacts, setContacts] = useState([]);
   const [folders, setFolders] = useState([]);
@@ -130,7 +132,6 @@ export default function AdminDashboardPage() {
   const [analyticsDays, setAnalyticsDays] = useState(30);
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
-  const [activeModule, setActiveModule] = useState('dashboard');
   const [navOpen, setNavOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
@@ -256,11 +257,7 @@ export default function AdminDashboardPage() {
 
   const goToModule = (key) => {
     const module = MODULES.find((m) => m.key === key);
-    if (module?.href) {
-      navigate(module.href);
-    } else {
-      setActiveModule(key);
-    }
+    navigate(module?.href || module?.path || '/dashboard');
     setNavOpen(false);
   };
 
