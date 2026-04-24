@@ -146,6 +146,12 @@ export default function AdminDashboardPage() {
   const [locationEndDate, setLocationEndDate] = useState('');
   const [locationStats, setLocationStats] = useState([]);
   const [locationLoading, setLocationLoading] = useState(false);
+  // Device chart — independent date filter
+  const [deviceDays, setDeviceDays] = useState(30);
+  const [deviceStartDate, setDeviceStartDate] = useState('');
+  const [deviceEndDate, setDeviceEndDate] = useState('');
+  const [deviceStats, setDeviceStats] = useState([]);
+  const [deviceLoading, setDeviceLoading] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
@@ -221,6 +227,7 @@ export default function AdminDashboardPage() {
       setAnalytics(analyticsRes.data || {});
       setUserStats(analyticsRes.data?.user_stats || []);
       setLocationStats(analyticsRes.data?.location_stats || []);
+      setDeviceStats(analyticsRes.data?.device_stats || []);
       setRecentActivity(activityRes.data?.items || []);
       setActivityTotal(activityRes.data?.total || 0);
       setFolders(Array.isArray(foldersRes.data) ? foldersRes.data : []);
@@ -278,6 +285,27 @@ export default function AdminDashboardPage() {
     if (locationFilterInitial.current) { locationFilterInitial.current = false; return; }
     fetchLocationStats();
   }, [fetchLocationStats]);
+
+  const fetchDeviceStats = useCallback(async () => {
+    setDeviceLoading(true);
+    try {
+      const params = deviceDays === -1
+        ? { days: 0, start_date: deviceStartDate || undefined, end_date: deviceEndDate || undefined }
+        : { days: deviceDays };
+      const res = await axios.get(`${API}/admin/analytics`, { params, withCredentials: true });
+      setDeviceStats(res.data?.device_stats || []);
+    } catch {
+      /* silently ignore */
+    } finally {
+      setDeviceLoading(false);
+    }
+  }, [deviceDays, deviceStartDate, deviceEndDate]);
+
+  const deviceFilterInitial = useRef(true);
+  useEffect(() => {
+    if (deviceFilterInitial.current) { deviceFilterInitial.current = false; return; }
+    fetchDeviceStats();
+  }, [fetchDeviceStats]);
 
   const userCount = useMemo(() => users.length, [users]);
   const contactCount = useMemo(() => contacts.length, [contacts]);
@@ -985,6 +1013,105 @@ export default function AdminDashboardPage() {
                     ))}
                   </TableBody>
                 </Table>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Device Breakdown Chart ────────────────────────────────────── */}
+        <div className="bg-white rounded-xl border p-5 mt-4" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+            <div>
+              <h3 className="font-bold" style={{ color: 'var(--teal)' }}>Device Breakdown</h3>
+              <p className="text-sm text-slate-500 mt-1">What type of device customers are using to open links.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={deviceDays}
+                onChange={e => setDeviceDays(Number(e.target.value))}
+                className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600"
+              >
+                <option value={7}>Last 7 days</option>
+                <option value={30}>Last 30 days</option>
+                <option value={90}>Last 90 days</option>
+                <option value={0}>All time</option>
+                <option value={-1}>Custom range</option>
+              </select>
+              {deviceDays === -1 && (
+                <>
+                  <Input
+                    type="date"
+                    value={deviceStartDate}
+                    onChange={e => setDeviceStartDate(e.target.value)}
+                    className="h-9 w-[150px] rounded-lg border-slate-200 text-sm"
+                  />
+                  <Input
+                    type="date"
+                    value={deviceEndDate}
+                    onChange={e => setDeviceEndDate(e.target.value)}
+                    className="h-9 w-[150px] rounded-lg border-slate-200 text-sm"
+                  />
+                </>
+              )}
+            </div>
+          </div>
+          {deviceLoading ? (
+            <div className="h-64 flex items-center justify-center">
+              <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--teal)' }} />
+            </div>
+          ) : deviceStats.length === 0 ? (
+            <div className="h-64 flex items-center justify-center text-center text-sm text-slate-400">
+              No device data for the selected date range.
+            </div>
+          ) : (
+            <div className="grid lg:grid-cols-2 gap-6 items-center">
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={deviceStats}
+                      dataKey="count"
+                      nameKey="device"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={100}
+                      label={({ device, percent }) => `${device} (${(percent * 100).toFixed(0)}%)`}
+                      labelLine={false}
+                    >
+                      {deviceStats.map((_, idx) => (
+                        <Cell
+                          key={idx}
+                          fill={['#144a57', '#E8A020', '#1e7a8f', '#f59e0b', '#0e6175'][idx % 5]}
+                        />
+                      ))}
+                    </Pie>
+                    <ChartTooltip formatter={(value, name) => [`${value} sessions`, name]} />
+                    <Legend iconType="circle" wrapperStyle={{ fontSize: 13 }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="flex flex-col gap-3">
+                {(() => {
+                  const total = deviceStats.reduce((s, r) => s + r.count, 0);
+                  const colors = ['#144a57', '#E8A020', '#1e7a8f', '#f59e0b', '#0e6175'];
+                  return deviceStats.map((row, i) => (
+                    <div key={i} className="flex items-center gap-3">
+                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: colors[i % 5] }} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between text-sm font-semibold text-slate-700 mb-1">
+                          <span>{row.device}</span>
+                          <span style={{ color: 'var(--teal)' }}>{row.count} <span className="text-slate-400 font-normal">({total ? ((row.count / total) * 100).toFixed(1) : 0}%)</span></span>
+                        </div>
+                        <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                          <div
+                            className="h-2 rounded-full transition-all"
+                            style={{ width: `${total ? (row.count / total) * 100 : 0}%`, backgroundColor: colors[i % 5] }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ));
+                })()}
               </div>
             </div>
           )}

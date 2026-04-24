@@ -1253,6 +1253,20 @@ async def admin_analytics(
         reverse=True,
     )[:20]
 
+    # device_stats: session count per device type
+    device_type_counts = {}
+    for session in sessions:
+        dt = (
+            session.get("device_type")
+            or infer_device_type(session.get("user_agent", ""), bool(session.get("is_mobile")))
+        ).strip() or "Unknown"
+        device_type_counts[dt] = device_type_counts.get(dt, 0) + 1
+    device_stats_list = sorted(
+        [{"device": dt, "count": cnt} for dt, cnt in device_type_counts.items()],
+        key=lambda x: x["count"],
+        reverse=True,
+    )
+
     return {
         "summary": {
             "total_links": len(links),
@@ -1273,6 +1287,7 @@ async def admin_analytics(
         ),
         "user_stats": user_stats_list,
         "location_stats": location_stats_list,
+        "device_stats": device_stats_list,
     }
 
 
