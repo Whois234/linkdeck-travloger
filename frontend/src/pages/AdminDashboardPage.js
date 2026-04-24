@@ -146,11 +146,12 @@ export default function AdminDashboardPage() {
   const [locationEndDate, setLocationEndDate] = useState('');
   const [locationStats, setLocationStats] = useState([]);
   const [locationLoading, setLocationLoading] = useState(false);
-  // Device chart — independent date filter
+  // Device + platform chart — independent date filter (shared filter for both)
   const [deviceDays, setDeviceDays] = useState(30);
   const [deviceStartDate, setDeviceStartDate] = useState('');
   const [deviceEndDate, setDeviceEndDate] = useState('');
   const [deviceStats, setDeviceStats] = useState([]);
+  const [platformStats, setPlatformStats] = useState([]);
   const [deviceLoading, setDeviceLoading] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -228,6 +229,7 @@ export default function AdminDashboardPage() {
       setUserStats(analyticsRes.data?.user_stats || []);
       setLocationStats(analyticsRes.data?.location_stats || []);
       setDeviceStats(analyticsRes.data?.device_stats || []);
+      setPlatformStats(analyticsRes.data?.platform_stats || []);
       setRecentActivity(activityRes.data?.items || []);
       setActivityTotal(activityRes.data?.total || 0);
       setFolders(Array.isArray(foldersRes.data) ? foldersRes.data : []);
@@ -294,6 +296,7 @@ export default function AdminDashboardPage() {
         : { days: deviceDays };
       const res = await axios.get(`${API}/admin/analytics`, { params, withCredentials: true });
       setDeviceStats(res.data?.device_stats || []);
+      setPlatformStats(res.data?.platform_stats || []);
     } catch {
       /* silently ignore */
     } finally {
@@ -909,6 +912,20 @@ export default function AdminDashboardPage() {
                       <TableCell className="text-right font-bold text-slate-600">{row.total_opens}</TableCell>
                     </TableRow>
                   ))}
+                  {/* Totals row */}
+                  {userStats.length > 0 && (() => {
+                    const totLinks = userStats.reduce((s, r) => s + r.total_links, 0);
+                    const totOpened = userStats.reduce((s, r) => s + r.opened_links, 0);
+                    const totOpens = userStats.reduce((s, r) => s + r.total_opens, 0);
+                    return (
+                      <TableRow className="border-t-2" style={{ borderColor: '#e2e8f0', backgroundColor: '#f8fafc' }}>
+                        <TableCell className="font-black text-slate-700 text-sm uppercase tracking-wider">Total</TableCell>
+                        <TableCell className="text-right font-black text-lg" style={{ color: 'var(--teal)' }}>{totLinks}</TableCell>
+                        <TableCell className="text-right font-black text-lg text-amber-600">{totOpened}</TableCell>
+                        <TableCell className="text-right font-black text-lg text-slate-700">{totOpens}</TableCell>
+                      </TableRow>
+                    );
+                  })()}
                 </TableBody>
               </Table>
             </div>
@@ -1090,28 +1107,57 @@ export default function AdminDashboardPage() {
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-              <div className="flex flex-col gap-3">
-                {(() => {
-                  const total = deviceStats.reduce((s, r) => s + r.count, 0);
-                  const colors = ['#144a57', '#E8A020', '#1e7a8f', '#f59e0b', '#0e6175'];
-                  return deviceStats.map((row, i) => (
-                    <div key={i} className="flex items-center gap-3">
-                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: colors[i % 5] }} />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex justify-between text-sm font-semibold text-slate-700 mb-1">
-                          <span>{row.device}</span>
-                          <span style={{ color: 'var(--teal)' }}>{row.count} <span className="text-slate-400 font-normal">({total ? ((row.count / total) * 100).toFixed(1) : 0}%)</span></span>
+              <div className="flex flex-col gap-4 overflow-y-auto max-h-64">
+                {/* Device type bars */}
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Device Type</p>
+                  <div className="flex flex-col gap-2">
+                    {(() => {
+                      const total = deviceStats.reduce((s, r) => s + r.count, 0);
+                      const colors = ['#144a57', '#E8A020', '#1e7a8f', '#f59e0b', '#0e6175'];
+                      return deviceStats.map((row, i) => (
+                        <div key={i} className="flex items-center gap-3">
+                          <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: colors[i % 5] }} />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex justify-between text-sm font-semibold text-slate-700 mb-1">
+                              <span>{row.device}</span>
+                              <span style={{ color: 'var(--teal)' }}>{row.count} <span className="text-slate-400 font-normal">({total ? ((row.count / total) * 100).toFixed(1) : 0}%)</span></span>
+                            </div>
+                            <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                              <div className="h-2 rounded-full transition-all" style={{ width: `${total ? (row.count / total) * 100 : 0}%`, backgroundColor: colors[i % 5] }} />
+                            </div>
+                          </div>
                         </div>
-                        <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-                          <div
-                            className="h-2 rounded-full transition-all"
-                            style={{ width: `${total ? (row.count / total) * 100 : 0}%`, backgroundColor: colors[i % 5] }}
-                          />
-                        </div>
-                      </div>
+                      ));
+                    })()}
+                  </div>
+                </div>
+                {/* Platform / OS bars */}
+                {platformStats.length > 0 && (
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Platform / OS</p>
+                    <div className="flex flex-col gap-2">
+                      {(() => {
+                        const total = platformStats.reduce((s, r) => s + r.count, 0);
+                        const colors = ['#144a57', '#E8A020', '#1e7a8f', '#f59e0b', '#0e6175', '#2c9fb5', '#b45309'];
+                        return platformStats.map((row, i) => (
+                          <div key={i} className="flex items-center gap-3">
+                            <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: colors[i % colors.length] }} />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex justify-between text-sm font-semibold text-slate-700 mb-1">
+                                <span>{row.platform}</span>
+                                <span style={{ color: 'var(--teal)' }}>{row.count} <span className="text-slate-400 font-normal">({total ? ((row.count / total) * 100).toFixed(1) : 0}%)</span></span>
+                              </div>
+                              <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                                <div className="h-2 rounded-full transition-all" style={{ width: `${total ? (row.count / total) * 100 : 0}%`, backgroundColor: colors[i % colors.length] }} />
+                              </div>
+                            </div>
+                          </div>
+                        ));
+                      })()}
                     </div>
-                  ));
-                })()}
+                  </div>
+                )}
               </div>
             </div>
           )}

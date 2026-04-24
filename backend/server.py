@@ -44,6 +44,29 @@ EXPIRED_ITINERARY_MESSAGE = (
 )
 IP_API_FIELDS = "status,message,query,country,countryCode,regionName,city"
 MAX_PDF_SIZE_BYTES = 100 * 1024 * 1024
+
+# ISO 3166-1 alpha-2 → full country name (for readable location labels)
+ISO_COUNTRY_NAMES: dict[str, str] = {
+    "AF": "Afghanistan", "AL": "Albania", "DZ": "Algeria", "AR": "Argentina",
+    "AU": "Australia", "AT": "Austria", "BD": "Bangladesh", "BE": "Belgium",
+    "BR": "Brazil", "CA": "Canada", "CL": "Chile", "CN": "China",
+    "CO": "Colombia", "HR": "Croatia", "CY": "Cyprus", "CZ": "Czech Republic",
+    "DK": "Denmark", "EG": "Egypt", "EE": "Estonia", "FI": "Finland",
+    "FR": "France", "DE": "Germany", "GH": "Ghana", "GR": "Greece",
+    "HK": "Hong Kong", "HU": "Hungary", "IN": "India", "ID": "Indonesia",
+    "IE": "Ireland", "IL": "Israel", "IT": "Italy", "JP": "Japan",
+    "JO": "Jordan", "KE": "Kenya", "KW": "Kuwait", "LB": "Lebanon",
+    "LT": "Lithuania", "LU": "Luxembourg", "MY": "Malaysia", "MX": "Mexico",
+    "MA": "Morocco", "NL": "Netherlands", "NZ": "New Zealand", "NG": "Nigeria",
+    "NO": "Norway", "OM": "Oman", "PK": "Pakistan", "PE": "Peru",
+    "PH": "Philippines", "PL": "Poland", "PT": "Portugal", "QA": "Qatar",
+    "RO": "Romania", "RU": "Russia", "SA": "Saudi Arabia", "SG": "Singapore",
+    "ZA": "South Africa", "KR": "South Korea", "ES": "Spain", "LK": "Sri Lanka",
+    "SE": "Sweden", "CH": "Switzerland", "TW": "Taiwan", "TZ": "Tanzania",
+    "TH": "Thailand", "TR": "Turkey", "UA": "Ukraine", "AE": "UAE",
+    "GB": "United Kingdom", "US": "United States", "VN": "Vietnam",
+    "ZW": "Zimbabwe",
+}
 PRESIGNED_UPLOAD_TTL_SECONDS = 15 * 60
 PRESIGNED_DOWNLOAD_TTL_SECONDS = 60 * 60
 
@@ -223,7 +246,9 @@ def get_location_snapshot(request: Request) -> dict:
     headers = request.headers
     city = headers.get("x-vercel-ip-city") or headers.get("cf-ipcity") or ""
     region = headers.get("x-vercel-ip-country-region") or headers.get("cf-region") or ""
-    country = headers.get("x-vercel-ip-country") or headers.get("cf-ipcountry") or ""
+    country_code = (headers.get("x-vercel-ip-country") or headers.get("cf-ipcountry") or "").strip().upper()
+    # Expand ISO 2-letter code to full country name so labels read "India" not "IN"
+    country = ISO_COUNTRY_NAMES.get(country_code, country_code)
     source = "headers" if any([city, region, country]) else None
     parts = [part for part in [city, region, country] if part]
     return {
@@ -1243,9 +1268,16 @@ async def admin_analytics(
     user_stats_list = sorted(user_stats_map.values(), key=lambda x: x["total_links"], reverse=True)
 
     # location_stats: session count per location (from view_sessions.location_label)
+    def _expand_location_label(raw: str) -> str:
+        """Expand bare ISO-2 country codes (legacy sessions) to full names."""
+        s = (raw or "").strip()
+        if s and len(s) == 2 and s.upper() in ISO_COUNTRY_NAMES:
+            return ISO_COUNTRY_NAMES[s.upper()]
+        return s or "Unknown"
+
     location_counts = {}
     for session in sessions:
-        loc = (session.get("location_label") or "").strip() or "Unknown"
+        loc = _expand_location_label(session.get("location_label") or "")
         location_counts[loc] = location_counts.get(loc, 0) + 1
     location_stats_list = sorted(
         [{"location": loc, "count": cnt} for loc, cnt in location_counts.items()],
@@ -1263,6 +1295,20 @@ async def admin_analytics(
         device_type_counts[dt] = device_type_counts.get(dt, 0) + 1
     device_stats_list = sorted(
         [{"device": dt, "count": cnt} for dt, cnt in device_type_counts.items()],
+        key=lambda x: x["count"],
+        reverse=True,
+    )
+
+    # platform_stats: session count per OS/platform (iOS, Android, Windows, macOS…)
+    platform_counts = {}
+    for session in sessions:
+        plat = (
+            session.get("platform")
+            or infer_platform(session.get("user_agent", ""))
+        ).strip() or "Unknown"
+        platform_counts[plat] = platform_counts.get(plat, 0) + 1
+    platform_stats_list = sorted(
+        [{"platform": p, "count": cnt} for p, cnt in platform_counts.items()],
         key=lambda x: x["count"],
         reverse=True,
     )
@@ -1288,6 +1334,7 @@ async def admin_analytics(
         "user_stats": user_stats_list,
         "location_stats": location_stats_list,
         "device_stats": device_stats_list,
+        "platform_stats": platform_stats_list,
     }
 
 
