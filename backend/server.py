@@ -9,7 +9,8 @@ import secrets
 import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Optional
-from urllib.parse import quote
+import asyncio
+from urllib.parse import quote, unquote
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -232,6 +233,10 @@ def infer_browser(user_agent: str) -> str:
 
 
 def get_client_ip(request: Request) -> str:
+    # x-vercel-forwarded-for is Vercel's authoritative client-IP header (single IP, no proxies)
+    vercel_fwd = request.headers.get("x-vercel-forwarded-for", "").strip()
+    if vercel_fwd:
+        return vercel_fwd.split(",")[0].strip()
     forwarded_for = request.headers.get("x-forwarded-for", "")
     if forwarded_for:
         return forwarded_for.split(",")[0].strip()
@@ -244,8 +249,9 @@ def get_client_ip(request: Request) -> str:
 
 def get_location_snapshot(request: Request) -> dict:
     headers = request.headers
-    city = headers.get("x-vercel-ip-city") or headers.get("cf-ipcity") or ""
-    region = headers.get("x-vercel-ip-country-region") or headers.get("cf-region") or ""
+    # Vercel URL-encodes city names — always decode before use
+    city = unquote(headers.get("x-vercel-ip-city") or headers.get("cf-ipcity") or "")
+    region = unquote(headers.get("x-vercel-ip-country-region") or headers.get("cf-region") or "")
     country_code = (headers.get("x-vercel-ip-country") or headers.get("cf-ipcountry") or "").strip().upper()
     # Expand ISO 2-letter code to full country name so labels read "India" not "IN"
     country = ISO_COUNTRY_NAMES.get(country_code, country_code)
@@ -307,12 +313,22 @@ def is_public_ip(ip_value: str) -> bool:
 
 
 async def lookup_ip_geolocation(ip_address: str) -> dict:
+    _empty = {"city": None, "region": None, "country": None, "label": None, "source": None}
     if not is_public_ip(ip_address):
-        return {"city": None, "region": None, "country": None, "label": None, "source": None}
+        return _empty
 
     cached = await db.geo_cache.find_one({"_id": ip_address})
     if cached:
-        parts = [part for part in [cached.get("city"), cached.get("region"), cached.get("country")] if part]
+        # Respect a failed-lookup marker (TTL: 1 h) so we don't keep hammering ip-api
+        if cached.get("failed"):
+            failed_at = cached.get("updated_at", "")
+            try:
+                age = (datetime.now(timezone.utc) - datetime.fromisoformat(failed_at)).total_seconds()
+                if age < 3600:
+                    return _empty
+            except Exception:
+                return _empty
+        parts = [p for p in [cached.get("city"), cached.get("region"), cached.get("country")] if p]
         return {
             "city": cached.get("city"),
             "region": cached.get("region"),
@@ -321,20 +337,36 @@ async def lookup_ip_geolocation(ip_address: str) -> dict:
             "source": cached.get("source") or "cache",
         }
 
+    # Run the synchronous HTTP call in a thread so we don't block the async event loop
     try:
-        response = requests.get(
-            f"http://ip-api.com/json/{ip_address}",
-            params={"fields": IP_API_FIELDS},
-            timeout=3,
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None,
+            lambda: requests.get(
+                f"http://ip-api.com/json/{ip_address}",
+                params={"fields": IP_API_FIELDS},
+                timeout=4,
+            ),
         )
         response.raise_for_status()
         payload = response.json()
     except Exception as exc:
         logger.warning(f"IP geolocation lookup failed for {ip_address}: {exc}")
-        return {"city": None, "region": None, "country": None, "label": None, "source": None}
+        # Cache the failure for 1 hour to avoid repeated rate-limit hits
+        await db.geo_cache.update_one(
+            {"_id": ip_address},
+            {"$set": {"failed": True, "updated_at": datetime.now(timezone.utc).isoformat()}},
+            upsert=True,
+        )
+        return _empty
 
     if payload.get("status") != "success":
-        return {"city": None, "region": None, "country": None, "label": None, "source": None}
+        await db.geo_cache.update_one(
+            {"_id": ip_address},
+            {"$set": {"failed": True, "updated_at": datetime.now(timezone.utc).isoformat()}},
+            upsert=True,
+        )
+        return _empty
 
     city = payload.get("city") or None
     region = payload.get("regionName") or None
@@ -346,12 +378,13 @@ async def lookup_ip_geolocation(ip_address: str) -> dict:
             "city": city,
             "region": region,
             "country": country,
+            "failed": False,
             "source": source,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }},
         upsert=True,
     )
-    parts = [part for part in [city, region, country] if part]
+    parts = [p for p in [city, region, country] if p]
     return {
         "city": city,
         "region": region,
@@ -1267,17 +1300,37 @@ async def admin_analytics(
         user_stats_map[uid]["total_opens"] += int(link.get("open_count") or 0)
     user_stats_list = sorted(user_stats_map.values(), key=lambda x: x["total_links"], reverse=True)
 
-    # location_stats: session count per location (from view_sessions.location_label)
-    def _expand_location_label(raw: str) -> str:
-        """Expand bare ISO-2 country codes (legacy sessions) to full names."""
-        s = (raw or "").strip()
-        if s and len(s) == 2 and s.upper() in ISO_COUNTRY_NAMES:
-            return ISO_COUNTRY_NAMES[s.upper()]
-        return s or "Unknown"
+    # location_stats: session count per location
+    def _best_location_label(session: dict) -> str:
+        """
+        Build the most specific label available for a session.
+        Priority: stored city+region fields → location_label → country fallback.
+        Also expands legacy bare ISO-2 country codes (e.g. "IN" → "India").
+        """
+        city = (session.get("location_city") or "").strip()
+        region = (session.get("location_region") or "").strip()
+        country_raw = (session.get("location_country") or "").strip()
+        country = ISO_COUNTRY_NAMES.get(country_raw.upper(), country_raw)
+
+        # If we have city-level detail, build from individual fields
+        if city:
+            parts = [p for p in [city, region, country] if p]
+            return ", ".join(parts)
+
+        # Fall back to stored label, expanding bare country codes
+        label = (session.get("location_label") or "").strip()
+        if label:
+            if len(label) == 2 and label.upper() in ISO_COUNTRY_NAMES:
+                # Bare ISO code — use full country name only (no city known)
+                return ISO_COUNTRY_NAMES[label.upper()]
+            return label
+
+        # Last resort: country alone
+        return country or "Unknown"
 
     location_counts = {}
     for session in sessions:
-        loc = _expand_location_label(session.get("location_label") or "")
+        loc = _best_location_label(session)
         location_counts[loc] = location_counts.get(loc, 0) + 1
     location_stats_list = sorted(
         [{"location": loc, "count": cnt} for loc, cnt in location_counts.items()],
