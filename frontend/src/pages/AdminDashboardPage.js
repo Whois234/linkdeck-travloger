@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
@@ -35,7 +35,7 @@ import {
   Map,
 } from 'lucide-react';
 import {
-  Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip as ChartTooltip, XAxis, YAxis
+  Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip as ChartTooltip, XAxis, YAxis
 } from 'recharts';
 import { toast } from 'sonner';
 
@@ -125,6 +125,8 @@ export default function AdminDashboardPage() {
     time_by_pdf: [],
     archived_time_by_pdf: [],
     user_daily_activity: [],
+    user_stats: [],
+    location_stats: [],
   });
   const [recentActivity, setRecentActivity] = useState([]);
   const [activityTotal, setActivityTotal] = useState(0);
@@ -132,6 +134,18 @@ export default function AdminDashboardPage() {
   const [analyticsDays, setAnalyticsDays] = useState(30);
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
+  // User stats table — independent date filter
+  const [userStatsDays, setUserStatsDays] = useState(30);
+  const [userStatsStartDate, setUserStatsStartDate] = useState('');
+  const [userStatsEndDate, setUserStatsEndDate] = useState('');
+  const [userStats, setUserStats] = useState([]);
+  const [userStatsLoading, setUserStatsLoading] = useState(false);
+  // Location chart — independent date filter
+  const [locationDays, setLocationDays] = useState(30);
+  const [locationStartDate, setLocationStartDate] = useState('');
+  const [locationEndDate, setLocationEndDate] = useState('');
+  const [locationStats, setLocationStats] = useState([]);
+  const [locationLoading, setLocationLoading] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
@@ -205,6 +219,8 @@ export default function AdminDashboardPage() {
       setStats(statsRes.data || {});
       setContacts(contactsRes.data || []);
       setAnalytics(analyticsRes.data || {});
+      setUserStats(analyticsRes.data?.user_stats || []);
+      setLocationStats(analyticsRes.data?.location_stats || []);
       setRecentActivity(activityRes.data?.items || []);
       setActivityTotal(activityRes.data?.total || 0);
       setFolders(Array.isArray(foldersRes.data) ? foldersRes.data : []);
@@ -219,6 +235,49 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     fetchAdminData();
   }, [fetchAdminData]);
+
+  const fetchUserStats = useCallback(async () => {
+    setUserStatsLoading(true);
+    try {
+      const params = userStatsDays === -1
+        ? { days: 0, start_date: userStatsStartDate || undefined, end_date: userStatsEndDate || undefined }
+        : { days: userStatsDays };
+      const res = await axios.get(`${API}/admin/analytics`, { params, withCredentials: true });
+      setUserStats(res.data?.user_stats || []);
+    } catch {
+      /* silently ignore */
+    } finally {
+      setUserStatsLoading(false);
+    }
+  }, [userStatsDays, userStatsStartDate, userStatsEndDate]);
+
+  // Only re-fetch when the filter actually changes (initial data comes from fetchAdminData)
+  const userStatsFilterInitial = useRef(true);
+  useEffect(() => {
+    if (userStatsFilterInitial.current) { userStatsFilterInitial.current = false; return; }
+    fetchUserStats();
+  }, [fetchUserStats]);
+
+  const fetchLocationStats = useCallback(async () => {
+    setLocationLoading(true);
+    try {
+      const params = locationDays === -1
+        ? { days: 0, start_date: locationStartDate || undefined, end_date: locationEndDate || undefined }
+        : { days: locationDays };
+      const res = await axios.get(`${API}/admin/analytics`, { params, withCredentials: true });
+      setLocationStats(res.data?.location_stats || []);
+    } catch {
+      /* silently ignore */
+    } finally {
+      setLocationLoading(false);
+    }
+  }, [locationDays, locationStartDate, locationEndDate]);
+
+  const locationFilterInitial = useRef(true);
+  useEffect(() => {
+    if (locationFilterInitial.current) { locationFilterInitial.current = false; return; }
+    fetchLocationStats();
+  }, [fetchLocationStats]);
 
   const userCount = useMemo(() => users.length, [users]);
   const contactCount = useMemo(() => contacts.length, [contacts]);
@@ -755,6 +814,178 @@ export default function AdminDashboardPage() {
                   <Bar dataKey="opened_links" fill="#E8A020" name="Opened Links" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+
+        {/* ── User Performance Table ────────────────────────────────────── */}
+        <div className="bg-white rounded-xl border p-5 mt-4" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+            <div>
+              <h3 className="font-bold" style={{ color: 'var(--teal)' }}>User Performance</h3>
+              <p className="text-sm text-slate-500 mt-1">Total links created, opened, and overall opens per user.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={userStatsDays}
+                onChange={e => setUserStatsDays(Number(e.target.value))}
+                className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600"
+              >
+                <option value={7}>Last 7 days</option>
+                <option value={30}>Last 30 days</option>
+                <option value={90}>Last 90 days</option>
+                <option value={0}>All time</option>
+                <option value={-1}>Custom range</option>
+              </select>
+              {userStatsDays === -1 && (
+                <>
+                  <Input
+                    type="date"
+                    value={userStatsStartDate}
+                    onChange={e => setUserStatsStartDate(e.target.value)}
+                    className="h-9 w-[150px] rounded-lg border-slate-200 text-sm"
+                  />
+                  <Input
+                    type="date"
+                    value={userStatsEndDate}
+                    onChange={e => setUserStatsEndDate(e.target.value)}
+                    className="h-9 w-[150px] rounded-lg border-slate-200 text-sm"
+                  />
+                </>
+              )}
+            </div>
+          </div>
+          {userStatsLoading ? (
+            <div className="h-32 flex items-center justify-center">
+              <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--teal)' }} />
+            </div>
+          ) : userStats.length === 0 ? (
+            <div className="py-10 text-center text-sm text-slate-400">No link activity for the selected date range.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
+                    <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">User</TableHead>
+                    <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10 text-right">Links Created</TableHead>
+                    <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10 text-right">Links Opened</TableHead>
+                    <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10 text-right">Total Opens</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {userStats.map((row, i) => (
+                    <TableRow key={i} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
+                      <TableCell className="font-semibold text-slate-800">{row.user_name}</TableCell>
+                      <TableCell className="text-right font-bold" style={{ color: 'var(--teal)' }}>{row.total_links}</TableCell>
+                      <TableCell className="text-right font-bold text-amber-600">{row.opened_links}</TableCell>
+                      <TableCell className="text-right font-bold text-slate-600">{row.total_opens}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </div>
+
+        {/* ── Opens by Location Chart ───────────────────────────────────── */}
+        <div className="bg-white rounded-xl border p-5 mt-4" style={{ borderColor: '#e5e7eb', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+            <div>
+              <h3 className="font-bold" style={{ color: 'var(--teal)' }}>Opens by Location</h3>
+              <p className="text-sm text-slate-500 mt-1">Where your customers are opening links from (top 20 locations).</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={locationDays}
+                onChange={e => setLocationDays(Number(e.target.value))}
+                className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600"
+              >
+                <option value={7}>Last 7 days</option>
+                <option value={30}>Last 30 days</option>
+                <option value={90}>Last 90 days</option>
+                <option value={0}>All time</option>
+                <option value={-1}>Custom range</option>
+              </select>
+              {locationDays === -1 && (
+                <>
+                  <Input
+                    type="date"
+                    value={locationStartDate}
+                    onChange={e => setLocationStartDate(e.target.value)}
+                    className="h-9 w-[150px] rounded-lg border-slate-200 text-sm"
+                  />
+                  <Input
+                    type="date"
+                    value={locationEndDate}
+                    onChange={e => setLocationEndDate(e.target.value)}
+                    className="h-9 w-[150px] rounded-lg border-slate-200 text-sm"
+                  />
+                </>
+              )}
+            </div>
+          </div>
+          {locationLoading ? (
+            <div className="h-80 flex items-center justify-center">
+              <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--teal)' }} />
+            </div>
+          ) : locationStats.length === 0 ? (
+            <div className="h-80 flex items-center justify-center text-center text-sm text-slate-400">
+              No location data for the selected date range.
+            </div>
+          ) : (
+            <div className="grid lg:grid-cols-2 gap-6 items-center">
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={locationStats}
+                      dataKey="count"
+                      nameKey="location"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={110}
+                      label={({ location, percent }) => `${location.split(',')[0].trim()} (${(percent * 100).toFixed(0)}%)`}
+                      labelLine={false}
+                    >
+                      {locationStats.map((_, idx) => (
+                        <Cell
+                          key={idx}
+                          fill={[
+                            '#144a57','#E8A020','#1e7a8f','#f59e0b','#0e6175','#fbbf24',
+                            '#2c9fb5','#d97706','#3bbdd4','#b45309','#6ee7f7','#92400e',
+                            '#a8edfa','#78350f','#67e8f9','#451a03','#e0f7fc','#713f12',
+                            '#bfecf8','#954600',
+                          ][idx % 20]}
+                        />
+                      ))}
+                    </Pie>
+                    <ChartTooltip formatter={(value, name) => [`${value} opens`, name]} />
+                    <Legend
+                      formatter={(value) => value.split(',')[0].trim()}
+                      iconType="circle"
+                      wrapperStyle={{ fontSize: 12 }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="overflow-x-auto max-h-80 overflow-y-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-b hover:bg-transparent" style={{ borderColor: '#f1f5f9', backgroundColor: '#f8fafc' }}>
+                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10">Location</TableHead>
+                      <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 h-10 text-right">Opens</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {locationStats.map((row, i) => (
+                      <TableRow key={i} className="border-b hover:bg-slate-50" style={{ borderColor: '#f1f5f9' }}>
+                        <TableCell className="text-sm text-slate-700">{row.location}</TableCell>
+                        <TableCell className="text-right font-bold" style={{ color: 'var(--teal)' }}>{row.count}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
           )}
         </div>

@@ -1223,6 +1223,36 @@ async def admin_analytics(
             user_daily_activity[activity_key]["opened_links"] += 1
         user_daily_activity[activity_key]["total_opens"] += int(link.get("open_count") or 0)
 
+    # user_stats: per-user aggregate (total links created, opened links, total opens)
+    user_stats_map = {}
+    for link in links:
+        uid = link.get("user_id")
+        if not uid:
+            continue
+        if uid not in user_stats_map:
+            user_stats_map[uid] = {
+                "user_name": user_map.get(uid, "Unknown User"),
+                "total_links": 0,
+                "opened_links": 0,
+                "total_opens": 0,
+            }
+        user_stats_map[uid]["total_links"] += 1
+        if link.get("opened") or int(link.get("open_count") or 0) > 0:
+            user_stats_map[uid]["opened_links"] += 1
+        user_stats_map[uid]["total_opens"] += int(link.get("open_count") or 0)
+    user_stats_list = sorted(user_stats_map.values(), key=lambda x: x["total_links"], reverse=True)
+
+    # location_stats: session count per location (from view_sessions.location_label)
+    location_counts = {}
+    for session in sessions:
+        loc = (session.get("location_label") or "").strip() or "Unknown"
+        location_counts[loc] = location_counts.get(loc, 0) + 1
+    location_stats_list = sorted(
+        [{"location": loc, "count": cnt} for loc, cnt in location_counts.items()],
+        key=lambda x: x["count"],
+        reverse=True,
+    )[:20]
+
     return {
         "summary": {
             "total_links": len(links),
@@ -1241,6 +1271,8 @@ async def admin_analytics(
             key=lambda item: (item["date"], item["user_name"]),
             reverse=True,
         ),
+        "user_stats": user_stats_list,
+        "location_stats": location_stats_list,
     }
 
 
