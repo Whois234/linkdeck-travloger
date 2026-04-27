@@ -1,0 +1,932 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum SupplierType {
+  HOTEL
+  VEHICLE
+  ACTIVITY
+  DMC
+  OTHER
+}
+
+enum HotelType {
+  HOTEL
+  RESORT
+  VILLA
+  HOMESTAY
+  HOUSEBOAT
+}
+
+enum HotelCategory {
+  BUDGET
+  STANDARD
+  DELUXE
+  PREMIUM
+  LUXURY
+}
+
+enum MealPlanCode {
+  EP
+  CP
+  MAP
+  AP
+}
+
+enum TransferRateType {
+  FIXED
+  PER_KM
+  PER_DAY
+}
+
+enum ActivityRateType {
+  PER_PERSON
+  PER_GROUP
+}
+
+enum InclusionType {
+  INCLUSION
+  EXCLUSION
+}
+
+enum InclusionCategory {
+  HOTEL
+  TRANSFER
+  ACTIVITY
+  TAX
+  GENERAL
+}
+
+enum PolicyType {
+  PAYMENT
+  CANCELLATION
+  TERMS
+  FAQ
+  IMPORTANT_NOTE
+}
+
+enum PolicyAppliesTo {
+  GROUP
+  PRIVATE
+  BOTH
+}
+
+enum MediaEntityType {
+  DESTINATION
+  HOTEL
+  ACTIVITY
+  DAY_PLAN
+  PACKAGE
+  GENERAL
+}
+
+enum MediaUsageType {
+  HERO
+  GALLERY
+  CARD
+}
+
+enum PricingAppliesTo {
+  HOTEL
+  ACTIVITY
+  TRANSFER
+  PACKAGE
+  ALL
+}
+
+enum MarkupType {
+  FLAT
+  PERCENTAGE
+}
+
+enum RoundingRule {
+  NONE
+  NEAREST_99
+  NEAREST_500
+  NEAREST_1000
+}
+
+enum GroupBatchStatus {
+  OPEN
+  SOLD_OUT
+  CLOSED
+  CANCELLED
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUOTE_SENT
+  CONVERTED
+  LOST
+}
+
+enum QuoteType {
+  GROUP
+  PRIVATE
+}
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  VIEWED
+  APPROVED
+  CONFIRMED
+  EXPIRED
+  CANCELLED
+  REVISED
+}
+
+enum QuoteEventType {
+  quote_created
+  quote_sent
+  quote_viewed
+  package_selected
+  approve_clicked
+  whatsapp_clicked
+}
+
+enum UserRole {
+  ADMIN
+  SALES
+  OPS
+  FINANCE
+  MANAGER
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+model State {
+  id              String        @id @default(cuid())
+  name            String
+  country         String
+  code            String        @unique
+  trip_id_prefix  String
+  description     String?
+  hero_image      String?
+  status          Boolean       @default(true)
+  created_at      DateTime      @default(now())
+  updated_at      DateTime      @updatedAt
+
+  destinations    Destination[]
+  private_templates PrivateTemplate[]
+  group_templates GroupTemplate[]
+  vehicle_package_rates VehiclePackageRate[]
+  quotes          Quote[]
+  quote_sequences QuoteSequence[]
+  policies        Policy[]
+
+  @@index([status])
+}
+
+model Destination {
+  id                    String   @id @default(cuid())
+  state_id              String
+  name                  String
+  country               String
+  short_description     String?
+  long_description      String?
+  best_season           String?
+  ideal_nights          Int?
+  latitude              Float?
+  longitude             Float?
+  default_pickup_points Json?
+  default_drop_points   Json?
+  hero_image            String?
+  gallery_images        Json?
+  tags                  Json?
+  status                Boolean  @default(true)
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
+
+  state                 State    @relation(fields: [state_id], references: [id])
+  hotels                Hotel[]
+  activities            Activity[]
+  day_plans             DayPlan[]
+  inclusions_exclusions InclusionExclusion[]
+  policies              Policy[]
+
+  @@index([state_id])
+  @@index([status])
+}
+
+model Supplier {
+  id                  String       @id @default(cuid())
+  supplier_type       SupplierType
+  name                String
+  contact_person      String?
+  phone               String?
+  whatsapp            String?
+  email               String?
+  address             String?
+  gst_number          String?
+  pan_number          String?
+  bank_details        Json?
+  payment_terms       String?
+  contract_start_date DateTime?
+  contract_end_date   DateTime?
+  notes               String?
+  status              Boolean      @default(true)
+  created_at          DateTime     @default(now())
+  updated_at          DateTime     @updatedAt
+
+  hotels              Hotel[]
+  activities          Activity[]
+  vehicle_package_rates VehiclePackageRate[]
+  transfers           Transfer[]
+
+  @@index([supplier_type])
+  @@index([status])
+}
+
+model Hotel {
+  id                 String        @id @default(cuid())
+  destination_id     String
+  supplier_id        String?
+  hotel_name         String
+  hotel_type         HotelType
+  star_rating        Int?
+  category_label     HotelCategory
+  address            String?
+  map_link           String?
+  phone              String?
+  email              String?
+  website            String?
+  check_in_time      String?
+  check_out_time     String?
+  amenities          Json?
+  hotel_description  String?
+  images             Json?
+  internal_notes     String?
+  status             Boolean       @default(true)
+  created_at         DateTime      @default(now())
+  updated_at         DateTime      @updatedAt
+
+  destination        Destination   @relation(fields: [destination_id], references: [id])
+  supplier           Supplier?     @relation(fields: [supplier_id], references: [id])
+  room_categories    RoomCategory[]
+  hotel_rates        HotelRate[]
+
+  @@index([destination_id])
+  @@index([supplier_id])
+  @@index([category_label])
+  @@index([status])
+}
+
+model RoomCategory {
+  id                   String   @id @default(cuid())
+  hotel_id             String
+  room_category_name   String
+  description          String?
+  max_adults           Int
+  max_children         Int
+  max_total_occupancy  Int
+  extra_bed_allowed    Boolean  @default(false)
+  cwb_allowed          Boolean  @default(false)
+  cwob_allowed         Boolean  @default(false)
+  bed_type             String?
+  images               Json?
+  status               Boolean  @default(true)
+
+  hotel                Hotel    @relation(fields: [hotel_id], references: [id], onDelete: Cascade)
+  hotel_rates          HotelRate[]
+
+  @@index([hotel_id])
+  @@index([status])
+}
+
+model MealPlan {
+  id          String       @id @default(cuid())
+  code        MealPlanCode @unique
+  name        String
+  description String?
+  status      Boolean      @default(true)
+
+  hotel_rates HotelRate[]
+
+  @@index([status])
+}
+
+model HotelRate {
+  id                    String   @id @default(cuid())
+  hotel_id              String
+  room_category_id      String
+  meal_plan_id          String
+  season_name           String?
+  valid_from            DateTime
+  valid_to              DateTime
+  currency              String   @default("INR")
+  single_occupancy_cost Float
+  double_occupancy_cost Float
+  triple_occupancy_cost Float?
+  quad_occupancy_cost   Float?
+  extra_adult_cost      Float?
+  child_with_bed_cost   Float?
+  child_without_bed_cost Float?
+  weekend_surcharge     Float?
+  festival_surcharge    Float?
+  minimum_nights        Int?
+  tax_included          Boolean  @default(false)
+  supplier_gst_percent  Float?
+  blackout_dates        Json?
+  notes                 String?
+  status                Boolean  @default(true)
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
+
+  hotel                 Hotel        @relation(fields: [hotel_id], references: [id], onDelete: Cascade)
+  room_category         RoomCategory @relation(fields: [room_category_id], references: [id], onDelete: Cascade)
+  meal_plan             MealPlan     @relation(fields: [meal_plan_id], references: [id])
+
+  @@index([hotel_id])
+  @@index([room_category_id])
+  @@index([meal_plan_id])
+  @@index([valid_from, valid_to])
+  @@index([status])
+}
+
+model VehicleType {
+  id               String  @id @default(cuid())
+  vehicle_type     String
+  display_name     String
+  capacity         Int
+  luggage_capacity Int?
+  ac_available     Boolean @default(true)
+  description      String?
+  images           Json?
+  status           Boolean @default(true)
+
+  vehicle_package_rates VehiclePackageRate[]
+  transfers             Transfer[]
+  quote_options         QuoteOption[]
+
+  @@index([status])
+}
+
+model VehiclePackageRate {
+  id                      String   @id @default(cuid())
+  route_name              String
+  state_id                String
+  start_city              String
+  end_city                String
+  destinations_covered    Json?
+  duration_days           Int
+  duration_nights         Int
+  vehicle_type_id         String
+  supplier_id             String?
+  base_cost               Float
+  extra_day_cost          Float?
+  extra_km_cost           Float?
+  driver_bata_included    Boolean  @default(false)
+  toll_parking_included   Boolean  @default(false)
+  valid_from              DateTime
+  valid_to                DateTime
+  status                  Boolean  @default(true)
+  created_at              DateTime @default(now())
+  updated_at              DateTime @updatedAt
+
+  state                   State        @relation(fields: [state_id], references: [id])
+  vehicle_type            VehicleType  @relation(fields: [vehicle_type_id], references: [id])
+  supplier                Supplier?    @relation(fields: [supplier_id], references: [id])
+
+  @@index([state_id])
+  @@index([vehicle_type_id])
+  @@index([status])
+}
+
+model Transfer {
+  id                   String           @id @default(cuid())
+  from_destination_id  String
+  to_destination_id    String
+  vehicle_type_id      String
+  supplier_id          String?
+  distance_km          Float?
+  duration_minutes     Int?
+  rate_type            TransferRateType
+  base_cost            Float
+  extra_km_cost        Float?
+  waiting_charge       Float?
+  notes                String?
+  status               Boolean          @default(true)
+  created_at           DateTime         @default(now())
+  updated_at           DateTime         @updatedAt
+
+  vehicle_type         VehicleType      @relation(fields: [vehicle_type_id], references: [id])
+  supplier             Supplier?        @relation(fields: [supplier_id], references: [id])
+
+  @@index([from_destination_id, to_destination_id])
+  @@index([vehicle_type_id])
+  @@index([status])
+}
+
+model Activity {
+  id             String           @id @default(cuid())
+  destination_id String
+  supplier_id    String?
+  activity_name  String
+  activity_type  String?
+  duration       String?
+  description    String?
+  inclusions     String?
+  exclusions     String?
+  adult_cost     Float
+  child_cost     Float?
+  rate_type      ActivityRateType
+  operating_days Json?
+  time_slots     Json?
+  images         Json?
+  status         Boolean          @default(true)
+  created_at     DateTime         @default(now())
+  updated_at     DateTime         @updatedAt
+
+  destination    Destination      @relation(fields: [destination_id], references: [id])
+  supplier       Supplier?        @relation(fields: [supplier_id], references: [id])
+
+  @@index([destination_id])
+  @@index([status])
+}
+
+model DayPlan {
+  id                 String      @id @default(cuid())
+  title              String
+  destination_id     String
+  description        String?
+  short_description  String?
+  duration_label     String?
+  default_image      String?
+  tags               Json?
+  linked_activities  Json?
+  linked_transfers   Json?
+  meals_included     Json?
+  internal_notes     String?
+  status             Boolean     @default(true)
+  created_at         DateTime    @default(now())
+  updated_at         DateTime    @updatedAt
+
+  destination        Destination @relation(fields: [destination_id], references: [id])
+
+  @@index([destination_id])
+  @@index([status])
+}
+
+model InclusionExclusion {
+  id             String            @id @default(cuid())
+  type           InclusionType
+  category       InclusionCategory
+  text           String
+  destination_id String?
+  status         Boolean           @default(true)
+  created_at     DateTime          @default(now())
+  updated_at     DateTime          @updatedAt
+
+  destination    Destination?      @relation(fields: [destination_id], references: [id])
+
+  @@index([type])
+  @@index([destination_id])
+  @@index([status])
+}
+
+model Policy {
+  id             String          @id @default(cuid())
+  policy_type    PolicyType
+  title          String
+  content        String
+  applies_to     PolicyAppliesTo
+  state_id       String?
+  destination_id String?
+  status         Boolean         @default(true)
+  created_at     DateTime        @default(now())
+  updated_at     DateTime        @updatedAt
+
+  state          State?          @relation(fields: [state_id], references: [id])
+  destination    Destination?    @relation(fields: [destination_id], references: [id])
+
+  @@index([policy_type])
+  @@index([applies_to])
+  @@index([state_id])
+  @@index([status])
+}
+
+model MediaLibrary {
+  id                  String          @id @default(cuid())
+  file_url            String
+  file_type           String
+  linked_entity_type  MediaEntityType
+  linked_entity_id    String?
+  title               String?
+  caption             String?
+  alt_text            String?
+  usage_type          MediaUsageType
+  status              Boolean         @default(true)
+  created_at          DateTime        @default(now())
+
+  @@index([linked_entity_type, linked_entity_id])
+  @@index([usage_type])
+}
+
+model Agent {
+  id               String   @id @default(cuid())
+  user_account_id  String?  @unique
+  name             String
+  role             String
+  phone            String?
+  whatsapp         String?
+  email            String?
+  photo            String?
+  designation      String?
+  rating           Float?
+  years_experience Int?
+  speciality       String?
+  available_hours  String?
+  status           Boolean  @default(true)
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  quotes           Quote[]
+  group_batches    GroupBatch[]
+
+  @@index([status])
+}
+
+model PricingRule {
+  id            String           @id @default(cuid())
+  rule_name     String
+  applies_to    PricingAppliesTo
+  markup_type   MarkupType
+  markup_value  Float
+  gst_percent   Float
+  rounding_rule RoundingRule
+  valid_from    DateTime
+  valid_to      DateTime
+  status        Boolean          @default(true)
+  created_at    DateTime         @default(now())
+  updated_at    DateTime         @updatedAt
+
+  @@index([applies_to])
+  @@index([status])
+}
+
+model PrivateTemplate {
+  id                      String        @id @default(cuid())
+  template_name           String
+  state_id                String
+  destinations            Json
+  duration_days           Int
+  duration_nights         Int
+  start_city              String?
+  end_city                String?
+  default_pickup_point    String?
+  default_drop_point      String?
+  theme                   String?
+  default_vehicle_route_id String?
+  default_inclusion_ids   Json?
+  default_exclusion_ids   Json?
+  default_policy_ids      Json?
+  hero_image              String?
+  status                  Boolean       @default(true)
+  created_at              DateTime      @default(now())
+  updated_at              DateTime      @updatedAt
+
+  state                   State         @relation(fields: [state_id], references: [id])
+  template_days           TemplateDay[]
+  template_hotel_tiers    TemplateHotelTier[]
+
+  @@index([state_id])
+  @@index([status])
+}
+
+model TemplateDay {
+  id                   String          @id @default(cuid())
+  template_id          String
+  day_number           Int
+  destination_id       String
+  night_destination_id String?
+  title                String
+  day_plan_id          String?
+  description_override String?
+  image_override       String?
+  activities           Json?
+  transfers            Json?
+  meals                Json?
+  sort_order           Int
+
+  template             PrivateTemplate @relation(fields: [template_id], references: [id], onDelete: Cascade)
+
+  @@index([template_id])
+  @@index([sort_order])
+}
+
+model TemplateHotelTier {
+  id                     String          @id @default(cuid())
+  template_id            String
+  tier_name              String
+  destination_id         String
+  default_hotel_id       String?
+  default_room_category_id String?
+  default_meal_plan_id   String?
+  nights                 Int
+  sort_order             Int
+
+  template               PrivateTemplate @relation(fields: [template_id], references: [id], onDelete: Cascade)
+
+  @@index([template_id])
+  @@index([destination_id])
+}
+
+model GroupTemplate {
+  id                    String             @id @default(cuid())
+  group_template_name   String
+  state_id              String
+  destinations          Json
+  duration_days         Int
+  duration_nights       Int
+  hero_image            String?
+  gallery_images        Json?
+  status                Boolean            @default(true)
+  created_at            DateTime           @default(now())
+  updated_at            DateTime           @updatedAt
+
+  state                 State              @relation(fields: [state_id], references: [id])
+  group_template_days   GroupTemplateDay[]
+  group_batches         GroupBatch[]
+
+  @@index([state_id])
+  @@index([status])
+}
+
+model GroupTemplateDay {
+  id                   String        @id @default(cuid())
+  group_template_id    String
+  day_number           Int
+  destination_id       String
+  title                String
+  day_plan_id          String?
+  description_override String?
+  image_override       String?
+  activities           Json?
+  transfers            Json?
+  meals                Json?
+  sort_order           Int
+
+  group_template       GroupTemplate @relation(fields: [group_template_id], references: [id], onDelete: Cascade)
+
+  @@index([group_template_id])
+  @@index([sort_order])
+}
+
+model GroupBatch {
+  id                  String           @id @default(cuid())
+  group_template_id   String
+  batch_name          String
+  start_date          DateTime
+  end_date            DateTime
+  total_seats         Int
+  available_seats     Int
+  adult_price         Float
+  child_5_12_price    Float
+  child_below_5_price Float
+  single_supplement   Float?
+  gst_percent         Float
+  fixed_inclusions    Json?
+  fixed_exclusions    Json?
+  fixed_policies      Json?
+  booking_status      GroupBatchStatus @default(OPEN)
+  assigned_agent_id   String?
+  status              Boolean          @default(true)
+  created_at          DateTime         @default(now())
+  updated_at          DateTime         @updatedAt
+
+  group_template      GroupTemplate    @relation(fields: [group_template_id], references: [id])
+  assigned_agent      Agent?           @relation(fields: [assigned_agent_id], references: [id])
+
+  @@index([group_template_id])
+  @@index([booking_status])
+  @@index([start_date])
+  @@index([status])
+}
+
+model Lead {
+  id                   String     @id @default(cuid())
+  customer_id          String?
+  name                 String
+  phone                String
+  email                String?
+  source               String?
+  destination_interest String?
+  travel_month         String?
+  budget_range         String?
+  status               LeadStatus @default(NEW)
+  assigned_agent_id    String?
+  notes                String?
+  created_at           DateTime   @default(now())
+  updated_at           DateTime   @updatedAt
+
+  customers            Customer[]
+  quotes               Quote[]
+
+  @@index([status])
+  @@index([assigned_agent_id])
+}
+
+model Customer {
+  id          String   @id @default(cuid())
+  name        String
+  phone       String
+  whatsapp    String?
+  email       String?
+  city        String?
+  nationality String?
+  lead_id     String?
+  notes       String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  lead        Lead?    @relation(fields: [lead_id], references: [id])
+  quotes      Quote[]
+
+  @@index([phone])
+  @@index([lead_id])
+}
+
+model Quote {
+  id                      String      @id @default(cuid())
+  quote_number            String      @unique
+  quote_type              QuoteType
+  customer_id             String
+  lead_id                 String?
+  state_id                String
+  status                  QuoteStatus @default(DRAFT)
+  start_date              DateTime
+  end_date                DateTime
+  duration_days           Int
+  duration_nights         Int
+  adults                  Int
+  children_below_5        Int         @default(0)
+  children_5_12           Int         @default(0)
+  infants                 Int         @default(0)
+  pickup_point            String?
+  drop_point              String?
+  assigned_agent_id       String?
+  expiry_date             DateTime?
+  public_token            String      @unique @default(cuid())
+  selected_quote_option_id String?
+  created_by              String
+  created_at              DateTime    @default(now())
+  updated_at              DateTime    @updatedAt
+
+  customer                Customer    @relation(fields: [customer_id], references: [id])
+  lead                    Lead?       @relation(fields: [lead_id], references: [id])
+  state                   State       @relation(fields: [state_id], references: [id])
+  assigned_agent          Agent?      @relation(fields: [assigned_agent_id], references: [id])
+  quote_options           QuoteOption[]
+  day_snapshots           QuoteDaySnapshot[]
+  snapshots               QuoteSnapshot[]
+  events                  QuoteEvent[]
+
+  @@index([quote_type])
+  @@index([status])
+  @@index([customer_id])
+  @@index([assigned_agent_id])
+  @@index([public_token])
+  @@index([created_at])
+}
+
+model QuoteOption {
+  id                      String     @id @default(cuid())
+  quote_id                String
+  option_name             String
+  display_order           Int
+  is_most_popular         Boolean    @default(false)
+  vehicle_type_id         String?
+  vehicle_cost            Float      @default(0)
+  hotel_cost              Float      @default(0)
+  activity_cost           Float      @default(0)
+  transfer_cost           Float      @default(0)
+  misc_cost               Float      @default(0)
+  base_cost               Float
+  profit_type             MarkupType
+  profit_value            Float
+  profit_amount           Float
+  discount_amount         Float      @default(0)
+  selling_before_gst      Float
+  gst_percent             Float
+  gst_amount              Float
+  final_price             Float
+  price_per_adult_display Float
+  rounding_adjustment     Float      @default(0)
+  currency                String     @default("INR")
+  internal_notes          String?
+  customer_visible_notes  String?
+
+  quote                   Quote       @relation(fields: [quote_id], references: [id], onDelete: Cascade)
+  vehicle_type            VehicleType? @relation(fields: [vehicle_type_id], references: [id])
+  option_hotels           QuoteOptionHotel[]
+
+  @@index([quote_id])
+  @@index([is_most_popular])
+}
+
+model QuoteOptionHotel {
+  id                    String      @id @default(cuid())
+  quote_option_id       String
+  destination_id        String
+  hotel_id              String
+  room_category_id      String
+  meal_plan_id          String
+  check_in_date         DateTime
+  check_out_date        DateTime
+  nights                Int
+  rooming_json          Json
+  calculated_cost       Float
+  manual_cost_override  Float?
+  override_reason       String?
+
+  quote_option          QuoteOption @relation(fields: [quote_option_id], references: [id], onDelete: Cascade)
+
+  @@index([quote_option_id])
+  @@index([hotel_id])
+}
+
+model QuoteDaySnapshot {
+  id             String   @id @default(cuid())
+  quote_id       String
+  day_number     Int
+  date           DateTime
+  destination_id String
+  title          String
+  description    String?
+  image_url      String?
+  tags           Json?
+  activities     Json?
+  transfers      Json?
+  meals          Json?
+  is_edited      Boolean  @default(false)
+
+  quote          Quote    @relation(fields: [quote_id], references: [id], onDelete: Cascade)
+
+  @@index([quote_id])
+  @@index([day_number])
+}
+
+model QuoteSnapshot {
+  id             String   @id @default(cuid())
+  quote_id       String
+  version_number Int
+  snapshot_json  Json
+  published_at   DateTime?
+  published_by   String?
+  is_current     Boolean  @default(false)
+
+  quote          Quote    @relation(fields: [quote_id], references: [id], onDelete: Cascade)
+
+  @@unique([quote_id, version_number])
+  @@index([quote_id, is_current])
+}
+
+model QuoteEvent {
+  id         String         @id @default(cuid())
+  quote_id   String
+  event_type QuoteEventType
+  metadata   Json?
+  created_at DateTime       @default(now())
+
+  quote      Quote          @relation(fields: [quote_id], references: [id], onDelete: Cascade)
+
+  @@index([quote_id])
+  @@index([event_type])
+  @@index([created_at])
+}
+
+model QuoteSequence {
+  id          String @id @default(cuid())
+  state_id    String
+  year        Int
+  last_number Int    @default(0)
+
+  state       State  @relation(fields: [state_id], references: [id])
+
+  @@unique([state_id, year])
+}
+
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  password     String
+  role         UserRole
+  agent_id     String?   @unique
+  status       Boolean   @default(true)
+  last_login   DateTime?
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
+
+  @@index([role])
+  @@index([status])
+}
