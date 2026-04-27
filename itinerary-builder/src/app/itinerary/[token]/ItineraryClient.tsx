@@ -133,9 +133,14 @@ function Nav({ quoteNum, pkgName }: { quoteNum: string; pkgName?: string }) {
     <nav className="tl-nav">
       <div className="tl-nav-logo-wrap">
         <div className="tl-nav-logo-pill">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/travloger-logo-icon.jpeg" alt="Travloger" />
-          <span>travloger.in</span>
+          <div className="tl-nav-logo-icon">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/travloger-logo-icon.jpeg" alt="Travloger" />
+          </div>
+          <div className="tl-nav-logo-text">
+            <span className="tl-nav-logo-name">travloger.in</span>
+            <span className="tl-nav-logo-tag">~ You travel, We Capture</span>
+          </div>
         </div>
       </div>
       <div className="tl-nav-right">
@@ -529,25 +534,9 @@ function WhyChoose() {
 /* ─────────────────────────── Stats ─────────────────────────── */
 function Stats() {
   const STATS = [
-    { n: '15K+',  l: 'Happy Travellers',    icon: null },
-    { n: '4.8 ★', l: 'Google Rating',       icon: null },
-    { n: '24 / 7',l: 'Always On Support',   icon: null },
-    { n: '50K+',  l: 'Instagram Followers',
-      icon: (
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ marginRight: 4, verticalAlign: 'middle' }}>
-          <defs>
-            <linearGradient id="ig-g" x1="0%" y1="100%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#fcb045"/>
-              <stop offset="50%" stopColor="#fd1d1d"/>
-              <stop offset="100%" stopColor="#833ab4"/>
-            </linearGradient>
-          </defs>
-          <rect x="2" y="2" width="20" height="20" rx="5" stroke="url(#ig-g)" strokeWidth="2"/>
-          <path d="M16 11.37A4 4 0 1112.63 8 4 4 0 0116 11.37z" stroke="url(#ig-g)" strokeWidth="2"/>
-          <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" stroke="url(#ig-g)" strokeWidth="2.5" strokeLinecap="round"/>
-        </svg>
-      ),
-    },
+    { n: '500+',   l: 'Trips Curated' },
+    { n: '4.9 ★',  l: 'Google Rating' },
+    { n: '24 / 7', l: 'Always On Support' },
   ];
 
   return (
@@ -565,16 +554,14 @@ function Stats() {
         <ellipse cx="36" cy="52" rx="10" ry="28" transform="rotate(-30 36 52)" />
         <rect x="57" y="65" width="6" height="90" rx="3" />
       </svg>
-      <div style={{ textAlign: 'center', maxWidth: 680, margin: '0 auto 28px' }}>
-        <div style={{ fontFamily: 'var(--f-body)', fontSize: '9.5px', letterSpacing: '4px', textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)', marginBottom: 8, fontWeight: 600 }}>Our Track Record</div>
-        <div style={{ fontFamily: 'var(--f-display)', fontSize: 24, fontWeight: 800, color: 'white' }}>Numbers that speak for us</div>
+      <div style={{ textAlign: 'center', maxWidth: 600, margin: '0 auto 32px' }}>
+        <div style={{ fontFamily: 'var(--f-body)', fontSize: '9px', letterSpacing: '4px', textTransform: 'uppercase', color: 'rgba(255,255,255,0.35)', marginBottom: 10, fontWeight: 600 }}>Our Track Record</div>
+        <div style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 800, color: 'white', letterSpacing: '-0.3px' }}>Numbers that speak for us</div>
       </div>
       <div className="tl-stats-grid">
         {STATS.map((s, i) => (
           <div key={i} className="tl-stat-card">
-            <div className="tl-stat-n">
-              {s.icon}{s.n}
-            </div>
+            <div className="tl-stat-n">{s.n}</div>
             <div className="tl-stat-l">{s.l}</div>
           </div>
         ))}
