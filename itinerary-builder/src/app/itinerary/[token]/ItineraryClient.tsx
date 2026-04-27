@@ -621,95 +621,100 @@ function FareSummary({ option, adults }: { option: QuoteOption | undefined; adul
 }
 
 /* ─────────────────────────── Policies ─────────────────────────── */
+function PolicyBullets({ content }: { content: string }) {
+  const lines = content.split('\n').map(l => l.replace(/^•\s*/, '').trim()).filter(Boolean);
+  return (
+    <ul className="tl-pol-bullets">
+      {lines.map((l, i) => <li key={i}>{l}</li>)}
+    </ul>
+  );
+}
+
 function Policies({ policies }: { policies: PolicyRecord[] }) {
-  const [faqOpen, setFaqOpen] = useState<number | null>(null);
   const [termsOpen, setTermsOpen] = useState(false);
 
-  const paymentPolicies = policies.filter((p) => p.policy_type === 'PAYMENT');
-  const cancellationPolicies = policies.filter((p) => p.policy_type === 'CANCELLATION');
-  const faqs = policies.filter((p) => p.policy_type === 'FAQ');
-  const terms = policies.filter((p) => p.policy_type === 'TERMS');
+  const paymentPolicies  = policies.filter((p) => p.policy_type === 'PAYMENT');
+  const cancelPolicies   = policies.filter((p) => p.policy_type === 'CANCELLATION');
+  const importantNotes   = policies.filter((p) => p.policy_type === 'IMPORTANT_NOTE');
+  const faqs             = policies.filter((p) => p.policy_type === 'FAQ');
+  const terms            = policies.filter((p) => p.policy_type === 'TERMS');
 
-  // Default payment schedule rows if no policy data
-  const defaultPayment = [
-    ['16+ days before departure', '₹5,000 advance/adult'],
-    ['15 days before departure', '50% of total'],
-    ['3 days before departure', 'Full payment'],
-    ['Book 20+ days early', 'Save ₹1,000/adult'],
-  ];
-  const defaultCancellation = [
-    ['Advance payment', 'Non-refundable'],
-    ['30+ days before', '30% of trip cost'],
-    ['7–30 days before', '50% of trip cost'],
-    ['Within 7 days', '100% of trip cost'],
-  ];
+  const cards = [
+    {
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>
+        </svg>
+      ),
+      label: 'Payment',
+      color: T,
+      policies: paymentPolicies,
+    },
+    {
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+      ),
+      label: 'Cancellation',
+      color: '#c0392b',
+      policies: cancelPolicies,
+    },
+  ].filter(c => c.policies.length > 0);
 
   return (
     <div className="tl-sec" style={{ paddingBottom: 0 }}>
       <div className="tl-sec-eyebrow">Good to Know</div>
-      <div className="tl-sec-h" style={{ marginBottom: 20 }}>Payment &amp; Cancellation Policy</div>
+      <div className="tl-sec-h" style={{ marginBottom: 6 }}>Policies</div>
+      <div className="tl-sec-sub" style={{ marginBottom: 24 }}>Clear terms so there are no surprises</div>
 
-      <div className="tl-pol-grid">
-        {/* Payment */}
-        <div className="tl-pol-card">
-          <div className="tl-pol-card-head">Payment Schedule</div>
-          {paymentPolicies.length > 0 ? (
-            paymentPolicies.map((p) => (
-              <div key={p.id} className="tl-pol-table-row">
-                <span className="tl-pol-table-key">{p.title}</span>
-                <span className="tl-pol-table-val">{p.content}</span>
-              </div>
-            ))
-          ) : (
-            defaultPayment.map(([k, v], i) => (
-              <div key={i} className="tl-pol-table-row">
-                <span className="tl-pol-table-key">{k}</span>
-                <span className="tl-pol-table-val">{v}</span>
-              </div>
-            ))
-          )}
-        </div>
-        {/* Cancellation */}
-        <div className="tl-pol-card">
-          <div className="tl-pol-card-head" style={{ color: '#d94040' }}>Cancellation Charges</div>
-          {cancellationPolicies.length > 0 ? (
-            cancellationPolicies.map((p) => (
-              <div key={p.id} className="tl-pol-table-row">
-                <span className="tl-pol-table-key">{p.title}</span>
-                <span className="tl-pol-table-val red">{p.content}</span>
-              </div>
-            ))
-          ) : (
-            defaultCancellation.map(([k, v], i) => (
-              <div key={i} className="tl-pol-table-row">
-                <span className="tl-pol-table-key">{k}</span>
-                <span className={`tl-pol-table-val${i > 0 ? ' red' : ''}`}>{v}</span>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      {/* FAQs */}
-      {faqs.length > 0 && (
-        <>
-          <div className="tl-sec-eyebrow" style={{ marginTop: 36 }}>FAQs</div>
-          <div className="tl-sec-h" style={{ marginBottom: 16 }}>Frequently Asked Questions</div>
-          <div className="tl-faq-list" style={{ marginBottom: 24 }}>
-            {faqs.map((f, i) => (
-              <div key={f.id} className="tl-faq-item">
-                <div className="tl-faq-head" onClick={() => setFaqOpen(faqOpen === i ? null : i)}>
-                  <span>{f.title}</span>
-                  <ChevronDown open={faqOpen === i} color={T} />
-                </div>
-                {faqOpen === i && <div className="tl-faq-body">{f.content}</div>}
-              </div>
+      {/* Policy cards */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
+        {cards.map((c) => (
+          <div key={c.label} className="tl-pol-block">
+            <div className="tl-pol-block-head" style={{ color: c.color }}>
+              <span style={{ color: c.color }}>{c.icon}</span>
+              {c.label} Policy
+            </div>
+            {c.policies.map((p) => (
+              <PolicyBullets key={p.id} content={p.content} />
             ))}
           </div>
-        </>
+        ))}
+      </div>
+
+      {/* Important notes inline */}
+      {importantNotes.length > 0 && (
+        <div className="tl-pol-notes">
+          <div className="tl-pol-notes-head">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="2.5" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            Important Notes
+          </div>
+          {importantNotes.map((n) => (
+            <PolicyBullets key={n.id} content={n.content} />
+          ))}
+        </div>
       )}
 
-      {/* Terms */}
+      {/* FAQs accordion */}
+      {faqs.length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          {faqs.map((f, i) => {
+            const [open, setOpen] = useState(false);
+            return (
+              <div key={f.id} className="tl-faq-item" style={{ marginBottom: 6 }}>
+                <div className="tl-faq-head" onClick={() => setOpen(!open)}>
+                  <span>{f.title}</span>
+                  <ChevronDown open={open} color={T} />
+                </div>
+                {open && <div className="tl-faq-body">{f.content}</div>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Terms accordion */}
       {terms.length > 0 && (
         <div className="tl-terms-item" style={{ marginBottom: 40 }}>
           <div className="tl-terms-head" onClick={() => setTermsOpen(!termsOpen)}>
@@ -731,17 +736,24 @@ function Policies({ policies }: { policies: PolicyRecord[] }) {
 
 /* ─────────────────────────── Agent Section ─────────────────────────── */
 function AgentSection({ agent, waUrl }: { agent: ItineraryData['agent']; waUrl: string }) {
-  const name = agent?.name ?? 'Your Travel Expert';
-  const designation = agent?.designation ?? 'Senior Travel Expert · Travloger';
-  const phone = agent?.phone ?? '';
-  const email = agent?.email ?? '';
-  const yrs = agent?.years_experience ?? '—';
-  const rating = agent?.rating ?? 4.9;
+  const name        = agent?.name        ?? 'Your Travel Expert';
+  const designation = agent?.designation ?? 'Senior Travel Consultant';
+  const phone       = agent?.phone       ?? '';
+  const email       = agent?.email       ?? '';
+  const rating      = agent?.rating      ?? 4.9;
+  const speciality  = agent?.speciality  ?? 'South India Specialist';
+
+  const TRUST = [
+    { icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--tl-warm)" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>, label: '24 / 7 Reachable' },
+    { icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--tl-warm)" strokeWidth="2.2" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>, label: 'Verified Expert' },
+    { icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--tl-warm)" strokeWidth="2.2" strokeLinecap="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>, label: 'Replies in ~2 hrs' },
+    { icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--tl-warm)" strokeWidth="2.2" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>, label: 'Free Trip Support' },
+  ];
 
   return (
     <div className="tl-agent-wrap">
-      {/* Palm deco */}
-      <svg style={{ position: 'absolute', right: -8, bottom: 0, opacity: 0.07, pointerEvents: 'none', width: 140, height: 210 }} viewBox="0 0 140 210" fill="white">
+      {/* Subtle palm deco */}
+      <svg style={{ position: 'absolute', right: -8, bottom: 0, opacity: 0.05, pointerEvents: 'none', width: 130, height: 200 }} viewBox="0 0 140 210" fill="white">
         <ellipse cx="70" cy="45" rx="14" ry="42" transform="rotate(-13 70 45)" />
         <ellipse cx="70" cy="45" rx="14" ry="42" transform="rotate(13 70 45)" />
         <ellipse cx="46" cy="62" rx="12" ry="36" transform="rotate(-35 46 62)" />
@@ -749,71 +761,79 @@ function AgentSection({ agent, waUrl }: { agent: ItineraryData['agent']; waUrl: 
         <rect x="67" y="80" width="7" height="125" rx="3.5" />
       </svg>
 
-      {/* Header */}
-      <div style={{ textAlign: 'center', marginBottom: 28, position: 'relative' }}>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(201,169,122,0.15)', border: '1px solid rgba(201,169,122,0.28)', borderRadius: 20, padding: '5px 14px', marginBottom: 14 }}>
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--tl-warm)" strokeWidth="2.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" strokeLinecap="round" /></svg>
-          <span style={{ fontFamily: 'var(--f-body)', fontSize: '9px', letterSpacing: '2.5px', textTransform: 'uppercase', color: 'var(--tl-warm)', fontWeight: 700 }}>Dedicated Travel Expert</span>
+      {/* Section header */}
+      <div style={{ textAlign: 'center', marginBottom: 24, position: 'relative' }}>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(201,169,122,0.13)', border: '1px solid rgba(201,169,122,0.25)', borderRadius: 20, padding: '5px 14px', marginBottom: 14 }}>
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="var(--tl-warm)" strokeWidth="2.5" strokeLinecap="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          <span style={{ fontFamily: 'var(--f-body)', fontSize: '9px', letterSpacing: '2.5px', textTransform: 'uppercase', color: 'var(--tl-warm)', fontWeight: 700 }}>Your Dedicated Expert</span>
         </div>
-        <div style={{ fontFamily: 'var(--f-display)', fontSize: 30, fontWeight: 800, color: 'white', lineHeight: 1.1, marginBottom: 6 }}>Talk to {name.split(' ')[0]}</div>
-        <div style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: 'rgba(255,255,255,0.45)', letterSpacing: 0.3 }}>
-          {agent?.speciality ?? 'Travel Expert'} · {yrs} {typeof yrs === 'number' ? 'Years' : ''} · 500+ Tours
+        <div style={{ fontFamily: 'var(--f-display)', fontSize: 28, fontWeight: 800, color: 'white', lineHeight: 1.1, marginBottom: 6 }}>
+          Your trip, handled personally
+        </div>
+        <div style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>
+          One point of contact from planning to homecoming
         </div>
       </div>
 
       <div className="tl-agent-card">
         {/* Profile row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
-          <div style={{ width: 74, height: 74, borderRadius: '50%', background: 'rgba(201,169,122,0.12)', border: '2px solid rgba(201,169,122,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, position: 'relative', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 18 }}>
+          <div style={{ width: 60, height: 60, borderRadius: '50%', background: 'rgba(255,255,255,0.08)', border: '1.5px solid rgba(201,169,122,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, position: 'relative', overflow: 'hidden' }}>
             {agent?.photo ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={agent.photo} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             ) : (
-              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="1.3"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" strokeLinecap="round" /><circle cx="12" cy="7" r="4" /></svg>
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="1.3" strokeLinecap="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
             )}
-            <div style={{ position: 'absolute', bottom: 3, right: 3, width: 12, height: 12, borderRadius: '50%', background: '#22c55e', border: '2px solid rgba(15,61,74,1)' }} />
+            {/* Online dot */}
+            <div style={{ position: 'absolute', bottom: 2, right: 2, width: 11, height: 11, borderRadius: '50%', background: '#22c55e', border: '2px solid #0f3d4a' }} />
           </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 800, color: 'white', marginBottom: 2 }}>{name}</div>
-            <div style={{ fontFamily: 'var(--f-body)', fontSize: 12, color: 'rgba(255,255,255,0.45)', marginBottom: 8 }}>{designation}</div>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {[`⭐ ${rating} Rating`, `🗺️ ${agent?.speciality ?? 'Travel Expert'}`].map((b, i) => (
-                <span key={i} style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 20, padding: '3px 10px', fontFamily: 'var(--f-body)', fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>{b}</span>
-              ))}
+          <div>
+            <div style={{ fontFamily: 'var(--f-body)', fontSize: 17, fontWeight: 700, color: 'white', letterSpacing: '-0.3px' }}>{name}</div>
+            <div style={{ fontFamily: 'var(--f-body)', fontSize: 11.5, color: 'rgba(255,255,255,0.4)', marginTop: 2, marginBottom: 7 }}>{designation}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <span style={{ fontFamily: 'var(--f-num)', fontSize: 11, fontWeight: 700, color: 'var(--tl-warm)' }}>★ {rating}</span>
+              <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 10 }}>·</span>
+              <span style={{ fontFamily: 'var(--f-body)', fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>{speciality}</span>
             </div>
           </div>
         </div>
 
-        {/* Stats */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 1, background: 'rgba(255,255,255,0.06)', borderRadius: 14, overflow: 'hidden', marginBottom: 20 }}>
-          {[['500+', 'Tours'], [String(yrs), 'Years'], ['24/7', 'Available']].map(([n, l], i) => (
-            <div key={i} style={{ textAlign: 'center', padding: '12px 8px', background: 'rgba(255,255,255,0.04)' }}>
-              <div style={{ fontFamily: 'var(--f-num)', fontSize: 18, fontWeight: 700, color: 'var(--tl-warm)' }}>{n}</div>
-              <div style={{ fontFamily: 'var(--f-body)', fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>{l}</div>
+        {/* Divider */}
+        <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', marginBottom: 16 }} />
+
+        {/* Trust badges */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 18 }}>
+          {TRUST.map((t, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 10, padding: '9px 11px' }}>
+              {t.icon}
+              <span style={{ fontFamily: 'var(--f-body)', fontSize: 11, color: 'rgba(255,255,255,0.65)', fontWeight: 500 }}>{t.label}</span>
             </div>
           ))}
         </div>
 
-        <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', marginBottom: 18 }} />
+        {/* Divider */}
+        <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', marginBottom: 16 }} />
 
         {/* Contacts */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 18 }}>
           {[
-            phone ? { icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--tl-warm)" strokeWidth="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.8a19.79 19.79 0 01-3.07-8.67A2 2 0 012.18 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 7.17a16 16 0 006.08 6.08l1.54-1.54a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z" strokeLinecap="round" /></svg>, main: phone, sub: 'Call or WhatsApp anytime' } : null,
-            email ? { icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--tl-warm)" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" strokeLinecap="round" /><polyline points="22,6 12,13 2,6" /></svg>, main: email, sub: 'Reply within 2 hours' } : null,
+            phone ? { icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--tl-warm)" strokeWidth="2" strokeLinecap="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.8a19.79 19.79 0 01-3.07-8.67A2 2 0 012.18 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 7.17a16 16 0 006.08 6.08l1.54-1.54a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>, main: phone, sub: 'Call or WhatsApp anytime' } : null,
+            email ? { icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--tl-warm)" strokeWidth="2" strokeLinecap="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>, main: email, sub: 'Replies within 2 hours' } : null,
           ].filter(Boolean).map((c, i) => c && (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.09)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{c.icon}</div>
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+              <div style={{ width: 34, height: 34, borderRadius: 9, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{c.icon}</div>
               <div>
-                <div style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: 'rgba(255,255,255,0.82)', fontWeight: 500 }}>{c.main}</div>
-                <div style={{ fontFamily: 'var(--f-body)', fontSize: 11, color: 'rgba(255,255,255,0.38)', marginTop: 1 }}>{c.sub}</div>
+                <div style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: 'rgba(255,255,255,0.8)', fontWeight: 500 }}>{c.main}</div>
+                <div style={{ fontFamily: 'var(--f-body)', fontSize: 10.5, color: 'rgba(255,255,255,0.35)', marginTop: 1 }}>{c.sub}</div>
               </div>
             </div>
           ))}
         </div>
 
+        {/* WhatsApp CTA */}
         <a href={waUrl} target="_blank" rel="noopener noreferrer" className="tl-wa-cta">
-          <WASvg size={20} color="white" />
+          <WASvg size={18} color="white" />
           Chat with {name.split(' ')[0]} on WhatsApp
         </a>
       </div>
