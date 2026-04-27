@@ -33,6 +33,7 @@ import {
   UserPlus,
   Users,
   Map,
+  CalendarDays,
 } from 'lucide-react';
 import {
   Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip as ChartTooltip, XAxis, YAxis
@@ -100,12 +101,13 @@ function TravlogerMark({ size = 32 }) {
 }
 
 const MODULES = [
-  { key: 'dashboard',       label: 'Dashboard',       icon: LayoutDashboard, path: '/dashboard' },
-  { key: 'contacts',        label: 'Contacts',         icon: Users,           path: '/contacts' },
-  { key: 'recent_activity', label: 'Recent Activity',  icon: Globe2,          path: '/recent-activity' },
-  { key: 'pdfs',            label: 'PDFs',             icon: FileText,        path: '/pdfs' },
-  { key: 'users',           label: 'Users',            icon: ShieldCheck,     path: '/users' },
-  { key: 'tripdeck',        label: 'TripDeck',         icon: Map,             href: '/tripdeck' },
+  { key: 'dashboard',       label: 'Dashboard',          icon: LayoutDashboard, path: '/dashboard' },
+  { key: 'contacts',        label: 'Contacts',            icon: Users,           path: '/contacts' },
+  { key: 'recent_activity', label: 'Recent Activity',     icon: Globe2,          path: '/recent-activity' },
+  { key: 'pdfs',            label: 'PDFs',               icon: FileText,        path: '/pdfs' },
+  { key: 'users',           label: 'Users',              icon: ShieldCheck,     path: '/users' },
+  { key: 'tripdeck',        label: 'TripDeck',            icon: Map,             href: '/tripdeck' },
+  { key: 'itinerary',       label: 'Itinerary Builder',   icon: CalendarDays,    href: process.env.REACT_APP_ITINERARY_BUILDER_URL || 'https://itinerary.travloger.in', newTab: true },
 ];
 
 export default function AdminDashboardPage() {
@@ -347,7 +349,11 @@ export default function AdminDashboardPage() {
 
   const goToModule = (key) => {
     const module = MODULES.find((m) => m.key === key);
-    navigate(module?.href || module?.path || '/dashboard');
+    if (module?.newTab) {
+      window.open(module.href, '_blank', 'noopener,noreferrer');
+    } else {
+      navigate(module?.href || module?.path || '/dashboard');
+    }
     setNavOpen(false);
   };
 

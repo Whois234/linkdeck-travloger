@@ -15,16 +15,17 @@ import {
   Link2, Copy, Trash2, FileText, ExternalLink, LogOut, Search, Filter,
   CheckCircle, XCircle, Eye, Loader2, LinkIcon, MapPin, ArrowUpDown,
   Smartphone, Monitor, Globe2, Archive, Download, ChevronDown, ChevronUp,
-  Users, Menu, FolderOpen, Map, Upload, Plus
+  Users, Menu, FolderOpen, Map, Upload, Plus, CalendarDays
 } from 'lucide-react';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const SITE_URL = process.env.REACT_APP_SITE_URL || window.location.origin;
 const USER_MODULES = [
-  { key: 'dashboard', label: 'Dashboard', icon: Link2,      path: '/dashboard' },
-  { key: 'pdfs',      label: 'PDFs',      icon: FolderOpen, path: '/pdfs' },
-  { key: 'contacts',  label: 'Contacts',  icon: Users,      path: '/contacts' },
-  { key: 'tripdeck',  label: 'TripDeck',  icon: Map,        href: '/tripdeck' },
+  { key: 'dashboard',  label: 'Dashboard',          icon: Link2,        path: '/dashboard' },
+  { key: 'pdfs',       label: 'PDFs',               icon: FolderOpen,   path: '/pdfs' },
+  { key: 'contacts',   label: 'Contacts',            icon: Users,        path: '/contacts' },
+  { key: 'tripdeck',   label: 'TripDeck',            icon: Map,          href: '/tripdeck' },
+  { key: 'itinerary',  label: 'Itinerary Builder',   icon: CalendarDays, href: process.env.REACT_APP_ITINERARY_BUILDER_URL || 'https://itinerary.travloger.in', newTab: true },
 ];
 
 function formatDuration(seconds) {
@@ -847,7 +848,11 @@ export default function DashboardPage() {
                           key={module.key}
                           type="button"
                           onClick={() => {
-                            navigate(module.href || module.path || '/dashboard');
+                            if (module.newTab) {
+                              window.open(module.href, '_blank', 'noopener,noreferrer');
+                            } else {
+                              navigate(module.href || module.path || '/dashboard');
+                            }
                             setNavOpen(false);
                           }}
                           className="w-full flex items-center gap-3 rounded-xl px-4 py-3 text-left transition-colors"
