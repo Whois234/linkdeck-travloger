@@ -107,7 +107,7 @@ const MODULES = [
   { key: 'pdfs',            label: 'PDFs',               icon: FileText,        path: '/pdfs' },
   { key: 'users',           label: 'Users',              icon: ShieldCheck,     path: '/users' },
   { key: 'tripdeck',        label: 'TripDeck',            icon: Map,             href: '/tripdeck' },
-  { key: 'itinerary',       label: 'Itinerary Builder',   icon: CalendarDays,    href: process.env.REACT_APP_ITINERARY_BUILDER_URL || 'https://itinerary.travloger.in', newTab: true },
+  { key: 'itinerary',       label: 'Itinerary Builder',   icon: CalendarDays,    href: process.env.REACT_APP_ITINERARY_BUILDER_URL || 'https://travloger-itinerary.vercel.app', newTab: true },
 ];
 
 export default function AdminDashboardPage() {

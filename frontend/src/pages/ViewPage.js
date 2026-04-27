@@ -1,28 +1,58 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Component, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { AlertCircle, Loader2 } from 'lucide-react';
 
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url,
-).toString();
+const PDFJS_VERSION = pdfjs.version;
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/build/pdf.worker.min.mjs`;
+
+const BACKEND_URL = (process.env.REACT_APP_BACKEND_URL || '').replace(/\/$/, '');
+const API = BACKEND_URL ? `${BACKEND_URL}/api` : '/api';
 
 function getPublicPdfUrl(uniqueId, fallbackUrl) {
-  if (!fallbackUrl) return '';
-  if (typeof window === 'undefined') {
-    return fallbackUrl;
-  }
-  if (window.location.hostname !== 'localhost') {
-    return `${window.location.origin}/api/view/${uniqueId}/pdf`;
+  if (!fallbackUrl) {
+    if (BACKEND_URL) return `${BACKEND_URL}/api/view/${uniqueId}/pdf`;
+    if (typeof window !== 'undefined') return `${window.location.origin}/api/view/${uniqueId}/pdf`;
+    return '';
   }
   if (/^https?:\/\//i.test(fallbackUrl)) {
     return fallbackUrl;
   }
+  if (typeof window === 'undefined') {
+    return fallbackUrl;
+  }
   return new URL(fallbackUrl, window.location.origin).toString();
+}
+
+class PdfRenderBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error) {
+    console.error('PDF viewer crashed, switching to native PDF view', error);
+    this.props.onError?.(error);
+  }
+
+  componentDidUpdate(prevProps) {
+    if (prevProps.resetKey !== this.props.resetKey && this.state.hasError) {
+      this.setState({ hasError: false });
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback || null;
+    }
+    return this.props.children;
+  }
 }
 
 function isMobileDevice() {
@@ -233,9 +263,21 @@ export default function ViewPage() {
   }, [buildPageDurationPayload, uniqueId]);
 
   useEffect(() => {
-    const resizeObserver = new ResizeObserver((entries) => {
-      const containerWidth = entries[0]?.contentRect?.width || 0;
+    const updatePageWidth = (containerWidth) => {
       setPageWidth(Math.max(260, Math.floor(containerWidth - 8)));
+    };
+    const updateFromElement = () => {
+      updatePageWidth(viewerRef.current?.getBoundingClientRect?.().width || 0);
+    };
+
+    if (typeof ResizeObserver === 'undefined') {
+      updateFromElement();
+      window.addEventListener('resize', updateFromElement);
+      return () => window.removeEventListener('resize', updateFromElement);
+    }
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      updatePageWidth(entries[0]?.contentRect?.width || 0);
     });
     if (viewerRef.current) resizeObserver.observe(viewerRef.current);
     return () => resizeObserver.disconnect();
@@ -563,42 +605,55 @@ export default function ViewPage() {
           </div>
         ) : (
           <div className="mx-auto max-w-5xl">
-            <Document
-              file={pdfUrl}
-              loading={
+            <PdfRenderBoundary
+              resetKey={pdfUrl}
+              onError={() => {
+                setViewerLoading(false);
+                setUseNativeFallback(true);
+              }}
+              fallback={
                 <div className="flex items-center justify-center py-16">
                   <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#144a57' }} />
                 </div>
               }
-              error={null}
-              onLoadSuccess={({ numPages }) => {
-                setViewerLoading(false);
-                setPageCount(numPages);
-                pageCountRef.current = numPages;
-                setCurrentPage(1);
-                currentPageRef.current = 1;
-                currentPageStartedAtRef.current = Date.now();
-              }}
-              onLoadError={(loadError) => {
-                console.error('react-pdf failed to load document, switching to native fallback', loadError);
-                setViewerLoading(false);
-                setUseNativeFallback(true);
-              }}
-              options={{
-                cMapUrl: 'https://unpkg.com/pdfjs-dist@5.6.205/cmaps/',
-                cMapPacked: true,
-                standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@5.6.205/standard_fonts/',
-              }}
             >
-              {!useNativeFallback && pageNumbers.map((pageNumber) => (
-                <PdfPageSurface
-                  key={pageNumber}
-                  pageNumber={pageNumber}
-                  pageWidth={pageWidth}
-                  registerPageNode={registerPageNode}
-                />
-              ))}
-            </Document>
+              <Document
+                file={pdfUrl}
+                loading={
+                  <div className="flex items-center justify-center py-16">
+                    <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#144a57' }} />
+                  </div>
+                }
+                error={null}
+                onLoadSuccess={({ numPages }) => {
+                  setViewerLoading(false);
+                  setPageCount(numPages);
+                  pageCountRef.current = numPages;
+                  setCurrentPage(1);
+                  currentPageRef.current = 1;
+                  currentPageStartedAtRef.current = Date.now();
+                }}
+                onLoadError={(loadError) => {
+                  console.error('react-pdf failed to load document, switching to native fallback', loadError);
+                  setViewerLoading(false);
+                  setUseNativeFallback(true);
+                }}
+                options={{
+                  cMapUrl: `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/cmaps/`,
+                  cMapPacked: true,
+                  standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/standard_fonts/`,
+                }}
+              >
+                {!useNativeFallback && pageNumbers.map((pageNumber) => (
+                  <PdfPageSurface
+                    key={pageNumber}
+                    pageNumber={pageNumber}
+                    pageWidth={pageWidth}
+                    registerPageNode={registerPageNode}
+                  />
+                ))}
+              </Document>
+            </PdfRenderBoundary>
             {viewerLoading && (
               <div className="flex items-center justify-center py-16">
                 <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#144a57' }} />

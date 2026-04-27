@@ -25,7 +25,7 @@ const USER_MODULES = [
   { key: 'pdfs',       label: 'PDFs',               icon: FolderOpen,   path: '/pdfs' },
   { key: 'contacts',   label: 'Contacts',            icon: Users,        path: '/contacts' },
   { key: 'tripdeck',   label: 'TripDeck',            icon: Map,          href: '/tripdeck' },
-  { key: 'itinerary',  label: 'Itinerary Builder',   icon: CalendarDays, href: process.env.REACT_APP_ITINERARY_BUILDER_URL || 'https://itinerary.travloger.in', newTab: true },
+  { key: 'itinerary',  label: 'Itinerary Builder',   icon: CalendarDays, href: process.env.REACT_APP_ITINERARY_BUILDER_URL || 'https://travloger-itinerary.vercel.app', newTab: true },
 ];
 
 function formatDuration(seconds) {
