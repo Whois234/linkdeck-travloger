@@ -6,7 +6,7 @@ import { Modal } from '@/components/admin/Modal';
 import { ImageUploader } from '@/components/admin/ImageUploader';
 import {
   Plus, Pencil, Trash2, ChevronDown, ChevronRight,
-  Star, Image as ImageIcon, X, Bed, Calendar,
+  Image as ImageIcon, X, Bed, Calendar, CheckCircle2,
 } from 'lucide-react';
 
 /* ── Shared style tokens ── */
@@ -102,6 +102,13 @@ export default function HotelDetailPage() {
   const [imageUrl, setImageUrl] = useState('');
   const [imagesSaving, setImagesSaving] = useState(false);
 
+  /* toast */
+  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+  function showToast(msg: string, type: 'success' | 'error' = 'success') {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  }
+
   /* ── Loaders ── */
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -147,8 +154,8 @@ export default function HotelDetailPage() {
     };
     const res = await fetch(`/api/v1/hotels/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     const d = await res.json();
-    if (!res.ok) setOvErr(d.error ?? 'Save failed');
-    else { setHotel(prev => prev ? { ...prev, ...d.data } : d.data); }
+    if (!res.ok) { setOvErr(d.error ?? 'Save failed'); showToast(d.error ?? 'Save failed', 'error'); }
+    else { setHotel(prev => prev ? { ...prev, ...d.data } : d.data); showToast('Hotel details saved!'); }
     setOvSaving(false);
   }
 
@@ -165,7 +172,7 @@ export default function HotelDetailPage() {
     const url = editRoom ? `/api/v1/hotels/${id}/room-categories/${editRoom.id}` : `/api/v1/hotels/${id}/room-categories`;
     const res = await fetch(url, { method: editRoom ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     const d = await res.json();
-    if (!res.ok) { setRoomErr(d.error ?? 'Save failed'); } else { setShowRoomForm(false); loadAll(); }
+    if (!res.ok) { setRoomErr(d.error ?? 'Save failed'); } else { setShowRoomForm(false); loadAll(); showToast(editRoom ? 'Room category updated!' : 'Room category added!'); }
     setRoomSaving(false);
   }
   async function deleteRoom(roomId: string) {
@@ -220,7 +227,7 @@ export default function HotelDetailPage() {
     const url = editRate ? `/api/v1/hotels/${id}/rates/${editRate.id}` : `/api/v1/hotels/${id}/rates`;
     const res = await fetch(url, { method: editRate ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     const d = await res.json();
-    if (!res.ok) { setRateErr(d.error ?? 'Save failed'); } else { setShowRateForm(false); loadRates(); }
+    if (!res.ok) { setRateErr(d.error ?? 'Save failed'); } else { setShowRateForm(false); loadRates(); showToast(editRate ? 'Rate updated!' : 'Rate added!'); }
     setRateSaving(false);
   }
   async function deleteRate(rateId: string) {
@@ -244,7 +251,7 @@ export default function HotelDetailPage() {
     const newImages = (hotel.images ?? []).filter((_, i) => i !== idx);
     const res = await fetch(`/api/v1/hotels/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ images: newImages }) });
     const d = await res.json();
-    if (d.success) setHotel(prev => prev ? { ...prev, images: newImages } : prev);
+    if (d.success) { setHotel(prev => prev ? { ...prev, images: newImages } : prev); showToast('Image removed'); }
   }
   async function moveImageToFirst(idx: number) {
     if (!hotel || idx === 0) return;
@@ -253,7 +260,7 @@ export default function HotelDetailPage() {
     imgs.unshift(item);
     const res = await fetch(`/api/v1/hotels/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ images: imgs }) });
     const d = await res.json();
-    if (d.success) setHotel(prev => prev ? { ...prev, images: imgs } : prev);
+    if (d.success) { setHotel(prev => prev ? { ...prev, images: imgs } : prev); showToast('Hero image updated!'); }
   }
 
   /* ── helpers ── */
@@ -342,9 +349,12 @@ export default function HotelDetailPage() {
               <textarea className="w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white resize-none" style={inpSt} rows={2} value={ovForm.internal_notes} onChange={e => setOvForm(p => ({ ...p, internal_notes: e.target.value }))} />
             </div>
           </div>
-          <div className="flex justify-end mt-5 pt-5" style={{ borderTop: '1px solid #F1F5F9' }}>
-            <button onClick={saveOverview} disabled={ovSaving} className="h-9 px-5 rounded-lg text-sm font-semibold text-white disabled:opacity-50 hover:opacity-90" style={{ backgroundColor: T }}>
-              {ovSaving ? 'Saving…' : 'Save Changes'}
+          <div className="flex items-center justify-end gap-3 mt-5 pt-5" style={{ borderTop: '1px solid #F1F5F9' }}>
+            {ovErr && <p className="text-xs font-medium text-red-600">{ovErr}</p>}
+            <button onClick={saveOverview} disabled={ovSaving}
+              className="flex items-center gap-2 h-9 px-5 rounded-lg text-sm font-semibold text-white disabled:opacity-50 hover:opacity-90"
+              style={{ backgroundColor: T }}>
+              {ovSaving ? 'Saving…' : <><CheckCircle2 className="w-4 h-4" /> Save Changes</>}
             </button>
           </div>
         </div>
@@ -476,7 +486,8 @@ export default function HotelDetailPage() {
                 setImagesSaving(true);
                 const res = await fetch(`/api/v1/hotels/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ images: newImages }) });
                 const d = await res.json();
-                if (d.success) setHotel(prev => prev ? { ...prev, images: newImages } : prev);
+                if (d.success) { setHotel(prev => prev ? { ...prev, images: newImages } : prev); showToast('Image uploaded & saved!'); }
+                else showToast('Failed to save image', 'error');
                 setImagesSaving(false);
               }}
             />
@@ -557,6 +568,15 @@ export default function HotelDetailPage() {
           <button onClick={saveRoom} disabled={roomSaving} className="h-9 px-5 rounded-lg text-sm font-semibold text-white disabled:opacity-50 hover:opacity-90" style={{ backgroundColor: T }}>{roomSaving ? 'Saving…' : editRoom ? 'Update' : 'Add Room'}</button>
         </div>
       </Modal>
+
+      {/* ═══ TOAST ═══ */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg text-sm font-semibold text-white transition-all"
+          style={{ backgroundColor: toast.type === 'success' ? '#16a34a' : '#DC2626', minWidth: 220 }}>
+          <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+          {toast.msg}
+        </div>
+      )}
 
       {/* ═══ RATE MODAL ═══ */}
       <Modal open={showRateForm} onClose={() => setShowRateForm(false)} title={editRate ? 'Edit Rate' : 'Add Rate'} subtitle={rooms.find(r => r.id === rateForRoom)?.room_category_name} maxWidth="max-w-2xl">
