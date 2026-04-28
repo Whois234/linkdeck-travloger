@@ -23,6 +23,9 @@ const QuoteSchema = z.object({
   drop_point: z.string().optional().nullable(),
   assigned_agent_id: z.string().optional().nullable(),
   expiry_date: z.string().datetime().optional().nullable(),
+  private_template_id: z.string().optional().nullable(),
+  group_template_id: z.string().optional().nullable(),
+  group_batch_id: z.string().optional().nullable(),
 });
 
 export async function GET(req: NextRequest) {

@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
     include: {
       state: { select: { name: true } },
       group_template_days: { orderBy: { sort_order: 'asc' } },
-      group_batches: { where: { status: true }, select: { id: true } },
+      group_batches: { where: { status: true }, orderBy: { start_date: 'asc' } },
     },
     orderBy: { group_template_name: 'asc' },
   });

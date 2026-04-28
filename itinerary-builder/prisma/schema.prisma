@@ -784,6 +784,9 @@ model Quote {
   expiry_date             DateTime?
   public_token            String      @unique @default(cuid())
   selected_quote_option_id String?
+  private_template_id     String?
+  group_template_id       String?
+  group_batch_id          String?
   created_by              String
   created_at              DateTime    @default(now())
   updated_at              DateTime    @updatedAt
