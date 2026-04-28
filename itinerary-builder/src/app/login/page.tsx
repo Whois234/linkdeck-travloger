@@ -231,7 +231,7 @@ function LoginForm() {
 
           {/* Footer */}
           <p className="text-center text-xs mt-10" style={{ color: '#CBD5E1' }}>
-            Travloger Itinerary Builder · v1.0
+            Travloger Itinerary Builder · v5.0
           </p>
         </div>
       </div>
