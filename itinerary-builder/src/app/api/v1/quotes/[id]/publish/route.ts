@@ -16,7 +16,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   });
   if (!quote) return notFound('Quote');
 
-  if (quote.quote_options.length === 0) {
+  // Group quotes use batch pricing — no quote_options required
+  if (quote.quote_type === 'PRIVATE' && quote.quote_options.length === 0) {
     return err('Quote must have at least one pricing option before publishing', 400);
   }
 
