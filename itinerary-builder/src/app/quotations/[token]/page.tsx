@@ -6,6 +6,7 @@ import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { cache } from 'react';
 import { ItineraryClient } from '@/app/itinerary/[token]/ItineraryClient';
+import QuotationTracker from './QuotationTracker';
 import { prisma } from '@/lib/prisma';
 import { QuoteStatus } from '@prisma/client';
 
@@ -39,6 +40,12 @@ export async function generateMetadata({ params }: { params: { token: string } }
 export default async function QuotationPage({ params }: { params: { token: string } }) {
   const data = await getItinerary(params.token);
   if (!data) notFound();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return <ItineraryClient data={data as any} token={params.token} />;
+  return (
+    <>
+      {/* Client-side analytics + notification tracker — renders nothing visible */}
+      <QuotationTracker token={params.token} />
+      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+      <ItineraryClient data={data as any} token={params.token} />
+    </>
+  );
 }

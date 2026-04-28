@@ -6,7 +6,13 @@ import { ok, err, notFound } from '@/lib/api-response';
 const Schema = z.object({ option_id: z.string() });
 
 export async function POST(req: NextRequest, { params }: { params: { token: string } }) {
-  const quote = await prisma.quote.findUnique({ where: { public_token: params.token } });
+  const quote = await prisma.quote.findUnique({
+    where: { public_token: params.token },
+    include: {
+      assigned_agent: { select: { user_account_id: true } },
+      customer: { select: { name: true } },
+    },
+  });
   if (!quote) return notFound('Itinerary');
 
   const body = await req.json();
@@ -30,6 +36,18 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
       metadata: { option_id: parsed.data.option_id, option_name: option.option_name },
     },
   });
+
+  // Notify assigned agent
+  if (quote.assigned_agent?.user_account_id) {
+    await prisma.notification.create({
+      data: {
+        user_id:    quote.assigned_agent.user_account_id,
+        quote_id:   quote.id,
+        message:    `${quote.customer.name} selected the ${option.option_name} package`,
+        event_type: 'package_selected',
+      },
+    }).catch(() => {});
+  }
 
   return ok({ selected_option_id: parsed.data.option_id });
 }

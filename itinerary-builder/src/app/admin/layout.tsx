@@ -60,6 +60,32 @@ const NAV = [
 
 interface AuthUser { name: string; email: string; role: string }
 
+interface Notification {
+  id: string;
+  message: string;
+  event_type: string;
+  is_read: boolean;
+  created_at: string;
+  quote_id: string | null;
+}
+
+const EVENT_ICONS: Record<string, string> = {
+  quote_viewed:     '👁',
+  whatsapp_clicked: '💬',
+  package_selected: '📦',
+  approve_clicked:  '✅',
+};
+
+function timeAgo(dateStr: string) {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -67,14 +93,51 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [user, setUser] = useState<AuthUser | null>(null);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [markingAll, setMarkingAll] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     fetch('/api/v1/auth/me').then(r => r.json()).then(d => {
       if (d.success) setUser(d.data);
     }).catch(() => {});
   }, []);
+
+  // Fetch notifications + start polling
+  async function fetchNotifications() {
+    try {
+      const res = await fetch('/api/v1/notifications');
+      const data = await res.json();
+      if (data.success) {
+        setNotifications(data.data.notifications);
+        setUnreadCount(data.data.unreadCount);
+      }
+    } catch { /* silent */ }
+  }
+
+  useEffect(() => {
+    fetchNotifications();
+    pollRef.current = setInterval(fetchNotifications, 30_000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, []);
+
+  async function markOneRead(id: string) {
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
+    setUnreadCount(prev => Math.max(0, prev - 1));
+    await fetch(`/api/v1/notifications/${id}`, { method: 'PUT' }).catch(() => {});
+  }
+
+  async function markAllRead() {
+    if (markingAll) return;
+    setMarkingAll(true);
+    await fetch('/api/v1/notifications/read-all', { method: 'PUT' }).catch(() => {});
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    setUnreadCount(0);
+    setMarkingAll(false);
+  }
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -226,23 +289,75 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <div ref={notifRef} className="relative">
               <button
                 onClick={() => { setShowNotifications(v => !v); setShowUserMenu(false); }}
-                className="w-9 h-9 rounded-lg flex items-center justify-center transition-colors hover:bg-[#F8FAFC]"
+                className="relative w-9 h-9 rounded-lg flex items-center justify-center transition-colors hover:bg-[#F8FAFC]"
                 style={{ border: '1px solid #E2E8F0', color: showNotifications ? '#134956' : '#64748B' }}
               >
                 <Bell className="w-4 h-4" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ backgroundColor: '#EF4444' }}>
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
               </button>
+
               {showNotifications && (
-                <div className="absolute right-0 top-11 w-80 bg-white rounded-xl z-50 overflow-hidden" style={{ border: '1px solid #E2E8F0', boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}>
-                  <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid #F1F5F9' }}>
-                    <p className="text-sm font-bold" style={{ color: '#0F172A' }}>Notifications</p>
-                    <button onClick={() => setShowNotifications(false)} className="w-6 h-6 rounded-md flex items-center justify-center hover:bg-[#F1F5F9]" style={{ color: '#94A3B8' }}><X className="w-3.5 h-3.5" /></button>
-                  </div>
-                  <div className="py-8 px-4 text-center">
-                    <div className="w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-3" style={{ backgroundColor: '#F1F5F9' }}>
-                      <Bell className="w-5 h-5" style={{ color: '#94A3B8' }} />
+                <div className="absolute right-0 top-11 w-[340px] bg-white rounded-xl z-50 overflow-hidden flex flex-col" style={{ border: '1px solid #E2E8F0', boxShadow: '0 8px 24px rgba(0,0,0,0.12)', maxHeight: '480px' }}>
+                  {/* Header */}
+                  <div className="flex items-center justify-between px-4 py-3 flex-shrink-0" style={{ borderBottom: '1px solid #F1F5F9' }}>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-bold" style={{ color: '#0F172A' }}>Notifications</p>
+                      {unreadCount > 0 && (
+                        <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold text-white" style={{ backgroundColor: '#EF4444' }}>{unreadCount}</span>
+                      )}
                     </div>
-                    <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>All caught up!</p>
-                    <p className="text-xs mt-1" style={{ color: '#94A3B8' }}>No new notifications at this time.</p>
+                    <div className="flex items-center gap-2">
+                      {unreadCount > 0 && (
+                        <button onClick={markAllRead} disabled={markingAll} className="text-xs font-medium transition-colors hover:underline" style={{ color: '#134956' }}>
+                          Mark all read
+                        </button>
+                      )}
+                      <button onClick={() => setShowNotifications(false)} className="w-6 h-6 rounded-md flex items-center justify-center hover:bg-[#F1F5F9]" style={{ color: '#94A3B8' }}><X className="w-3.5 h-3.5" /></button>
+                    </div>
+                  </div>
+
+                  {/* List */}
+                  <div className="overflow-y-auto flex-1">
+                    {notifications.length === 0 ? (
+                      <div className="py-8 px-4 text-center">
+                        <div className="w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-3" style={{ backgroundColor: '#F1F5F9' }}>
+                          <Bell className="w-5 h-5" style={{ color: '#94A3B8' }} />
+                        </div>
+                        <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>All caught up!</p>
+                        <p className="text-xs mt-1" style={{ color: '#94A3B8' }}>No notifications yet.</p>
+                      </div>
+                    ) : (
+                      notifications.map(n => (
+                        <div
+                          key={n.id}
+                          onClick={() => {
+                            if (!n.is_read) markOneRead(n.id);
+                            if (n.quote_id) {
+                              // navigate to quote detail — we need quote number but we have quote_id
+                              router.push(`/admin/quotes/${n.quote_id}`);
+                              setShowNotifications(false);
+                            }
+                          }}
+                          className="flex items-start gap-3 px-4 py-3 cursor-pointer transition-colors hover:bg-[#F8FAFC]"
+                          style={{ borderBottom: '1px solid #F8FAFC', backgroundColor: n.is_read ? undefined : '#F0FDF4' }}
+                        >
+                          <div className="w-8 h-8 rounded-full flex items-center justify-center text-base flex-shrink-0 mt-0.5" style={{ backgroundColor: '#F1F5F9' }}>
+                            {EVENT_ICONS[n.event_type] ?? '🔔'}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs leading-snug" style={{ color: '#0F172A', fontWeight: n.is_read ? 400 : 600 }}>{n.message}</p>
+                            <p className="text-[11px] mt-0.5" style={{ color: '#94A3B8' }}>{timeAgo(n.created_at)}</p>
+                          </div>
+                          {!n.is_read && (
+                            <div className="w-2 h-2 rounded-full mt-2 flex-shrink-0" style={{ backgroundColor: '#134956' }} />
+                          )}
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               )}

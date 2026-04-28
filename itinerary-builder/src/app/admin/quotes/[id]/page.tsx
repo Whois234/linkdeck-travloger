@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/admin/PageHeader';
-import { ArrowLeft, Calendar, Users, MapPin, Phone, Mail, Clock, Edit2, Check, X, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Calendar, Users, MapPin, Phone, Mail, Clock, Edit2, Check, X, ExternalLink, BarChart2, Eye, MessageCircle, Package, ThumbsUp } from 'lucide-react';
 
 const STATUS_BADGE: Record<string, { bg: string; text: string }> = {
   DRAFT:     { bg: '#F1F5F9', text: '#475569' },
@@ -33,15 +33,44 @@ interface Quote {
   day_snapshots: Array<{ id: string; day_number: number; title: string | null }>;
 }
 
+interface QuoteEvent {
+  id: string;
+  event_type: string;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+}
+
+const EVENT_ICON: Record<string, { icon: React.ElementType; color: string; bg: string; label: string }> = {
+  quote_created:    { icon: Calendar,       color: '#6366F1', bg: '#EEF2FF', label: 'Quote Created' },
+  quote_sent:       { icon: ExternalLink,   color: '#0EA5E9', bg: '#E0F2FE', label: 'Sent to Customer' },
+  quote_viewed:     { icon: Eye,            color: '#8B5CF6', bg: '#F5F3FF', label: 'Viewed by Customer' },
+  package_selected: { icon: Package,        color: '#F59E0B', bg: '#FFFBEB', label: 'Package Selected' },
+  approve_clicked:  { icon: ThumbsUp,       color: '#10B981', bg: '#ECFDF5', label: 'Approved' },
+  whatsapp_clicked: { icon: MessageCircle,  color: '#22C55E', bg: '#F0FDF4', label: 'WhatsApp Clicked' },
+};
+
+function timeAgo(dateStr: string) {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
 export default function QuoteDetailPage({ params }: { params: { id: string } }) {
   const { id } = params;
   const router = useRouter();
+  const [activeTab, setActiveTab] = useState<'overview' | 'analytics'>('overview');
   const [quote, setQuote] = useState<Quote | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [editingStatus, setEditingStatus] = useState(false);
   const [newStatus, setNewStatus] = useState('');
   const [savingStatus, setSavingStatus] = useState(false);
+  const [events, setEvents] = useState<QuoteEvent[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -51,7 +80,24 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
     else setError('Quote not found');
     setLoading(false);
   }
+
+  async function loadEvents() {
+    if (eventsLoading) return;
+    setEventsLoading(true);
+    const res = await fetch(`/api/v1/quotes/${id}/events`).catch(() => null);
+    if (res?.ok) {
+      const data = await res.json();
+      if (data.success) setEvents(data.data);
+    }
+    setEventsLoading(false);
+  }
+
   useEffect(() => { load(); }, [id]);
+
+  useEffect(() => {
+    if (activeTab === 'analytics') loadEvents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   async function saveStatus() {
     if (!quote || newStatus === quote.status) { setEditingStatus(false); return; }
@@ -70,6 +116,25 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
 
   const totalPax = quote.adults + (quote.children_5_12 ?? 0) + (quote.children_below_5 ?? 0) + (quote.infants ?? 0);
   const badge = STATUS_BADGE[quote.status] ?? STATUS_BADGE.DRAFT;
+
+  // ── aggregate analytics ─────────────────────────────────────────────────
+  const viewCount       = events.filter(e => e.event_type === 'quote_viewed').length;
+  const whatsappClicks  = events.filter(e => e.event_type === 'whatsapp_clicked').length;
+  const pkgSelectedEvt  = events.filter(e => e.event_type === 'package_selected');
+  const approvedEvt     = events.filter(e => e.event_type === 'approve_clicked');
+
+  // Section-view aggregation from metadata
+  const sectionTotals: Record<string, number> = {};
+  events
+    .filter(e => e.event_type === 'quote_viewed' && e.metadata?.section_views)
+    .forEach(e => {
+      const sv = e.metadata!.section_views as Record<string, number>;
+      Object.entries(sv).forEach(([k, v]) => { sectionTotals[k] = (sectionTotals[k] ?? 0) + v; });
+    });
+  const topSections = Object.entries(sectionTotals)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 6);
+  const maxSectionVal = topSections[0]?.[1] ?? 1;
 
   return (
     <div className="max-w-[1400px]">
@@ -90,7 +155,161 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
         }
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      {/* Tab bar */}
+      <div className="flex gap-1 mb-5 p-1 rounded-xl w-fit" style={{ backgroundColor: '#F1F5F9' }}>
+        {(['overview', 'analytics'] as const).map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className="flex items-center gap-2 h-8 px-4 rounded-lg text-sm font-semibold transition-all"
+            style={activeTab === tab
+              ? { backgroundColor: '#fff', color: '#134956', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }
+              : { color: '#64748B' }
+            }
+          >
+            {tab === 'analytics' && <BarChart2 className="w-3.5 h-3.5" />}
+            {tab.charAt(0).toUpperCase() + tab.slice(1)}
+          </button>
+        ))}
+      </div>
+
+      {/* ── ANALYTICS TAB ─────────────────────────────────────────────────── */}
+      {activeTab === 'analytics' && (
+        <div className="space-y-5">
+          {eventsLoading ? (
+            <div className="py-16 text-center"><div className="w-8 h-8 rounded-full border-2 border-[#134956] border-t-transparent animate-spin mx-auto" /></div>
+          ) : (
+            <>
+              {/* Stat cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                {[
+                  { label: 'Total Views', value: viewCount, icon: Eye, color: '#8B5CF6', bg: '#F5F3FF' },
+                  { label: 'WhatsApp Clicks', value: whatsappClicks, icon: MessageCircle, color: '#22C55E', bg: '#F0FDF4' },
+                  { label: 'Pkg Selected', value: pkgSelectedEvt.length, icon: Package, color: '#F59E0B', bg: '#FFFBEB' },
+                  { label: 'Approved', value: approvedEvt.length, icon: ThumbsUp, color: '#10B981', bg: '#ECFDF5' },
+                ].map(s => (
+                  <div key={s.label} className="bg-white rounded-xl border p-4" style={{ borderColor: '#E2E8F0', ...cardShadow }}>
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#94A3B8' }}>{s.label}</p>
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: s.bg }}>
+                        <s.icon className="w-4 h-4" style={{ color: s.color }} />
+                      </div>
+                    </div>
+                    <p className="text-2xl font-bold" style={{ color: '#0F172A' }}>{s.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                {/* Section heatmap */}
+                <div className="bg-white rounded-xl border p-5" style={{ borderColor: '#E2E8F0', ...cardShadow }}>
+                  <h3 className="text-sm font-bold mb-4" style={{ color: '#0F172A' }}>Section View Heatmap</h3>
+                  {topSections.length === 0 ? (
+                    <p className="text-sm" style={{ color: '#94A3B8' }}>No section data yet.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {topSections.map(([section, count]) => (
+                        <div key={section}>
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="text-xs font-medium capitalize" style={{ color: '#475569' }}>{section.replace(/_/g, ' ')}</span>
+                            <span className="text-xs font-bold" style={{ color: '#0F172A' }}>{count}</span>
+                          </div>
+                          <div className="h-2 rounded-full" style={{ backgroundColor: '#F1F5F9' }}>
+                            <div
+                              className="h-2 rounded-full transition-all"
+                              style={{ width: `${(count / maxSectionVal) * 100}%`, backgroundColor: '#134956' }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Package preference */}
+                <div className="bg-white rounded-xl border p-5" style={{ borderColor: '#E2E8F0', ...cardShadow }}>
+                  <h3 className="text-sm font-bold mb-4" style={{ color: '#0F172A' }}>Package Preference</h3>
+                  {pkgSelectedEvt.length === 0 ? (
+                    <p className="text-sm" style={{ color: '#94A3B8' }}>No package selected yet.</p>
+                  ) : (() => {
+                    // Count selections per option_name
+                    const counts: Record<string, number> = {};
+                    pkgSelectedEvt.forEach(e => {
+                      const name = (e.metadata?.option_name as string) ?? 'Unknown';
+                      counts[name] = (counts[name] ?? 0) + 1;
+                    });
+                    const maxC = Math.max(...Object.values(counts));
+                    return (
+                      <div className="space-y-3">
+                        {Object.entries(counts).sort(([, a], [, b]) => b - a).map(([name, cnt]) => (
+                          <div key={name}>
+                            <div className="flex justify-between items-center mb-1">
+                              <span className="text-xs font-medium" style={{ color: '#475569' }}>{name}</span>
+                              <span className="text-xs font-bold" style={{ color: '#0F172A' }}>{cnt}×</span>
+                            </div>
+                            <div className="h-2 rounded-full" style={{ backgroundColor: '#F1F5F9' }}>
+                              <div
+                                className="h-2 rounded-full"
+                                style={{ width: `${(cnt / maxC) * 100}%`, backgroundColor: '#F59E0B' }}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* Events timeline */}
+              <div className="bg-white rounded-xl border p-5" style={{ borderColor: '#E2E8F0', ...cardShadow }}>
+                <h3 className="text-sm font-bold mb-4" style={{ color: '#0F172A' }}>Activity Timeline</h3>
+                {events.length === 0 ? (
+                  <p className="text-sm" style={{ color: '#94A3B8' }}>No events recorded yet.</p>
+                ) : (
+                  <div className="relative">
+                    <div className="absolute left-[19px] top-0 bottom-0 w-px" style={{ backgroundColor: '#E2E8F0' }} />
+                    <div className="space-y-4">
+                      {events.slice(0, 50).map((evt, i) => {
+                        const meta = EVENT_ICON[evt.event_type] ?? { icon: Calendar, color: '#64748B', bg: '#F8FAFC', label: evt.event_type };
+                        const Icon = meta.icon;
+                        return (
+                          <div key={evt.id ?? i} className="flex items-start gap-4 relative">
+                            <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 z-10" style={{ backgroundColor: meta.bg, border: `2px solid ${meta.color}` }}>
+                              <Icon className="w-4 h-4" style={{ color: meta.color }} />
+                            </div>
+                            <div className="flex-1 min-w-0 pt-1.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>{meta.label}</p>
+                                <p className="text-xs flex-shrink-0" style={{ color: '#94A3B8' }}>{timeAgo(evt.created_at)}</p>
+                              </div>
+                              {evt.metadata && Object.keys(evt.metadata).length > 0 && (
+                                <div className="mt-1 flex flex-wrap gap-1.5">
+                                  {!!evt.metadata.option_name && (
+                                    <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ backgroundColor: '#FFFBEB', color: '#B45309' }}>{String(evt.metadata.option_name)}</span>
+                                  )}
+                                  {evt.metadata.time_spent_seconds != null && (
+                                    <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ backgroundColor: '#F1F5F9', color: '#475569' }}>
+                                      {Math.floor(Number(evt.metadata.time_spent_seconds) / 60)}m {Number(evt.metadata.time_spent_seconds) % 60}s on page
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── OVERVIEW TAB ──────────────────────────────────────────────────── */}
+      {activeTab === 'overview' && (<div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div className="lg:col-span-2 space-y-5">
 
           {/* Status bar */}
@@ -242,7 +461,7 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
             </div>
           </div>
         </div>
-      </div>
+      </div>)}
     </div>
   );
 }
