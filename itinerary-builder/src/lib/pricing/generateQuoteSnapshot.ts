@@ -20,6 +20,41 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
 
   if (!quote) throw new Error(`Quote ${quote_id} not found`);
 
+  // If no QuoteDaySnapshot records exist yet (quote created via wizard),
+  // fall back to the linked private template's template_days
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let resolvedDaySnapshots: any[];
+
+  if (quote.day_snapshots.length > 0) {
+    resolvedDaySnapshots = quote.day_snapshots.map((d) => ({
+      ...d,
+      date: d.date instanceof Date ? d.date.toISOString() : d.date,
+    }));
+  } else if (quote.private_template_id) {
+    const templateDays = await prisma.templateDay.findMany({
+      where: { template_id: quote.private_template_id },
+      orderBy: { day_number: 'asc' },
+    });
+
+    resolvedDaySnapshots = templateDays.map((td) => {
+      const dayDate = quote.start_date
+        ? new Date(new Date(quote.start_date).getTime() + (td.day_number - 1) * 86400000).toISOString()
+        : new Date().toISOString();
+      return {
+        day_number: td.day_number,
+        date: dayDate,
+        destination_id: td.destination_id,
+        title: td.title,
+        description: td.description_override ?? null,
+        image_url: td.image_override ?? null,
+        tags: null,
+        transfers: td.transfers ?? null,
+      };
+    });
+  } else {
+    resolvedDaySnapshots = [];
+  }
+
   // Resolve inclusions, exclusions, policies from state
   const [inclusions, exclusions, policies] = await Promise.all([
     prisma.inclusionExclusion.findMany({
@@ -74,7 +109,7 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
     agent: quote.assigned_agent,
     state: quote.state,
     quote_options: enrichedOptions,
-    day_snapshots: quote.day_snapshots,
+    day_snapshots: resolvedDaySnapshots,
     inclusions,
     exclusions,
     policies,
