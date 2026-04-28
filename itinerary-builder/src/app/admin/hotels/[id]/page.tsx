@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
+import { ImageUploader } from '@/components/admin/ImageUploader';
 import {
   Plus, Pencil, Trash2, ChevronDown, ChevronRight,
   Star, Image as ImageIcon, X, Bed, Calendar,
@@ -461,20 +462,24 @@ export default function HotelDetailPage() {
         <div className="bg-white rounded-2xl p-6" style={card}>
           <div className="mb-6">
             <p className="text-sm font-semibold text-[#0F172A] mb-1">Hotel Images</p>
-            <p className="text-xs text-[#64748B]">First image is used as the hero. Paste an image URL and click Add.</p>
+            <p className="text-xs text-[#64748B]">First image is used as the hero. Upload images directly — they are stored on AWS S3.</p>
           </div>
 
-          {/* Add image row */}
-          <div className="flex gap-2 mb-6">
-            <input
-              className="flex-1 h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white"
-              style={inpSt} value={imageUrl} onChange={e => setImageUrl(e.target.value)}
-              placeholder="https://example.com/hotel-photo.jpg"
-              onKeyDown={e => { if (e.key === 'Enter') addImage(); }}
+          {/* Upload using S3 */}
+          <div className="mb-6">
+            <ImageUploader
+              folder="hotels"
+              placeholder="Upload hotel photo (click or drag & drop)"
+              onChange={async (url) => {
+                if (!url || !hotel) return;
+                const newImages = [...(hotel.images ?? []), url];
+                setImagesSaving(true);
+                const res = await fetch(`/api/v1/hotels/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ images: newImages }) });
+                const d = await res.json();
+                if (d.success) setHotel(prev => prev ? { ...prev, images: newImages } : prev);
+                setImagesSaving(false);
+              }}
             />
-            <button onClick={addImage} disabled={imagesSaving || !imageUrl.trim()} className="h-9 px-4 rounded-lg text-sm font-semibold text-white disabled:opacity-40 hover:opacity-90" style={{ backgroundColor: T }}>
-              <Plus className="w-4 h-4" />
-            </button>
           </div>
 
           {/* Image grid */}

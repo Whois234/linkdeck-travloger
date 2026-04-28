@@ -133,14 +133,8 @@ function Nav({ quoteNum, pkgName }: { quoteNum: string; pkgName?: string }) {
     <nav className="tl-nav">
       <div className="tl-nav-logo-wrap">
         <div className="tl-nav-logo-pill">
-          <div className="tl-nav-logo-icon">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/travloger-logo-icon.jpeg" alt="Travloger" />
-          </div>
-          <div className="tl-nav-logo-text">
-            <span className="tl-nav-logo-name">travloger.in</span>
-            <span className="tl-nav-logo-tag">~ You travel, We Capture</span>
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/travloger-logo-full.jpeg" alt="Travloger" style={{ height: 36, width: 'auto', objectFit: 'contain' }} />
         </div>
       </div>
       <div className="tl-nav-right">
@@ -872,11 +866,8 @@ function Footer({ quoteNum, expiryDate, waUrl }: { quoteNum: string; expiryDate?
     <footer className="tl-footer">
       {/* Logo */}
       <div style={{ marginBottom: 18 }}>
-        <div style={{ background: 'white', borderRadius: 10, display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 12px 6px 6px', marginBottom: 8 }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/travloger-logo-icon.jpeg" alt="Travloger" style={{ width: 32, height: 32, borderRadius: 7, objectFit: 'cover' }} />
-          <span style={{ fontFamily: 'var(--f-brand)', fontWeight: 700, fontSize: 15, color: 'var(--tl-teal)', letterSpacing: '-0.2px' }}>travloger.in</span>
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/travloger-logo-white.png" alt="Travloger" style={{ height: 40, width: 'auto', objectFit: 'contain', marginBottom: 8 }} />
         <div style={{ fontSize: '11.5px', color: 'rgba(255,255,255,0.35)', fontStyle: 'italic', fontFamily: 'var(--f-body)' }}>
           Crafting memories, one trip at a time.
         </div>

@@ -7,6 +7,7 @@ import { UserRole, QuoteType, QuoteStatus } from '@prisma/client';
 import { generateQuoteNumber } from '@/lib/generate-quote-number';
 
 const QuoteSchema = z.object({
+  quote_name: z.string().optional().nullable(),
   quote_type: z.nativeEnum(QuoteType),
   customer_id: z.string(),
   lead_id: z.string().optional().nullable(),

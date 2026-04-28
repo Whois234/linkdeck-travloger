@@ -34,7 +34,7 @@ export interface HotelCostResult {
 
 function isWeekend(date: Date): boolean {
   const day = date.getDay();
-  return day === 0 || day === 6; // Sunday or Saturday
+  return day === 0 || day === 6;
 }
 
 function getRoomCost(
@@ -66,44 +66,45 @@ export async function calculateHotelCost(params: {
 }): Promise<HotelCostResult> {
   const { hotel_id, room_category_id, meal_plan_id, check_in_date, check_out_date, rooming_json } = params;
 
-  // Generate array of stay nights
-  const nights: Date[] = [];
-  const current = new Date(check_in_date);
-  current.setHours(0, 0, 0, 0);
+  const checkIn = new Date(check_in_date);
+  checkIn.setHours(0, 0, 0, 0);
   const checkOut = new Date(check_out_date);
   checkOut.setHours(0, 0, 0, 0);
 
-  while (current < checkOut) {
-    nights.push(new Date(current));
-    current.setDate(current.getDate() + 1);
+  const nights: Date[] = [];
+  const cur = new Date(checkIn);
+  while (cur < checkOut) {
+    nights.push(new Date(cur));
+    cur.setDate(cur.getDate() + 1);
   }
 
-  if (nights.length === 0) {
-    throw new Error('check_out_date must be after check_in_date');
-  }
+  if (nights.length === 0) throw new Error('check_out_date must be after check_in_date');
 
-  // Fetch hotel and room info for error messages
-  const hotel = await prisma.hotel.findUnique({ where: { id: hotel_id }, select: { hotel_name: true } });
-  const roomCat = await prisma.roomCategory.findUnique({ where: { id: room_category_id }, select: { room_category_name: true } });
-  const mealPlan = await prisma.mealPlan.findUnique({ where: { id: meal_plan_id }, select: { code: true } });
+  // Fetch all reference data and rates in parallel (one query each instead of N per night)
+  const [hotel, roomCat, mealPlan, allRates] = await Promise.all([
+    prisma.hotel.findUnique({ where: { id: hotel_id }, select: { hotel_name: true } }),
+    prisma.roomCategory.findUnique({ where: { id: room_category_id }, select: { room_category_name: true } }),
+    prisma.mealPlan.findUnique({ where: { id: meal_plan_id }, select: { code: true } }),
+    prisma.hotelRate.findMany({
+      where: {
+        hotel_id,
+        room_category_id,
+        meal_plan_id,
+        valid_from: { lte: checkOut },
+        valid_to: { gt: checkIn },
+        status: true,
+      },
+      orderBy: { valid_from: 'asc' },
+    }),
+  ]);
 
   const breakdown: NightBreakdown[] = [];
   let total_cost = 0;
 
   for (const nightDate of nights) {
-    const nextDay = new Date(nightDate);
-    nextDay.setDate(nextDay.getDate() + 1);
-
-    const rate = await prisma.hotelRate.findFirst({
-      where: {
-        hotel_id,
-        room_category_id,
-        meal_plan_id,
-        valid_from: { lte: nightDate },
-        valid_to: { gt: nightDate },
-        status: true,
-      },
-    });
+    const rate = allRates.find(
+      (r) => r.valid_from <= nightDate && r.valid_to > nightDate
+    );
 
     if (!rate) {
       const dateStr = nightDate.toISOString().split('T')[0];
@@ -117,12 +118,9 @@ export async function calculateHotelCost(params: {
     let nightCwob = 0;
 
     for (const room of rooming_json.rooms) {
-      const roomBase = getRoomCost(rate, room.adults) * room.count;
-      const cwbCost = (rate.child_with_bed_cost ?? 0) * room.children_with_bed * room.count;
-      const cwobCost = (rate.child_without_bed_cost ?? 0) * room.children_without_bed * room.count;
-      nightBaseCost += roomBase;
-      nightCwb += cwbCost;
-      nightCwob += cwobCost;
+      nightBaseCost += getRoomCost(rate, room.adults) * room.count;
+      nightCwb += (rate.child_with_bed_cost ?? 0) * room.children_with_bed * room.count;
+      nightCwob += (rate.child_without_bed_cost ?? 0) * room.children_without_bed * room.count;
     }
 
     const weekend_surcharge = isWeekend(nightDate) && rate.weekend_surcharge

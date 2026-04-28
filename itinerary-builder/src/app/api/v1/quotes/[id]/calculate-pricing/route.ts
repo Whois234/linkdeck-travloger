@@ -66,43 +66,33 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const popularCount = parsed.data.options.filter((o) => o.is_most_popular).length;
   if (popularCount > 1) return err('Only one option can be marked as Most Popular', 400);
 
+  // Validate manual override permissions upfront
+  const hasManualOverride = parsed.data.options.some((o) => o.hotels.some((h) => h.manual_cost_override != null));
+  if (hasManualOverride && !requireRole(user, UserRole.ADMIN, UserRole.MANAGER)) return forbidden();
+  if (hasManualOverride && parsed.data.options.some((o) => o.hotels.some((h) => h.manual_cost_override != null && !h.override_reason))) {
+    return err('override_reason is required when using manual_cost_override', 400);
+  }
+
   try {
-    const results: any[] = [];
-
-    for (const option of parsed.data.options) {
-      // Calculate hotel costs
-      let total_hotel_cost = 0;
-      const hotelBreakdowns = [];
-
-      for (const hotel of option.hotels) {
-        let hotelCost: number;
-        let breakdown;
-
+    // Process all options in parallel for speed
+    const results: any[] = await Promise.all(parsed.data.options.map(async (option) => {
+      // Calculate all hotel costs in parallel within each option
+      const hotelBreakdowns = await Promise.all(option.hotels.map(async (hotel) => {
         if (hotel.manual_cost_override != null) {
-          if (!requireRole(user, UserRole.ADMIN, UserRole.MANAGER)) {
-            return forbidden();
-          }
-          if (!hotel.override_reason) {
-            return err('override_reason is required when using manual_cost_override', 400);
-          }
-          hotelCost = hotel.manual_cost_override;
-          breakdown = { manual_override: true, cost: hotelCost };
-        } else {
-          const result = await calculateHotelCost({
-            hotel_id: hotel.hotel_id,
-            room_category_id: hotel.room_category_id,
-            meal_plan_id: hotel.meal_plan_id,
-            check_in_date: new Date(hotel.check_in_date),
-            check_out_date: new Date(hotel.check_out_date),
-            rooming_json: hotel.rooming_json,
-          });
-          hotelCost = result.total_cost;
-          breakdown = result;
+          return { ...hotel, calculated_cost: hotel.manual_cost_override, breakdown: { manual_override: true, cost: hotel.manual_cost_override } };
         }
+        const result = await calculateHotelCost({
+          hotel_id: hotel.hotel_id,
+          room_category_id: hotel.room_category_id,
+          meal_plan_id: hotel.meal_plan_id,
+          check_in_date: new Date(hotel.check_in_date),
+          check_out_date: new Date(hotel.check_out_date),
+          rooming_json: hotel.rooming_json,
+        });
+        return { ...hotel, calculated_cost: result.total_cost, breakdown: result };
+      }));
 
-        total_hotel_cost += hotelCost;
-        hotelBreakdowns.push({ ...hotel, calculated_cost: hotelCost, breakdown });
-      }
+      const total_hotel_cost = hotelBreakdowns.reduce((sum, h) => sum + h.calculated_cost, 0);
 
       const pricing = calculateQuoteOption({
         hotel_cost: total_hotel_cost,
@@ -118,15 +108,17 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         adults: quote.adults,
       });
 
-      results.push({
+      return {
         option_name: option.option_name,
         display_order: option.display_order,
         is_most_popular: option.is_most_popular ?? false,
         vehicle_type_id: option.vehicle_type_id,
         hotel_breakdowns: hotelBreakdowns,
         pricing,
-      });
-    }
+        // top-level for convenience
+        final_price: pricing.final_price,
+      };
+    }));
 
     // Auto-set most popular to middle option if 3 options and none marked
     if (parsed.data.options.length === 3 && popularCount === 0) {

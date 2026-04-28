@@ -173,16 +173,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const SidebarContent = () => (
     <div className="flex flex-col h-full" style={{ backgroundColor: '#0D3340' }}>
       {/* Logo */}
-      <div className="px-5 pt-6 pb-5" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-lg font-bold flex-shrink-0" style={{ backgroundColor: '#134956' }}>
-            ✈
-          </div>
-          <div>
-            <p className="font-bold text-white text-[15px] leading-tight tracking-tight">Travloger</p>
-            <p className="text-[11px] mt-0.5 font-medium" style={{ color: '#7DD3C0' }}>Itinerary Builder</p>
-          </div>
-        </div>
+      <div className="px-5 pt-5 pb-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/travloger-logo-white.png" alt="Travloger" style={{ height: 34, width: 'auto', objectFit: 'contain' }} />
+        <p className="text-[11px] mt-1.5 font-medium" style={{ color: '#7DD3C0' }}>Itinerary Builder</p>
       </div>
 
       {/* Nav */}

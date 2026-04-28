@@ -765,6 +765,7 @@ model Customer {
 model Quote {
   id                      String      @id @default(cuid())
   quote_number            String      @unique
+  quote_name              String?
   quote_type              QuoteType
   customer_id             String
   lead_id                 String?
