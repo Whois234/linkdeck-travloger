@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { cache } from 'react';
 import { ItineraryClient } from './ItineraryClient';
@@ -47,8 +47,6 @@ export async function generateMetadata({ params }: { params: { token: string } }
 }
 
 export default async function ItineraryPage({ params }: { params: { token: string } }) {
-  const data = await getItinerary(params.token);
-  if (!data) notFound();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return <ItineraryClient data={data as any} token={params.token} />;
+  // Permanent redirect: /itinerary/[token] → /quotations/[token]
+  redirect(`/quotations/${params.token}`);
 }

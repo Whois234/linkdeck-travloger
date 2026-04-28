@@ -5,10 +5,9 @@ export const metadata: Metadata = {
   description: 'View your personalised travel itinerary from Travloger.',
 };
 
-export default function ItineraryLayout({ children }: { children: React.ReactNode }) {
+export default function QuotationsLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
-      {/* Google Fonts for itinerary design */}
       {/* eslint-disable-next-line @next/next/no-page-custom-font */}
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />

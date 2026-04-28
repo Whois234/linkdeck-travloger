@@ -21,6 +21,17 @@ const UpdateSchema = z.object({
   status: z.boolean().optional(),
 });
 
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+  const user = await getAuthUser(req);
+  if (!user) return unauthorized();
+  const hotel = await prisma.hotel.findUnique({
+    where: { id: params.id },
+    include: { destination: { select: { id: true, name: true, state: { select: { id: true, name: true } } } } },
+  });
+  if (!hotel) return notFound('Hotel');
+  return ok(hotel);
+}
+
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   const user = await getAuthUser(req);
   if (!user) return unauthorized();

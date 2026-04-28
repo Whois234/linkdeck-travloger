@@ -370,7 +370,7 @@ function LogoMarquee() {
   const doubled = [...BRAND_LOGOS, ...BRAND_LOGOS];
   return (
     <div className="tl-logos-sec">
-      <div className="tl-logos-label">Trusted by employees of leading organisations</div>
+      <div className="tl-logos-label">Trusted by leading organizations</div>
       <div className="tl-marquee-wrap">
         <div className="tl-marquee-track">
           {doubled.map((c, i) => (
@@ -534,9 +534,9 @@ function WhyChoose() {
 /* ─────────────────────────── Stats ─────────────────────────── */
 function Stats() {
   const STATS = [
-    { n: '500+',   l: 'Trips Curated' },
-    { n: '4.9 ★',  l: 'Google Rating' },
-    { n: '24 / 7', l: 'Always On Support' },
+    { n: '15,000+', l: 'Happy Travellers' },
+    { n: '4.8 ★',   l: 'Google Rating' },
+    { n: '24 / 7',  l: 'Always On Support' },
   ];
 
   return (
@@ -621,6 +621,33 @@ function FareSummary({ option, adults }: { option: QuoteOption | undefined; adul
 }
 
 /* ─────────────────────────── Policies ─────────────────────────── */
+/** Parse "Label: Value" lines into KV pairs; plain lines become label-only rows */
+function PolicyKVTable({ content }: { content: string }) {
+  const lines = content.split('\n').map(l => l.replace(/^[•\-]\s*/, '').trim()).filter(Boolean);
+  return (
+    <div className="tl-pol-kv-table">
+      {lines.map((l, i) => {
+        const sep = l.indexOf(':');
+        if (sep > 0 && sep < l.length - 1) {
+          const label = l.slice(0, sep).trim();
+          const value = l.slice(sep + 1).trim();
+          return (
+            <div key={i} className="tl-pol-kv-row">
+              <span className="tl-pol-kv-label">{label}</span>
+              <span className="tl-pol-kv-value">{value}</span>
+            </div>
+          );
+        }
+        return (
+          <div key={i} className="tl-pol-kv-row tl-pol-kv-full">
+            <span className="tl-pol-kv-label">{l}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function PolicyBullets({ content }: { content: string }) {
   const lines = content.split('\n').map(l => l.replace(/^•\s*/, '').trim()).filter(Boolean);
   return (
@@ -677,7 +704,7 @@ function Policies({ policies }: { policies: PolicyRecord[] }) {
               {c.label} Policy
             </div>
             {c.policies.map((p) => (
-              <PolicyBullets key={p.id} content={p.content} />
+              <PolicyKVTable key={p.id} content={p.content} />
             ))}
           </div>
         ))}
@@ -785,8 +812,6 @@ function AgentSection({ agent, waUrl }: { agent: ItineraryData['agent']; waUrl: 
             ) : (
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="1.3" strokeLinecap="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
             )}
-            {/* Online dot */}
-            <div style={{ position: 'absolute', bottom: 2, right: 2, width: 11, height: 11, borderRadius: '50%', background: '#22c55e', border: '2px solid #0f3d4a' }} />
           </div>
           <div>
             <div style={{ fontFamily: 'var(--f-body)', fontSize: 17, fontWeight: 700, color: 'white', letterSpacing: '-0.3px' }}>{name}</div>
@@ -850,7 +875,7 @@ function Footer({ quoteNum, expiryDate, waUrl }: { quoteNum: string; expiryDate?
         <div style={{ background: 'white', borderRadius: 10, display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 12px 6px 6px', marginBottom: 8 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/travloger-logo-icon.jpeg" alt="Travloger" style={{ width: 32, height: 32, borderRadius: 7, objectFit: 'cover' }} />
-          <span style={{ fontFamily: 'var(--f-body)', fontWeight: 700, fontSize: 15, color: 'var(--tl-teal)', letterSpacing: '-0.3px' }}>travloger.in</span>
+          <span style={{ fontFamily: 'var(--f-brand)', fontWeight: 700, fontSize: 15, color: 'var(--tl-teal)', letterSpacing: '-0.2px' }}>travloger.in</span>
         </div>
         <div style={{ fontSize: '11.5px', color: 'rgba(255,255,255,0.35)', fontStyle: 'italic', fontFamily: 'var(--f-body)' }}>
           Crafting memories, one trip at a time.

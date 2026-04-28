@@ -18,6 +18,17 @@ const UpdateSchema = z.object({
   status: z.boolean().optional(),
 }).passthrough();
 
+export async function GET(req: NextRequest, { params }: { params: { id: string; rateId: string } }) {
+  const user = await getAuthUser(req);
+  if (!user) return unauthorized();
+  const rate = await prisma.hotelRate.findFirst({
+    where: { id: params.rateId, hotel_id: params.id },
+    include: { meal_plan: true, room_category: true },
+  });
+  if (!rate) return notFound('Hotel Rate');
+  return ok(rate);
+}
+
 export async function PUT(req: NextRequest, { params }: { params: { id: string; rateId: string } }) {
   const user = await getAuthUser(req);
   if (!user) return unauthorized();
@@ -32,4 +43,14 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string; 
 
   const updated = await prisma.hotelRate.update({ where: { id: params.rateId }, data: parsed.data });
   return ok(updated);
+}
+
+export async function DELETE(req: NextRequest, { params }: { params: { id: string; rateId: string } }) {
+  const user = await getAuthUser(req);
+  if (!user) return unauthorized();
+  if (!canEditRates(user)) return forbidden();
+  const rate = await prisma.hotelRate.findFirst({ where: { id: params.rateId, hotel_id: params.id } });
+  if (!rate) return notFound('Hotel Rate');
+  await prisma.hotelRate.update({ where: { id: params.rateId }, data: { status: false } });
+  return ok({ message: 'Rate deactivated' });
 }

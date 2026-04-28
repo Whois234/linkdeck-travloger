@@ -591,6 +591,7 @@ model PrivateTemplate {
   default_exclusion_ids   Json?
   default_policy_ids      Json?
   hero_image              String?
+  cms_data                Json?
   status                  Boolean       @default(true)
   created_at              DateTime      @default(now())
   updated_at              DateTime      @updatedAt
@@ -648,8 +649,13 @@ model GroupTemplate {
   destinations          Json
   duration_days         Int
   duration_nights       Int
+  theme                 String?
+  start_city            String?
+  end_city              String?
+  default_policy_ids    Json?
   hero_image            String?
   gallery_images        Json?
+  cms_data              Json?
   status                Boolean            @default(true)
   created_at            DateTime           @default(now())
   updated_at            DateTime           @updatedAt
@@ -928,6 +934,23 @@ model User {
   created_at   DateTime  @default(now())
   updated_at   DateTime  @updatedAt
 
+  notifications Notification[]
+
   @@index([role])
   @@index([status])
+}
+
+model Notification {
+  id         String   @id @default(cuid())
+  user_id    String
+  quote_id   String?
+  message    String
+  event_type String?
+  is_read    Boolean  @default(false)
+  created_at DateTime @default(now())
+
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, is_read])
+  @@index([created_at])
 }

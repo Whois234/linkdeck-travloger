@@ -13,6 +13,10 @@ const Schema = z.object({
   duration_nights: z.number().int().min(0),
   hero_image: z.string().optional().nullable(),
   gallery_images: z.array(z.string()).optional().nullable(),
+  theme: z.string().optional().nullable(),
+  start_city: z.string().optional().nullable(),
+  end_city: z.string().optional().nullable(),
+  cms_data: z.record(z.unknown()).optional().nullable(),
   status: z.boolean().optional(),
 });
 
@@ -28,6 +32,7 @@ export async function GET(req: NextRequest) {
     include: {
       state: { select: { name: true } },
       group_template_days: { orderBy: { sort_order: 'asc' } },
+      group_batches: { where: { status: true }, select: { id: true } },
     },
     orderBy: { group_template_name: 'asc' },
   });
