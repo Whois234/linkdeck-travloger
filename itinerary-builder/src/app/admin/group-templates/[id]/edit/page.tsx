@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
 import {
@@ -23,6 +23,15 @@ const card  = { border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.
 interface Dest    { id: string; name: string }
 interface DayPlan { id: string; title: string; destination_id: string; description?: string | null }
 interface Policy  { id: string; title: string; policy_type: string; content: string }
+interface WhyItem { title: string; description: string }
+
+function normaliseWhy(arr: (string | WhyItem)[]): WhyItem[] {
+  return arr.map(item =>
+    typeof item === 'string'
+      ? { title: item, description: '' }
+      : item
+  );
+}
 
 interface CmsOption {
   tier_name: string;
@@ -40,7 +49,7 @@ interface CmsData {
   hero_tags: string[];
   destination_cards: Array<{ destination_id: string; custom_name: string | null; description: string; image_url: string }>;
   package_options: CmsOption[];
-  why_choose: string[];
+  why_choose: (string | WhyItem)[];
   faqs_enabled: boolean;
   custom_faqs: Array<{ question: string; answer: string }>;
 }
@@ -81,7 +90,13 @@ const DEFAULT_CMS: CmsData = {
     { tier_name: 'Standard', display_order: 1, is_most_popular: false, inclusions: [], adult_price: 0, child_price: 0 },
     { tier_name: 'Deluxe',   display_order: 2, is_most_popular: true,  inclusions: [], adult_price: 0, child_price: 0 },
   ],
-  why_choose: ['Ranked Professionals','Best Prices Guaranteed','Top-tier Standards','24×7 Monitoring','On-ground Support'],
+  why_choose: [
+    { title: 'Ranked Professionals', description: 'Our certified travel experts craft every detail of your journey.' },
+    { title: 'Best Prices Guaranteed', description: 'We match or beat any comparable package price, no questions asked.' },
+    { title: 'Top-tier Standards', description: 'Only hand-picked hotels, guides, and transport providers.' },
+    { title: '24×7 Monitoring', description: 'Round-the-clock support for every traveller on every tour.' },
+    { title: 'On-ground Support', description: 'Dedicated local contacts available throughout your trip.' },
+  ],
   faqs_enabled: false, custom_faqs: [],
 };
 
@@ -110,6 +125,7 @@ const BOOKING_STATUSES = ['OPEN', 'FILLING_FAST', 'ALMOST_FULL', 'FULL', 'CLOSED
 /* ════════════════════════════════════════════════════ */
 export default function GroupTemplateEditPage() {
   const { id } = useParams<{ id: string }>();
+  const router  = useRouter();
 
   const [tpl,      setTpl]      = useState<Template | null>(null);
   const [cms,      setCms]      = useState<CmsData>(DEFAULT_CMS);
@@ -209,12 +225,16 @@ export default function GroupTemplateEditPage() {
           body: JSON.stringify(days),
         }),
       ]);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2500);
+      if (publish) {
+        router.push('/admin/group-templates?published=1');
+      } else {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2500);
+      }
     } finally {
       setSaving(false);
     }
-  }, [id, cms, days, selectedPolicies]);
+  }, [id, cms, days, selectedPolicies, router]);
 
   /* ── Batch save/delete ── */
   async function saveBatch() {
@@ -688,19 +708,39 @@ export default function GroupTemplateEditPage() {
           {/* ═══ WHY CHOOSE ═══ */}
           {activeSection === 'why' && (
             <div className="bg-white rounded-2xl p-6" style={card}>
-              <SectionHeader title="Why Choose Travloger" desc="Pre-filled trust points. Edit or keep as is." />
-              <div className="flex flex-col gap-2">
-                {cms.why_choose.map((point, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <div className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center text-white text-[10px] font-bold" style={{ backgroundColor: T }}>{i + 1}</div>
-                    <input className="flex-1 h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white" style={inpSt}
-                      value={point} onChange={e => { const w = [...cms.why_choose]; w[i] = e.target.value; updCms('why_choose', w); }} />
-                    <button onClick={() => updCms('why_choose', cms.why_choose.filter((_, j) => j !== i))}
-                      className="text-[#94A3B8] hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
+              <SectionHeader title="Why Choose Travloger" desc="Pre-filled trust points shown to customers. Each can have a title and short description." />
+              <div className="flex flex-col gap-3">
+                {normaliseWhy(cms.why_choose).map((item, i) => (
+                  <div key={i} className="rounded-xl p-4" style={{ border: '1px solid #E2E8F0' }}>
+                    <div className="flex items-start gap-3">
+                      <div className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-white text-[10px] font-bold mt-1" style={{ backgroundColor: T }}>{i + 1}</div>
+                      <div className="flex-1 flex flex-col gap-2">
+                        <input
+                          className="w-full h-9 px-3 rounded-lg border text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white"
+                          style={inpSt} placeholder="Title e.g. Best Prices Guaranteed"
+                          value={item.title}
+                          onChange={e => {
+                            const w = normaliseWhy(cms.why_choose);
+                            w[i] = { ...w[i], title: e.target.value };
+                            updCms('why_choose', w);
+                          }} />
+                        <textarea
+                          className="w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white resize-none"
+                          style={inpSt} rows={2} placeholder="Short description (optional)"
+                          value={item.description}
+                          onChange={e => {
+                            const w = normaliseWhy(cms.why_choose);
+                            w[i] = { ...w[i], description: e.target.value };
+                            updCms('why_choose', w);
+                          }} />
+                      </div>
+                      <button onClick={() => updCms('why_choose', normaliseWhy(cms.why_choose).filter((_, j) => j !== i))}
+                        className="text-[#94A3B8] hover:text-red-500 mt-1 flex-shrink-0"><Trash2 className="w-4 h-4" /></button>
+                    </div>
                   </div>
                 ))}
-                <button onClick={() => updCms('why_choose', [...cms.why_choose, ''])}
-                  className="flex items-center gap-2 text-sm font-semibold mt-2" style={{ color: T }}>
+                <button onClick={() => updCms('why_choose', [...normaliseWhy(cms.why_choose), { title: '', description: '' }])}
+                  className="flex items-center gap-2 text-sm font-semibold mt-1" style={{ color: T }}>
                   <Plus className="w-4 h-4" /> Add Point
                 </button>
               </div>

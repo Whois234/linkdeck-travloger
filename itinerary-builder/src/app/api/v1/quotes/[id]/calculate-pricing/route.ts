@@ -133,13 +133,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       results[1].is_most_popular = true;
     }
 
-    // Persist options + hotel selections
-    await prisma.$transaction(async (tx) => {
-      // Delete existing options
-      await tx.quoteOption.deleteMany({ where: { quote_id: params.id } });
+    // Persist options + hotel selections.
+    // NOTE: We intentionally avoid prisma.$transaction(async tx=>{...}) here because
+    // Supabase uses PgBouncer in transaction-pooling mode which does not support
+    // Prisma interactive (callback-based) transactions. Instead we delete + re-create
+    // sequentially — the operation is idempotent so partial failures are safe to retry.
+    await prisma.quoteOption.deleteMany({ where: { quote_id: params.id } });
 
-      for (const result of results) {
-        const qo = await tx.quoteOption.create({
+    for (const result of results) {
+        const qo = await prisma.quoteOption.create({
           data: {
             quote_id: params.id,
             option_name: result.option_name,
@@ -168,7 +170,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         const inputOption = parsed.data.options.find((o) => o.option_name === result.option_name)!;
         for (const h of inputOption.hotels) {
           const hb = result.hotel_breakdowns.find((b: any) => b.hotel_id === h.hotel_id && b.destination_id === h.destination_id);
-          await tx.quoteOptionHotel.create({
+          await prisma.quoteOptionHotel.create({
             data: {
               quote_option_id: qo.id,
               destination_id: h.destination_id,
@@ -185,8 +187,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
             },
           });
         }
-      }
-    });
+    }
 
     return ok(results);
   } catch (e: unknown) {

@@ -197,13 +197,14 @@ export default function CreateQuotePage() {
     const destList = (tpl.destinations ?? []) as string[];
 
     const newOpts: PricingOpt[] = options.map((opt, oi) => {
+      // Sequential dates: each destination's check-in = previous destination's check-out
+      let cursorMs = basics.start_date ? new Date(basics.start_date).getTime() : Date.now();
       const hotels: HotelSel[] = destList.map(did => {
         const tier = tpl.template_hotel_tiers?.find(t => t.tier_name === opt.tier_name && t.destination_id === did);
-        // Suggest check-in/out from start_date + cumulative nights
-        const startMs = basics.start_date ? new Date(basics.start_date).getTime() : Date.now();
-        const tierNights = tier?.nights ?? Math.max(1, Math.floor(nights / destList.length));
-        const checkIn = new Date(startMs).toISOString().slice(0, 10);
-        const checkOut = new Date(startMs + tierNights * 86400000).toISOString().slice(0, 10);
+        const tierNights = tier?.nights ?? Math.max(1, Math.floor(nights / Math.max(1, destList.length)));
+        const checkIn  = new Date(cursorMs).toISOString().slice(0, 10);
+        cursorMs += tierNights * 86400000;
+        const checkOut = new Date(cursorMs).toISOString().slice(0, 10);
         return {
           destination_id: did,
           hotel_id: tier?.default_hotel_id ?? '',
@@ -245,6 +246,8 @@ export default function CreateQuotePage() {
   }, [selectedPT, scaffoldPricingOptions]);
 
   /* ── Helpers ── */
+  const today = new Date().toISOString().slice(0, 10);  // YYYY-MM-DD — used as min on all date pickers
+
   const nights = basics.start_date && basics.end_date
     ? Math.max(0, Math.round((new Date(basics.end_date).getTime() - new Date(basics.start_date).getTime()) / 86400000))
     : (selectedPT?.duration_nights ?? selectedGT?.duration_nights ?? 0);
@@ -539,11 +542,11 @@ export default function CreateQuotePage() {
               </div>
               <div>
                 <label className={lbl}>Start Date <span className="text-red-500">*</span></label>
-                <input type="date" className={inp} style={inpSt} value={basics.start_date} onChange={e => setBasics(p => ({ ...p, start_date: e.target.value }))} />
+                <input type="date" className={inp} style={inpSt} min={today} value={basics.start_date} onChange={e => setBasics(p => ({ ...p, start_date: e.target.value, end_date: p.end_date && p.end_date < e.target.value ? e.target.value : p.end_date }))} />
               </div>
               <div>
                 <label className={lbl}>End Date <span className="text-red-500">*</span></label>
-                <input type="date" className={inp} style={inpSt} value={basics.end_date} onChange={e => setBasics(p => ({ ...p, end_date: e.target.value }))} />
+                <input type="date" className={inp} style={inpSt} min={basics.start_date || today} value={basics.end_date} onChange={e => setBasics(p => ({ ...p, end_date: e.target.value }))} />
               </div>
               {basics.start_date && basics.end_date && (
                 <div className="col-span-2">
@@ -563,7 +566,7 @@ export default function CreateQuotePage() {
                   {agents.map(a => <option key={a.id} value={a.id}>{a.name} ({a.role})</option>)}
                 </select>
               </div>
-              <div><label className={lbl}>Quote Expiry</label><input type="date" className={inp} style={inpSt} value={basics.expiry_date} onChange={e => setBasics(p => ({ ...p, expiry_date: e.target.value }))} /></div>
+              <div><label className={lbl}>Quote Expiry</label><input type="date" className={inp} style={inpSt} min={today} value={basics.expiry_date} onChange={e => setBasics(p => ({ ...p, expiry_date: e.target.value }))} /></div>
             </div>
           </div>
         </div>
@@ -696,12 +699,21 @@ export default function CreateQuotePage() {
                       </div>
                       <div>
                         <label className={lbl}>Check-in</label>
-                        <input type="date" className={inp} style={inpSt} value={hs.check_in_date}
-                          onChange={e => updHotelSel(oi, hi, { check_in_date: e.target.value })} />
+                        <input type="date" className={inp} style={inpSt} min={basics.start_date || today}
+                          value={hs.check_in_date}
+                          onChange={e => {
+                            const newIn = e.target.value;
+                            const nights = hs.check_out_date
+                              ? Math.round((new Date(hs.check_out_date).getTime() - new Date(hs.check_in_date).getTime()) / 86400000)
+                              : 1;
+                            const newOut = new Date(new Date(newIn).getTime() + nights * 86400000).toISOString().slice(0, 10);
+                            updHotelSel(oi, hi, { check_in_date: newIn, check_out_date: newOut });
+                          }} />
                       </div>
                       <div>
                         <label className={lbl}>Check-out</label>
-                        <input type="date" className={inp} style={inpSt} value={hs.check_out_date}
+                        <input type="date" className={inp} style={inpSt} min={hs.check_in_date || basics.start_date || today}
+                          value={hs.check_out_date}
                           onChange={e => updHotelSel(oi, hi, { check_out_date: e.target.value })} />
                       </div>
                       <div>

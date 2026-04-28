@@ -1,9 +1,19 @@
 'use client';
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useMemo, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
-import { Plus, Pencil, Trash2, Search, Users, ChevronRight } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, Users, ChevronRight, LayoutGrid, List, ArrowUpDown, CheckCircle2 } from 'lucide-react';
+
+type SortKey = 'name_asc' | 'name_desc' | 'nights_asc' | 'nights_desc' | 'batches_desc' | 'state_asc';
+const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: 'name_asc',     label: 'Name A → Z' },
+  { value: 'name_desc',    label: 'Name Z → A' },
+  { value: 'state_asc',    label: 'State A → Z' },
+  { value: 'nights_asc',   label: 'Nights: Low → High' },
+  { value: 'nights_desc',  label: 'Nights: High → Low' },
+  { value: 'batches_desc', label: 'Most Departures' },
+];
 
 interface State { id: string; name: string }
 interface Dest  { id: string; name: string; state_id: string }
@@ -27,13 +37,18 @@ const DEFAULT_OPTIONS = [
   { tier_name: 'Deluxe',   display_order: 2, is_most_popular: true,  inclusions: [], adult_price: 0, child_price: 0 },
 ];
 
-export default function GroupTemplatesPage() {
+function GroupTemplatesPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const justPublished = searchParams.get('published') === '1';
   const [rows, setRows]       = useState<GT[]>([]);
   const [states, setStates]   = useState<State[]>([]);
   const [dests, setDests]     = useState<Dest[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch]   = useState('');
+  const [search, setSearch]     = useState('');
+  const [stateFilter, setStateFilter] = useState('');
+  const [sortKey, setSortKey]   = useState<SortKey>('name_asc');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [showSetup, setShowSetup] = useState(false);
   const [saving, setSaving]   = useState(false);
   const [err, setErr]         = useState('');
@@ -119,10 +134,26 @@ export default function GroupTemplatesPage() {
     setDeleting(null); load();
   }
 
-  const filtered = rows.filter(r =>
-    !search || r.group_template_name.toLowerCase().includes(search.toLowerCase()) ||
-    r.state.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = useMemo(() => {
+    let list = rows.filter(r => {
+      const q = search.toLowerCase();
+      if (q && !r.group_template_name.toLowerCase().includes(q) && !r.state.name.toLowerCase().includes(q) && !(r.theme ?? '').toLowerCase().includes(q)) return false;
+      if (stateFilter && r.state_id !== stateFilter) return false;
+      return true;
+    });
+    list = [...list].sort((a, b) => {
+      switch (sortKey) {
+        case 'name_asc':     return a.group_template_name.localeCompare(b.group_template_name);
+        case 'name_desc':    return b.group_template_name.localeCompare(a.group_template_name);
+        case 'state_asc':    return a.state.name.localeCompare(b.state.name);
+        case 'nights_asc':   return a.duration_nights - b.duration_nights;
+        case 'nights_desc':  return b.duration_nights - a.duration_nights;
+        case 'batches_desc': return (b.group_batches?.length ?? 0) - (a.group_batches?.length ?? 0);
+        default:             return 0;
+      }
+    });
+    return list;
+  }, [rows, search, stateFilter, sortKey]);
 
   return (
     <div className="max-w-[1400px]">
@@ -138,17 +169,59 @@ export default function GroupTemplatesPage() {
         }
       />
 
-      {/* Search */}
-      <div className="flex items-center gap-3 mb-5">
+      {/* Success banner */}
+      {justPublished && (
+        <div className="flex items-center gap-3 px-4 py-3 mb-5 rounded-xl text-sm font-medium" style={{ backgroundColor: '#DCFCE7', color: '#166534', border: '1px solid #BBF7D0' }}>
+          <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
+          Group template published successfully!
+        </div>
+      )}
+
+      {/* Filter / Sort bar */}
+      <div className="flex flex-wrap items-center gap-2 mb-5">
+        {/* Search */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#94A3B8]" />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search templates…"
-            className="w-64 h-9 pl-9 pr-3 rounded-lg border text-sm placeholder:text-[#94A3B8] focus:outline-none bg-white" style={inpSt} />
+            className="w-56 h-9 pl-9 pr-3 rounded-lg border text-sm placeholder:text-[#94A3B8] focus:outline-none bg-white" style={inpSt} />
         </div>
-        <p className="text-sm text-[#94A3B8] ml-auto">{loading ? 'Loading…' : `${filtered.length} template${filtered.length !== 1 ? 's' : ''}`}</p>
+
+        {/* State filter */}
+        <div className="relative">
+          <select value={stateFilter} onChange={e => setStateFilter(e.target.value)}
+            className="h-9 pl-3 pr-8 rounded-lg border text-sm focus:outline-none bg-white appearance-none" style={inpSt}>
+            <option value="">All States</option>
+            {states.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </div>
+
+        {/* Sort */}
+        <div className="relative flex items-center">
+          <ArrowUpDown className="absolute left-2.5 w-3.5 h-3.5 text-[#94A3B8] pointer-events-none" />
+          <select value={sortKey} onChange={e => setSortKey(e.target.value as SortKey)}
+            className="h-9 pl-8 pr-8 rounded-lg border text-sm focus:outline-none bg-white appearance-none" style={inpSt}>
+            {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
+
+        {/* View toggle */}
+        <div className="flex rounded-lg overflow-hidden ml-auto" style={{ border: '1px solid #E2E8F0' }}>
+          <button onClick={() => setViewMode('grid')}
+            className="w-9 h-9 flex items-center justify-center transition-colors"
+            style={viewMode === 'grid' ? { backgroundColor: T, color: 'white' } : { backgroundColor: 'white', color: '#94A3B8' }}>
+            <LayoutGrid className="w-4 h-4" />
+          </button>
+          <button onClick={() => setViewMode('list')}
+            className="w-9 h-9 flex items-center justify-center transition-colors"
+            style={viewMode === 'list' ? { backgroundColor: T, color: 'white' } : { backgroundColor: 'white', color: '#94A3B8' }}>
+            <List className="w-4 h-4" />
+          </button>
+        </div>
+
+        <p className="text-sm text-[#94A3B8]">{loading ? 'Loading…' : `${filtered.length} template${filtered.length !== 1 ? 's' : ''}`}</p>
       </div>
 
-      {/* Grid */}
+      {/* Content */}
       {loading ? (
         <div className="py-20 flex justify-center">
           <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: T }} />
@@ -159,7 +232,57 @@ export default function GroupTemplatesPage() {
           <p className="font-semibold text-sm text-[#0F172A]">No group templates yet</p>
           <p className="text-sm mt-1 text-[#64748B]">Create your first group template to start managing departures</p>
         </div>
+      ) : viewMode === 'list' ? (
+        /* ── LIST VIEW ── */
+        <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
+          <table className="w-full text-sm">
+            <thead>
+              <tr style={{ borderBottom: '1px solid #F1F5F9', backgroundColor: '#F8FAFC' }}>
+                <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#64748B]">Template</th>
+                <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#64748B]">State</th>
+                <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#64748B]">Duration</th>
+                <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#64748B]">Theme</th>
+                <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#64748B]">Days</th>
+                <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#64748B]">Departures</th>
+                <th className="px-4 py-3" />
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((r, i) => (
+                <tr key={r.id} onClick={() => router.push(`/admin/group-templates/${r.id}/edit`)}
+                  className="cursor-pointer hover:bg-[#F8FAFC] transition-colors"
+                  style={i < filtered.length - 1 ? { borderBottom: '1px solid #F1F5F9' } : {}}>
+                  <td className="px-4 py-3 font-semibold text-[#0F172A]">{r.group_template_name}</td>
+                  <td className="px-4 py-3">
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-md" style={{ backgroundColor: '#FEF9C3', color: '#854D0E' }}>{r.state.name}</span>
+                  </td>
+                  <td className="px-4 py-3 text-[#64748B]">{r.duration_nights}N / {r.duration_days}D</td>
+                  <td className="px-4 py-3 text-[#64748B]">{r.theme ?? '—'}</td>
+                  <td className="px-4 py-3 text-[#64748B]">{r.group_template_days.length}</td>
+                  <td className="px-4 py-3">
+                    {(r.group_batches?.length ?? 0) > 0
+                      ? <span className="text-[11px] font-bold px-2 py-0.5 rounded-md" style={{ backgroundColor: '#DCFCE7', color: '#166534' }}>{r.group_batches.length} batch{r.group_batches.length !== 1 ? 'es' : ''}</span>
+                      : <span className="text-[#CBD5E1] text-xs">—</span>}
+                  </td>
+                  <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                    <div className="flex gap-1 justify-end">
+                      <button onClick={() => router.push(`/admin/group-templates/${r.id}/edit`)}
+                        className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#F1F5F9] hover:text-[#134956]">
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button onClick={() => del(r.id)} disabled={deleting === r.id}
+                        className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#FEF2F2] hover:text-[#DC2626] disabled:opacity-40">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : (
+        /* ── GRID VIEW ── */
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map(r => (
             <div key={r.id} className="bg-white rounded-2xl overflow-hidden group cursor-pointer hover:-translate-y-0.5 transition-all"
@@ -280,5 +403,13 @@ export default function GroupTemplatesPage() {
         </div>
       </Modal>
     </div>
+  );
+}
+
+export default function GroupTemplatesPage() {
+  return (
+    <Suspense fallback={<div className="py-20 flex justify-center"><div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: '#134956' }} /></div>}>
+      <GroupTemplatesPageInner />
+    </Suspense>
   );
 }

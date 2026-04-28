@@ -136,7 +136,14 @@ export default function HotelDetailPage() {
   /* ── Overview save ── */
   async function saveOverview() {
     setOvSaving(true); setOvErr('');
-    const payload = { ...ovForm, star_rating: ovForm.star_rating ? Number(ovForm.star_rating) : null };
+    const payload = {
+      ...ovForm,
+      star_rating: ovForm.star_rating ? Number(ovForm.star_rating) : null,
+      // Zod rejects empty string for email/phone — send null instead
+      email: ovForm.email?.trim() || null,
+      phone: ovForm.phone?.trim() || null,
+      address: ovForm.address?.trim() || null,
+    };
     const res = await fetch(`/api/v1/hotels/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     const d = await res.json();
     if (!res.ok) setOvErr(d.error ?? 'Save failed');

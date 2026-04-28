@@ -30,6 +30,7 @@ interface CmsOption {
   is_most_popular: boolean;
   inclusions: string[];
 }
+interface WhyItem { title: string; description: string }
 interface CmsData {
   pax_count: number;
   hero_heading: string;
@@ -37,9 +38,14 @@ interface CmsData {
   hero_tags: string[];
   destination_cards: Array<{ destination_id: string; custom_name: string | null; description: string; image_url: string }>;
   package_options: CmsOption[];
-  why_choose: string[];
+  why_choose: (string | WhyItem)[];
   faqs_enabled: boolean;
   custom_faqs: Array<{ question: string; answer: string }>;
+}
+
+// Normalise legacy string[] entries to WhyItem objects
+function normaliseWhy(items: (string | WhyItem)[]): WhyItem[] {
+  return items.map(i => typeof i === 'string' ? { title: i, description: '' } : i);
 }
 interface TDay {
   id?: string; day_number: number; destination_id: string; title: string;
@@ -66,7 +72,13 @@ const DEFAULT_CMS: CmsData = {
     { tier_name: 'Standard', display_order: 1, is_most_popular: false, inclusions: [] },
     { tier_name: 'Deluxe',   display_order: 2, is_most_popular: true,  inclusions: [] },
   ],
-  why_choose: ['Ranked Professionals','Best Prices Guaranteed','Top-tier Standards','24×7 Monitoring','On-ground Support'],
+  why_choose: [
+    { title: 'Ranked Professionals',    description: 'Expert travel consultants with years of on-ground experience.' },
+    { title: 'Best Prices Guaranteed',  description: 'Competitive rates with no hidden charges — ever.' },
+    { title: 'Top-tier Standards',      description: 'Carefully vetted hotels, vehicles and activity partners.' },
+    { title: '24×7 Monitoring',         description: 'Round-the-clock support throughout your journey.' },
+    { title: 'On-ground Support',       description: 'Local guides and coordinators at every destination.' },
+  ],
   faqs_enabled: false, custom_faqs: [],
 };
 
@@ -197,12 +209,17 @@ export default function TemplateEditPage() {
           body: JSON.stringify(tiers),
         }),
       ]);
+      if (publish) {
+        // Redirect back to list with success banner
+        router.push('/admin/private-templates?published=1');
+        return;
+      }
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } finally {
       setSaving(false);
     }
-  }, [id, cms, days, tiers, selectedPolicies]);
+  }, [id, cms, days, tiers, selectedPolicies, router]);
 
   /* ── Helpers ── */
   function updCms<K extends keyof CmsData>(key: K, val: CmsData[K]) {
@@ -563,19 +580,37 @@ export default function TemplateEditPage() {
           {/* ═══ WHY CHOOSE ═══ */}
           {activeSection === 'why' && (
             <div className="bg-white rounded-2xl p-6" style={card}>
-              <SectionHeader title="Why Choose Travloger" desc="Pre-filled trust points. Edit or keep as is." />
-              <div className="flex flex-col gap-2">
-                {cms.why_choose.map((point, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <div className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center text-white text-[10px] font-bold" style={{ backgroundColor: T }}>{i + 1}</div>
-                    <input className="flex-1 h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white" style={inpSt}
-                      value={point} onChange={e => { const w = [...cms.why_choose]; w[i] = e.target.value; updCms('why_choose', w); }} />
-                    <button onClick={() => updCms('why_choose', cms.why_choose.filter((_, j) => j !== i))}
-                      className="text-[#94A3B8] hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
+              <SectionHeader title="Why Choose Travloger" desc="Add trust points with titles and descriptions shown on the customer quotation page." />
+              <div className="flex flex-col gap-3">
+                {normaliseWhy(cms.why_choose).map((item, i) => (
+                  <div key={i} className="p-4 rounded-xl" style={{ border: '1px solid #E2E8F0', backgroundColor: '#F8FAFC' }}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center text-white text-[10px] font-bold" style={{ backgroundColor: T }}>{i + 1}</div>
+                      <input
+                        className="flex-1 h-9 px-3 rounded-lg border text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white" style={inpSt}
+                        placeholder="Point title (e.g. Best Prices Guaranteed)"
+                        value={item.title}
+                        onChange={e => {
+                          const w = normaliseWhy(cms.why_choose);
+                          w[i] = { ...w[i], title: e.target.value };
+                          updCms('why_choose', w);
+                        }} />
+                      <button onClick={() => updCms('why_choose', normaliseWhy(cms.why_choose).filter((_, j) => j !== i))}
+                        className="text-[#94A3B8] hover:text-red-500 flex-shrink-0"><Trash2 className="w-4 h-4" /></button>
+                    </div>
+                    <textarea
+                      className={ta} style={inpSt} rows={2}
+                      placeholder="Short description shown below the title (optional)"
+                      value={item.description}
+                      onChange={e => {
+                        const w = normaliseWhy(cms.why_choose);
+                        w[i] = { ...w[i], description: e.target.value };
+                        updCms('why_choose', w);
+                      }} />
                   </div>
                 ))}
-                <button onClick={() => updCms('why_choose', [...cms.why_choose, ''])}
-                  className="flex items-center gap-2 text-sm font-semibold mt-2" style={{ color: T }}>
+                <button onClick={() => updCms('why_choose', [...normaliseWhy(cms.why_choose), { title: '', description: '' }])}
+                  className="flex items-center gap-2 text-sm font-semibold mt-1" style={{ color: T }}>
                   <Plus className="w-4 h-4" /> Add Point
                 </button>
               </div>
