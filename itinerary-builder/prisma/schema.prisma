@@ -785,6 +785,7 @@ model Quote {
   assigned_agent_id       String?
   expiry_date             DateTime?
   public_token            String      @unique @default(cuid())
+  link_active             Boolean     @default(true)
   selected_quote_option_id String?
   private_template_id     String?
   group_template_id       String?

@@ -12,6 +12,7 @@ const UpdateSchema = z.object({
   assigned_agent_id: z.string().optional().nullable(),
   expiry_date: z.string().datetime().optional().nullable(),
   selected_quote_option_id: z.string().optional().nullable(),
+  link_active: z.boolean().optional(),
 }).passthrough();
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
@@ -64,4 +65,17 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     data: parsed.data,
   });
   return ok(updated);
+}
+
+export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+  const user = await getAuthUser(req);
+  if (!user) return unauthorized();
+  if (!requireRole(user, UserRole.ADMIN, UserRole.MANAGER)) return forbidden();
+
+  const quote = await prisma.quote.findUnique({ where: { id: params.id } });
+  if (!quote) return notFound('Quote');
+
+  // Cascade delete via Prisma (QuoteOption, QuoteOptionHotel, QuoteSnapshot, QuoteEvent all have onDelete: Cascade)
+  await prisma.quote.delete({ where: { id: params.id } });
+  return ok({ deleted: true });
 }

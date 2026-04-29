@@ -16,6 +16,7 @@ const getItinerary = cache(async (token: string) => {
     include: { snapshots: { where: { is_current: true } } },
   });
   if (!quote || quote.snapshots.length === 0) return null;
+  if ((quote as unknown as { link_active: boolean }).link_active === false) return null; // treat deactivated links as not found
 
   prisma.quoteEvent.create({ data: { quote_id: quote.id, event_type: 'quote_viewed' } }).catch(() => {});
   if (quote.status === QuoteStatus.SENT) {
