@@ -490,7 +490,7 @@ export default function TemplateEditPage() {
                           </div>
                           <div>
                             <label className={lbl}>Nights</label>
-                            <input type="number" min="1" className={inp} style={inpSt} value={tier.nights}
+                            <input type="number" min="0" className={inp} style={inpSt} value={tier.nights}
                               onChange={e => updTier(opt.tier_name, did, { nights: Number(e.target.value) })} />
                           </div>
                         </div>

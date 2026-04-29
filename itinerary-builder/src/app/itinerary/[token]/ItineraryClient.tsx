@@ -708,6 +708,8 @@ function PolicyBullets({ content }: { content: string }) {
 function Policies({ policies }: { policies: PolicyRecord[] }) {
   const [termsOpen, setTermsOpen] = useState(false);
 
+  if (!policies || policies.length === 0) return null;
+
   const paymentPolicies  = policies.filter((p) => p.policy_type === 'PAYMENT');
   const cancelPolicies   = policies.filter((p) => p.policy_type === 'CANCELLATION');
   const importantNotes   = policies.filter((p) => p.policy_type === 'IMPORTANT_NOTE');

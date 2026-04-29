@@ -364,7 +364,7 @@ export default function CreateQuotePage() {
           profit_value: profitValue,
           discount_amount: 0,
           gst_percent: gstPercent,
-          rounding_rule: 'NEAREST_500',
+          rounding_rule: 'NONE',
           internal_notes: null,
           customer_visible_notes: null,
           hotels: opt.hotels.filter(h => h.hotel_id && h.room_category_id && h.meal_plan_id).map(h => ({

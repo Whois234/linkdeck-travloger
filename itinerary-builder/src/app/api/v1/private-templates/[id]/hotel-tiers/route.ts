@@ -37,7 +37,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
           default_hotel_id: (t.default_hotel_id as string) ?? null,
           default_room_category_id: (t.default_room_category_id as string) ?? null,
           default_meal_plan_id: (t.default_meal_plan_id as string) ?? null,
-          nights: Number(t.nights) || 1,
+          nights: Number(t.nights) >= 0 ? Number(t.nights) : 1,
           sort_order: Number(t.sort_order) || i + 1,
         },
       })
