@@ -32,6 +32,8 @@ interface DaySnapshot {
   day_number: number;
   date: string;
   destination_id: string;
+  destination_name?: string | null;
+  destination_hero_image?: string | null;
   title: string;
   description?: string | null;
   image_url?: string | null;
@@ -50,6 +52,7 @@ interface ItineraryData {
   selected_option_id?: string | null;
   quote: {
     quote_number: string;
+    quote_name?: string | null;
     adults: number;
     children_5_12?: number;
     children_below_5?: number;
@@ -149,28 +152,29 @@ function Nav({ quoteNum, pkgName }: { quoteNum: string; pkgName?: string }) {
 function Hero({ data }: { data: ItineraryData }) {
   const { quote, customer, state, day_snapshots } = data;
 
-  // Unique destinations from day snapshots (in order of appearance)
+  // Build ordered list of unique destination names from day snapshots
   const destNames: string[] = [];
   day_snapshots.forEach((d) => {
-    // We don't have dest name in snapshot directly, so we skip — shown via state only
-    // Unless destination names are available
+    if (d.destination_name && !destNames.includes(d.destination_name)) {
+      destNames.push(d.destination_name);
+    }
   });
-
-  const totalPax = quote.adults
-    + (quote.children_5_12 ?? 0)
-    + (quote.children_below_5 ?? 0)
-    + (quote.infants ?? 0);
 
   const startFmt = fmtShortDate(quote.start_date);
   const endFmt = fmtShortDate(quote.end_date);
   const dateRange = `${startFmt} – ${endFmt}`;
 
-  const stateDesc = state.description ?? 'God\'s Own Country';
+  // Hero title priority: quote_name > state.name
+  const heroTitle = quote.quote_name?.trim() || state.name;
+  // Sub-line: destination list if available, else state description
+  const heroSub = destNames.length > 1
+    ? destNames.join(' · ')
+    : (state.description ?? null);
 
   return (
     <div className="tl-hero">
       {state.hero_image && (
-        <img src={state.hero_image} alt={state.name} className="tl-hero-bg-img" loading="eager" />
+        <img src={state.hero_image} alt={heroTitle} className="tl-hero-bg-img" loading="eager" />
       )}
       <div className="tl-hero-noise" />
       <div className="tl-hero-overlay" />
@@ -188,8 +192,8 @@ function Hero({ data }: { data: ItineraryData }) {
 
       <div className="tl-hero-body">
         <div className="tl-hero-eyebrow">Travloger Exclusive Itinerary</div>
-        <div className="tl-hero-title">{state.name}</div>
-        <div className="tl-hero-sub">{stateDesc}</div>
+        <div className="tl-hero-title">{heroTitle}</div>
+        {heroSub && <div className="tl-hero-sub">{heroSub}</div>}
         {quote.pickup_point && (
           <div className="tl-hero-dest">Ex-{quote.pickup_point}</div>
         )}
@@ -280,7 +284,7 @@ function Packages({
           Same journey — your comfort level, your choice.
         </div>
       </div>
-      <div className="tl-pkg-scroll">
+      <div className="tl-pkg-scroll" style={options.length === 1 ? { justifyContent: 'center' } : undefined}>
         {options.map((opt) => {
           const isSel = selectedId === opt.id;
           // Group hotels by destination
@@ -383,6 +387,50 @@ function LogoMarquee() {
   );
 }
 
+/* ─────────────────────────── Day Description Renderer ─────────────────────────── */
+/**
+ * Smart renderer: if description has lines starting with "- " or "• ", render as a
+ * bulleted list. Otherwise render as a paragraph (preserving line breaks).
+ */
+function DayDescription({ text }: { text: string }) {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const isBullet = lines.every(l => /^[-•*]\s/.test(l));
+
+  if (isBullet) {
+    return (
+      <ul style={{ margin: '0 0 8px', paddingLeft: 18, listStyleType: 'disc' }}>
+        {lines.map((l, i) => (
+          <li key={i} className="tl-day-desc" style={{ marginBottom: 4, padding: 0 }}>
+            {l.replace(/^[-•*]\s+/, '')}
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
+  // Mixed: some lines are bullets, others are prose — render line-by-line
+  const hasSomeBullets = lines.some(l => /^[-•*]\s/.test(l));
+  if (hasSomeBullets) {
+    return (
+      <div>
+        {lines.map((l, i) => {
+          if (/^[-•*]\s/.test(l)) {
+            return (
+              <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 3 }}>
+                <span style={{ color: T, flexShrink: 0, marginTop: 1 }}>•</span>
+                <span className="tl-day-desc" style={{ margin: 0 }}>{l.replace(/^[-•*]\s+/, '')}</span>
+              </div>
+            );
+          }
+          return <p key={i} className="tl-day-desc">{l}</p>;
+        })}
+      </div>
+    );
+  }
+
+  return <p className="tl-day-desc">{text}</p>;
+}
+
 /* ─────────────────────────── Day Cards ─────────────────────────── */
 function DayCard({ day, open, onToggle }: { day: DaySnapshot; open: boolean; onToggle: () => void }) {
   return (
@@ -410,7 +458,7 @@ function DayCard({ day, open, onToggle }: { day: DaySnapshot; open: boolean; onT
               <img src={day.image_url} alt={day.title} className="tl-day-img" loading="lazy" />
             )}
             <div className="tl-day-body">
-              {day.description && <p className="tl-day-desc">{day.description}</p>}
+              {day.description && <DayDescription text={day.description} />}
               {Array.isArray(day.tags) && day.tags.length > 0 && (
                 <div className="tl-tag-row">
                   {day.tags.map((tag, j) => <span key={j} className="tl-tag">{tag}</span>)}
@@ -567,7 +615,8 @@ function Stats() {
 /* ─────────────────────────── Fare Summary ─────────────────────────── */
 function FareSummary({ option, adults }: { option: QuoteOption | undefined; adults: number }) {
   if (!option) return null;
-  const perAdult = option.price_per_adult_display;
+  // Per-adult pre-GST so the math adds up: (perAdultPreGst × adults) = selling_before_gst
+  const perAdultPreGst = adults > 0 ? option.selling_before_gst / adults : 0;
   const total = option.final_price;
 
   return (
@@ -578,8 +627,8 @@ function FareSummary({ option, adults }: { option: QuoteOption | undefined; adul
         <div className="tl-sec-sub">{adults} Adult{adults > 1 ? 's' : ''} · {option.option_name} Package</div>
         <div className="tl-fare-card">
           <div className="tl-fare-row">
-            <span>Per Adult ({option.option_name})</span>
-            <span style={{ fontWeight: 700 }}>{fmtCurrency(perAdult)}</span>
+            <span>Per Adult (before GST)</span>
+            <span style={{ fontWeight: 700 }}>{fmtCurrency(perAdultPreGst)}</span>
           </div>
           <div className="tl-fare-row">
             <span>× {adults} Adult{adults > 1 ? 's' : ''}</span>
@@ -590,7 +639,12 @@ function FareSummary({ option, adults }: { option: QuoteOption | undefined; adul
             <span>{fmtCurrency(option.gst_amount)}</span>
           </div>
           <div className="tl-fare-total">
-            <span className="tl-fare-total-label">Total Amount</span>
+            <div>
+              <span className="tl-fare-total-label">Total Amount</span>
+              <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2, fontFamily: 'var(--f-body)' }}>
+                {fmtCurrency(option.price_per_adult_display)} per person · incl. GST
+              </div>
+            </div>
             <span className="tl-fare-total-val">{fmtCurrency(total)}</span>
           </div>
         </div>

@@ -5,8 +5,8 @@ import { Modal } from '@/components/admin/Modal';
 import { Plus, Pencil, Trash2, Search } from 'lucide-react';
 
 interface State { id: string; name: string }
-interface Dest { id: string; name: string; state: { name: string }; state_id: string; status: boolean }
-const EMPTY = { name: '', state_id: '', description: '' };
+interface Dest { id: string; name: string; state: { name: string }; state_id: string; hero_image: string | null; status: boolean }
+const EMPTY = { name: '', state_id: '', description: '', hero_image: '' };
 const inp = 'w-full h-10 px-3 rounded-lg border text-sm placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white transition-colors';
 const inpStyle = { borderColor: '#E2E8F0' };
 const sel = 'w-full h-10 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white transition-colors appearance-none';
@@ -38,7 +38,7 @@ export default function DestinationsPage() {
   useEffect(() => { load(); }, []);
 
   function openCreate() { setEditing(null); setForm({ ...EMPTY }); setError(''); setShowForm(true); }
-  function openEdit(r: Dest) { setEditing(r); setForm({ name: r.name, state_id: r.state_id, description: '' }); setError(''); setShowForm(true); }
+  function openEdit(r: Dest) { setEditing(r); setForm({ name: r.name, state_id: r.state_id, description: '', hero_image: r.hero_image ?? '' }); setError(''); setShowForm(true); }
 
   async function handleSave() {
     setSaving(true); setError('');
@@ -73,6 +73,14 @@ export default function DestinationsPage() {
               </select>
             </div>
             <div className="sm:col-span-2"><label className={lbl} style={lblStyle}>Description</label><textarea rows={3} className={textarea} style={inpStyle} value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="Brief description…" /></div>
+            <div className="sm:col-span-2">
+              <label className={lbl} style={lblStyle}>Hero Image URL</label>
+              <input className={inp} style={inpStyle} value={form.hero_image} onChange={e => setForm(p => ({ ...p, hero_image: e.target.value }))} placeholder="https://… paste image URL" />
+              <p style={{ fontSize: 11, color: '#94A3B8', marginTop: 4, fontFamily: 'sans-serif' }}>📐 Recommended size: <strong>1200 × 630 px</strong> (landscape, 16:9). Use the Media Library to upload &amp; copy the URL.</p>
+              {form.hero_image && (
+                <img src={form.hero_image} alt="Preview" style={{ marginTop: 8, width: '100%', height: 140, objectFit: 'cover', borderRadius: 8, border: '1px solid #E2E8F0' }} />
+              )}
+            </div>
           </div>
           <div className="flex justify-end gap-3 mt-5 pt-5" style={{ borderTop: '1px solid #F1F5F9' }}>
             <button onClick={() => setShowForm(false)} className="h-9 px-4 rounded-lg text-sm font-semibold transition-colors hover:bg-[#F8FAFC]" style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>Cancel</button>

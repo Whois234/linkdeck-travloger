@@ -322,6 +322,7 @@ export default function TemplateEditPage() {
                     value={cms.hero_tags[0] ?? null}
                     onChange={url => updCms('hero_tags', url ? [url, ...cms.hero_tags.slice(1)] : cms.hero_tags.slice(1))}
                     placeholder="Upload hero banner image"
+                    sizeHint="1200 × 630 px (landscape 16:9)"
                   />
                 </div>
                 <div>
@@ -371,6 +372,7 @@ export default function TemplateEditPage() {
                             value={dc.image_url || null}
                             onChange={url => { const c = [...cms.destination_cards]; c[i] = { ...c[i], image_url: url ?? '' }; updCms('destination_cards', c); }}
                             placeholder="Upload destination photo"
+                            sizeHint="800 × 600 px (4:3)"
                           />
                         </div>
                         <div className="col-span-2">
@@ -561,6 +563,7 @@ export default function TemplateEditPage() {
                               value={day.image_override ?? null}
                               onChange={url => updDay(i, { image_override: url })}
                               placeholder="Upload day image"
+                              sizeHint="1200 × 800 px (3:2) — shown full-width in itinerary"
                             />
                           </div>
                           <div className="col-span-2">

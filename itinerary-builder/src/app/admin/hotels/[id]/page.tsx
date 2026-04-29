@@ -480,6 +480,7 @@ export default function HotelDetailPage() {
             <ImageUploader
               folder="hotels"
               placeholder="Upload hotel photo (click or drag & drop)"
+              sizeHint="1200 × 800 px (3:2) — shown in package cards"
               onChange={async (url) => {
                 if (!url || !hotel) return;
                 const newImages = [...(hotel.images ?? []), url];

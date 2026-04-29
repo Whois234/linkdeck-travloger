@@ -9,6 +9,8 @@ interface Props {
   accept?: string;
   label?: string;
   placeholder?: string;
+  /** e.g. "1200 × 630 px (16:9)" — shown as a hint below the uploader */
+  sizeHint?: string;
 }
 
 const T = '#134956';
@@ -19,7 +21,7 @@ function fileIcon(type: string) {
   return <ImageIcon className="w-5 h-5" />;
 }
 
-export function ImageUploader({ value, onChange, folder = 'uploads', accept = 'image/*,application/pdf,video/*', label, placeholder }: Props) {
+export function ImageUploader({ value, onChange, folder = 'uploads', accept = 'image/*,application/pdf,video/*', label, placeholder, sizeHint }: Props) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const [dragOver, setDragOver] = useState(false);
@@ -114,6 +116,11 @@ export function ImageUploader({ value, onChange, folder = 'uploads', accept = 'i
         onChange={(e) => handleFile(e.target.files?.[0])}
       />
 
+      {sizeHint && (
+        <p className="text-[11px] mt-1.5" style={{ color: '#94A3B8' }}>
+          📐 Recommended: <strong style={{ color: '#64748B' }}>{sizeHint}</strong>
+        </p>
+      )}
       {error && <p className="text-xs text-red-500 mt-1.5">{error}</p>}
     </div>
   );
