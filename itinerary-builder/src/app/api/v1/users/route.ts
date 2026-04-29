@@ -1,3 +1,4 @@
+import { cleanBody } from '@/lib/clean-body';
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
@@ -65,7 +66,7 @@ export async function POST(req: NextRequest) {
   if (!user) return unauthorized();
   if (!requireRole(user, UserRole.ADMIN)) return forbidden();
 
-  const body = await req.json();
+  const rawBody = await req.json(); const body = cleanBody(rawBody);
   const parsed = CreateUserSchema.safeParse(body);
   if (!parsed.success) return err('Invalid request', 400, parsed.error.flatten());
 

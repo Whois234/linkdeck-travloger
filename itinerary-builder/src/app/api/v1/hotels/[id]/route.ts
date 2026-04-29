@@ -1,3 +1,4 @@
+import { cleanBody } from '@/lib/clean-body';
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
@@ -37,7 +38,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   if (!user) return unauthorized();
   if (!requireRole(user, UserRole.ADMIN, UserRole.OPS)) return forbidden();
 
-  const body = await req.json();
+  const rawBody = await req.json(); const body = cleanBody(rawBody);
   const parsed = UpdateSchema.safeParse(body);
   if (!parsed.success) return err('Validation failed', 400, parsed.error.flatten());
 
