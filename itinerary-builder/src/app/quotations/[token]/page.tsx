@@ -63,16 +63,13 @@ function DeactivatedPage({ quoteNumber, destination }: { quoteNumber: string; de
       <div style={{ maxWidth: '440px', width: '100%' }}>
         {/* Logo / brand */}
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-          <div style={{
-            width: '64px', height: '64px', borderRadius: '16px', backgroundColor: '#134956',
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px',
-          }}>
-            {/* simple travel icon */}
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
-            </svg>
-          </div>
-          <p style={{ fontSize: '13px', fontWeight: 600, color: '#94A3B8', letterSpacing: '0.08em', textTransform: 'uppercase' }}>travloger.in</p>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/travloger-logo-icon.jpeg"
+            alt="Travloger"
+            style={{ width: '72px', height: '72px', borderRadius: '18px', objectFit: 'cover', marginBottom: '10px', display: 'inline-block' }}
+          />
+          <p style={{ fontSize: '13px', fontWeight: 700, color: '#134956', letterSpacing: '0.08em', textTransform: 'uppercase' }}>travloger.in</p>
         </div>
 
         {/* Card */}
@@ -128,14 +125,15 @@ function DeactivatedPage({ quoteNumber, destination }: { quoteNumber: string; de
           <a
             href={`tel:${PHONE}`}
             style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '9px',
               backgroundColor: '#F8FAFC', color: '#134956',
               padding: '12px 24px', borderRadius: '12px', textDecoration: 'none',
               fontWeight: 600, fontSize: '14px', border: '1px solid #E2E8F0',
             }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.8 19.79 19.79 0 0120 1.82 2 2 0 0122 4v3a2 2 0 01-2 2 9.9 9.9 0 00-3 .53 2 2 0 01-2-.2l-1.4-1.4a16 16 0 00-6.88 6.88l1.4 1.4a2 2 0 01.2 2A9.9 9.9 0 009 20a2 2 0 01-2 2z"/>
+            {/* clean filled phone handset */}
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+              <path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.01-.24c1.12.37 2.33.57 3.58.57a1 1 0 011 1V20a1 1 0 01-1 1C10.18 21 3 13.82 3 5a1 1 0 011-1h3.5a1 1 0 011 1c0 1.25.2 2.45.57 3.57a1 1 0 01-.25 1.02l-2.2 2.2z"/>
             </svg>
             Call {PHONE}
           </a>
