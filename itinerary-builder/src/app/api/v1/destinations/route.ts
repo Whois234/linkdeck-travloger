@@ -8,7 +8,8 @@ import { UserRole, Prisma } from '@prisma/client';
 const DestinationSchema = z.object({
   state_id: z.string(),
   name: z.string().min(1),
-  country: z.string().min(1),
+  country: z.string().optional().default('India'),   // UI doesn't send this — default to India
+  description: z.string().optional().nullable(),     // UI sends "description" → stored as short_description
   short_description: z.string().optional().nullable(),
   long_description: z.string().optional().nullable(),
   best_season: z.string().optional().nullable(),
@@ -50,10 +51,12 @@ export async function POST(req: NextRequest) {
   const parsed = DestinationSchema.safeParse(body);
   if (!parsed.success) return err('Validation failed', 400, parsed.error.flatten());
 
-  const { gallery_images, default_pickup_points, default_drop_points, tags, ...rest } = parsed.data;
+  // Merge "description" from UI into short_description
+  const { gallery_images, default_pickup_points, default_drop_points, tags, description, short_description, ...rest } = parsed.data;
   const destination = await prisma.destination.create({
     data: {
       ...rest,
+      short_description: short_description ?? description ?? null,
       ...(gallery_images !== undefined ? { gallery_images: gallery_images as Prisma.InputJsonValue } : {}),
       ...(default_pickup_points !== undefined ? { default_pickup_points: default_pickup_points as Prisma.InputJsonValue } : {}),
       ...(default_drop_points !== undefined ? { default_drop_points: default_drop_points as Prisma.InputJsonValue } : {}),
