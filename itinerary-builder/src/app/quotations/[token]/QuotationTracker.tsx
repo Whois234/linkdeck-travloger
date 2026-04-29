@@ -33,6 +33,7 @@ export default function QuotationTracker({ token }: Props) {
   const sectionEnterRef    = useRef<Record<string, number>>({});   // entry timestamp (ms)
   const flushTimerRef      = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef       = useRef<number>(Date.now());
+  const finalFlushedRef    = useRef(false);   // guard: only one is_final=true flush per session
 
   function post(event_type: string, metadata?: Record<string, unknown>) {
     const payload = JSON.stringify({ event_type, metadata });
@@ -64,6 +65,11 @@ export default function QuotationTracker({ token }: Props) {
   }
 
   function flush(isFinal = false) {
+    // Ensure is_final=true is only sent once per session (visibilitychange + pagehide both fire on tab close)
+    if (isFinal) {
+      if (finalFlushedRef.current) return;
+      finalFlushedRef.current = true;
+    }
     snapshotActiveTime();
     const timeSpent = Math.round((Date.now() - startTimeRef.current) / 1000);
     post('quote_viewed', {
@@ -75,6 +81,13 @@ export default function QuotationTracker({ token }: Props) {
   }
 
   useEffect(() => {
+    // Reset per-mount state
+    finalFlushedRef.current  = false;
+    startTimeRef.current     = Date.now();
+    sectionViewsRef.current  = {};
+    sectionTimeRef.current   = {};
+    sectionEnterRef.current  = {};
+
     // 1. Immediate first ping
     flush();
 
