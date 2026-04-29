@@ -172,7 +172,7 @@ function Hero({ data }: { data: ItineraryData }) {
     : (state.description ?? null);
 
   return (
-    <div className="tl-hero">
+    <div className="tl-hero" data-section="hero">
       {state.hero_image && (
         <img src={state.hero_image} alt={heroTitle} className="tl-hero-bg-img" loading="eager" />
       )}
@@ -276,7 +276,7 @@ function Packages({
   if (options.length === 0) return null;
 
   return (
-    <div className="tl-pkg-wrap">
+    <div className="tl-pkg-wrap" data-section="packages">
       <div style={{ padding: '0 18px', maxWidth: 680, margin: '0 auto 20px' }}>
         <div className="tl-sec-eyebrow">Choose Your Experience</div>
         <div className="tl-sec-h">Package Options</div>
@@ -479,7 +479,7 @@ function ItinerarySection({ days }: { days: DaySnapshot[] }) {
   const [openDay, setOpenDay] = useState<number>(0); // first day open by default
   if (days.length === 0) return null;
   return (
-    <div className="tl-sec">
+    <div className="tl-sec" data-section="itinerary">
       <div className="tl-sec-eyebrow">Day by Day</div>
       <div className="tl-sec-h">Your Itinerary</div>
       <div className="tl-sec-sub">
@@ -503,7 +503,7 @@ function ItinerarySection({ days }: { days: DaySnapshot[] }) {
 function IncExc({ inclusions, exclusions }: { inclusions: ItineraryData['inclusions']; exclusions: ItineraryData['exclusions'] }) {
   if (inclusions.length === 0 && exclusions.length === 0) return null;
   return (
-    <div style={{ background: 'white', borderTop: '1px solid var(--tl-border)' }}>
+    <div style={{ background: 'white', borderTop: '1px solid var(--tl-border)' }} data-section="inclusions">
       <div className="tl-sec">
         <div className="tl-sec-eyebrow">What&apos;s Covered</div>
         <div className="tl-sec-h">Inclusions &amp; Exclusions</div>
@@ -620,7 +620,7 @@ function FareSummary({ option, adults }: { option: QuoteOption | undefined; adul
   const total = option.final_price;
 
   return (
-    <div style={{ background: 'white', borderTop: '1px solid var(--tl-border)' }}>
+    <div style={{ background: 'white', borderTop: '1px solid var(--tl-border)' }} data-section="hotels">
       <div className="tl-sec">
         <div className="tl-sec-eyebrow">Cost Breakdown</div>
         <div className="tl-sec-h">Fare Summary</div>
@@ -754,7 +754,7 @@ function Policies({ policies }: { policies: PolicyRecord[] }) {
   ].filter(c => c.policies.length > 0);
 
   return (
-    <div className="tl-sec" style={{ paddingBottom: 0 }}>
+    <div className="tl-sec" style={{ paddingBottom: 0 }} data-section="policies">
       <div className="tl-sec-eyebrow">Good to Know</div>
       <div className="tl-sec-h" style={{ marginBottom: 6 }}>Policies</div>
       <div className="tl-sec-sub" style={{ marginBottom: 24 }}>Clear terms so there are no surprises</div>
@@ -789,7 +789,10 @@ function Policies({ policies }: { policies: PolicyRecord[] }) {
 
       {/* FAQs accordion */}
       {faqs.length > 0 && (
-        <div style={{ marginBottom: 10 }}>
+        <div style={{ marginBottom: 24 }} data-section="faqs">
+          <div style={{ fontFamily: 'var(--f-display)', fontSize: 20, fontWeight: 800, color: 'var(--tl-dark)', marginBottom: 14, marginTop: 8 }}>
+            Frequently Asked Questions
+          </div>
           {faqs.map((f) => <FaqItem key={f.id} faq={f} />)}
         </div>
       )}
