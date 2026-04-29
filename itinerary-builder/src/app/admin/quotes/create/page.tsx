@@ -44,6 +44,8 @@ interface HotelRow {
   cwob: number;
   fetched_price: number | null;
   fetching: boolean;
+  fetch_error: string | null;   // error message from rate lookup
+  manual_cost: number | null;   // agent-entered fallback when no rate exists
 }
 
 interface OptionDraft {
@@ -188,6 +190,10 @@ export default function CreateQuotePage() {
       const hotels: HotelRow[] = destList.map(did => {
         const tier = tpl.template_hotel_tiers?.find(t => t.tier_name === pkg.tier_name && t.destination_id === did);
         const n    = tier?.nights ?? Math.max(1, Math.floor(nightsTotal / Math.max(1, destList.length)));
+
+        // Skip destinations with 0 nights (transit stops / no accommodation needed)
+        if (n === 0) return null;
+
         const checkIn  = new Date(cursorMs).toISOString().slice(0, 10);
         cursorMs += n * 86400000;
         const checkOut = new Date(cursorMs).toISOString().slice(0, 10);
@@ -205,8 +211,10 @@ export default function CreateQuotePage() {
           cwob: childrenBelow5,
           fetched_price: null,
           fetching: false,
+          fetch_error: null,
+          manual_cost: null,
         };
-      });
+      }).filter(Boolean) as HotelRow[];
       return { name: OPTION_NAMES[oi] ?? `Option ${oi + 1}`, is_most_popular: pkg.is_most_popular, hotels };
     });
     setOptions(newOpts);
@@ -245,7 +253,7 @@ export default function CreateQuotePage() {
     const key = `${oi}-${hi}`;
     clearTimeout(fetchPriceRef.current[key]);
     if (!row.hotel_id || !row.room_category_id || !row.meal_plan_id || !row.check_in_date || !row.check_out_date) return;
-    updHotel(oi, hi, { fetching: true, fetched_price: null });
+    updHotel(oi, hi, { fetching: true, fetched_price: null, fetch_error: null });
     fetchPriceRef.current[key] = setTimeout(async () => {
       try {
         const res = await fetch('/api/v1/hotel-rate-preview', {
@@ -259,9 +267,14 @@ export default function CreateQuotePage() {
           }),
         });
         const d = await res.json();
-        updHotel(oi, hi, { fetching: false, fetched_price: res.ok ? d.data?.total_cost ?? null : null });
+        if (res.ok) {
+          updHotel(oi, hi, { fetching: false, fetched_price: d.data?.total_cost ?? null, fetch_error: null });
+        } else {
+          // Rate not found — surface error so agent can enter manually
+          updHotel(oi, hi, { fetching: false, fetched_price: null, fetch_error: d.error ?? 'No rate found for selected dates' });
+        }
       } catch {
-        updHotel(oi, hi, { fetching: false, fetched_price: null });
+        updHotel(oi, hi, { fetching: false, fetched_price: null, fetch_error: 'Network error' });
       }
     }, 600);
   }
@@ -278,9 +291,14 @@ export default function CreateQuotePage() {
     });
   }
 
+  /** Effective price for a hotel row — fetched rate if available, else manual override */
+  function effectivePrice(h: HotelRow): number {
+    return h.fetched_price ?? h.manual_cost ?? 0;
+  }
+
   /* ─── Live comparison calc ─── */
   function liveCalc(opt: OptionDraft) {
-    const hotelTotal = opt.hotels.reduce((s, h) => s + (h.fetched_price ?? 0), 0);
+    const hotelTotal = opt.hotels.reduce((s, h) => s + effectivePrice(h), 0);
     const baseCost   = hotelTotal + vehicleCost;
     const profitAmt  = profitType === 'PERCENTAGE' ? baseCost * profitValue / 100 : profitValue;
     const beforeGst  = Math.max(0, baseCost + profitAmt);
@@ -357,7 +375,8 @@ export default function CreateQuotePage() {
             check_in_date: new Date(h.check_in_date).toISOString(),
             check_out_date: new Date(h.check_out_date).toISOString(),
             rooming_json: { rooms: [{ type: 'Double', count: h.rooms, adults: h.adults_per_room, children_with_bed: h.cwb, children_without_bed: h.cwob }] },
-            manual_cost_override: null, override_reason: null,
+            manual_cost_override: h.manual_cost ?? null,
+            override_reason: h.manual_cost != null ? 'No rate configured for dates' : null,
           })),
         })),
       };
@@ -731,11 +750,13 @@ export default function CreateQuotePage() {
                   const destList = (tpl.destinations ?? []) as string[];
                   let cursorMs = startDate ? new Date(startDate).getTime() : Date.now();
                   const hotels: HotelRow[] = destList.map(did => {
-                    const n = Math.max(1, Math.floor(durationNights / Math.max(1, destList.length)));
+                    const tier = tpl.template_hotel_tiers?.find(t => t.destination_id === did);
+                    const n = tier?.nights ?? Math.max(1, Math.floor(durationNights / Math.max(1, destList.length)));
+                    if (n === 0) return null;
                     const checkIn  = new Date(cursorMs).toISOString().slice(0, 10);
                     cursorMs += n * 86400000;
-                    return { destination_id: did, hotel_id: '', room_category_id: '', meal_plan_id: '', check_in_date: checkIn, check_out_date: new Date(cursorMs).toISOString().slice(0, 10), nights: n, rooms: Math.max(1, Math.ceil(adults / 2)), adults_per_room: 2, cwb: children512, cwob: childrenBelow5, fetched_price: null, fetching: false };
-                  });
+                    return { destination_id: did, hotel_id: '', room_category_id: '', meal_plan_id: '', check_in_date: checkIn, check_out_date: new Date(cursorMs).toISOString().slice(0, 10), nights: n, rooms: Math.max(1, Math.ceil(adults / 2)), adults_per_room: 2, cwb: children512, cwob: childrenBelow5, fetched_price: null, fetching: false, fetch_error: null, manual_cost: null };
+                  }).filter(Boolean) as HotelRow[];
                   setOptions(p => [...p, { name: OPTION_NAMES[ni], is_most_popular: false, hotels }]);
                   setExpandedOpt(ni);
                 }}
@@ -747,7 +768,7 @@ export default function CreateQuotePage() {
           </div>
 
           {options.map((opt, oi) => {
-            const optionTotal = opt.hotels.reduce((s, h) => s + (h.fetched_price ?? 0), 0);
+            const optionTotal = opt.hotels.reduce((s, h) => s + effectivePrice(h), 0);
             const isOpen      = expandedOpt === oi;
             return (
               <div key={oi} className="bg-white rounded-2xl overflow-hidden" style={{ ...card, border: `2px solid ${opt.is_most_popular ? T : '#E2E8F0'}` }}>
@@ -809,8 +830,11 @@ export default function CreateQuotePage() {
                               {!h.fetching && h.fetched_price !== null && (
                                 <span className="font-bold" style={{ color: T }}>₹{h.fetched_price.toLocaleString('en-IN')}</span>
                               )}
-                              {!h.fetching && h.fetched_price === null && h.hotel_id && h.room_category_id && h.meal_plan_id && (
-                                <span className="text-[#F59E0B] font-medium">No rate</span>
+                              {!h.fetching && h.fetched_price === null && h.manual_cost !== null && (
+                                <span className="font-bold" style={{ color: '#F59E0B' }}>₹{h.manual_cost.toLocaleString('en-IN')} <span className="font-normal text-[#94A3B8]">(manual)</span></span>
+                              )}
+                              {!h.fetching && h.fetch_error && h.fetched_price === null && h.manual_cost === null && (
+                                <span className="text-[#EF4444] font-medium">No rate</span>
                               )}
                             </div>
                           </div>
@@ -867,6 +891,28 @@ export default function CreateQuotePage() {
                                 onChange={e => updHotelAndFetch(oi, hi, { rooms: Number(e.target.value) })} />
                             </div>
                           </div>
+
+                          {/* Manual cost fallback — shown when rate lookup fails */}
+                          {h.fetch_error && h.fetched_price === null && h.hotel_id && h.room_category_id && h.meal_plan_id && (
+                            <div className="mt-3 p-3 rounded-xl" style={{ backgroundColor: '#FFFBEB', border: '1px solid #FDE68A' }}>
+                              <p className="text-[11px] font-semibold mb-2" style={{ color: '#92400E' }}>
+                                ⚠ No rate found for these dates — enter cost manually
+                              </p>
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-semibold" style={{ color: '#64748B' }}>₹</span>
+                                <input
+                                  type="number" min="0" placeholder="Enter total hotel cost"
+                                  className={inp} style={{ ...inpSt, borderColor: '#FCD34D' }}
+                                  value={h.manual_cost ?? ''}
+                                  onChange={e => updHotel(oi, hi, { manual_cost: e.target.value ? Number(e.target.value) : null })}
+                                />
+                                <span className="text-xs whitespace-nowrap" style={{ color: '#94A3B8' }}>for {h.nights}N</span>
+                              </div>
+                              <p className="text-[10px] mt-1.5" style={{ color: '#B45309' }}>
+                                Tip: Add hotel rates in <strong>Hotels → Rates</strong> tab to auto-calculate.
+                              </p>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
