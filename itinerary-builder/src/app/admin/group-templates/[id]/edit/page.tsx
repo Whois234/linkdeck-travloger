@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
+import { ImageUploader } from '@/components/admin/ImageUploader';
 import {
   ChevronDown, ChevronRight, Plus, Trash2, Check,
   Save, Star, Image as ImgIcon, FileText, LayoutList,
@@ -394,13 +395,14 @@ export default function GroupTemplateEditPage() {
                   </div>
                 </div>
                 <div>
-                  <label className={lbl}>Hero Image URL</label>
-                  <input className={inp} style={inpSt} value={cms.hero_tags[0] ?? ''} placeholder="https://…"
-                    onChange={e => updCms('hero_tags', e.target.value ? [e.target.value, ...cms.hero_tags.slice(1)] : cms.hero_tags.slice(1))} />
-                  {cms.hero_tags[0] && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={cms.hero_tags[0]} alt="Hero preview" className="mt-2 w-full h-40 object-cover rounded-xl" />
-                  )}
+                  <ImageUploader
+                    label="Hero Image"
+                    folder="templates/hero"
+                    value={cms.hero_tags[0] ?? null}
+                    onChange={url => updCms('hero_tags', url ? [url, ...cms.hero_tags.slice(1)] : cms.hero_tags.slice(1))}
+                    placeholder="Upload hero banner image"
+                    sizeHint="1200 × 630 px (landscape 16:9)"
+                  />
                 </div>
                 <div>
                   <label className={lbl}>Main Heading</label>
@@ -440,10 +442,14 @@ export default function GroupTemplateEditPage() {
                       <p className="text-sm font-semibold text-[#0F172A] mb-3">{dest?.name ?? dc.destination_id}</p>
                       <div className="grid grid-cols-2 gap-3">
                         <div className="col-span-2">
-                          <label className={lbl}>Photo URL</label>
-                          <input className={inp} style={inpSt} value={dc.image_url}
-                            onChange={e => { const c = [...cms.destination_cards]; c[i] = { ...c[i], image_url: e.target.value }; updCms('destination_cards', c); }}
-                            placeholder="https://…" />
+                          <ImageUploader
+                            label="Destination Photo"
+                            folder="templates/destinations"
+                            value={dc.image_url || null}
+                            onChange={url => { const c = [...cms.destination_cards]; c[i] = { ...c[i], image_url: url ?? '' }; updCms('destination_cards', c); }}
+                            placeholder="Upload destination photo"
+                            sizeHint="800 × 600 px (4:3)"
+                          />
                         </div>
                         <div className="col-span-2">
                           <label className={lbl}>Short Description</label>
@@ -590,9 +596,14 @@ export default function GroupTemplateEditPage() {
                               placeholder="Describe the day's activities…" />
                           </div>
                           <div className="col-span-2">
-                            <label className={lbl}>Day Image URL</label>
-                            <input className={inp} style={inpSt} value={day.image_override ?? ''}
-                              onChange={e => updDay(i, { image_override: e.target.value || null })} placeholder="https://…" />
+                            <ImageUploader
+                              label="Day Image"
+                              folder="templates/days"
+                              value={day.image_override ?? null}
+                              onChange={url => updDay(i, { image_override: url })}
+                              placeholder="Upload day image"
+                              sizeHint="1200 × 800 px (3:2) — shown full-width in itinerary"
+                            />
                           </div>
                           <div className="col-span-2">
                             <label className={lbl}>Meals included</label>

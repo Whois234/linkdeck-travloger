@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/admin/PageHeader';
-import { ArrowLeft, Calendar, Users, MapPin, Phone, Mail, Clock, Edit2, Check, X, ExternalLink, BarChart2, Eye, MessageCircle, Package, ThumbsUp } from 'lucide-react';
+import { ArrowLeft, Calendar, Users, MapPin, Phone, Mail, Clock, Edit2, Check, X, ExternalLink, BarChart2, Eye, MessageCircle, Package, ThumbsUp, RefreshCw } from 'lucide-react';
 
 const STATUS_BADGE: Record<string, { bg: string; text: string }> = {
   DRAFT:     { bg: '#F1F5F9', text: '#475569' },
@@ -73,6 +73,8 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
   const [savingStatus, setSavingStatus] = useState(false);
   const [events, setEvents] = useState<QuoteEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
+  const [republishing, setRepublishing] = useState(false);
+  const [republishMsg, setRepublishMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   async function load() {
     setLoading(true);
@@ -100,6 +102,27 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
     if (activeTab === 'analytics') loadEvents();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
+
+  async function handleRepublish() {
+    if (!quote || republishing) return;
+    setRepublishing(true);
+    setRepublishMsg(null);
+    try {
+      const res = await fetch(`/api/v1/quotes/${id}/publish`, { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        setRepublishMsg({ ok: true, text: 'Snapshot refreshed — customer link is now up to date.' });
+        load();
+      } else {
+        setRepublishMsg({ ok: false, text: data.error ?? 'Re-publish failed.' });
+      }
+    } catch {
+      setRepublishMsg({ ok: false, text: 'Network error. Try again.' });
+    } finally {
+      setRepublishing(false);
+      setTimeout(() => setRepublishMsg(null), 6000);
+    }
+  }
 
   async function saveStatus() {
     if (!quote || newStatus === quote.status) { setEditingStatus(false); return; }
@@ -153,8 +176,23 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
         subtitle={`${quote.state.name} · ${quote.duration_nights}N/${quote.duration_days}D · ${totalPax} pax`}
         crumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Quotes', href: '/admin/quotes' }, { label: quote.quote_number }]}
         action={
-          <div className="flex items-center gap-2">
-            <a href={`/itinerary/${quote.public_token}`} target="_blank" rel="noopener noreferrer"
+          <div className="flex items-center gap-2 flex-wrap">
+            {republishMsg && (
+              <span className="text-xs font-medium px-3 py-1.5 rounded-lg" style={republishMsg.ok ? { backgroundColor: '#DCFCE7', color: '#15803D' } : { backgroundColor: '#FEF2F2', color: '#DC2626' }}>
+                {republishMsg.text}
+              </span>
+            )}
+            <button
+              onClick={handleRepublish}
+              disabled={republishing}
+              title="Regenerate the customer snapshot with latest hotel rates, policies & fixes"
+              className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
+              style={{ backgroundColor: '#134956' }}
+            >
+              <RefreshCw className={`w-4 h-4 ${republishing ? 'animate-spin' : ''}`} />
+              {republishing ? 'Republishing…' : 'Re-publish'}
+            </button>
+            <a href={`/quotations/${quote.public_token}`} target="_blank" rel="noopener noreferrer"
               className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold transition-colors hover:bg-[#F1F5F9]" style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>
               <ExternalLink className="w-4 h-4" /> Preview
             </a>

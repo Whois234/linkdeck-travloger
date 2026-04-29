@@ -1,3 +1,4 @@
+import { cleanBody } from '@/lib/clean-body';
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
@@ -38,7 +39,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const tpl = await prisma.groupTemplate.findUnique({ where: { id: params.id } });
   if (!tpl) return notFound('Group Template');
 
-  const body = await req.json();
+  const rawBody = await req.json(); const body = cleanBody(rawBody);
   const parsed = BatchSchema.safeParse(body);
   if (!parsed.success) return err('Validation failed', 400, parsed.error.flatten());
 

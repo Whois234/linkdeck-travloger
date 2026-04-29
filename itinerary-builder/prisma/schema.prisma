@@ -116,6 +116,7 @@ enum RoundingRule {
 
 enum GroupBatchStatus {
   OPEN
+  FILLING_FAST
   SOLD_OUT
   CLOSED
   CANCELLED
