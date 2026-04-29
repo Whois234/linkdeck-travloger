@@ -9,31 +9,39 @@ import {
   Bell, ChevronDown, Tag, Briefcase, Settings, User, X,
 } from 'lucide-react';
 
-const NAV = [
+// Roles that can see each nav group/item. Empty = all roles.
+type NavRole = 'ADMIN' | 'MANAGER' | 'SALES' | 'OPS' | 'FINANCE';
+
+interface NavItem { label: string; href: string; icon: React.ElementType; roles?: NavRole[] }
+interface NavGroup { group: string; items: NavItem[]; roles?: NavRole[] }
+
+const ALL_NAV: NavGroup[] = [
   {
     group: 'MASTERS',
+    roles: ['ADMIN', 'MANAGER', 'OPS'],
     items: [
-      { label: 'States', href: '/admin/states', icon: MapPin },
-      { label: 'Destinations', href: '/admin/destinations', icon: Map },
-      { label: 'Suppliers', href: '/admin/suppliers', icon: Tag },
-      { label: 'Hotels', href: '/admin/hotels', icon: Building2 },
-      { label: 'Vehicle Types', href: '/admin/vehicle-types', icon: Car },
-      { label: 'Vehicle Rates', href: '/admin/vehicle-package-rates', icon: Car },
-      { label: 'Activities', href: '/admin/activities', icon: Activity },
-      { label: 'Day Plans', href: '/admin/day-plans', icon: BookOpen },
-      { label: 'Inclusions / Excl.', href: '/admin/inclusions-exclusions', icon: ListPlus },
-      { label: 'Policies', href: '/admin/policies', icon: ScrollText },
-      { label: 'Media Library', href: '/admin/media-library', icon: Image },
-      { label: 'Agents', href: '/admin/agents', icon: Briefcase },
-      { label: 'Pricing Rules', href: '/admin/pricing-rules', icon: DollarSign },
+      { label: 'States',             href: '/admin/states',                icon: MapPin    },
+      { label: 'Destinations',       href: '/admin/destinations',          icon: Map       },
+      { label: 'Suppliers',          href: '/admin/suppliers',             icon: Tag       },
+      { label: 'Hotels',             href: '/admin/hotels',                icon: Building2 },
+      { label: 'Vehicle Types',      href: '/admin/vehicle-types',         icon: Car       },
+      { label: 'Vehicle Rates',      href: '/admin/vehicle-package-rates', icon: Car       },
+      { label: 'Activities',         href: '/admin/activities',            icon: Activity  },
+      { label: 'Day Plans',          href: '/admin/day-plans',             icon: BookOpen  },
+      { label: 'Inclusions / Excl.', href: '/admin/inclusions-exclusions', icon: ListPlus  },
+      { label: 'Policies',           href: '/admin/policies',              icon: ScrollText},
+      { label: 'Media Library',      href: '/admin/media-library',         icon: Image     },
+      { label: 'Agents',             href: '/admin/agents',                icon: Briefcase, roles: ['ADMIN', 'MANAGER'] },
+      { label: 'Pricing Rules',      href: '/admin/pricing-rules',         icon: DollarSign, roles: ['ADMIN', 'MANAGER'] },
     ],
   },
   {
     group: 'ITINERARY',
+    roles: ['ADMIN', 'MANAGER', 'OPS'],
     items: [
-      { label: 'Private Templates', href: '/admin/private-templates', icon: Layout },
-      { label: 'Group Templates', href: '/admin/group-templates', icon: Layers },
-      { label: 'Group Batches', href: '/admin/group-batches', icon: CalendarDays },
+      { label: 'Private Templates', href: '/admin/private-templates', icon: Layout    },
+      { label: 'Group Templates',   href: '/admin/group-templates',   icon: Layers    },
+      { label: 'Group Batches',     href: '/admin/group-batches',     icon: CalendarDays },
     ],
   },
   {
@@ -45,18 +53,30 @@ const NAV = [
   {
     group: 'CRM',
     items: [
-      { label: 'Leads', href: '/admin/leads', icon: DollarSign },
-      { label: 'Customers', href: '/admin/customers', icon: Users },
+      { label: 'Leads',     href: '/admin/leads',     icon: DollarSign },
+      { label: 'Customers', href: '/admin/customers', icon: Users      },
     ],
   },
   {
     group: 'SETTINGS',
+    roles: ['ADMIN', 'MANAGER'],
     items: [
-      { label: 'Users', href: '/admin/users', icon: User },
+      { label: 'Users',    href: '/admin/users',    icon: User     },
       { label: 'Settings', href: '/admin/settings', icon: Settings },
     ],
   },
 ];
+
+function filterNav(role: string): NavGroup[] {
+  const r = role as NavRole;
+  return ALL_NAV
+    .filter(g => !g.roles || g.roles.includes(r))
+    .map(g => ({
+      ...g,
+      items: g.items.filter(item => !item.roles || item.roles.includes(r)),
+    }))
+    .filter(g => g.items.length > 0);
+}
 
 interface AuthUser { name: string; email: string; role: string }
 
@@ -169,6 +189,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }
 
   const initials = user?.name?.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2) ?? 'AU';
+  const visibleNav = filterNav(user?.role ?? 'SALES');
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full" style={{ backgroundColor: '#0D3340' }}>
@@ -195,7 +216,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           Dashboard
         </Link>
 
-        {NAV.map(({ group, items }) => (
+        {visibleNav.map(({ group, items }) => (
           <div key={group} className="pt-5">
             <p className="px-3 mb-1.5 text-[10px] font-bold tracking-[0.15em] uppercase" style={{ color: 'rgba(255,255,255,0.35)' }}>
               {group}

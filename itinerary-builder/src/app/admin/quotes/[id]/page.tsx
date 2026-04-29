@@ -49,14 +49,16 @@ const EVENT_ICON: Record<string, { icon: React.ElementType; color: string; bg: s
   whatsapp_clicked: { icon: MessageCircle,  color: '#22C55E', bg: '#F0FDF4', label: 'WhatsApp Clicked' },
 };
 
-function timeAgo(dateStr: string) {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return 'Just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+function formatEventTime(dateStr: string) {
+  return new Date(dateStr).toLocaleString('en-IN', {
+    day: 'numeric', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: true,
+  });
+}
+
+function fmtSecs(s: number) {
+  if (s < 60) return `${s}s`;
+  return `${Math.floor(s / 60)}m ${s % 60}s`;
 }
 
 export default function QuoteDetailPage({ params }: { params: { id: string } }) {
@@ -123,18 +125,26 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
   const pkgSelectedEvt  = events.filter(e => e.event_type === 'package_selected');
   const approvedEvt     = events.filter(e => e.event_type === 'approve_clicked');
 
-  // Section-view aggregation from metadata
-  const sectionTotals: Record<string, number> = {};
+  // Section time aggregation (seconds) — prefer section_time_seconds, fallback to section_views
+  const sectionTimeTotals: Record<string, number> = {};
   events
-    .filter(e => e.event_type === 'quote_viewed' && e.metadata?.section_views)
+    .filter(e => e.event_type === 'quote_viewed')
     .forEach(e => {
-      const sv = e.metadata!.section_views as Record<string, number>;
-      Object.entries(sv).forEach(([k, v]) => { sectionTotals[k] = (sectionTotals[k] ?? 0) + v; });
+      const st = e.metadata?.section_time_seconds as Record<string, number> | undefined;
+      const sv = e.metadata?.section_views as Record<string, number> | undefined;
+      if (st) {
+        Object.entries(st).forEach(([k, v]) => { sectionTimeTotals[k] = (sectionTimeTotals[k] ?? 0) + v; });
+      } else if (sv) {
+        Object.entries(sv).forEach(([k, v]) => { sectionTimeTotals[k] = (sectionTimeTotals[k] ?? 0) + v; });
+      }
     });
-  const topSections = Object.entries(sectionTotals)
+  const topSections = Object.entries(sectionTimeTotals)
     .sort(([, a], [, b]) => b - a)
-    .slice(0, 6);
+    .slice(0, 7);
   const maxSectionVal = topSections[0]?.[1] ?? 1;
+
+  // Unique sessions: final quote_viewed events (is_final = true) — these carry per-session breakdown
+  const sessionEvents = events.filter(e => e.event_type === 'quote_viewed' && e.metadata?.is_final === true);
 
   return (
     <div className="max-w-[1400px]">
@@ -201,23 +211,24 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                {/* Section heatmap */}
+                {/* Section time heatmap */}
                 <div className="bg-white rounded-xl border p-5" style={{ borderColor: '#E2E8F0', ...cardShadow }}>
-                  <h3 className="text-sm font-bold mb-4" style={{ color: '#0F172A' }}>Section View Heatmap</h3>
+                  <h3 className="text-sm font-bold mb-1" style={{ color: '#0F172A' }}>Section Engagement</h3>
+                  <p className="text-xs mb-4" style={{ color: '#94A3B8' }}>Total time spent per section across all sessions</p>
                   {topSections.length === 0 ? (
                     <p className="text-sm" style={{ color: '#94A3B8' }}>No section data yet.</p>
                   ) : (
                     <div className="space-y-3">
-                      {topSections.map(([section, count]) => (
+                      {topSections.map(([section, val]) => (
                         <div key={section}>
                           <div className="flex justify-between items-center mb-1">
                             <span className="text-xs font-medium capitalize" style={{ color: '#475569' }}>{section.replace(/_/g, ' ')}</span>
-                            <span className="text-xs font-bold" style={{ color: '#0F172A' }}>{count}</span>
+                            <span className="text-xs font-bold" style={{ color: '#0F172A' }}>{fmtSecs(val)}</span>
                           </div>
                           <div className="h-2 rounded-full" style={{ backgroundColor: '#F1F5F9' }}>
                             <div
                               className="h-2 rounded-full transition-all"
-                              style={{ width: `${(count / maxSectionVal) * 100}%`, backgroundColor: '#134956' }}
+                              style={{ width: `${(val / maxSectionVal) * 100}%`, backgroundColor: '#134956' }}
                             />
                           </div>
                         </div>
@@ -261,6 +272,68 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
                 </div>
               </div>
 
+              {/* Session breakdowns (final events) */}
+              {sessionEvents.length > 0 && (
+                <div className="bg-white rounded-xl border p-5" style={{ borderColor: '#E2E8F0', ...cardShadow }}>
+                  <h3 className="text-sm font-bold mb-4" style={{ color: '#0F172A' }}>Sessions ({sessionEvents.length})</h3>
+                  <div className="space-y-4">
+                    {sessionEvents.slice(0, 20).map((evt, i) => {
+                      const st  = evt.metadata?.section_time_seconds as Record<string, number> | undefined;
+                      const tot = Number(evt.metadata?.time_spent_seconds ?? 0);
+                      const nonZero = st ? Object.entries(st).filter(([, v]) => v > 0).sort(([, a], [, b]) => b - a) : [];
+                      const maxT = nonZero[0]?.[1] ?? 1;
+                      return (
+                        <div key={evt.id ?? i} className="rounded-xl p-4" style={{ border: '1px solid #F1F5F9', backgroundColor: '#F8FAFC' }}>
+                          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                            <div className="flex flex-wrap gap-1.5">
+                              {!!evt.metadata?.device && (
+                                <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ backgroundColor: '#EEF2FF', color: '#4F46E5' }}>
+                                  {String(evt.metadata.device)}
+                                </span>
+                              )}
+                              {!!evt.metadata?.os && (
+                                <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ backgroundColor: '#F0F9FF', color: '#0369A1' }}>
+                                  {String(evt.metadata.os)}
+                                </span>
+                              )}
+                              {!!evt.metadata?.browser && (
+                                <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ backgroundColor: '#F0FDF4', color: '#15803D' }}>
+                                  {String(evt.metadata.browser)}
+                                </span>
+                              )}
+                              {!!(evt.metadata?.city || evt.metadata?.region || evt.metadata?.country) && (
+                                <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ backgroundColor: '#FFF7ED', color: '#C2410C' }}>
+                                  📍 {[evt.metadata!.city, evt.metadata!.region, evt.metadata!.country].filter(Boolean).map(String).join(', ')}
+                                </span>
+                              )}
+                              {tot > 0 && (
+                                <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ backgroundColor: '#F1F5F9', color: '#475569' }}>
+                                  {fmtSecs(tot)} total
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[11px] flex-shrink-0" style={{ color: '#94A3B8' }}>{formatEventTime(evt.created_at)}</span>
+                          </div>
+                          {nonZero.length > 0 && (
+                            <div className="space-y-1.5">
+                              {nonZero.map(([section, secs]) => (
+                                <div key={section} className="flex items-center gap-2">
+                                  <span className="text-[11px] w-20 flex-shrink-0 capitalize" style={{ color: '#64748B' }}>{section}</span>
+                                  <div className="flex-1 h-1.5 rounded-full" style={{ backgroundColor: '#E2E8F0' }}>
+                                    <div className="h-1.5 rounded-full" style={{ width: `${(secs / maxT) * 100}%`, backgroundColor: '#134956' }} />
+                                  </div>
+                                  <span className="text-[11px] flex-shrink-0 font-medium" style={{ color: '#475569' }}>{fmtSecs(secs)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Events timeline */}
               <div className="bg-white rounded-xl border p-5" style={{ borderColor: '#E2E8F0', ...cardShadow }}>
                 <h3 className="text-sm font-bold mb-4" style={{ color: '#0F172A' }}>Activity Timeline</h3>
@@ -279,18 +352,26 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
                               <Icon className="w-4 h-4" style={{ color: meta.color }} />
                             </div>
                             <div className="flex-1 min-w-0 pt-1.5">
-                              <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
                                 <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>{meta.label}</p>
-                                <p className="text-xs flex-shrink-0" style={{ color: '#94A3B8' }}>{timeAgo(evt.created_at)}</p>
+                                <p className="text-xs flex-shrink-0" style={{ color: '#94A3B8' }}>{formatEventTime(evt.created_at)}</p>
                               </div>
-                              {evt.metadata && Object.keys(evt.metadata).length > 0 && (
+                              {evt.metadata && (
                                 <div className="mt-1 flex flex-wrap gap-1.5">
                                   {!!evt.metadata.option_name && (
                                     <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ backgroundColor: '#FFFBEB', color: '#B45309' }}>{String(evt.metadata.option_name)}</span>
                                   )}
                                   {evt.metadata.time_spent_seconds != null && (
                                     <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ backgroundColor: '#F1F5F9', color: '#475569' }}>
-                                      {Math.floor(Number(evt.metadata.time_spent_seconds) / 60)}m {Number(evt.metadata.time_spent_seconds) % 60}s on page
+                                      {fmtSecs(Number(evt.metadata.time_spent_seconds))} on page
+                                    </span>
+                                  )}
+                                  {!!evt.metadata.device && (
+                                    <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ backgroundColor: '#EEF2FF', color: '#4F46E5' }}>{String(evt.metadata.device)} · {String(evt.metadata.os ?? '')}</span>
+                                  )}
+                                  {!!(evt.metadata.city || evt.metadata.country) && (
+                                    <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ backgroundColor: '#FFF7ED', color: '#C2410C' }}>
+                                      📍 {[evt.metadata.city, evt.metadata.country].filter(Boolean).map(String).join(', ')}
                                     </span>
                                   )}
                                 </div>

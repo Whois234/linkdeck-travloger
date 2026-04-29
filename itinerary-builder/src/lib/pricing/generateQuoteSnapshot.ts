@@ -51,6 +51,27 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
         transfers: td.transfers ?? null,
       };
     });
+  } else if (quote.group_template_id) {
+    const groupDays = await prisma.groupTemplateDay.findMany({
+      where: { group_template_id: quote.group_template_id },
+      orderBy: { day_number: 'asc' },
+    });
+
+    resolvedDaySnapshots = groupDays.map((gd) => {
+      const dayDate = quote.start_date
+        ? new Date(new Date(quote.start_date).getTime() + (gd.day_number - 1) * 86400000).toISOString()
+        : new Date().toISOString();
+      return {
+        day_number: gd.day_number,
+        date: dayDate,
+        destination_id: gd.destination_id,
+        title: gd.title,
+        description: gd.description_override ?? null,
+        image_url: gd.image_override ?? null,
+        tags: null,
+        transfers: gd.transfers ?? null,
+      };
+    });
   } else {
     resolvedDaySnapshots = [];
   }

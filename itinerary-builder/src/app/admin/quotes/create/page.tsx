@@ -783,7 +783,7 @@ export default function CreateQuotePage() {
                   <div className="border-t px-4 pb-4" style={{ borderColor: '#F1F5F9' }}>
                     {opt.hotels.map((h, hi) => {
                       const dest       = dests.find(d => d.id === h.destination_id);
-                      const destHotels = hotels.filter(ht => ht.destination_id === h.destination_id && (ht.star_rating === hotelCategory || !ht.star_rating));
+                      const destHotels = hotels.filter(ht => ht.destination_id === h.destination_id);
                       const roomCats   = hotels.find(ht => ht.id === h.hotel_id)?.room_categories ?? [];
                       const pax        = adults + children512 + childrenBelow5;
                       return (

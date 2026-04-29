@@ -134,7 +134,7 @@ function Nav({ quoteNum, pkgName }: { quoteNum: string; pkgName?: string }) {
       <div className="tl-nav-logo-wrap">
         <div className="tl-nav-logo-pill">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/travloger-logo-full.jpeg" alt="Travloger" style={{ height: 36, width: 'auto', objectFit: 'contain' }} />
+          <img src="/travloger-logo-white.png" alt="Travloger" style={{ height: 36, width: 'auto', objectFit: 'contain' }} />
         </div>
       </div>
       <div className="tl-nav-right">

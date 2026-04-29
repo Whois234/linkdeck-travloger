@@ -1,13 +1,12 @@
 'use client';
 /**
- * QuotationTracker — client component rendered on the customer itinerary page.
+ * QuotationTracker — tracks section engagement time + device info.
  *
- * Responsibilities:
- *  1. Fire "quote_viewed" immediately on mount (+ again every 30 s as a keep-alive)
- *  2. Track which named sections are visible via IntersectionObserver
- *  3. Collect section-view data and flush it on unload / every 30 s
- *  4. Expose a `trackWhatsApp()` function via a window event listener so the
- *     ItineraryClient can dispatch a custom event when the WhatsApp button is clicked.
+ * Sends:
+ *  - section_time_seconds: { hero: 20, itinerary: 30, ... }  (time spent per section)
+ *  - section_views:        { hero: 2, itinerary: 1, ... }    (entry count per section)
+ *  - time_spent_seconds: total page time
+ *  - is_final: true on last flush (unload/hide)
  */
 import { useEffect, useRef } from 'react';
 
@@ -18,7 +17,6 @@ interface Props {
 const ANALYTICS_URL = (token: string) =>
   `/api/v1/public/itinerary/${token}/analytics`;
 
-/** Section IDs we want to track — must match `data-section` attrs in ItineraryClient */
 const TRACKED_SECTIONS = [
   'hero',
   'packages',
@@ -30,35 +28,49 @@ const TRACKED_SECTIONS = [
 ];
 
 export default function QuotationTracker({ token }: Props) {
-  const sectionViewsRef = useRef<Record<string, number>>({});
-  const flushTimerRef   = useRef<ReturnType<typeof setInterval> | null>(null);
-  const startTimeRef    = useRef<number>(Date.now());
+  const sectionViewsRef    = useRef<Record<string, number>>({});
+  const sectionTimeRef     = useRef<Record<string, number>>({});   // accumulated seconds
+  const sectionEnterRef    = useRef<Record<string, number>>({});   // entry timestamp (ms)
+  const flushTimerRef      = useRef<ReturnType<typeof setInterval> | null>(null);
+  const startTimeRef       = useRef<number>(Date.now());
 
-  // ── post helper (fire-and-forget) ─────────────────────────────────────────
   function post(event_type: string, metadata?: Record<string, unknown>) {
-    navigator.sendBeacon
-      ? navigator.sendBeacon(
-          ANALYTICS_URL(token),
-          new Blob([JSON.stringify({ event_type, metadata })], {
-            type: 'application/json',
-          }),
-        )
-      : fetch(ANALYTICS_URL(token), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ event_type, metadata }),
-          keepalive: true,
-        }).catch(() => {});
+    const payload = JSON.stringify({ event_type, metadata });
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon(
+        ANALYTICS_URL(token),
+        new Blob([payload], { type: 'application/json' }),
+      );
+    } else {
+      fetch(ANALYTICS_URL(token), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload,
+        keepalive: true,
+      }).catch(() => {});
+    }
   }
 
-  // ── flush accumulated section data ────────────────────────────────────────
+  /** Snapshot currently-visible sections' elapsed time into sectionTimeRef */
+  function snapshotActiveTime() {
+    const now = Date.now();
+    Object.entries(sectionEnterRef.current).forEach(([section, enterMs]) => {
+      if (enterMs > 0) {
+        sectionTimeRef.current[section] =
+          (sectionTimeRef.current[section] ?? 0) + Math.round((now - enterMs) / 1000);
+        sectionEnterRef.current[section] = now; // reset so next flush doesn't double-count
+      }
+    });
+  }
+
   function flush(isFinal = false) {
-    const views = { ...sectionViewsRef.current };
+    snapshotActiveTime();
     const timeSpent = Math.round((Date.now() - startTimeRef.current) / 1000);
     post('quote_viewed', {
-      section_views: views,
-      time_spent_seconds: timeSpent,
-      is_final: isFinal,
+      section_views:        { ...sectionViewsRef.current },
+      section_time_seconds: { ...sectionTimeRef.current },
+      time_spent_seconds:   timeSpent,
+      is_final:             isFinal,
     });
   }
 
@@ -69,15 +81,27 @@ export default function QuotationTracker({ token }: Props) {
     // 2. Periodic flush every 30 s
     flushTimerRef.current = setInterval(() => flush(), 30_000);
 
-    // 3. IntersectionObserver for section tracking
+    // 3. IntersectionObserver — track entry/exit per section
     const observer = new IntersectionObserver(
       (entries) => {
+        const now = Date.now();
         entries.forEach((entry) => {
+          const section = (entry.target as HTMLElement).dataset.section;
+          if (!section) return;
+
           if (entry.isIntersecting) {
-            const section = (entry.target as HTMLElement).dataset.section;
-            if (section) {
-              sectionViewsRef.current[section] =
-                (sectionViewsRef.current[section] ?? 0) + 1;
+            // Section entered viewport
+            sectionViewsRef.current[section] =
+              (sectionViewsRef.current[section] ?? 0) + 1;
+            sectionEnterRef.current[section] = now;
+          } else {
+            // Section left viewport — accumulate time
+            const enterMs = sectionEnterRef.current[section];
+            if (enterMs && enterMs > 0) {
+              sectionTimeRef.current[section] =
+                (sectionTimeRef.current[section] ?? 0) +
+                Math.round((now - enterMs) / 1000);
+              sectionEnterRef.current[section] = 0;
             }
           }
         });
@@ -85,7 +109,6 @@ export default function QuotationTracker({ token }: Props) {
       { threshold: 0.2 },
     );
 
-    // Observe sections once the DOM has settled
     const observeTimeout = setTimeout(() => {
       TRACKED_SECTIONS.forEach((s) => {
         const el = document.querySelector(`[data-section="${s}"]`);
@@ -93,13 +116,15 @@ export default function QuotationTracker({ token }: Props) {
       });
     }, 800);
 
-    // 4. WhatsApp click listener dispatched by ItineraryClient
+    // 4. WhatsApp click listener
     function onWhatsApp() {
-      post('whatsapp_clicked', { time_spent_seconds: Math.round((Date.now() - startTimeRef.current) / 1000) });
+      post('whatsapp_clicked', {
+        time_spent_seconds: Math.round((Date.now() - startTimeRef.current) / 1000),
+      });
     }
     window.addEventListener('itinerary:whatsapp_clicked', onWhatsApp);
 
-    // 5. Flush on page hide / unload
+    // 5. Final flush on hide / unload
     function onHide() { flush(true); }
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') onHide();
@@ -116,6 +141,5 @@ export default function QuotationTracker({ token }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  // This component renders nothing visible
   return null;
 }
