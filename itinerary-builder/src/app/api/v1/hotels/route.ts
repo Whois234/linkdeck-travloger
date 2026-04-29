@@ -32,12 +32,14 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const destination_id = searchParams.get('destination_id');
-  const category = searchParams.get('category') as HotelCategory | null;
+  const state_id       = searchParams.get('state_id');
+  const category       = searchParams.get('category') as HotelCategory | null;
 
   const hotels = await prisma.hotel.findMany({
     where: {
       status: true,
       ...(destination_id ? { destination_id } : {}),
+      ...(state_id ? { destination: { state_id } } : {}),
       ...(category ? { category_label: category } : {}),
     },
     include: {

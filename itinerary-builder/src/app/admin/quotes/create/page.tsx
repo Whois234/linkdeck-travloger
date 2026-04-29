@@ -156,7 +156,7 @@ export default function CreateQuotePage() {
   useEffect(() => {
     if (!stateId) return;
     Promise.all([
-      fetch('/api/v1/hotels').then(r => r.json()),
+      fetch(`/api/v1/hotels?state_id=${stateId}`).then(r => r.json()),
       fetch(`/api/v1/vehicle-package-rates?state_id=${stateId}`).then(r => r.json()),
     ]).then(([hd, vd]) => {
       if (hd.success) setHotels(hd.data);
@@ -722,7 +722,7 @@ export default function CreateQuotePage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-bold text-[#0F172A]">Hotel Selection</p>
-                <p className="text-xs text-[#94A3B8] mt-0.5">{selectedPT?.template_name} · Showing {hotelCategory}★ hotels</p>
+                <p className="text-xs text-[#94A3B8] mt-0.5">{selectedPT?.template_name} · {hotels.length} hotels loaded</p>
               </div>
               {options.length < 3 && (
                 <button type="button" onClick={() => {
@@ -752,13 +752,20 @@ export default function CreateQuotePage() {
             return (
               <div key={oi} className="bg-white rounded-2xl overflow-hidden" style={{ ...card, border: `2px solid ${opt.is_most_popular ? T : '#E2E8F0'}` }}>
                 {/* Accordion header */}
-                <div className="flex items-center justify-between p-4 cursor-pointer" onClick={() => setExpandedOpt(isOpen ? -1 : oi)}>
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold" style={{ backgroundColor: `${T}15`, color: T }}>
+                <div className="flex items-center justify-between p-4">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0" style={{ backgroundColor: `${T}15`, color: T }}>
                       {String.fromCharCode(65 + oi)}
                     </div>
-                    <div>
-                      <p className="text-sm font-bold text-[#0F172A]">{opt.name}</p>
+                    <div className="flex-1 min-w-0" onClick={() => setExpandedOpt(isOpen ? -1 : oi)}>
+                      <input
+                        className="text-sm font-bold bg-transparent border-0 border-b-2 border-transparent focus:outline-none focus:border-[#134956] w-full transition-colors"
+                        style={{ color: '#0F172A' }}
+                        value={opt.name}
+                        onClick={e => e.stopPropagation()}
+                        onChange={e => setOptions(prev => prev.map((o, i) => i === oi ? { ...o, name: e.target.value } : o))}
+                        placeholder="Option name…"
+                      />
                       <p className="text-xs text-[#94A3B8]">{optionTotal > 0 ? `Hotel Total: ₹${optionTotal.toLocaleString('en-IN')}` : 'Select hotels to see price'}</p>
                     </div>
                   </div>
@@ -774,7 +781,9 @@ export default function CreateQuotePage() {
                         <Minus className="w-3 h-3" />
                       </button>
                     )}
-                    {isOpen ? <ChevronUp className="w-4 h-4 text-[#94A3B8]" /> : <ChevronDown className="w-4 h-4 text-[#94A3B8]" />}
+                    <button type="button" onClick={() => setExpandedOpt(isOpen ? -1 : oi)} className="p-1 rounded hover:bg-[#F1F5F9] transition-colors">
+                      {isOpen ? <ChevronUp className="w-4 h-4 text-[#94A3B8]" /> : <ChevronDown className="w-4 h-4 text-[#94A3B8]" />}
+                    </button>
                   </div>
                 </div>
 
@@ -810,9 +819,14 @@ export default function CreateQuotePage() {
                               <label className={lbl}>Hotel</label>
                               <select className={sel} style={inpSt} value={h.hotel_id}
                                 onChange={e => updHotelAndFetch(oi, hi, { hotel_id: e.target.value, room_category_id: '', fetched_price: null })}>
-                                <option value="">Select hotel…</option>
+                                <option value="">{destHotels.length === 0 ? '⚠ No hotels for this destination' : 'Select hotel…'}</option>
                                 {destHotels.map(ht => <option key={ht.id} value={ht.id}>{ht.hotel_name}{ht.star_rating ? ` (${ht.star_rating}★)` : ''}</option>)}
                               </select>
+                              {destHotels.length === 0 && (
+                                <p className="text-[11px] mt-1" style={{ color: '#F59E0B' }}>
+                                  Add hotels for <strong>{dest?.name}</strong> in Hotels module first.
+                                </p>
+                              )}
                             </div>
                             <div>
                               <label className={lbl}>Room Type</label>
