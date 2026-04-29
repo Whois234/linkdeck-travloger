@@ -225,6 +225,19 @@ export default function CreateQuotePage() {
     if (selectedPT) scaffoldOptions(selectedPT);
   }, [selectedPT, scaffoldOptions]);
 
+  /* ─── Auto-fetch prices for fully-configured hotel rows that have no price yet ─── */
+  useEffect(() => {
+    options.forEach((opt, oi) => {
+      opt.hotels.forEach((h, hi) => {
+        if (h.hotel_id && h.room_category_id && h.meal_plan_id && h.check_in_date && h.check_out_date
+            && h.fetched_price === null && !h.fetching && !h.fetch_error) {
+          triggerPriceFetch(oi, hi, h);
+        }
+      });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [options.map(o => o.hotels.map(h => `${h.hotel_id}|${h.room_category_id}|${h.meal_plan_id}|${h.check_in_date}|${h.check_out_date}|${h.rooms}`).join(',')).join(';')]);
+
   /* ─── Auto-fill vehicle cost ─── */
   function autoFillVehicle(vtId: string) {
     setVehicleTypeId(vtId);

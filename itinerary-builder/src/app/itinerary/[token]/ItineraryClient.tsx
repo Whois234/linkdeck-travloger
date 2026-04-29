@@ -803,9 +803,14 @@ function Policies({ policies }: { policies: PolicyRecord[] }) {
           </div>
           {termsOpen && (
             <div className="tl-terms-body">
-              {terms.map((t) => (
-                <div key={t.id} className="tl-terms-li">{t.content}</div>
-              ))}
+              {terms.map((t) =>
+                t.content.split('\n')
+                  .map(l => l.replace(/^[•\-*]\s*/, '').trim())
+                  .filter(Boolean)
+                  .map((line, i) => (
+                    <div key={`${t.id}-${i}`} className="tl-terms-li">{line}</div>
+                  ))
+              )}
             </div>
           )}
         </div>
