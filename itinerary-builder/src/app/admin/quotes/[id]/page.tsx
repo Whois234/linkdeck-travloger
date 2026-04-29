@@ -451,7 +451,7 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
                       const nonZero = st
                         ? SECTION_ORDER.filter(s => (st[s] ?? 0) > 0).map(s => [s, st[s]] as [string, number])
                         : [];
-                      const maxT = nonZero[0]?.[1] ?? 1;
+                      const maxT = Math.max(...nonZero.map(([, v]) => v), 1);
                       return (
                         <div key={evt.id ?? i} className="rounded-xl p-4" style={{ border: '1px solid #F1F5F9', backgroundColor: '#F8FAFC' }}>
                           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
@@ -473,8 +473,8 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
                               {nonZero.map(([section, secs]) => (
                                 <div key={section} className="flex items-center gap-2">
                                   <span className="text-[11px] w-20 flex-shrink-0 capitalize" style={{ color: '#64748B' }}>{section}</span>
-                                  <div className="flex-1 h-1.5 rounded-full" style={{ backgroundColor: '#E2E8F0' }}>
-                                    <div className="h-1.5 rounded-full" style={{ width: `${(secs / maxT) * 100}%`, backgroundColor: T }} />
+                                  <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: '#E2E8F0' }}>
+                                    <div className="h-1.5 rounded-full" style={{ width: `${Math.min((secs / maxT) * 100, 100)}%`, backgroundColor: T }} />
                                   </div>
                                   <span className="text-[11px] flex-shrink-0 font-medium" style={{ color: '#475569' }}>{fmtSecs(secs)}</span>
                                 </div>
