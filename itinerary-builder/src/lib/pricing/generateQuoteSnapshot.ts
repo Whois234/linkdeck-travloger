@@ -29,14 +29,19 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
     });
   }
 
-  // Also fetch private template hero_image if applicable
+  // Fetch private template: hero_image + default_policy_ids + cms_data (for FAQs)
   let privateTemplateHero: string | null = null;
+  let templatePolicyIds: string[] | null = null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let templateCmsData: any = null;
   if (quote.private_template_id) {
     const pt = await prisma.privateTemplate.findUnique({
       where: { id: quote.private_template_id },
-      select: { hero_image: true },
+      select: { hero_image: true, default_policy_ids: true, cms_data: true },
     });
     privateTemplateHero = pt?.hero_image ?? null;
+    templatePolicyIds = Array.isArray(pt?.default_policy_ids) ? (pt.default_policy_ids as string[]) : null;
+    templateCmsData = pt?.cms_data ?? null;
   }
 
   // If no QuoteDaySnapshot records exist yet (quote created via wizard),
@@ -95,26 +100,57 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
     resolvedDaySnapshots = [];
   }
 
-  // Resolve inclusions, exclusions, policies from state
-  // Policies: include both state-specific AND global (state_id = null) policies
-  const [inclusions, exclusions, policies] = await Promise.all([
+  // Resolve inclusions, exclusions, and policies
+  // Policies: if template has selected policy IDs, use only those; otherwise all global + state policies
+  const [inclusions, exclusions, rawPolicies] = await Promise.all([
     prisma.inclusionExclusion.findMany({
       where: { type: 'INCLUSION', destination_id: quote.state_id, status: true },
     }),
     prisma.inclusionExclusion.findMany({
       where: { type: 'EXCLUSION', destination_id: quote.state_id, status: true },
     }),
-    prisma.policy.findMany({
-      where: {
-        status: true,
-        OR: [
-          { state_id: quote.state_id },
-          { state_id: null },
-        ],
-      },
-      orderBy: [{ policy_type: 'asc' }],
-    }),
+    templatePolicyIds && templatePolicyIds.length > 0
+      ? prisma.policy.findMany({
+          where: { id: { in: templatePolicyIds }, status: true },
+          orderBy: [{ policy_type: 'asc' }],
+        })
+      : prisma.policy.findMany({
+          where: {
+            status: true,
+            OR: [
+              { state_id: quote.state_id },
+              { state_id: null },
+            ],
+          },
+          orderBy: [{ policy_type: 'asc' }],
+        }),
   ]);
+
+  // Append custom FAQs from private template cms_data as FAQ policy records
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const customFaqs: any[] = [];
+  if (
+    templateCmsData?.faqs_enabled &&
+    Array.isArray(templateCmsData?.custom_faqs) &&
+    templateCmsData.custom_faqs.length > 0
+  ) {
+    templateCmsData.custom_faqs.forEach((faq: { question: string; answer: string }, i: number) => {
+      if (faq.question?.trim()) {
+        customFaqs.push({
+          id: `faq-${i}`,
+          policy_type: 'FAQ',
+          title: faq.question,
+          content: faq.answer ?? '',
+          status: true,
+          state_id: null,
+          destination_id: null,
+          applies_to: 'BOTH',
+        });
+      }
+    });
+  }
+
+  const policies = [...rawPolicies, ...customFaqs];
 
   // Enrich day snapshots with destination name + hero_image
   const allDestIds = resolvedDaySnapshots.map((d: { destination_id: string }) => d.destination_id).filter(Boolean) as string[];
@@ -132,7 +168,7 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
     destination_hero_image: destMap[d.destination_id]?.hero_image ?? null,
   }));
 
-  // Derive hero image: prefer first destination with a hero_image, fallback to state
+  // Derive hero image: state > group template > private template > first destination
   const firstDestHero = enrichedDaySnapshots.find((d: { destination_hero_image: string | null }) => d.destination_hero_image)?.destination_hero_image ?? null;
 
   // Enrich option hotels with hotel/room/meal names
@@ -175,7 +211,7 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
     },
     customer: quote.customer,
     agent: quote.assigned_agent,
-    // state hero_image is supplemented by first-destination hero image when available
+    // state hero_image: state > group template > private template hero > first destination hero
     state: {
       ...quote.state,
       hero_image: quote.state.hero_image ?? groupTemplate?.hero_image ?? privateTemplateHero ?? firstDestHero ?? null,

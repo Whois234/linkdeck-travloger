@@ -705,6 +705,20 @@ function PolicyBullets({ content }: { content: string }) {
   );
 }
 
+/** Single FAQ accordion item — must be its own component so useState is called at top level */
+function FaqItem({ faq }: { faq: PolicyRecord }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="tl-faq-item" style={{ marginBottom: 6 }}>
+      <div className="tl-faq-head" onClick={() => setOpen(!open)}>
+        <span>{faq.title}</span>
+        <ChevronDown open={open} color={T} />
+      </div>
+      {open && <div className="tl-faq-body">{faq.content}</div>}
+    </div>
+  );
+}
+
 function Policies({ policies }: { policies: PolicyRecord[] }) {
   const [termsOpen, setTermsOpen] = useState(false);
 
@@ -776,18 +790,7 @@ function Policies({ policies }: { policies: PolicyRecord[] }) {
       {/* FAQs accordion */}
       {faqs.length > 0 && (
         <div style={{ marginBottom: 10 }}>
-          {faqs.map((f, i) => {
-            const [open, setOpen] = useState(false);
-            return (
-              <div key={f.id} className="tl-faq-item" style={{ marginBottom: 6 }}>
-                <div className="tl-faq-head" onClick={() => setOpen(!open)}>
-                  <span>{f.title}</span>
-                  <ChevronDown open={open} color={T} />
-                </div>
-                {open && <div className="tl-faq-body">{f.content}</div>}
-              </div>
-            );
-          })}
+          {faqs.map((f) => <FaqItem key={f.id} faq={f} />)}
         </div>
       )}
 

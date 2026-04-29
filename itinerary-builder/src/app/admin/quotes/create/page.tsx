@@ -116,7 +116,7 @@ export default function CreateQuotePage() {
 
   /* ─── Step 5 margins ─── */
   const [profitType, setProfitType]   = useState<'PERCENTAGE' | 'FLAT'>('PERCENTAGE');
-  const [profitValue, setProfitValue] = useState(15);
+  const [profitValue, setProfitValue] = useState(30);
   const [gstPercent, setGstPercent]   = useState(5);
   const [calcResults, setCalcResults] = useState<Record<string, { final_price: number; hotel_cost: number; base_cost: number; profit_amount: number; gst_amount: number; selling_before_gst: number }>>({});
   const [calculating, setCalculating] = useState(false);
@@ -750,7 +750,9 @@ export default function CreateQuotePage() {
                   const destList = (tpl.destinations ?? []) as string[];
                   let cursorMs = startDate ? new Date(startDate).getTime() : Date.now();
                   const hotels: HotelRow[] = destList.map(did => {
-                    const tier = tpl.template_hotel_tiers?.find(t => t.destination_id === did);
+                    // Prioritise Standard tier so 0-night transit destinations are respected
+                    const tier = tpl.template_hotel_tiers?.find(t => t.tier_name === 'Standard' && t.destination_id === did)
+                      ?? tpl.template_hotel_tiers?.find(t => t.destination_id === did);
                     const n = tier?.nights ?? Math.max(1, Math.floor(durationNights / Math.max(1, destList.length)));
                     if (n === 0) return null;
                     const checkIn  = new Date(cursorMs).toISOString().slice(0, 10);

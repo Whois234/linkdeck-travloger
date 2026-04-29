@@ -320,7 +320,7 @@ export default function TemplateEditPage() {
                     label="Hero Image"
                     folder="templates/hero"
                     value={cms.hero_tags[0] ?? null}
-                    onChange={url => updCms('hero_tags', url ? [url, ...cms.hero_tags.slice(1)] : cms.hero_tags.slice(1))}
+                    onChange={url => updCms('hero_tags', [url ?? '', ...cms.hero_tags.slice(1)])}
                     placeholder="Upload hero banner image"
                     sizeHint="1200 × 630 px (landscape 16:9)"
                   />
