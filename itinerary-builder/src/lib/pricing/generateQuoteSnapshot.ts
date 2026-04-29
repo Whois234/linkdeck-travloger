@@ -20,6 +20,25 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
 
   if (!quote) throw new Error(`Quote ${quote_id} not found`);
 
+  // For group quotes: fetch the group template for name + hero image
+  let groupTemplate: { group_template_name: string; hero_image: string | null; cms_data: unknown } | null = null;
+  if (quote.group_template_id) {
+    groupTemplate = await prisma.groupTemplate.findUnique({
+      where: { id: quote.group_template_id },
+      select: { group_template_name: true, hero_image: true, cms_data: true },
+    });
+  }
+
+  // Also fetch private template hero_image if applicable
+  let privateTemplateHero: string | null = null;
+  if (quote.private_template_id) {
+    const pt = await prisma.privateTemplate.findUnique({
+      where: { id: quote.private_template_id },
+      select: { hero_image: true },
+    });
+    privateTemplateHero = pt?.hero_image ?? null;
+  }
+
   // If no QuoteDaySnapshot records exist yet (quote created via wizard),
   // fall back to the linked private template's template_days
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -139,7 +158,7 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
     quote: {
       id: quote.id,
       quote_number: quote.quote_number,
-      quote_name: quote.quote_name ?? null,
+      quote_name: quote.quote_name ?? groupTemplate?.group_template_name ?? null,
       quote_type: quote.quote_type,
       status: quote.status,
       start_date: quote.start_date,
@@ -159,7 +178,7 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
     // state hero_image is supplemented by first-destination hero image when available
     state: {
       ...quote.state,
-      hero_image: quote.state.hero_image ?? firstDestHero ?? null,
+      hero_image: quote.state.hero_image ?? groupTemplate?.hero_image ?? privateTemplateHero ?? firstDestHero ?? null,
     },
     quote_options: enrichedOptions,
     day_snapshots: enrichedDaySnapshots,

@@ -330,7 +330,7 @@ export default function CreateQuotePage() {
 
       // 2. Create quote
       const payload = {
-        quote_name: quoteName || selectedPT?.template_name || null,
+        quote_name: quoteName || selectedGT?.group_template_name || selectedPT?.template_name || null,
         quote_type: quoteType,
         customer_id: customerId,
         state_id: stateId,
