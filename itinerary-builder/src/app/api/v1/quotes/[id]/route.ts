@@ -29,7 +29,14 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       quote_options: {
         include: {
           vehicle_type: true,
-          option_hotels: true,
+          option_hotels: {
+            include: {
+              hotel:         { select: { hotel_name: true, star_rating: true, category_label: true } },
+              room_category: { select: { room_category_name: true } },
+              meal_plan:     { select: { code: true, name: true } },
+              destination:   { select: { name: true } },
+            },
+          },
         },
         orderBy: { display_order: 'asc' },
       },

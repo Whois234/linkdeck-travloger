@@ -124,11 +124,10 @@ export default function QuotationTracker({ token }: Props) {
     }
     window.addEventListener('itinerary:whatsapp_clicked', onWhatsApp);
 
-    // 5. Final flush on hide / unload
+    // 5. Final flush on hide / unload — named handlers so cleanup can remove them
     function onHide() { flush(true); }
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') onHide();
-    });
+    function onVisChange() { if (document.visibilityState === 'hidden') onHide(); }
+    document.addEventListener('visibilitychange', onVisChange);
     window.addEventListener('pagehide', onHide);
 
     return () => {
@@ -136,6 +135,7 @@ export default function QuotationTracker({ token }: Props) {
       clearTimeout(observeTimeout);
       observer.disconnect();
       window.removeEventListener('itinerary:whatsapp_clicked', onWhatsApp);
+      document.removeEventListener('visibilitychange', onVisChange);
       window.removeEventListener('pagehide', onHide);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

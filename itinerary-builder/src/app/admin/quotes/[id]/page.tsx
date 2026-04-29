@@ -170,6 +170,11 @@ function OptionPricingCard({ opt, adults }: { opt: QuoteOptionFull; adults: numb
             {/* B2C pricing */}
             <div className="rounded-lg p-3 space-y-2" style={{ backgroundColor: '#F0FDF4', border: '1px solid #86EFAC' }}>
               <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: '#94A3B8' }}>B2C Pricing</p>
+              {/* B2B Total (base) */}
+              <div className="flex items-center justify-between pb-2 mb-1" style={{ borderBottom: '1px dashed #86EFAC' }}>
+                <span className="text-xs font-semibold" style={{ color: '#475569' }}>B2B Total</span>
+                <span className="text-xs font-semibold" style={{ color: '#0F172A' }}>{fmtINR(opt.base_cost)}</span>
+              </div>
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-1.5 text-xs" style={{ color: '#475569' }}>
                   <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
@@ -310,13 +315,17 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
   const pkgSelectedEvt = events.filter(e => e.event_type === 'package_selected');
   const approvedEvt    = events.filter(e => e.event_type === 'approve_clicked');
 
+  const SECTION_ORDER = ['hero', 'packages', 'itinerary', 'hotels', 'inclusions', 'policies', 'faqs'];
   const sectionTimeTotals: Record<string, number> = {};
   events.filter(e => e.event_type === 'quote_viewed').forEach(e => {
     const st = e.metadata?.section_time_seconds as Record<string, number> | undefined;
     if (st) Object.entries(st).forEach(([k, v]) => { sectionTimeTotals[k] = (sectionTimeTotals[k] ?? 0) + v; });
   });
-  const topSections = Object.entries(sectionTimeTotals).sort(([, a], [, b]) => b - a).slice(0, 7);
-  const maxSectionVal = topSections[0]?.[1] ?? 1;
+  // Keep fixed section order, filter out zeros
+  const topSections = SECTION_ORDER
+    .filter(s => (sectionTimeTotals[s] ?? 0) > 0)
+    .map(s => [s, sectionTimeTotals[s]] as [string, number]);
+  const maxSectionVal = Math.max(...topSections.map(([, v]) => v), 1);
   const sessionEvents = events.filter(e => e.event_type === 'quote_viewed' && e.metadata?.is_final === true);
 
   return (
@@ -438,7 +447,10 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
                     {sessionEvents.slice(0, 20).map((evt, i) => {
                       const st = evt.metadata?.section_time_seconds as Record<string, number> | undefined;
                       const tot = Number(evt.metadata?.time_spent_seconds ?? 0);
-                      const nonZero = st ? Object.entries(st).filter(([, v]) => v > 0).sort(([, a], [, b]) => b - a) : [];
+                      // Fixed section order, filter zeros
+                      const nonZero = st
+                        ? SECTION_ORDER.filter(s => (st[s] ?? 0) > 0).map(s => [s, st[s]] as [string, number])
+                        : [];
                       const maxT = nonZero[0]?.[1] ?? 1;
                       return (
                         <div key={evt.id ?? i} className="rounded-xl p-4" style={{ border: '1px solid #F1F5F9', backgroundColor: '#F8FAFC' }}>

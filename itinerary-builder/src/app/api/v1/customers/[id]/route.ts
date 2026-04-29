@@ -4,6 +4,26 @@ import { getAuthUser, requireRole } from '@/lib/auth';
 import { ok, err, unauthorized, forbidden, notFound } from '@/lib/api-response';
 import { UserRole } from '@prisma/client';
 
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+  const user = await getAuthUser(req);
+  if (!user) return unauthorized();
+
+  const customer = await prisma.customer.findUnique({ where: { id: params.id } });
+  if (!customer) return notFound('Customer');
+
+  const quotes = await prisma.quote.findMany({
+    where: { customer_id: params.id },
+    include: {
+      state: { select: { name: true } },
+      quote_options: { select: { final_price: true, is_most_popular: true }, orderBy: { display_order: 'asc' } },
+      assigned_agent: { select: { name: true } },
+    },
+    orderBy: { created_at: 'desc' },
+  });
+
+  return ok({ customer, quotes });
+}
+
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   const user = await getAuthUser(req);
   if (!user) return unauthorized();

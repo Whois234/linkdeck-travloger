@@ -43,6 +43,10 @@ export async function POST(req: NextRequest) {
   const parsed = Schema.safeParse(body);
   if (!parsed.success) return err('Validation failed', 400, parsed.error.flatten());
 
+  // Deduplicate by phone — if number already exists, return that customer
+  const existing = await prisma.customer.findFirst({ where: { phone: parsed.data.phone } });
+  if (existing) return ok(existing);
+
   const record = await prisma.customer.create({ data: parsed.data as Parameters<typeof prisma.customer.create>[0]['data'] });
   return created(record);
 }

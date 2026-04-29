@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
+import Link from 'next/link';
 import { Plus, Pencil, Trash2, Search } from 'lucide-react';
 
 interface Customer { id: string; name: string; phone: string; email?: string | null; city?: string | null; nationality?: string | null; status: boolean }
@@ -85,7 +86,7 @@ export default function CustomersPage() {
               <tbody>
                 {rows.map(r => (
                   <tr key={r.id} className="transition-colors hover:bg-[#F8FAFC]" style={{ borderBottom: '1px solid #F1F5F9', height: '56px' }}>
-                    <td className="px-5 py-0"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0" style={{ backgroundColor: '#134956' }}>{r.name.charAt(0).toUpperCase()}</div><span className="font-semibold" style={{ color: '#0F172A' }}>{r.name}</span></div></td>
+                    <td className="px-5 py-0"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0" style={{ backgroundColor: '#134956' }}>{r.name.charAt(0).toUpperCase()}</div><Link href={`/admin/customers/${r.id}`} className="font-semibold hover:underline" style={{ color: '#0F172A' }}>{r.name}</Link></div></td>
                     <td className="px-5 py-0 text-sm font-mono" style={{ color: '#64748B' }}>{r.phone}</td>
                     <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>{r.email ?? '—'}</td>
                     <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>{r.city ?? '—'}</td>

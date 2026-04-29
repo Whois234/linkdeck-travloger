@@ -208,12 +208,13 @@ model Destination {
   created_at            DateTime @default(now())
   updated_at            DateTime @updatedAt
 
-  state                 State    @relation(fields: [state_id], references: [id])
+  state                 State             @relation(fields: [state_id], references: [id])
   hotels                Hotel[]
   activities            Activity[]
   day_plans             DayPlan[]
   inclusions_exclusions InclusionExclusion[]
   policies              Policy[]
+  quote_option_hotels   QuoteOptionHotel[]
 
   @@index([state_id])
   @@index([status])
@@ -271,10 +272,11 @@ model Hotel {
   created_at         DateTime      @default(now())
   updated_at         DateTime      @updatedAt
 
-  destination        Destination   @relation(fields: [destination_id], references: [id])
-  supplier           Supplier?     @relation(fields: [supplier_id], references: [id])
+  destination        Destination        @relation(fields: [destination_id], references: [id])
+  supplier           Supplier?          @relation(fields: [supplier_id], references: [id])
   room_categories    RoomCategory[]
   hotel_rates        HotelRate[]
+  quote_option_hotels QuoteOptionHotel[]
 
   @@index([destination_id])
   @@index([supplier_id])
@@ -297,8 +299,9 @@ model RoomCategory {
   images               Json?
   status               Boolean  @default(true)
 
-  hotel                Hotel    @relation(fields: [hotel_id], references: [id], onDelete: Cascade)
+  hotel                Hotel             @relation(fields: [hotel_id], references: [id], onDelete: Cascade)
   hotel_rates          HotelRate[]
+  quote_option_hotels  QuoteOptionHotel[]
 
   @@index([hotel_id])
   @@index([status])
@@ -311,7 +314,8 @@ model MealPlan {
   description String?
   status      Boolean      @default(true)
 
-  hotel_rates HotelRate[]
+  hotel_rates         HotelRate[]
+  quote_option_hotels QuoteOptionHotel[]
 
   @@index([status])
 }
@@ -847,7 +851,7 @@ model QuoteOption {
 }
 
 model QuoteOptionHotel {
-  id                    String      @id @default(cuid())
+  id                    String       @id @default(cuid())
   quote_option_id       String
   destination_id        String
   hotel_id              String
@@ -861,10 +865,17 @@ model QuoteOptionHotel {
   manual_cost_override  Float?
   override_reason       String?
 
-  quote_option          QuoteOption @relation(fields: [quote_option_id], references: [id], onDelete: Cascade)
+  quote_option          QuoteOption  @relation(fields: [quote_option_id], references: [id], onDelete: Cascade)
+  hotel                 Hotel        @relation(fields: [hotel_id], references: [id])
+  room_category         RoomCategory @relation(fields: [room_category_id], references: [id])
+  meal_plan             MealPlan     @relation(fields: [meal_plan_id], references: [id])
+  destination           Destination  @relation(fields: [destination_id], references: [id])
 
   @@index([quote_option_id])
   @@index([hotel_id])
+  @@index([room_category_id])
+  @@index([meal_plan_id])
+  @@index([destination_id])
 }
 
 model QuoteDaySnapshot {
