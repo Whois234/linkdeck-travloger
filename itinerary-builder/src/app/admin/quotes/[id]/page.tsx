@@ -326,8 +326,11 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
 
   const SECTION_ORDER = ['hero', 'packages', 'dates', 'itinerary', 'inclusions', 'fare', 'policies', 'faqs'];
   const sectionTimeTotals: Record<string, number> = {};
-  // Use ALL quote_viewed events for section time aggregation (not just final ones)
-  events.filter(e => e.event_type === 'quote_viewed').forEach(e => {
+  // IMPORTANT: section_time_seconds is CUMULATIVE from session start (each periodic flush
+  // re-sends the running total, not a delta). Only the final flush (is_final === true) has
+  // the correct end-of-session totals. Summing intermediate flushes would multiply the
+  // values by the number of flushes. Use sessionEvents which are already filtered to is_final.
+  sessionEvents.forEach(e => {
     const st = e.metadata?.section_time_seconds as Record<string, number> | undefined;
     if (st) Object.entries(st).forEach(([k, v]) => { sectionTimeTotals[k] = (sectionTimeTotals[k] ?? 0) + v; });
   });
