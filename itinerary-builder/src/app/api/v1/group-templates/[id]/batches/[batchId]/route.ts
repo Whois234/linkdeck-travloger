@@ -25,6 +25,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string; 
   if (body.single_supplement   !== undefined) data.single_supplement   = body.single_supplement;
   if (body.gst_percent         !== undefined) data.gst_percent         = body.gst_percent;
   if (body.booking_status      !== undefined) data.booking_status      = body.booking_status as GroupBatchStatus;
+  if (body.badge_text          !== undefined) data.badge_text          = body.badge_text;
+  if (body.badge_color         !== undefined) data.badge_color         = body.badge_color;
   if (body.assigned_agent_id   !== undefined) data.assigned_agent_id   = body.assigned_agent_id;
 
   const updated = await prisma.groupBatch.update({ where: { id: params.batchId }, data });

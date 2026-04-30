@@ -196,6 +196,7 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
       quote_number: quote.quote_number,
       quote_name: quote.quote_name ?? groupTemplate?.group_template_name ?? null,
       quote_type: quote.quote_type,
+      group_template_id: quote.group_template_id ?? null,
       status: quote.status,
       start_date: quote.start_date,
       end_date: quote.end_date,

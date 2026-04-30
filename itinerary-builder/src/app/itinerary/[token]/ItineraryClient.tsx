@@ -48,11 +48,30 @@ interface PolicyRecord {
   content: string;
 }
 
+interface GroupBatch {
+  id: string;
+  batch_name: string;
+  start_date: string;
+  end_date: string;
+  total_seats: number;
+  available_seats: number;
+  adult_price: number;
+  child_5_12_price: number;
+  child_below_5_price: number;
+  single_supplement: number | null;
+  gst_percent: number;
+  booking_status: 'OPEN' | 'FILLING_FAST' | 'SOLD_OUT' | 'CLOSED' | 'CANCELLED';
+  badge_text: string | null;
+  badge_color: string | null;
+}
+
 interface ItineraryData {
   selected_option_id?: string | null;
   quote: {
     quote_number: string;
     quote_name?: string | null;
+    quote_type?: string | null;
+    group_template_id?: string | null;
     adults: number;
     children_5_12?: number;
     children_below_5?: number;
@@ -1106,21 +1125,549 @@ function StickyCTA({ options, selectedId, onSelect, onApprove, approving }: {
   );
 }
 
+/* ─────────────────────────── GROUP: Batch Date Picker ─────────────────────────── */
+function statusLabel(status: GroupBatch['booking_status'], badgeText: string | null): string {
+  if (badgeText) return badgeText;
+  switch (status) {
+    case 'OPEN':         return 'Available';
+    case 'FILLING_FAST': return 'Filling Fast';
+    case 'SOLD_OUT':     return 'Sold Out';
+    case 'CLOSED':       return 'Closed';
+    default:             return status;
+  }
+}
+
+function statusColor(status: GroupBatch['booking_status'], badgeColor: string | null): string {
+  if (badgeColor) return badgeColor;
+  switch (status) {
+    case 'OPEN':         return '#16A34A';
+    case 'FILLING_FAST': return '#EA580C';
+    case 'SOLD_OUT':     return '#DC2626';
+    case 'CLOSED':       return '#64748B';
+    default:             return '#64748B';
+  }
+}
+
+function batchIsSoldOut(b: GroupBatch): boolean {
+  return b.booking_status === 'SOLD_OUT' || b.booking_status === 'CLOSED' || b.available_seats === 0;
+}
+
+function groupBatchesByMonth(batches: GroupBatch[]): Array<{ monthLabel: string; batches: GroupBatch[] }> {
+  const map = new Map<string, GroupBatch[]>();
+  batches.forEach((b) => {
+    const d = new Date(b.start_date);
+    const key = d.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(b);
+  });
+  return Array.from(map.entries()).map(([monthLabel, batches]) => ({ monthLabel, batches }));
+}
+
+function BatchDatePicker({
+  batches, selectedBatchId, onSelect,
+}: {
+  batches: GroupBatch[]; selectedBatchId: string | null; onSelect: (b: GroupBatch) => void;
+}) {
+  if (batches.length === 0) return null;
+  const months = groupBatchesByMonth(batches);
+
+  return (
+    <div style={{ background: '#FAFCFF', borderTop: '1px solid var(--tl-border)', borderBottom: '1px solid var(--tl-border)' }} data-section="dates">
+      <div className="tl-sec">
+        <div className="tl-sec-eyebrow">Book Your Spot</div>
+        <div className="tl-sec-h">Choose Your Travel Dates</div>
+        <div className="tl-sec-sub">Select the batch that works best for you. Prices may vary by date.</div>
+
+        {months.map(({ monthLabel, batches: mBatches }) => (
+          <div key={monthLabel} style={{ marginTop: 28 }}>
+            {/* Month label */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14,
+            }}>
+              <div style={{
+                background: T, color: 'white', borderRadius: 8, padding: '3px 12px',
+                fontSize: 12, fontWeight: 700, fontFamily: 'var(--f-body)', letterSpacing: '0.5px',
+              }}>{monthLabel}</div>
+              <div style={{ flex: 1, height: 1, background: 'var(--tl-border)' }} />
+            </div>
+
+            {/* Batch cards */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {mBatches.map((batch) => {
+                const isSelected = selectedBatchId === batch.id;
+                const isSoldOut = batchIsSoldOut(batch);
+                const sColor = statusColor(batch.booking_status, batch.badge_color);
+                const sLabel = statusLabel(batch.booking_status, batch.badge_text);
+                const startD = new Date(batch.start_date);
+                const endD = new Date(batch.end_date);
+                const nights = Math.round((endD.getTime() - startD.getTime()) / 86400000);
+                const seatsLeft = batch.available_seats;
+
+                return (
+                  <div
+                    key={batch.id}
+                    onClick={() => !isSoldOut && onSelect(batch)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 14,
+                      border: isSelected ? `2px solid ${T}` : '1.5px solid var(--tl-border)',
+                      borderRadius: 16, padding: '14px 16px',
+                      background: isSelected ? `${T}08` : 'white',
+                      cursor: isSoldOut ? 'not-allowed' : 'pointer',
+                      opacity: isSoldOut ? 0.55 : 1,
+                      filter: isSoldOut ? 'grayscale(0.5)' : 'none',
+                      transition: 'all 0.2s ease',
+                      boxShadow: isSelected ? `0 0 0 3px ${T}22` : '0 1px 3px rgba(0,0,0,0.04)',
+                      position: 'relative',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSoldOut && !isSelected) {
+                        (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-2px)';
+                        (e.currentTarget as HTMLDivElement).style.boxShadow = '0 6px 20px rgba(19,73,86,0.12)';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSoldOut && !isSelected) {
+                        (e.currentTarget as HTMLDivElement).style.transform = 'translateY(0)';
+                        (e.currentTarget as HTMLDivElement).style.boxShadow = '0 1px 3px rgba(0,0,0,0.04)';
+                      }
+                    }}
+                  >
+                    {/* Date badge */}
+                    <div style={{
+                      flexShrink: 0, width: 54, height: 54, borderRadius: 12,
+                      background: isSelected ? T : '#EEF5F7',
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                      transition: 'background 0.2s',
+                    }}>
+                      <div style={{ fontFamily: 'var(--f-num)', fontSize: 20, fontWeight: 800, lineHeight: 1, color: isSelected ? 'white' : T }}>
+                        {startD.getDate()}
+                      </div>
+                      <div style={{ fontFamily: 'var(--f-body)', fontSize: 9, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: isSelected ? 'rgba(255,255,255,0.7)' : '#94A3B8', marginTop: 2 }}>
+                        {startD.toLocaleDateString('en-IN', { month: 'short' })}
+                      </div>
+                    </div>
+
+                    {/* Middle content */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontFamily: 'var(--f-body)', fontSize: 14, fontWeight: 700, color: '#0F172A', marginBottom: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {batch.batch_name}
+                      </div>
+                      <div style={{ fontFamily: 'var(--f-body)', fontSize: 12, color: '#64748B', marginBottom: 4 }}>
+                        {startD.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} – {endD.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        {' · '}{nights} night{nights !== 1 ? 's' : ''}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        {/* Status badge */}
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 4,
+                          background: `${sColor}15`, color: sColor,
+                          borderRadius: 20, padding: '2px 8px', fontSize: 10, fontWeight: 700, fontFamily: 'var(--f-body)',
+                        }}>
+                          <span style={{ width: 5, height: 5, borderRadius: '50%', background: sColor, display: 'inline-block' }} />
+                          {sLabel}
+                        </span>
+                        {/* Seats */}
+                        {!isSoldOut && seatsLeft <= 10 && seatsLeft > 0 && (
+                          <span style={{
+                            fontSize: 10, fontWeight: 600, color: '#EA580C', fontFamily: 'var(--f-body)',
+                            background: '#FFF7ED', borderRadius: 20, padding: '2px 7px',
+                          }}>
+                            {seatsLeft} seat{seatsLeft !== 1 ? 's' : ''} left
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Price + select */}
+                    <div style={{ flexShrink: 0, textAlign: 'right' }}>
+                      <div style={{
+                        fontFamily: 'var(--f-num)', fontSize: 16, fontWeight: 800,
+                        color: isSoldOut ? '#94A3B8' : isSelected ? T : '#0F172A',
+                        textDecoration: isSoldOut ? 'line-through' : 'none',
+                      }}>
+                        {fmtCurrency(batch.adult_price)}
+                      </div>
+                      <div style={{ fontFamily: 'var(--f-body)', fontSize: 10, color: '#94A3B8', marginTop: 1 }}>per adult</div>
+                      {isSelected && !isSoldOut && (
+                        <div style={{ marginTop: 6 }}>
+                          <span style={{
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            width: 22, height: 22, borderRadius: '50%', background: T, color: 'white',
+                          }}>
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round"><path d="M5 13l4 4L19 7" /></svg>
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+
+        {/* No dates prompt */}
+        {batches.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '40px 20px', color: '#94A3B8', fontFamily: 'var(--f-body)', fontSize: 14 }}>
+            No upcoming batches available at this time. Contact us for details.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────── GROUP: What's Covered ─────────────────────────── */
+const INCLUSION_EMOJI_MAP: Array<[RegExp, string]> = [
+  [/hotel|accommodat|stay|resort|room|villa|cottage/i, '🏨'],
+  [/flight|air(fare)?|ticket|fly/i, '✈️'],
+  [/transport|transfer|cab|taxi|bus|vehicle|car|suv/i, '🚌'],
+  [/meal|breakfast|dinner|lunch|food|dining|bb|cp|map|ap/i, '🍽️'],
+  [/guide|sightseeing|sight|tour/i, '🧭'],
+  [/photo|photography/i, '📸'],
+  [/water|boat|cruise|ferry|houseboat|backwater/i, '⛵'],
+  [/trek|hike|mountain|hill|camp/i, '🏔️'],
+  [/gst|tax/i, '📋'],
+  [/insurance/i, '🛡️'],
+  [/wifi|internet/i, '📶'],
+  [/entry|ticket|permit|pass/i, '🎫'],
+  [/activ|adventure|sport/i, '🎯'],
+  [/spa|wellness|massage/i, '💆'],
+  [/pickup|drop|airport/i, '🚐'],
+];
+
+const EXCLUSION_EMOJI_MAP: Array<[RegExp, string]> = [
+  [/visa/i, '🛂'],
+  [/personal|medicine|medical|health/i, '💊'],
+  [/shopping|shop/i, '🛍️'],
+  [/tip|gratuity/i, '💰'],
+  [/alcohol|drink|beverage/i, '🍷'],
+  [/flight|air(fare)?|fly/i, '✈️'],
+  [/camera|photography/i, '📷'],
+  [/room service|minibar/i, '🛎️'],
+  [/toll|parking/i, '🚦'],
+  [/laundry/i, '👕'],
+  [/porterage|baggage/i, '🧳'],
+];
+
+function getEmoji(text: string, map: Array<[RegExp, string]>, fallback: string): string {
+  for (const [regex, emoji] of map) {
+    if (regex.test(text)) return emoji;
+  }
+  return fallback;
+}
+
+function GroupWhatsCovered({
+  inclusions, exclusions,
+}: {
+  inclusions: ItineraryData['inclusions'];
+  exclusions: ItineraryData['exclusions'];
+}) {
+  if (inclusions.length === 0 && exclusions.length === 0) return null;
+
+  return (
+    <div style={{ background: 'white', borderTop: '1px solid var(--tl-border)' }} data-section="inclusions">
+      <div className="tl-sec">
+        <div className="tl-sec-eyebrow">Know Before You Go</div>
+        <div className="tl-sec-h">What&apos;s Covered</div>
+        <div className="tl-sec-sub">Everything included in your group package — and what&apos;s not.</div>
+
+        {inclusions.length > 0 && (
+          <div style={{ marginTop: 24 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+              <div style={{ width: 28, height: 28, borderRadius: 8, background: '#DCFCE7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16A34A" strokeWidth="2.5" strokeLinecap="round"><path d="M20 6L9 17l-5-5" /></svg>
+              </div>
+              <span style={{ fontFamily: 'var(--f-body)', fontSize: 15, fontWeight: 700, color: '#15803D' }}>Included in Your Package</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(156px, 1fr))', gap: 10 }}>
+              {inclusions.map((item) => (
+                <div key={item.id} style={{
+                  display: 'flex', alignItems: 'flex-start', gap: 10,
+                  background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 12,
+                  padding: '11px 12px', transition: 'transform 0.15s, box-shadow 0.15s',
+                }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-2px)'; (e.currentTarget as HTMLDivElement).style.boxShadow = '0 4px 12px rgba(21,128,61,0.10)'; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLDivElement).style.boxShadow = 'none'; }}
+                >
+                  <span style={{ fontSize: 18, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>
+                    {getEmoji(item.text, INCLUSION_EMOJI_MAP, '✅')}
+                  </span>
+                  <span style={{ fontFamily: 'var(--f-body)', fontSize: 12, color: '#166534', fontWeight: 500, lineHeight: 1.4 }}>
+                    {item.text}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {exclusions.length > 0 && (
+          <div style={{ marginTop: 22 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+              <div style={{ width: 28, height: 28, borderRadius: 8, background: '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </div>
+              <span style={{ fontFamily: 'var(--f-body)', fontSize: 15, fontWeight: 700, color: '#B91C1C' }}>Not Included</span>
+            </div>
+            <div style={{
+              background: '#FFF5F5', border: '1px solid #FCA5A5', borderRadius: 14, padding: '14px 16px',
+              display: 'flex', flexDirection: 'column', gap: 8,
+            }}>
+              {exclusions.map((item) => (
+                <div key={item.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                  <span style={{ fontSize: 15, lineHeight: 1, flexShrink: 0, marginTop: 2 }}>
+                    {getEmoji(item.text, EXCLUSION_EMOJI_MAP, '❌')}
+                  </span>
+                  <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#7F1D1D', lineHeight: 1.45 }}>{item.text}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────── GROUP: Fare Summary ─────────────────────────── */
+function GroupFareSummary({
+  batch, adults, onAdultsChange, token, customerName, quoteNumber, onBookNow, booking,
+}: {
+  batch: GroupBatch | null;
+  adults: number;
+  onAdultsChange: (n: number) => void;
+  token: string;
+  customerName: string;
+  quoteNumber: string;
+  onBookNow: () => void;
+  booking: boolean;
+}) {
+  if (!batch) {
+    return (
+      <div style={{ background: 'white', borderTop: '1px solid var(--tl-border)' }} data-section="fare">
+        <div className="tl-sec" style={{ textAlign: 'center', paddingTop: 40, paddingBottom: 40 }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>📅</div>
+          <div style={{ fontFamily: 'var(--f-display)', fontSize: 18, fontWeight: 700, color: '#0F172A', marginBottom: 8 }}>Select a Date First</div>
+          <div style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#64748B' }}>Choose your travel dates above to see the fare breakdown.</div>
+        </div>
+      </div>
+    );
+  }
+
+  const pricePerAdult = batch.adult_price;
+  const subtotal = pricePerAdult * adults;
+  const gstAmount = Math.round(subtotal * batch.gst_percent / 100);
+  const total = subtotal + gstAmount;
+  const pricePerAdultInclGst = Math.round(total / adults);
+
+  const startFmt = new Date(batch.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  const endFmt   = new Date(batch.end_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+
+  return (
+    <div style={{ background: 'white', borderTop: '1px solid var(--tl-border)' }} data-section="fare">
+      <div className="tl-sec">
+        <div className="tl-sec-eyebrow">Cost Breakdown</div>
+        <div className="tl-sec-h">Fare Summary</div>
+        <div className="tl-sec-sub">{batch.batch_name} · {startFmt} – {endFmt}</div>
+
+        <div className="tl-fare-card" style={{ marginTop: 20 }}>
+          {/* Adult counter */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+            <div>
+              <div style={{ fontFamily: 'var(--f-body)', fontSize: 13, fontWeight: 600, color: '#475569', marginBottom: 2 }}>Number of Adults</div>
+              <div style={{ fontFamily: 'var(--f-body)', fontSize: 11, color: '#94A3B8' }}>Adjust to see the total</div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 0, border: `2px solid ${T}`, borderRadius: 12, overflow: 'hidden' }}>
+              <button
+                onClick={() => onAdultsChange(Math.max(1, adults - 1))}
+                style={{
+                  width: 38, height: 38, background: adults === 1 ? '#F8FAFC' : `${T}12`,
+                  border: 'none', cursor: adults === 1 ? 'not-allowed' : 'pointer',
+                  fontSize: 18, fontWeight: 700, color: adults === 1 ? '#CBD5E1' : T,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.15s',
+                }}
+              >−</button>
+              <div style={{
+                width: 44, textAlign: 'center', fontFamily: 'var(--f-num)', fontSize: 18, fontWeight: 800, color: T,
+                background: `${T}08`,
+              }}>{adults}</div>
+              <button
+                onClick={() => onAdultsChange(Math.min(30, adults + 1))}
+                style={{
+                  width: 38, height: 38, background: `${T}12`,
+                  border: 'none', cursor: 'pointer',
+                  fontSize: 18, fontWeight: 700, color: T,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.15s',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = `${T}22`)}
+                onMouseLeave={e => (e.currentTarget.style.background = `${T}12`)}
+              >+</button>
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div style={{ borderTop: '1px dashed #E2E8F0', marginBottom: 16 }} />
+
+          {/* Price rows */}
+          <div className="tl-fare-row">
+            <span>Per Adult (before GST)</span>
+            <span style={{ fontWeight: 700 }}>{fmtCurrency(pricePerAdult)}</span>
+          </div>
+          <div className="tl-fare-row">
+            <span>× {adults} Adult{adults > 1 ? 's' : ''}</span>
+            <span style={{ fontWeight: 700 }}>{fmtCurrency(subtotal)}</span>
+          </div>
+          <div className="tl-fare-row">
+            <span>{batch.gst_percent}% GST</span>
+            <span>{fmtCurrency(gstAmount)}</span>
+          </div>
+
+          <div className="tl-fare-total">
+            <div>
+              <span className="tl-fare-total-label">Total Amount</span>
+              <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2, fontFamily: 'var(--f-body)' }}>
+                {fmtCurrency(pricePerAdultInclGst)} per person · incl. GST
+              </div>
+            </div>
+            <span className="tl-fare-total-val">{fmtCurrency(total)}</span>
+          </div>
+
+          {/* Book Now CTA */}
+          <button
+            onClick={onBookNow}
+            disabled={booking}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+              width: '100%', height: 52, marginTop: 18, borderRadius: 14,
+              background: booking ? '#94A3B8' : `linear-gradient(135deg, ${T} 0%, #1e6b7e 100%)`,
+              color: 'white', border: 'none', cursor: booking ? 'not-allowed' : 'pointer',
+              fontFamily: 'var(--f-body)', fontSize: 16, fontWeight: 700, letterSpacing: '0.2px',
+              boxShadow: booking ? 'none' : `0 4px 16px ${T}44`,
+              transition: 'all 0.2s ease',
+            }}
+            onMouseEnter={e => { if (!booking) (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)'; }}
+          >
+            {booking ? (
+              <>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" style={{ animation: 'spin 1s linear infinite' }}>
+                  <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+                </svg>
+                Sending your interest…
+              </>
+            ) : (
+              <>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round">
+                  <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" />
+                </svg>
+                Book Now — {fmtCurrency(total)}
+              </>
+            )}
+          </button>
+          <div style={{ textAlign: 'center', fontFamily: 'var(--f-body)', fontSize: 11, color: '#94A3B8', marginTop: 10 }}>
+            Our team will contact you within 2 hours to confirm your booking.
+          </div>
+        </div>
+
+        {/* Trust signals */}
+        <div style={{ marginTop: 16, background: 'white', borderRadius: 16, border: '1px solid var(--tl-border)', padding: '4px 16px' }}>
+          {[
+            { icon: <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" strokeLinecap="round" /></svg>, t: 'Secure Payments', d: '100% safe via Razorpay & direct bank transfer' },
+            { icon: <WASvg size={17} color={T} />, t: '24/7 WhatsApp Support', d: 'Your agent reachable throughout the trip' },
+            { icon: <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="2"><polyline points="23 4 23 10 17 10" strokeLinecap="round" strokeLinejoin="round" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" strokeLinecap="round" strokeLinejoin="round" /></svg>, t: 'Free Cancellation', d: 'Full refund if cancelled 30+ days before departure' },
+            { icon: <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" strokeLinecap="round" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" strokeLinecap="round" /></svg>, t: '15,000+ Travellers', d: 'Verified happy travellers across India' },
+          ].map((x, i) => (
+            <div key={i} className="tl-trust-row">
+              <div className="tl-trust-icon-wrap">{x.icon}</div>
+              <div><strong>{x.t}</strong><span>{x.d}</span></div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────── GROUP: Booking Intent Modal ─────────────────────────── */
+function BookingIntentModal({
+  batch, adults, total, customerName, agentName, waUrl, onClose,
+}: {
+  batch: GroupBatch; adults: number; total: number;
+  customerName: string; agentName: string; waUrl: string; onClose: () => void;
+}) {
+  const startFmt = new Date(batch.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  const firstName = agentName.split(' ')[0];
+
+  return (
+    <div className="tl-overlay" onClick={onClose}>
+      <div className="tl-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="tl-modal-tick">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+            <path d="M5 13l4.5 4.5L19 7" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
+        <div className="tl-modal-h">Booking Interest Noted! 🎉</div>
+        <div className="tl-modal-pkg">
+          You&apos;ve selected <strong>{batch.batch_name}</strong> — <strong>{startFmt}</strong>
+        </div>
+        <div className="tl-modal-price-box">
+          <div className="tl-modal-price-main">{fmtCurrency(total)} for {adults} adult{adults > 1 ? 's' : ''}</div>
+          <div className="tl-modal-price-sub">(inclusive of {batch.gst_percent}% GST)</div>
+        </div>
+        <div className="tl-modal-agent">
+          <strong>{firstName}</strong> will call you within <strong>2 hours</strong> to confirm seats and collect the advance.
+        </div>
+        <a href={waUrl} target="_blank" rel="noopener noreferrer" className="tl-modal-wa">
+          <WASvg size={18} color="white" />
+          WhatsApp {firstName} Now
+        </a>
+        <button className="tl-modal-wait" onClick={onClose}>I&apos;ll wait for the call</button>
+      </div>
+    </div>
+  );
+}
+
 /* ─────────────────────────── Main Component ─────────────────────────── */
 export function ItineraryClient({ data, token }: Props) {
   const { quote, customer, agent, state, quote_options, day_snapshots, inclusions, exclusions, policies } = data;
+
+  const isGroup = quote.quote_type === 'GROUP';
 
   const defaultOption = data.selected_option_id
     ? quote_options.find((o) => o.id === data.selected_option_id)?.id ?? null
     : quote_options.find((o) => o.is_most_popular)?.id ?? quote_options[0]?.id ?? null;
 
-  const [selectedId, setSelectedId] = useState<string | null>(defaultOption);
-  const [approving, setApproving] = useState(false);
-  const [showSuccess, setShowSuccess] = useState(false);
-  const [showReview, setShowReview] = useState(false);
+  const [selectedId, setSelectedId]         = useState<string | null>(defaultOption);
+  const [approving, setApproving]           = useState(false);
+  const [showSuccess, setShowSuccess]       = useState(false);
+  const [showReview, setShowReview]         = useState(false);
+
+  // GROUP-only state
+  const [batches, setBatches]               = useState<GroupBatch[]>([]);
+  const [selectedBatch, setSelectedBatch]   = useState<GroupBatch | null>(null);
+  const [groupAdults, setGroupAdults]       = useState<number>(Math.max(1, quote.adults ?? 1));
+  const [booking, setBooking]               = useState(false);
+  const [showBookingIntent, setShowBookingIntent] = useState(false);
 
   const selectedOption = quote_options.find((o) => o.id === selectedId);
   const waUrl = buildWaUrl(agent, quote.quote_number, customer.name, state.name);
+
+  // Fetch group batches when applicable
+  useEffect(() => {
+    if (!isGroup || !quote.group_template_id) return;
+    fetch(`/api/v1/public/group-batches/${quote.group_template_id}`)
+      .then((r) => r.json())
+      .then((d: { data?: GroupBatch[] }) => {
+        const list = d.data ?? [];
+        setBatches(list);
+        // Pre-select first available batch
+        const firstAvail = list.find((b) => !batchIsSoldOut(b));
+        if (firstAvail) setSelectedBatch(firstAvail);
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Auto-trigger review modal after 90 seconds
   useEffect(() => {
@@ -1137,7 +1684,7 @@ export function ItineraryClient({ data, token }: Props) {
         body: JSON.stringify({ option_id: id }),
       });
     } catch {
-      // non-critical — UI already updated
+      // non-critical
     }
   }
 
@@ -1153,12 +1700,54 @@ export function ItineraryClient({ data, token }: Props) {
       const res = await fetch(`/api/v1/public/itinerary/${token}/approve`, { method: 'POST' });
       if (res.ok) setShowSuccess(true);
     } catch {
-      // show modal anyway for UX
       setShowSuccess(true);
     } finally {
       setApproving(false);
     }
   }
+
+  async function handleBookNow() {
+    if (!selectedBatch || booking) return;
+    setBooking(true);
+
+    const pricePerAdult = selectedBatch.adult_price;
+    const subtotal      = pricePerAdult * groupAdults;
+    const gstAmount     = Math.round(subtotal * selectedBatch.gst_percent / 100);
+    const total         = subtotal + gstAmount;
+
+    try {
+      await fetch(`/api/v1/public/itinerary/${token}/analytics`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event_type: 'booking_intent',
+          metadata: {
+            customer_name:    customer.name,
+            adults:           groupAdults,
+            batch_id:         selectedBatch.id,
+            batch_name:       selectedBatch.batch_name,
+            batch_start_date: selectedBatch.start_date,
+            batch_end_date:   selectedBatch.end_date,
+            total_price:      total,
+            quote_number:     quote.quote_number,
+          },
+        }),
+      });
+    } catch {
+      // non-critical — show confirmation anyway
+    } finally {
+      setBooking(false);
+      setShowBookingIntent(true);
+    }
+  }
+
+  // Derived group fare
+  const groupTotal = selectedBatch
+    ? (() => {
+        const sub = selectedBatch.adult_price * groupAdults;
+        return sub + Math.round(sub * selectedBatch.gst_percent / 100);
+      })()
+    : 0;
 
   return (
     <div className="tl-page">
@@ -1168,28 +1757,64 @@ export function ItineraryClient({ data, token }: Props) {
         <Hero data={data} />
         <Strip quote={quote} />
         <Gallery state={state} day_snapshots={day_snapshots} />
+
+        {/* Package options (all quote types) */}
         <Packages options={quote_options} selectedId={selectedId} onSelect={handleSelectOption} />
+
+        {/* ── GROUP: date picker right after packages ── */}
+        {isGroup && (
+          <BatchDatePicker
+            batches={batches}
+            selectedBatchId={selectedBatch?.id ?? null}
+            onSelect={(b) => { setSelectedBatch(b); setGroupAdults(Math.max(1, quote.adults ?? 1)); }}
+          />
+        )}
+
         <LogoMarquee />
         <ItinerarySection days={day_snapshots} />
-        <IncExc inclusions={inclusions} exclusions={exclusions} />
+
+        {/* ── GROUP: visual what's covered; regular: plain inc/exc ── */}
+        {isGroup
+          ? <GroupWhatsCovered inclusions={inclusions} exclusions={exclusions} />
+          : <IncExc inclusions={inclusions} exclusions={exclusions} />
+        }
+
+        {/* ── GROUP: fare summary with adult counter + Book Now ── */}
+        {isGroup && (
+          <GroupFareSummary
+            batch={selectedBatch}
+            adults={groupAdults}
+            onAdultsChange={setGroupAdults}
+            token={token}
+            customerName={customer.name}
+            quoteNumber={quote.quote_number}
+            onBookNow={handleBookNow}
+            booking={booking}
+          />
+        )}
+
         <WhyChoose />
         <Stats />
-        <FareSummary option={selectedOption} adults={quote.adults} />
+
+        {/* Regular fare summary for non-GROUP quotes */}
+        {!isGroup && <FareSummary option={selectedOption} adults={quote.adults} />}
+
         <Policies policies={policies} />
         <AgentSection agent={agent} waUrl={waUrl} />
         <Footer quoteNum={quote.quote_number} expiryDate={quote.expiry_date} waUrl={waUrl} />
-        {/* Safe-area spacer for sticky CTA */}
         <div style={{ height: 'calc(env(safe-area-inset-bottom,0px) + 130px)', background: 'var(--tl-dark)' }} />
       </div>
 
-      {/* Sticky CTA */}
-      <StickyCTA
-        options={quote_options}
-        selectedId={selectedId}
-        onSelect={handleSelectOption}
-        onApprove={handleApprove}
-        approving={approving}
-      />
+      {/* Sticky CTA — only for non-GROUP (GROUP has inline Book Now) */}
+      {!isGroup && (
+        <StickyCTA
+          options={quote_options}
+          selectedId={selectedId}
+          onSelect={handleSelectOption}
+          onApprove={handleApprove}
+          approving={approving}
+        />
+      )}
 
       {/* WhatsApp float */}
       <a href={waUrl} target="_blank" rel="noopener noreferrer" className="tl-wa-float" title="Chat on WhatsApp">
@@ -1206,6 +1831,17 @@ export function ItineraryClient({ data, token }: Props) {
           waUrl={waUrl}
           agentName={agent?.name ?? 'Your Agent'}
           onClose={() => setShowSuccess(false)}
+        />
+      )}
+      {showBookingIntent && selectedBatch && (
+        <BookingIntentModal
+          batch={selectedBatch}
+          adults={groupAdults}
+          total={groupTotal}
+          customerName={customer.name}
+          agentName={agent?.name ?? 'Your Agent'}
+          waUrl={waUrl}
+          onClose={() => setShowBookingIntent(false)}
         />
       )}
       {showReview && <ReviewModal onClose={() => setShowReview(false)} />}

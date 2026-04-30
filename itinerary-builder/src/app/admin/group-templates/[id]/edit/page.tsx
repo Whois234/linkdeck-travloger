@@ -72,6 +72,8 @@ interface Batch {
   single_supplement: number | null;
   gst_percent: number;
   booking_status: string;
+  badge_text: string | null;
+  badge_color: string | null;
   assigned_agent_id: string | null;
 }
 interface Template {
@@ -106,7 +108,7 @@ const EMPTY_BATCH: Batch = {
   total_seats: 20, available_seats: 20,
   adult_price: 0, child_5_12_price: 0, child_below_5_price: 0,
   single_supplement: null, gst_percent: 5,
-  booking_status: 'OPEN', assigned_agent_id: null,
+  booking_status: 'OPEN', badge_text: null, badge_color: null, assigned_agent_id: null,
 };
 
 const SECTIONS = [
@@ -921,6 +923,23 @@ export default function GroupTemplateEditPage() {
                     onChange={e => updBatch('booking_status', e.target.value)}>
                     {BOOKING_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
+                </div>
+                <div>
+                  <label className={lbl}>Badge Text <span className="text-[#94A3B8] font-normal">(optional)</span></label>
+                  <input className={inp} style={inpSt} value={editingBatch.badge_text ?? ''}
+                    onChange={e => updBatch('badge_text', e.target.value || null)}
+                    placeholder="e.g. Filling Fast, 2 Spots Left, Early Bird" />
+                </div>
+                <div>
+                  <label className={lbl}>Badge Color</label>
+                  <div className="flex items-center gap-3 mt-1">
+                    <input type="color" value={editingBatch.badge_color ?? '#F59E0B'}
+                      onChange={e => updBatch('badge_color', e.target.value)}
+                      className="h-9 w-14 rounded cursor-pointer border-0 p-0.5" style={{ backgroundColor: 'transparent' }} />
+                    <span className="text-xs text-[#64748B] font-mono">{editingBatch.badge_color ?? '#F59E0B'}</span>
+                    <button type="button" onClick={() => updBatch('badge_color', null)}
+                      className="text-xs text-[#94A3B8] hover:text-[#64748B] underline">Reset</button>
+                  </div>
                 </div>
               </div>
             </div>

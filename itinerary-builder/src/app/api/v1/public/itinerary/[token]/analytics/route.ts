@@ -9,7 +9,7 @@ import { prisma } from '@/lib/prisma';
 import { ok, notFound } from '@/lib/api-response';
 import { QuoteEventType, Prisma } from '@prisma/client';
 
-const ALLOWED_EVENTS: QuoteEventType[] = ['quote_viewed', 'whatsapp_clicked'];
+const ALLOWED_EVENTS: QuoteEventType[] = ['quote_viewed', 'whatsapp_clicked', 'booking_intent'];
 
 /* ── lightweight UA parser ───────────────────────────────────────────── */
 function parseUA(ua: string): { device: string; os: string; browser: string } {
@@ -101,9 +101,15 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
 
   // Notification for assigned agent
   if (quote.assigned_agent?.user_account_id) {
+    const batchDate = enrichedMeta.batch_start_date
+      ? new Date(enrichedMeta.batch_start_date as string).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+      : null;
     const messages: Record<string, string> = {
-      quote_viewed:     `${quote.assigned_agent.name ? 'A customer' : 'Someone'} viewed your quotation`,
+      quote_viewed:     `A customer viewed your quotation`,
       whatsapp_clicked: `A customer clicked WhatsApp on your quotation`,
+      booking_intent:   batchDate
+        ? `🎉 Booking Intent! ${enrichedMeta.customer_name ?? 'A customer'} wants ${enrichedMeta.adults ?? 1} adult(s) on ${batchDate} · ₹${enrichedMeta.total_price ?? ''}`
+        : `🎉 Booking Intent! ${enrichedMeta.customer_name ?? 'A customer'} wants to book`,
     };
     const message = messages[eventType];
     if (message) {

@@ -153,6 +153,7 @@ enum QuoteEventType {
   package_selected
   approve_clicked
   whatsapp_clicked
+  booking_intent
 }
 
 enum UserRole {
@@ -710,6 +711,8 @@ model GroupBatch {
   fixed_exclusions    Json?
   fixed_policies      Json?
   booking_status      GroupBatchStatus @default(OPEN)
+  badge_text          String?          // custom label e.g. "2 Spots Left"
+  badge_color         String?          // hex override e.g. "#F59E0B"
   assigned_agent_id   String?
   status              Boolean          @default(true)
   created_at          DateTime         @default(now())

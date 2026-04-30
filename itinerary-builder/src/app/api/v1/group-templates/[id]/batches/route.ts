@@ -18,6 +18,8 @@ const BatchSchema = z.object({
   single_supplement:   z.number().min(0).optional().nullable(),
   gst_percent:         z.number().min(0).default(5),
   booking_status:      z.nativeEnum(GroupBatchStatus).default('OPEN'),
+  badge_text:          z.string().optional().nullable(),
+  badge_color:         z.string().optional().nullable(),
   assigned_agent_id:   z.string().optional().nullable(),
 });
 
