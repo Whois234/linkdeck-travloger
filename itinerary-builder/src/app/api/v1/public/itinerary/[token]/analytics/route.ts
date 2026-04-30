@@ -9,7 +9,13 @@ import { prisma } from '@/lib/prisma';
 import { ok, notFound } from '@/lib/api-response';
 import { QuoteEventType, Prisma } from '@prisma/client';
 
-const ALLOWED_EVENTS: QuoteEventType[] = ['quote_viewed', 'whatsapp_clicked', 'booking_intent'];
+const ALLOWED_EVENTS: QuoteEventType[] = [
+  'quote_viewed',
+  'whatsapp_clicked',
+  'booking_intent',
+  'rating_submitted',
+  'batch_selected',
+];
 
 /* ── lightweight UA parser ───────────────────────────────────────────── */
 function parseUA(ua: string): { device: string; os: string; browser: string } {
@@ -104,12 +110,18 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
     const batchDate = enrichedMeta.batch_start_date
       ? new Date(enrichedMeta.batch_start_date as string).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
       : null;
+    const RATING_LABELS: Record<number, string> = { 0: 'Very Dissatisfied 😢', 1: 'Dissatisfied 😕', 2: 'Neutral 😐', 3: 'Satisfied 🙂', 4: 'Very Satisfied 😍' };
+    const ratingLabel = enrichedMeta.rating != null ? (RATING_LABELS[Number(enrichedMeta.rating)] ?? `${enrichedMeta.rating}/4`) : '';
+    const batchName   = enrichedMeta.batch_name ? ` (${enrichedMeta.batch_name})` : '';
+
     const messages: Record<string, string> = {
       quote_viewed:     `A customer viewed your quotation`,
       whatsapp_clicked: `A customer clicked WhatsApp on your quotation`,
       booking_intent:   batchDate
         ? `🎉 Booking Intent! ${enrichedMeta.customer_name ?? 'A customer'} wants ${enrichedMeta.adults ?? 1} adult(s) on ${batchDate} · ₹${enrichedMeta.total_price ?? ''}`
         : `🎉 Booking Intent! ${enrichedMeta.customer_name ?? 'A customer'} wants to book`,
+      rating_submitted: `⭐ Customer rated the quotation: ${ratingLabel}`,
+      batch_selected:   batchDate ? `📅 Customer selected departure${batchName}: ${batchDate}` : `📅 Customer selected a departure date`,
     };
     const message = messages[eventType];
     if (message) {

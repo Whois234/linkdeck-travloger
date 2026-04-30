@@ -154,6 +154,8 @@ enum QuoteEventType {
   approve_clicked
   whatsapp_clicked
   booking_intent
+  rating_submitted
+  batch_selected
 }
 
 enum UserRole {

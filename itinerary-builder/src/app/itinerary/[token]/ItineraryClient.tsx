@@ -1039,13 +1039,28 @@ function SuccessModal({ option, adults, waUrl, agentName, onClose }: {
 }
 
 /* ─────────────────────────── Review Modal ─────────────────────────── */
-function ReviewModal({ onClose }: { onClose: () => void }) {
+function ReviewModal({ onClose, token }: { onClose: () => void; token: string }) {
   const [picked, setPicked] = useState<number | null>(null);
   const [done, setDone] = useState(false);
 
-  function submit() {
+  const FACE_LABELS = ['Very Dissatisfied', 'Dissatisfied', 'Neutral', 'Satisfied', 'Very Satisfied'];
+
+  async function submit() {
     if (picked === null) return;
     setDone(true);
+    // Fire rating_submitted event (non-blocking)
+    fetch(`/api/v1/public/itinerary/${token}/analytics`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event_type: 'rating_submitted',
+        metadata: {
+          rating: picked,
+          rating_label: FACE_LABELS[picked] ?? '',
+          max_rating: 4,
+        },
+      }),
+    }).catch(() => {});
     setTimeout(onClose, 2200);
   }
 
@@ -1880,6 +1895,26 @@ export function ItineraryClient({ data, token }: Props) {
     }
   }
 
+  function handleBatchSelect(b: GroupBatch) {
+    setSelectedBatch(b);
+    setGroupAdults(Math.max(1, quote.adults ?? 1));
+    // Fire batch_selected analytics (non-blocking)
+    fetch(`/api/v1/public/itinerary/${token}/analytics`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event_type: 'batch_selected',
+        metadata: {
+          batch_id:         b.id,
+          batch_name:       b.batch_name,
+          batch_start_date: b.start_date,
+          batch_end_date:   b.end_date,
+          adult_price:      b.adult_price,
+        },
+      }),
+    }).catch(() => {});
+  }
+
   async function handleBookNow() {
     if (!selectedBatch || booking) return;
     setBooking(true);
@@ -1940,7 +1975,7 @@ export function ItineraryClient({ data, token }: Props) {
           <BatchDatePicker
             batches={batches}
             selectedBatchId={selectedBatch?.id ?? null}
-            onSelect={(b) => { setSelectedBatch(b); setGroupAdults(Math.max(1, quote.adults ?? 1)); }}
+            onSelect={handleBatchSelect}
           />
         )}
 
@@ -2027,7 +2062,7 @@ export function ItineraryClient({ data, token }: Props) {
           onClose={() => setShowBookingIntent(false)}
         />
       )}
-      {showReview && <ReviewModal onClose={() => setShowReview(false)} />}
+      {showReview && <ReviewModal onClose={() => setShowReview(false)} token={token} />}
     </div>
   );
 }

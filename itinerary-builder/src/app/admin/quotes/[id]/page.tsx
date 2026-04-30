@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/admin/PageHeader';
-import { ArrowLeft, Calendar, Users, MapPin, Phone, Mail, Clock, Edit2, Check, X, ExternalLink, BarChart2, Eye, MessageCircle, Package, ThumbsUp, RefreshCw, Trash2, LinkIcon, Link2Off, ChevronDown, ChevronUp, Hotel, Car, TrendingUp, Receipt } from 'lucide-react';
+import { ArrowLeft, Calendar, Users, MapPin, Phone, Mail, Clock, Edit2, Check, X, ExternalLink, BarChart2, Eye, MessageCircle, Package, ThumbsUp, RefreshCw, Trash2, LinkIcon, Link2Off, ChevronDown, ChevronUp, Hotel, Car, TrendingUp, Receipt, Star, CalendarCheck } from 'lucide-react';
 
 const T = '#134956';
 const STATUS_BADGE: Record<string, { bg: string; text: string }> = {
@@ -68,6 +68,8 @@ const EVENT_ICON: Record<string, { icon: React.ElementType; color: string; bg: s
   approve_clicked:  { icon: ThumbsUp,       color: '#10B981', bg: '#ECFDF5', label: 'Approved' },
   whatsapp_clicked: { icon: MessageCircle,  color: '#22C55E', bg: '#F0FDF4', label: 'WhatsApp Clicked' },
   booking_intent:   { icon: ThumbsUp,       color: '#EC4899', bg: '#FDF2F8', label: '🎉 Booking Intent' },
+  rating_submitted: { icon: Star,           color: '#F59E0B', bg: '#FFFBEB', label: '⭐ Customer Rated' },
+  batch_selected:   { icon: CalendarCheck,  color: '#0EA5E9', bg: '#E0F2FE', label: '📅 Date Selected' },
 };
 
 function formatEventTime(dateStr: string) {
@@ -317,6 +319,10 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
   const pkgSelectedEvt = events.filter(e => e.event_type === 'package_selected');
   const approvedEvt    = events.filter(e => e.event_type === 'approve_clicked');
   const bookingIntents = events.filter(e => e.event_type === 'booking_intent');
+  const ratingEvents   = events.filter(e => e.event_type === 'rating_submitted');
+  const latestRating   = ratingEvents.length > 0 ? ratingEvents[ratingEvents.length - 1] : null;
+  const RATING_FACES   = ['😢', '😕', '😐', '🙂', '😍'];
+  const latestFace     = latestRating?.metadata?.rating != null ? (RATING_FACES[Number(latestRating.metadata.rating)] ?? '⭐') : null;
 
   const SECTION_ORDER = ['hero', 'packages', 'dates', 'itinerary', 'inclusions', 'fare', 'policies', 'faqs'];
   const sectionTimeTotals: Record<string, number> = {};
@@ -381,12 +387,14 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
             <div className="py-16 text-center"><div className="w-8 h-8 rounded-full border-2 border-[#134956] border-t-transparent animate-spin mx-auto" /></div>
           ) : (
             <>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
                 {[
                   { label: 'Sessions', value: viewCount, icon: Eye, color: '#8B5CF6', bg: '#F5F3FF', sub: 'unique page visits' },
                   { label: 'WhatsApp Clicks', value: whatsappClicks, icon: MessageCircle, color: '#22C55E', bg: '#F0FDF4', sub: '' },
+                  { label: 'Pkg Selected', value: pkgSelectedEvt.length, icon: Package, color: '#F59E0B', bg: '#FFFBEB', sub: pkgSelectedEvt.length > 0 ? (pkgSelectedEvt[pkgSelectedEvt.length - 1]?.metadata?.option_name as string | undefined ?? '') : 'no selection yet' },
                   { label: 'Booking Intents', value: bookingIntents.length, icon: ThumbsUp, color: '#EC4899', bg: '#FDF2F8', sub: 'Book Now tapped' },
                   { label: 'Approved', value: approvedEvt.length, icon: ThumbsUp, color: '#10B981', bg: '#ECFDF5', sub: '' },
+                  { label: 'Customer Rating', value: latestFace ?? (ratingEvents.length === 0 ? '—' : '⭐'), icon: Star, color: '#F59E0B', bg: '#FFFBEB', sub: ratingEvents.length > 0 ? (latestRating?.metadata?.rating_label as string | undefined ?? '') : 'not yet rated', isText: true },
                 ].map(s => (
                   <div key={s.label} className="bg-white rounded-xl border p-4" style={{ borderColor: '#E2E8F0', ...cardShadow }}>
                     <div className="flex items-center justify-between mb-3">
@@ -395,8 +403,11 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
                         <s.icon className="w-4 h-4" style={{ color: s.color }} />
                       </div>
                     </div>
-                    <p className="text-2xl font-bold" style={{ color: '#0F172A' }}>{s.value}</p>
-                    {s.sub && <p className="text-[10px] mt-0.5" style={{ color: '#94A3B8' }}>{s.sub}</p>}
+                    {'isText' in s && s.isText
+                      ? <p className="text-3xl leading-none font-bold" style={{ color: '#0F172A' }}>{s.value}</p>
+                      : <p className="text-2xl font-bold" style={{ color: '#0F172A' }}>{s.value}</p>
+                    }
+                    {s.sub && <p className="text-[10px] mt-0.5 truncate" style={{ color: '#94A3B8' }}>{s.sub}</p>}
                   </div>
                 ))}
               </div>
@@ -512,7 +523,6 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
                               </div>
                               {evt.metadata && (
                                 <div className="mt-1 flex flex-wrap gap-1.5">
-                                  {!!evt.metadata.option_name && <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ backgroundColor: '#FFFBEB', color: '#B45309' }}>{String(evt.metadata.option_name)}</span>}
                                   {/* booking_intent specific fields */}
                                   {evt.event_type === 'booking_intent' && !!evt.metadata.customer_name && (
                                     <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ backgroundColor: '#FDF2F8', color: '#BE185D' }}>
@@ -534,9 +544,40 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
                                       ₹{Number(evt.metadata.total_price).toLocaleString('en-IN')}
                                     </span>
                                   )}
-                                  {evt.event_type !== 'booking_intent' && evt.metadata.time_spent_seconds != null && <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ backgroundColor: '#F1F5F9', color: '#475569' }}>{fmtSecs(Number(evt.metadata.time_spent_seconds))} on page</span>}
-                                  {!!evt.metadata.device && <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ backgroundColor: '#EEF2FF', color: '#4F46E5' }}>{String(evt.metadata.device)} · {String(evt.metadata.os ?? '')}</span>}
-                                  {!!(evt.metadata.city || evt.metadata.country) && <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ backgroundColor: '#FFF7ED', color: '#C2410C' }}>📍 {[evt.metadata.city, evt.metadata.country].filter(Boolean).map(String).join(', ')}</span>}
+                                  {/* rating_submitted chips */}
+                                  {evt.event_type === 'rating_submitted' && evt.metadata.rating != null && (
+                                    <span className="px-2 py-0.5 rounded-full text-[13px] font-bold" style={{ backgroundColor: '#FFFBEB', color: '#B45309' }}>
+                                      {(['😢','😕','😐','🙂','😍'][Number(evt.metadata.rating)] ?? '⭐')}
+                                      <span className="text-[11px] font-medium ml-1" style={{ color: '#92400E' }}>
+                                        {String(evt.metadata.rating_label ?? '')}
+                                      </span>
+                                    </span>
+                                  )}
+                                  {/* batch_selected chips */}
+                                  {evt.event_type === 'batch_selected' && !!evt.metadata.batch_name && (
+                                    <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ backgroundColor: '#E0F2FE', color: '#0369A1' }}>
+                                      {String(evt.metadata.batch_name)}
+                                    </span>
+                                  )}
+                                  {evt.event_type === 'batch_selected' && !!evt.metadata.batch_start_date && (
+                                    <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ backgroundColor: '#ECFDF5', color: '#065F46' }}>
+                                      📅 {new Date(String(evt.metadata.batch_start_date)).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                    </span>
+                                  )}
+                                  {evt.event_type === 'batch_selected' && !!evt.metadata.adult_price && (
+                                    <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ backgroundColor: '#F0FDF4', color: '#15803D' }}>
+                                      ₹{Number(evt.metadata.adult_price).toLocaleString('en-IN')} / adult
+                                    </span>
+                                  )}
+                                  {/* package_selected chips */}
+                                  {evt.event_type === 'package_selected' && !!evt.metadata.option_name && (
+                                    <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ backgroundColor: '#FFFBEB', color: '#B45309' }}>
+                                      📦 {String(evt.metadata.option_name)}
+                                    </span>
+                                  )}
+                                  {evt.event_type !== 'booking_intent' && evt.event_type !== 'rating_submitted' && evt.event_type !== 'batch_selected' && evt.event_type !== 'package_selected' && evt.metadata.time_spent_seconds != null && <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ backgroundColor: '#F1F5F9', color: '#475569' }}>{fmtSecs(Number(evt.metadata.time_spent_seconds))} on page</span>}
+                                  {!!evt.metadata.device && evt.event_type === 'quote_viewed' && <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ backgroundColor: '#EEF2FF', color: '#4F46E5' }}>{String(evt.metadata.device)} · {String(evt.metadata.os ?? '')}</span>}
+                                  {!!(evt.metadata.city || evt.metadata.country) && evt.event_type === 'quote_viewed' && <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ backgroundColor: '#FFF7ED', color: '#C2410C' }}>📍 {[evt.metadata.city, evt.metadata.country].filter(Boolean).map(String).join(', ')}</span>}
                                 </div>
                               )}
                             </div>
