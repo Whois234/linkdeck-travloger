@@ -1351,68 +1351,6 @@ function BatchDatePicker({
 }
 
 /* ─────────────────────────── GROUP: What's Covered ─────────────────────────── */
-
-/* Inline SVG icon by keyword */
-function incIcon(text: string) {
-  const t = text.toLowerCase();
-  const C = T; // teal stroke colour
-  if (/hotel|accommodat|stay|resort|room|villa|cottage/.test(t))
-    return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>;
-  if (/flight|air(fare)?|fly/.test(t))
-    return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 00-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg>;
-  if (/transport|transfer|cab|taxi|bus|vehicle|car|suv|ac/.test(t))
-    return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>;
-  if (/meal|breakfast|dinner|lunch|food|dining|map\b|cp\b|ap\b/.test(t))
-    return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round"><path d="M18 8h1a4 4 0 010 8h-1"/><path d="M2 8h16v9a4 4 0 01-4 4H6a4 4 0 01-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>;
-  if (/guide|sightseeing|sight|tour/.test(t))
-    return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>;
-  if (/photo|photography/.test(t))
-    return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>;
-  if (/water|boat|cruise|ferry|houseboat|backwater/.test(t))
-    return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round"><path d="M2 20c1.67 0 3.33-1 5-1s3.33 1 5 1 3.33-1 5-1"/><path d="M12 10V4l-3 3h6l-3-3"/><path d="M5 12H2l2 8"/><path d="M19 12h3l-2 8"/><path d="M12 10c0 0-4.5 1.5-7 2"/><path d="M12 10c0 0 4.5 1.5 7 2"/></svg>;
-  if (/trek|hike|mountain|hill|camp/.test(t))
-    return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><polygon points="3 17 12 3 21 17 3 17"/></svg>;
-  if (/gst|tax/.test(t))
-    return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>;
-  if (/insurance/.test(t))
-    return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>;
-  if (/wifi|internet/.test(t))
-    return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round"><path d="M5 12.55a11 11 0 0114.08 0"/><path d="M1.42 9a16 16 0 0121.16 0"/><path d="M8.53 16.11a6 6 0 016.95 0"/><line x1="12" y1="20" x2="12.01" y2="20" strokeWidth="2.5"/></svg>;
-  if (/entry|ticket|permit|pass/.test(t))
-    return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round"><path d="M2 9a3 3 0 010-6h20a3 3 0 010 6"/><path d="M2 15a3 3 0 000 6h20a3 3 0 000-6"/><line x1="2" y1="12" x2="22" y2="12"/></svg>;
-  if (/activ|adventure|sport/.test(t))
-    return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>;
-  if (/pickup|drop|airport/.test(t))
-    return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>;
-  if (/toll|parking/.test(t))
-    return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>;
-  // default: check inside circle
-  return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>;
-}
-
-function excIcon(text: string) {
-  const t = text.toLowerCase();
-  const R = '#DC2626';
-  if (/visa/.test(t))
-    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={R} strokeWidth="2" strokeLinecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>;
-  if (/personal|medicine|medical|health/.test(t))
-    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={R} strokeWidth="2" strokeLinecap="round"><path d="M12 2a10 10 0 100 20A10 10 0 0012 2z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>;
-  if (/shopping|shop/.test(t))
-    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={R} strokeWidth="2" strokeLinecap="round"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>;
-  if (/flight|air(fare)?|fly/.test(t))
-    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={R} strokeWidth="2" strokeLinecap="round"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 00-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg>;
-  if (/camera|photography/.test(t))
-    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={R} strokeWidth="2" strokeLinecap="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>;
-  if (/alcohol|drink|beverage/.test(t))
-    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={R} strokeWidth="2" strokeLinecap="round"><path d="M8 22h8M12 11v11M5 3h14l-2 9a7 7 0 01-10 0L5 3z"/></svg>;
-  if (/laundry/.test(t))
-    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={R} strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="14" r="6"/><rect x="2" y="2" width="20" height="7" rx="1"/><path d="M14 14a2 2 0 01-4 0"/></svg>;
-  if (/porterage|baggage|luggage/.test(t))
-    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={R} strokeWidth="2" strokeLinecap="round"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M10 2V1M14 2V1"/><line x1="12" y1="7" x2="12" y2="17"/><line x1="8" y1="12" x2="16" y2="12"/></svg>;
-  // default: X circle
-  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={R} strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>;
-}
-
 function GroupWhatsCovered({
   inclusions, exclusions,
 }: {
@@ -1428,33 +1366,27 @@ function GroupWhatsCovered({
         <div className="tl-sec-h">What&apos;s Covered</div>
         <div className="tl-sec-sub">Everything included in your group package — and what&apos;s not.</div>
 
+        {/* ── Inclusions ── */}
         {inclusions.length > 0 && (
           <div style={{ marginTop: 24 }}>
-            {/* Section label */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-              <div style={{ width: 30, height: 30, borderRadius: 9, background: '#DCFCE7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16A34A" strokeWidth="2.5" strokeLinecap="round"><path d="M20 6L9 17l-5-5" /></svg>
-              </div>
-              <span style={{ fontFamily: 'var(--f-body)', fontSize: 14, fontWeight: 700, color: '#15803D' }}>Included in Your Package</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#16A34A', flexShrink: 0 }} />
+              <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, fontWeight: 700, color: '#15803D', letterSpacing: '0.2px' }}>
+                Included in Your Package
+              </span>
             </div>
-
-            {/* Inclusion tiles — icon left, text right */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {inclusions.map((item) => (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0, border: '1px solid #D1FAE5', borderRadius: 14, overflow: 'hidden' }}>
+              {inclusions.map((item, idx) => (
                 <div key={item.id} style={{
-                  display: 'flex', alignItems: 'center', gap: 12,
-                  background: '#F8FFFE', border: '1px solid #D1FAE5', borderRadius: 12,
-                  padding: '11px 14px',
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '11px 16px',
+                  background: idx % 2 === 0 ? '#F0FDF4' : 'white',
+                  borderTop: idx > 0 ? '1px solid #D1FAE5' : 'none',
                 }}>
-                  {/* Icon in teal circle */}
-                  <div style={{
-                    width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
-                    background: `${T}12`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    {incIcon(item.text)}
-                  </div>
-                  <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#1E4A3A', fontWeight: 500, lineHeight: 1.4 }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#16A34A" strokeWidth="2.5" strokeLinecap="round" style={{ flexShrink: 0 }}>
+                    <path d="M20 6L9 17l-5-5" />
+                  </svg>
+                  <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#1A3A2A', lineHeight: 1.45 }}>
                     {item.text}
                   </span>
                 </div>
@@ -1463,35 +1395,29 @@ function GroupWhatsCovered({
           </div>
         )}
 
+        {/* ── Exclusions ── */}
         {exclusions.length > 0 && (
-          <div style={{ marginTop: 22 }}>
-            {/* Section label */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-              <div style={{ width: 30, height: 30, borderRadius: 9, background: '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-              </div>
-              <span style={{ fontFamily: 'var(--f-body)', fontSize: 14, fontWeight: 700, color: '#B91C1C' }}>Not Included</span>
+          <div style={{ marginTop: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#DC2626', flexShrink: 0 }} />
+              <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, fontWeight: 700, color: '#B91C1C', letterSpacing: '0.2px' }}>
+                Not Included
+              </span>
             </div>
-
-            {/* Exclusion list */}
-            <div style={{
-              background: '#FFF8F8', border: '1px solid #FECACA', borderRadius: 14,
-              overflow: 'hidden',
-            }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0, border: '1px solid #FECACA', borderRadius: 14, overflow: 'hidden' }}>
               {exclusions.map((item, idx) => (
                 <div key={item.id} style={{
-                  display: 'flex', alignItems: 'center', gap: 12,
-                  padding: '11px 14px',
-                  borderTop: idx > 0 ? '1px solid #FEE2E2' : 'none',
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '11px 16px',
+                  background: idx % 2 === 0 ? '#FFF8F8' : 'white',
+                  borderTop: idx > 0 ? '1px solid #FECACA' : 'none',
                 }}>
-                  <div style={{
-                    width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
-                    background: '#FEE2E2',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    {excIcon(item.text)}
-                  </div>
-                  <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#7F1D1D', lineHeight: 1.45 }}>{item.text}</span>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2.5" strokeLinecap="round" style={{ flexShrink: 0 }}>
+                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                  <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#7F1D1D', lineHeight: 1.45 }}>
+                    {item.text}
+                  </span>
                 </div>
               ))}
             </div>

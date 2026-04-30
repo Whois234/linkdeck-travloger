@@ -460,7 +460,8 @@ export default function CreateQuotePage() {
       if (!custName.trim()) { setErrMsg('Customer name is required'); return; }
       if (!custMobile.trim()) { setErrMsg('Mobile number is required'); return; }
       if (!stateId) { setErrMsg('Please select a state'); return; }
-      if (!startDate) { setErrMsg('Please select start date'); return; }
+      // Travel start date only required for PRIVATE quotes (GROUP gets dates from the batch)
+      if (quoteType === 'PRIVATE' && !startDate) { setErrMsg('Please select a start date'); return; }
       setStep(2);
     } else if (step === 2) {
       if (quoteType === 'PRIVATE' && !selectedPT) { setErrMsg('Please select a package'); return; }
@@ -583,26 +584,46 @@ export default function CreateQuotePage() {
                   {states.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
-              <div>
-                <label className={lbl}>Travel Start Date <span className="text-red-500">*</span></label>
-                <input type="date" className={inp} style={inpSt} min={today} value={startDate} onChange={e => setStartDate(e.target.value)} />
-              </div>
-              <div>
-                <label className={lbl}>Number of Days <span className="text-red-500">*</span></label>
-                <input type="number" min="2" max="30" className={inp} style={inpSt} value={durationDays} onChange={e => setDurationDays(Math.max(2, Number(e.target.value)))} />
-              </div>
-              {startDate && (
-                <div className="col-span-2">
-                  <p className="text-xs text-[#64748B]">
-                    Trip: <span className="font-semibold" style={{ color: T }}>
-                      {new Date(startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} → {endDate && new Date(endDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} ({durationNights}N / {durationDays}D)
-                    </span>
-                  </p>
+
+              {/* Travel dates — PRIVATE only (GROUP dates come from the batch) */}
+              {quoteType === 'PRIVATE' && (
+                <>
+                  <div>
+                    <label className={lbl}>Travel Start Date <span className="text-red-500">*</span></label>
+                    <input type="date" className={inp} style={inpSt} min={today} value={startDate} onChange={e => setStartDate(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className={lbl}>Number of Days <span className="text-red-500">*</span></label>
+                    <input type="number" min="2" max="30" className={inp} style={inpSt} value={durationDays} onChange={e => setDurationDays(Math.max(2, Number(e.target.value)))} />
+                  </div>
+                  {startDate && (
+                    <div className="col-span-2">
+                      <p className="text-xs text-[#64748B]">
+                        Trip: <span className="font-semibold" style={{ color: T }}>
+                          {new Date(startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} → {endDate && new Date(endDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} ({durationNights}N / {durationDays}D)
+                        </span>
+                      </p>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* GROUP info note */}
+              {quoteType === 'GROUP' && (
+                <div className="col-span-2 flex items-start gap-2 rounded-xl px-3 py-2.5" style={{ background: '#F0F9FF', border: '1px solid #BAE6FD' }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0284C7" strokeWidth="2" strokeLinecap="round" className="mt-0.5 flex-shrink-0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  <p className="text-xs" style={{ color: '#0369A1' }}>Departure dates &amp; duration come from the group batch you select in the next step.</p>
                 </div>
               )}
+
+              {/* Pax — not mandatory for GROUP (exact count added in Step 2) */}
               <div>
-                <label className={lbl}>Adults <span className="text-red-500">*</span></label>
-                <input type="number" min="1" className={inp} style={inpSt} value={adults} onChange={e => setAdults(Math.max(1, Number(e.target.value)))} />
+                <label className={lbl}>
+                  Adults{quoteType === 'PRIVATE' && <span className="text-red-500"> *</span>}
+                  {quoteType === 'GROUP' && <span className="text-[10px] font-normal normal-case tracking-normal ml-1" style={{ color: '#94A3B8' }}>(optional)</span>}
+                </label>
+                <input type="number" min="0" className={inp} style={inpSt} value={adults}
+                  onChange={e => setAdults(Math.max(0, Number(e.target.value)))} />
               </div>
               <div>
                 <label className={lbl}>Children (5–12)</label>
@@ -612,10 +633,15 @@ export default function CreateQuotePage() {
                 <label className={lbl}>Children (&lt;5)</label>
                 <input type="number" min="0" className={inp} style={inpSt} value={childrenBelow5} onChange={e => setChildrenBelow5(Math.max(0, Number(e.target.value)))} />
               </div>
-              <div>
-                <label className={lbl}>Quote Valid Till</label>
-                <input type="date" className={inp} style={inpSt} min={today} value={expiryDate} onChange={e => setExpiryDate(e.target.value)} />
-              </div>
+
+              {/* Quote Valid Till — PRIVATE only */}
+              {quoteType === 'PRIVATE' && (
+                <div>
+                  <label className={lbl}>Quote Valid Till</label>
+                  <input type="date" className={inp} style={inpSt} min={today} value={expiryDate} onChange={e => setExpiryDate(e.target.value)} />
+                </div>
+              )}
+
               {quoteType === 'PRIVATE' && (
                 <div className="col-span-2">
                   <label className={lbl}>Hotel Category</label>
@@ -692,8 +718,8 @@ export default function CreateQuotePage() {
       {step === 2 && quoteType === 'GROUP' && (
         <div className="flex flex-col gap-3">
           <div className="bg-white rounded-2xl p-5" style={card}>
-            <p className="text-sm font-bold text-[#0F172A] mb-1">Select Group Tour</p>
-            <p className="text-xs text-[#94A3B8]">{states.find(s => s.id === stateId)?.name}</p>
+            <p className="text-sm font-bold text-[#0F172A] mb-1">Select Group Tour &amp; Batch</p>
+            <p className="text-xs text-[#94A3B8]">{states.find(s => s.id === stateId)?.name} · Select a departure date below</p>
           </div>
           {groupTpls.length === 0 ? (
             <div className="py-14 text-center bg-white rounded-2xl" style={card}>
@@ -742,6 +768,33 @@ export default function CreateQuotePage() {
               </div>
             );
           })}
+
+          {/* ── Traveller Count ── shown below the batch list */}
+          <div className="bg-white rounded-2xl p-5" style={card}>
+            <p className="text-sm font-bold text-[#0F172A] mb-1">Traveller Count</p>
+            <p className="text-xs mb-4" style={{ color: '#94A3B8' }}>
+              {selectedBatch
+                ? `₹${Number(selectedBatch.adult_price).toLocaleString('en-IN')}/adult · ${adults > 0 ? `Est. total: ₹${(Number(selectedBatch.adult_price) * adults).toLocaleString('en-IN')}` : 'enter count to see total'}`
+                : 'Optional — enter the number of travellers for this booking'}
+            </p>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className={lbl}>Adults</label>
+                <input type="number" min="0" className={inp} style={inpSt} value={adults}
+                  onChange={e => setAdults(Math.max(0, Number(e.target.value)))} />
+              </div>
+              <div>
+                <label className={lbl}>Children (5–12)</label>
+                <input type="number" min="0" className={inp} style={inpSt} value={children512}
+                  onChange={e => setChildren512(Math.max(0, Number(e.target.value)))} />
+              </div>
+              <div>
+                <label className={lbl}>Children (&lt;5)</label>
+                <input type="number" min="0" className={inp} style={inpSt} value={childrenBelow5}
+                  onChange={e => setChildrenBelow5(Math.max(0, Number(e.target.value)))} />
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
