@@ -50,6 +50,8 @@ interface CmsData {
   hero_tags: string[];
   destination_cards: Array<{ destination_id: string; custom_name: string | null; description: string; image_url: string }>;
   package_options: CmsOption[];
+  inclusions: string[];
+  exclusions: string[];
   why_choose: (string | WhyItem)[];
   faqs_enabled: boolean;
   custom_faqs: Array<{ question: string; answer: string }>;
@@ -93,6 +95,8 @@ const DEFAULT_CMS: CmsData = {
     { tier_name: 'Standard', display_order: 1, is_most_popular: false, inclusions: [], adult_price: 0, child_price: 0 },
     { tier_name: 'Deluxe',   display_order: 2, is_most_popular: true,  inclusions: [], adult_price: 0, child_price: 0 },
   ],
+  inclusions: ['Accommodation on twin/triple sharing basis', 'Daily breakfast & dinner (MAP)', 'AC vehicle for all transfers & sightseeing', 'Toll, parking, driver allowance', '5% GST included'],
+  exclusions: ['Personal expenses & shopping', 'Airfare / train tickets', 'Travel insurance', 'Entry fees to monuments', 'Anything not mentioned in inclusions'],
   why_choose: [
     { title: 'Ranked Professionals', description: 'Our certified travel experts craft every detail of your journey.' },
     { title: 'Best Prices Guaranteed', description: 'We match or beat any comparable package price, no questions asked.' },
@@ -117,6 +121,7 @@ const SECTIONS = [
   { id: 'options', label: 'Package Options',   icon: LayoutList },
   { id: 'days',    label: 'Day Itinerary',     icon: FileText   },
   { id: 'batches', label: 'Batches',           icon: Calendar   },
+  { id: 'covered', label: "What's Covered",    icon: Check      },
   { id: 'why',     label: 'Why Choose',        icon: Star       },
   { id: 'policy',  label: 'Policies',          icon: Shield     },
   { id: 'faq',     label: 'FAQs',              icon: HelpCircle },
@@ -168,6 +173,9 @@ export default function GroupTemplateEditPage() {
           destination_id: did, custom_name: null, description: '', image_url: '',
         }));
       }
+      // Backfill new fields that may not exist in older cms_data
+      if (!Array.isArray(c.inclusions)) c.inclusions = [...DEFAULT_CMS.inclusions];
+      if (!Array.isArray(c.exclusions)) c.exclusions = [...DEFAULT_CMS.exclusions];
       setCms(c);
       setDays(t.group_template_days.map(d => ({
         ...d,
@@ -715,6 +723,87 @@ export default function GroupTemplateEditPage() {
                   })}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ═══ WHAT'S COVERED ═══ */}
+          {activeSection === 'covered' && (
+            <div className="bg-white rounded-2xl p-6" style={card}>
+              <SectionHeader title="What's Covered" desc="Define what's included and excluded in this group tour. Shown beautifully on the customer itinerary." />
+
+              {/* Inclusions */}
+              <div className="mb-6">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-6 h-6 rounded-md flex items-center justify-center" style={{ background: '#DCFCE7' }}>
+                    <Check className="w-3.5 h-3.5" style={{ color: '#15803D' }} />
+                  </div>
+                  <p className="text-sm font-bold" style={{ color: '#15803D' }}>Inclusions</p>
+                  <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: '#DCFCE7', color: '#166534' }}>{cms.inclusions.length} items</span>
+                </div>
+                <div className="flex flex-col gap-2 mb-3">
+                  {cms.inclusions.map((item, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <div className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center" style={{ background: '#F0FDF4', border: '1px solid #BBF7D0' }}>
+                        <Check className="w-3 h-3" style={{ color: '#16A34A' }} />
+                      </div>
+                      <input
+                        className={inp} style={inpSt}
+                        value={item}
+                        onChange={e => { const a = [...cms.inclusions]; a[i] = e.target.value; updCms('inclusions', a); }}
+                        placeholder={`Inclusion ${i + 1}`}
+                      />
+                      <button onClick={() => updCms('inclusions', cms.inclusions.filter((_, j) => j !== i))}
+                        className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center hover:bg-red-50 transition-colors" style={{ color: '#94A3B8' }}>
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button onClick={() => updCms('inclusions', [...cms.inclusions, ''])}
+                  className="flex items-center gap-2 h-8 px-3 rounded-lg text-xs font-semibold hover:opacity-90" style={{ background: '#DCFCE7', color: '#15803D', border: '1px solid #BBF7D0' }}>
+                  <Plus className="w-3 h-3" /> Add Inclusion
+                </button>
+              </div>
+
+              <div style={{ borderTop: '1px solid #F1F5F9', marginBottom: 20 }} />
+
+              {/* Exclusions */}
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-6 h-6 rounded-md flex items-center justify-center" style={{ background: '#FEE2E2' }}>
+                    <X className="w-3.5 h-3.5" style={{ color: '#DC2626' }} />
+                  </div>
+                  <p className="text-sm font-bold" style={{ color: '#B91C1C' }}>Exclusions</p>
+                  <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: '#FEE2E2', color: '#7F1D1D' }}>{cms.exclusions.length} items</span>
+                </div>
+                <div className="flex flex-col gap-2 mb-3">
+                  {cms.exclusions.map((item, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <div className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center" style={{ background: '#FFF5F5', border: '1px solid #FCA5A5' }}>
+                        <X className="w-3 h-3" style={{ color: '#DC2626' }} />
+                      </div>
+                      <input
+                        className={inp} style={inpSt}
+                        value={item}
+                        onChange={e => { const a = [...cms.exclusions]; a[i] = e.target.value; updCms('exclusions', a); }}
+                        placeholder={`Exclusion ${i + 1}`}
+                      />
+                      <button onClick={() => updCms('exclusions', cms.exclusions.filter((_, j) => j !== i))}
+                        className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center hover:bg-red-50 transition-colors" style={{ color: '#94A3B8' }}>
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button onClick={() => updCms('exclusions', [...cms.exclusions, ''])}
+                  className="flex items-center gap-2 h-8 px-3 rounded-lg text-xs font-semibold hover:opacity-90" style={{ background: '#FEE2E2', color: '#DC2626', border: '1px solid #FCA5A5' }}>
+                  <Plus className="w-3 h-3" /> Add Exclusion
+                </button>
+              </div>
+
+              <div className="mt-6 p-3 rounded-xl text-xs" style={{ background: '#F0F7F9', border: '1px solid #B2D8E2', color: '#134956' }}>
+                💡 <strong>Tip:</strong> These are saved to the group template and shown as "What's Covered" on the customer itinerary. Be specific — customers read this before booking!
+              </div>
             </div>
           )}
 

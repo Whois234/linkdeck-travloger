@@ -20,12 +20,17 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
 
   if (!quote) throw new Error(`Quote ${quote_id} not found`);
 
-  // For group quotes: fetch the group template for name + hero image
-  let groupTemplate: { group_template_name: string; hero_image: string | null; cms_data: unknown } | null = null;
+  // For group quotes: fetch the group template for name + hero image + policy IDs + cms_data inclusions
+  let groupTemplate: {
+    group_template_name: string;
+    hero_image: string | null;
+    cms_data: unknown;
+    default_policy_ids: unknown;
+  } | null = null;
   if (quote.group_template_id) {
     groupTemplate = await prisma.groupTemplate.findUnique({
       where: { id: quote.group_template_id },
-      select: { group_template_name: true, hero_image: true, cms_data: true },
+      select: { group_template_name: true, hero_image: true, cms_data: true, default_policy_ids: true },
     });
   }
 
@@ -100,18 +105,40 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
     resolvedDaySnapshots = [];
   }
 
+  // For GROUP quotes: use group template's default_policy_ids if available
+  const groupTemplatePolicyIds = Array.isArray(groupTemplate?.default_policy_ids)
+    ? (groupTemplate!.default_policy_ids as string[])
+    : null;
+  const effectivePolicyIds = templatePolicyIds ?? groupTemplatePolicyIds;
+
+  // For GROUP quotes: use cms_data inclusions/exclusions if defined (avoids relying on empty state-level data)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const groupCms = groupTemplate?.cms_data as any;
+  const groupCmsInclusions: Array<{ id: string; text: string }> | null =
+    Array.isArray(groupCms?.inclusions) && groupCms.inclusions.length > 0
+      ? (groupCms.inclusions as string[]).map((text: string, i: number) => ({ id: `inc-${i}`, text }))
+      : null;
+  const groupCmsExclusions: Array<{ id: string; text: string }> | null =
+    Array.isArray(groupCms?.exclusions) && groupCms.exclusions.length > 0
+      ? (groupCms.exclusions as string[]).map((text: string, i: number) => ({ id: `exc-${i}`, text }))
+      : null;
+
   // Resolve inclusions, exclusions, and policies
   // Policies: if template has selected policy IDs, use only those; otherwise all global + state policies
-  const [inclusions, exclusions, rawPolicies] = await Promise.all([
-    prisma.inclusionExclusion.findMany({
-      where: { type: 'INCLUSION', destination_id: quote.state_id, status: true },
-    }),
-    prisma.inclusionExclusion.findMany({
-      where: { type: 'EXCLUSION', destination_id: quote.state_id, status: true },
-    }),
-    templatePolicyIds && templatePolicyIds.length > 0
+  const [dbInclusions, dbExclusions, rawPolicies] = await Promise.all([
+    groupCmsInclusions
+      ? Promise.resolve([])  // will use cms_data ones below
+      : prisma.inclusionExclusion.findMany({
+          where: { type: 'INCLUSION', destination_id: quote.state_id, status: true },
+        }),
+    groupCmsExclusions
+      ? Promise.resolve([])
+      : prisma.inclusionExclusion.findMany({
+          where: { type: 'EXCLUSION', destination_id: quote.state_id, status: true },
+        }),
+    effectivePolicyIds && effectivePolicyIds.length > 0
       ? prisma.policy.findMany({
-          where: { id: { in: templatePolicyIds }, status: true },
+          where: { id: { in: effectivePolicyIds }, status: true },
           orderBy: [{ policy_type: 'asc' }],
         })
       : prisma.policy.findMany({
@@ -125,6 +152,9 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
           orderBy: [{ policy_type: 'asc' }],
         }),
   ]);
+
+  const inclusions = groupCmsInclusions ?? dbInclusions;
+  const exclusions = groupCmsExclusions ?? dbExclusions;
 
   // Append custom FAQs from private template cms_data as FAQ policy records
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
