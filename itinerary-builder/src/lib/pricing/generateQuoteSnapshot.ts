@@ -39,14 +39,18 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
   let templatePolicyIds: string[] | null = null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let templateCmsData: any = null;
+  let templateInclusionIds: string[] | null = null;
+  let templateExclusionIds: string[] | null = null;
   if (quote.private_template_id) {
     const pt = await prisma.privateTemplate.findUnique({
       where: { id: quote.private_template_id },
-      select: { hero_image: true, default_policy_ids: true, cms_data: true },
+      select: { hero_image: true, default_policy_ids: true, cms_data: true, default_inclusion_ids: true, default_exclusion_ids: true },
     });
     privateTemplateHero = pt?.hero_image ?? null;
-    templatePolicyIds = Array.isArray(pt?.default_policy_ids) ? (pt.default_policy_ids as string[]) : null;
-    templateCmsData = pt?.cms_data ?? null;
+    templatePolicyIds    = Array.isArray(pt?.default_policy_ids)  ? (pt.default_policy_ids  as string[]) : null;
+    templateInclusionIds = Array.isArray(pt?.default_inclusion_ids) ? (pt.default_inclusion_ids as string[]) : null;
+    templateExclusionIds = Array.isArray(pt?.default_exclusion_ids) ? (pt.default_exclusion_ids as string[]) : null;
+    templateCmsData      = pt?.cms_data ?? null;
   }
 
   // If no QuoteDaySnapshot records exist yet (quote created via wizard),
@@ -111,7 +115,7 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
     : null;
   const effectivePolicyIds = templatePolicyIds ?? groupTemplatePolicyIds;
 
-  // For GROUP quotes: use cms_data inclusions/exclusions if defined (avoids relying on empty state-level data)
+  // For GROUP quotes: use cms_data inclusions/exclusions if defined
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const groupCms = groupTemplate?.cms_data as any;
   const groupCmsInclusions: Array<{ id: string; text: string }> | null =
@@ -123,19 +127,52 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
       ? (groupCms.exclusions as string[]).map((text: string, i: number) => ({ id: `exc-${i}`, text }))
       : null;
 
-  // Resolve inclusions, exclusions, and policies
-  // Policies: if template has selected policy IDs, use only those; otherwise all global + state policies
+  // Destination IDs present in this quote's itinerary (used for destination-scoped inc/exc)
+  const itineraryDestIds = Array.from(new Set(
+    resolvedDaySnapshots
+      .map((d: { destination_id?: string }) => d.destination_id)
+      .filter(Boolean) as string[]
+  ));
+
+  // Helper: build the OR filter for inclusions/exclusions —
+  //   rows where destination_id is NULL (global) OR matches a destination in the itinerary
+  const incExcDestFilter = itineraryDestIds.length > 0
+    ? { OR: [{ destination_id: null }, { destination_id: { in: itineraryDestIds } }] }
+    : { destination_id: null };
+
+  // Resolve inclusions, exclusions, and policies.
+  // Priority for inclusions/exclusions:
+  //   GROUP  → cms_data arrays (above)
+  //   PRIVATE → template's default_inclusion/exclusion_ids list
+  //   Fallback → global + destination-scoped rows from InclusionExclusion table
   const [dbInclusions, dbExclusions, rawPolicies] = await Promise.all([
+    // Inclusions ─────────────────────────────────────────────────────────────
     groupCmsInclusions
-      ? Promise.resolve([])  // will use cms_data ones below
-      : prisma.inclusionExclusion.findMany({
-          where: { type: 'INCLUSION', destination_id: quote.state_id, status: true },
-        }),
+      ? Promise.resolve([])                                     // GROUP: use cms_data
+      : templateInclusionIds && templateInclusionIds.length > 0
+        ? prisma.inclusionExclusion.findMany({                  // PRIVATE: template's explicit list
+            where: { id: { in: templateInclusionIds }, status: true },
+            orderBy: [{ category: 'asc' }],
+          })
+        : prisma.inclusionExclusion.findMany({                  // Fallback: global + itinerary dests
+            where: { type: 'INCLUSION', status: true, ...incExcDestFilter },
+            orderBy: [{ category: 'asc' }],
+          }),
+
+    // Exclusions ─────────────────────────────────────────────────────────────
     groupCmsExclusions
-      ? Promise.resolve([])
-      : prisma.inclusionExclusion.findMany({
-          where: { type: 'EXCLUSION', destination_id: quote.state_id, status: true },
-        }),
+      ? Promise.resolve([])                                     // GROUP: use cms_data
+      : templateExclusionIds && templateExclusionIds.length > 0
+        ? prisma.inclusionExclusion.findMany({                  // PRIVATE: template's explicit list
+            where: { id: { in: templateExclusionIds }, status: true },
+            orderBy: [{ category: 'asc' }],
+          })
+        : prisma.inclusionExclusion.findMany({                  // Fallback: global + itinerary dests
+            where: { type: 'EXCLUSION', status: true, ...incExcDestFilter },
+            orderBy: [{ category: 'asc' }],
+          }),
+
+    // Policies ────────────────────────────────────────────────────────────────
     effectivePolicyIds && effectivePolicyIds.length > 0
       ? prisma.policy.findMany({
           where: { id: { in: effectivePolicyIds }, status: true },
@@ -180,7 +217,38 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
     });
   }
 
+  // Append custom FAQs from GROUP template cms_data
+  if (
+    groupCms?.faqs_enabled &&
+    Array.isArray(groupCms?.custom_faqs) &&
+    groupCms.custom_faqs.length > 0
+  ) {
+    groupCms.custom_faqs.forEach((faq: { question: string; answer: string }, i: number) => {
+      if (faq.question?.trim()) {
+        customFaqs.push({
+          id: `grp-faq-${i}`,
+          policy_type: 'FAQ',
+          title: faq.question,
+          content: faq.answer ?? '',
+          status: true,
+          state_id: null,
+          destination_id: null,
+          applies_to: 'BOTH',
+        });
+      }
+    });
+  }
+
   const policies = [...rawPolicies, ...customFaqs];
+
+  // Group package tier options (Standard / Deluxe etc.) from cms_data
+  const groupPackageOptions: Array<{
+    tier_name: string;
+    is_most_popular: boolean;
+    inclusions: string[];
+    adult_price: number;
+    child_price: number;
+  }> = Array.isArray(groupCms?.package_options) ? groupCms.package_options : [];
 
   // Enrich day snapshots with destination name + hero_image
   const allDestIds = resolvedDaySnapshots.map((d: { destination_id: string }) => d.destination_id).filter(Boolean) as string[];
@@ -248,6 +316,7 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
       hero_image: quote.state.hero_image ?? groupTemplate?.hero_image ?? privateTemplateHero ?? firstDestHero ?? null,
     },
     quote_options: enrichedOptions,
+    group_package_options: groupPackageOptions,
     day_snapshots: enrichedDaySnapshots,
     inclusions,
     exclusions,

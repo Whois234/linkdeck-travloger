@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
@@ -8,7 +8,7 @@ import {
   ChevronDown, ChevronRight, Plus, Trash2, Check,
   Save, Star, Image as ImgIcon, FileText, LayoutList,
   MapPin, Shield, HelpCircle, BookOpen, Calendar,
-  Users, X,
+  Users, X, GripVertical,
 } from 'lucide-react';
 
 /* ── Style tokens ── */
@@ -148,6 +148,22 @@ export default function GroupTemplateEditPage() {
   const [activeSection, setActiveSection] = useState('hero');
   const [expandedDays, setExpandedDays]   = useState<Set<number>>(new Set([1]));
   const [selectedPolicies, setSelectedPolicies] = useState<string[]>([]);
+
+  /* Drag-and-drop ref: tracks { field, from } while dragging */
+  const dragRef = useRef<{ field: string; from: number } | null>(null);
+  const [dragOver, setDragOver] = useState<{ field: string; idx: number } | null>(null);
+
+  /** Reorder any CMS array field */
+  function dndReorder(field: keyof CmsData, from: number, to: number) {
+    if (from === to) return;
+    setCms(prev => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const arr = [...(prev[field] as any[])];
+      const [moved] = arr.splice(from, 1);
+      arr.splice(to, 0, moved);
+      return { ...prev, [field]: arr };
+    });
+  }
 
   /* Batch modal state */
   const [showBatchModal, setShowBatchModal] = useState(false);
@@ -742,7 +758,18 @@ export default function GroupTemplateEditPage() {
                 </div>
                 <div className="flex flex-col gap-2 mb-3">
                   {cms.inclusions.map((item, i) => (
-                    <div key={i} className="flex items-center gap-2">
+                    <div
+                      key={i}
+                      draggable
+                      onDragStart={() => { dragRef.current = { field: 'inclusions', from: i }; }}
+                      onDragOver={e => { e.preventDefault(); setDragOver({ field: 'inclusions', idx: i }); }}
+                      onDragLeave={() => setDragOver(null)}
+                      onDrop={() => { setDragOver(null); if (dragRef.current?.field === 'inclusions') dndReorder('inclusions', dragRef.current.from, i); dragRef.current = null; }}
+                      onDragEnd={() => { setDragOver(null); dragRef.current = null; }}
+                      className="flex items-center gap-2 rounded-lg transition-all"
+                      style={{ opacity: dragRef.current?.field === 'inclusions' && dragRef.current?.from === i ? 0.4 : 1, background: dragOver?.field === 'inclusions' && dragOver?.idx === i ? '#F0FDF4' : 'transparent', outline: dragOver?.field === 'inclusions' && dragOver?.idx === i ? '2px dashed #86EFAC' : 'none' }}
+                    >
+                      <GripVertical className="w-4 h-4 flex-shrink-0 cursor-grab active:cursor-grabbing" style={{ color: '#CBD5E1' }} />
                       <div className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center" style={{ background: '#F0FDF4', border: '1px solid #BBF7D0' }}>
                         <Check className="w-3 h-3" style={{ color: '#16A34A' }} />
                       </div>
@@ -778,7 +805,18 @@ export default function GroupTemplateEditPage() {
                 </div>
                 <div className="flex flex-col gap-2 mb-3">
                   {cms.exclusions.map((item, i) => (
-                    <div key={i} className="flex items-center gap-2">
+                    <div
+                      key={i}
+                      draggable
+                      onDragStart={() => { dragRef.current = { field: 'exclusions', from: i }; }}
+                      onDragOver={e => { e.preventDefault(); setDragOver({ field: 'exclusions', idx: i }); }}
+                      onDragLeave={() => setDragOver(null)}
+                      onDrop={() => { setDragOver(null); if (dragRef.current?.field === 'exclusions') dndReorder('exclusions', dragRef.current.from, i); dragRef.current = null; }}
+                      onDragEnd={() => { setDragOver(null); dragRef.current = null; }}
+                      className="flex items-center gap-2 rounded-lg transition-all"
+                      style={{ opacity: dragRef.current?.field === 'exclusions' && dragRef.current?.from === i ? 0.4 : 1, background: dragOver?.field === 'exclusions' && dragOver?.idx === i ? '#FFF5F5' : 'transparent', outline: dragOver?.field === 'exclusions' && dragOver?.idx === i ? '2px dashed #FCA5A5' : 'none' }}
+                    >
+                      <GripVertical className="w-4 h-4 flex-shrink-0 cursor-grab active:cursor-grabbing" style={{ color: '#CBD5E1' }} />
                       <div className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center" style={{ background: '#FFF5F5', border: '1px solid #FCA5A5' }}>
                         <X className="w-3 h-3" style={{ color: '#DC2626' }} />
                       </div>
@@ -813,8 +851,19 @@ export default function GroupTemplateEditPage() {
               <SectionHeader title="Why Choose Travloger" desc="Pre-filled trust points shown to customers. Each can have a title and short description." />
               <div className="flex flex-col gap-3">
                 {normaliseWhy(cms.why_choose).map((item, i) => (
-                  <div key={i} className="rounded-xl p-4" style={{ border: '1px solid #E2E8F0' }}>
+                  <div
+                    key={i}
+                    draggable
+                    onDragStart={() => { dragRef.current = { field: 'why_choose', from: i }; }}
+                    onDragOver={e => { e.preventDefault(); setDragOver({ field: 'why_choose', idx: i }); }}
+                    onDragLeave={() => setDragOver(null)}
+                    onDrop={() => { setDragOver(null); if (dragRef.current?.field === 'why_choose') dndReorder('why_choose', dragRef.current.from, i); dragRef.current = null; }}
+                    onDragEnd={() => { setDragOver(null); dragRef.current = null; }}
+                    className="rounded-xl p-4 transition-all"
+                    style={{ border: dragOver?.field === 'why_choose' && dragOver?.idx === i ? `2px dashed ${T}` : '1px solid #E2E8F0', opacity: dragRef.current?.field === 'why_choose' && dragRef.current?.from === i ? 0.4 : 1, background: dragOver?.field === 'why_choose' && dragOver?.idx === i ? '#F0F7F9' : 'white' }}
+                  >
                     <div className="flex items-start gap-3">
+                      <GripVertical className="w-4 h-4 flex-shrink-0 cursor-grab active:cursor-grabbing mt-1.5" style={{ color: '#CBD5E1' }} />
                       <div className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-white text-[10px] font-bold mt-1" style={{ backgroundColor: T }}>{i + 1}</div>
                       <div className="flex-1 flex flex-col gap-2">
                         <input
@@ -893,9 +942,22 @@ export default function GroupTemplateEditPage() {
               {cms.faqs_enabled && (
                 <div className="flex flex-col gap-3">
                   {cms.custom_faqs.map((faq, i) => (
-                    <div key={i} className="rounded-xl p-4" style={{ border: '1px solid #E2E8F0' }}>
+                    <div
+                      key={i}
+                      draggable
+                      onDragStart={() => { dragRef.current = { field: 'custom_faqs', from: i }; }}
+                      onDragOver={e => { e.preventDefault(); setDragOver({ field: 'custom_faqs', idx: i }); }}
+                      onDragLeave={() => setDragOver(null)}
+                      onDrop={() => { setDragOver(null); if (dragRef.current?.field === 'custom_faqs') dndReorder('custom_faqs', dragRef.current.from, i); dragRef.current = null; }}
+                      onDragEnd={() => { setDragOver(null); dragRef.current = null; }}
+                      className="rounded-xl p-4 transition-all"
+                      style={{ border: dragOver?.field === 'custom_faqs' && dragOver?.idx === i ? '2px dashed #134956' : '1px solid #E2E8F0', opacity: dragRef.current?.field === 'custom_faqs' && dragRef.current?.from === i ? 0.4 : 1, background: dragOver?.field === 'custom_faqs' && dragOver?.idx === i ? '#F0F7F9' : 'white' }}
+                    >
                       <div className="flex items-start justify-between gap-2 mb-2">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-[#64748B]">Q{i + 1}</p>
+                        <div className="flex items-center gap-2">
+                          <GripVertical className="w-4 h-4 cursor-grab active:cursor-grabbing" style={{ color: '#CBD5E1' }} />
+                          <p className="text-xs font-semibold uppercase tracking-wider text-[#64748B]">Q{i + 1}</p>
+                        </div>
                         <button onClick={() => updCms('custom_faqs', cms.custom_faqs.filter((_, j) => j !== i))}
                           className="text-[#94A3B8] hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
                       </div>

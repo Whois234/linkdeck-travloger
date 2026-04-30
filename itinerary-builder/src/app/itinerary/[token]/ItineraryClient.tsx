@@ -65,6 +65,14 @@ interface GroupBatch {
   badge_color: string | null;
 }
 
+interface GroupPackageOption {
+  tier_name: string;
+  is_most_popular: boolean;
+  inclusions: string[];
+  adult_price: number;
+  child_price: number;
+}
+
 interface ItineraryData {
   selected_option_id?: string | null;
   quote: {
@@ -99,6 +107,7 @@ interface ItineraryData {
   } | null;
   state: { name: string; description?: string | null; hero_image?: string | null };
   quote_options: QuoteOption[];
+  group_package_options?: GroupPackageOption[];
   day_snapshots: DaySnapshot[];
   inclusions: Array<{ id: string; text: string }>;
   exclusions: Array<{ id: string; text: string }>;
@@ -524,35 +533,51 @@ function IncExc({ inclusions, exclusions }: { inclusions: ItineraryData['inclusi
   return (
     <div style={{ background: 'white', borderTop: '1px solid var(--tl-border)' }} data-section="inclusions">
       <div className="tl-sec">
-        <div className="tl-sec-eyebrow">What&apos;s Covered</div>
-        <div className="tl-sec-h">Inclusions &amp; Exclusions</div>
-        <div style={{ marginTop: 20 }}>
+        <div className="tl-sec-eyebrow">Know Before You Go</div>
+        <div className="tl-sec-h">What&apos;s Covered</div>
+        <div style={{ marginTop: 24 }}>
           {inclusions.length > 0 && (
-            <div className="tl-inc-box" style={{ borderTop: `3px solid ${T}` }}>
-              <div className="tl-inc-box-head" style={{ color: T }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg>
-                What&apos;s Included
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <div style={{ width: 10, height: 10, borderRadius: 3, background: '#16A34A', flexShrink: 0 }} />
+                <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, fontWeight: 800, color: '#15803D' }}>
+                  Included in Your Package
+                </span>
               </div>
-              {inclusions.map((item) => (
-                <div key={item.id} className="tl-inc-item">
-                  <svg className="tl-inc-ico" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="2.5"><path d="M20 6L9 17l-5-5" strokeLinecap="round" /></svg>
-                  {item.text}
-                </div>
-              ))}
+              <div style={{ border: '1px solid #D1FAE5', borderRadius: 14, overflow: 'hidden' }}>
+                {inclusions.map((item, idx) => (
+                  <div key={item.id} style={{
+                    padding: '12px 16px',
+                    background: idx % 2 === 0 ? '#F0FDF4' : 'white',
+                    borderTop: idx > 0 ? '1px solid #D1FAE5' : 'none',
+                    fontFamily: 'var(--f-body)', fontSize: 13, color: '#1A3A2A', lineHeight: 1.5,
+                  }}>
+                    {item.text}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
           {exclusions.length > 0 && (
-            <div className="tl-inc-box" style={{ borderTop: '3px solid #d94040', marginTop: inclusions.length > 0 ? 12 : 0 }}>
-              <div className="tl-inc-box-head" style={{ color: '#d94040' }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d94040" strokeWidth="2.5"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>
-                Not Included
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <div style={{ width: 10, height: 10, borderRadius: 3, background: '#DC2626', flexShrink: 0 }} />
+                <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, fontWeight: 800, color: '#B91C1C' }}>
+                  Not Included
+                </span>
               </div>
-              {exclusions.map((item) => (
-                <div key={item.id} className="tl-inc-item">
-                  <svg className="tl-inc-ico" viewBox="0 0 24 24" fill="none" stroke="#d94040" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-                  {item.text}
-                </div>
-              ))}
+              <div style={{ border: '1px solid #FECACA', borderRadius: 14, overflow: 'hidden' }}>
+                {exclusions.map((item, idx) => (
+                  <div key={item.id} style={{
+                    padding: '12px 16px',
+                    background: idx % 2 === 0 ? '#FFF8F8' : 'white',
+                    borderTop: idx > 0 ? '1px solid #FECACA' : 'none',
+                    fontFamily: 'var(--f-body)', fontSize: 13, color: '#7F1D1D', lineHeight: 1.5,
+                  }}>
+                    {item.text}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -1196,155 +1221,129 @@ function BatchDatePicker({
   const months = groupBatchesByMonth(batches);
 
   return (
-    <div style={{ background: 'linear-gradient(180deg, #F0F7F9 0%, #FAFCFF 100%)', borderTop: '1px solid var(--tl-border)' }} data-section="dates">
+    <div style={{ background: 'white', borderTop: '1px solid var(--tl-border)' }} data-section="dates">
       <div className="tl-sec" style={{ paddingBottom: 32 }}>
         <div className="tl-sec-eyebrow">Book Your Spot</div>
         <div className="tl-sec-h">Choose Your Travel Dates</div>
         <div className="tl-sec-sub" style={{ marginBottom: 28 }}>
-          Select from upcoming departures. Prices may vary by batch — <strong style={{ color: T }}>early bookings</strong> save more.
+          Every batch departs Friday night &amp; returns Monday morning
         </div>
 
-        {/* Multi-month horizontal scroll layout */}
-        <div style={{
-          display: 'flex', gap: 14, overflowX: 'auto', paddingBottom: 8,
-          scrollSnapType: 'x mandatory',
-          msOverflowStyle: 'none', scrollbarWidth: 'none',
-        }}>
-          {months.map(({ monthKey, monthLabel, year, batches: mBatches }) => (
-            <div key={monthKey} style={{
-              flexShrink: 0, width: 'min(240px, 76vw)',
-              scrollSnapAlign: 'start',
-              background: 'white',
-              borderRadius: 20, border: '1.5px solid var(--tl-border)',
-              overflow: 'hidden',
-              boxShadow: '0 2px 12px rgba(19,73,86,0.06)',
+        {months.map(({ monthKey, monthLabel, year, batches: mBatches }) => (
+          <div key={monthKey} style={{ marginBottom: 32 }}>
+            {/* Month header */}
+            <div style={{
+              fontFamily: 'var(--f-body)', fontSize: 13, fontWeight: 800,
+              color: '#0F172A', letterSpacing: '1.5px', textTransform: 'uppercase',
+              marginBottom: 14, paddingBottom: 10,
+              borderBottom: '2px solid #E2E8F0',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             }}>
-              {/* Month header */}
-              <div style={{
-                background: `linear-gradient(135deg, ${T} 0%, #1e6b7e 100%)`,
-                padding: '14px 16px 12px',
-              }}>
-                <div style={{ fontFamily: 'var(--f-body)', fontSize: 11, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: 'rgba(255,255,255,0.6)', marginBottom: 2 }}>
-                  {year}
-                </div>
-                <div style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 800, color: 'white', lineHeight: 1 }}>
-                  {monthLabel}
-                </div>
-                <div style={{ fontFamily: 'var(--f-body)', fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 4 }}>
-                  {mBatches.length} departure{mBatches.length !== 1 ? 's' : ''}
-                </div>
-              </div>
+              <span>{monthLabel} {year}</span>
+              <span style={{ fontSize: 11, fontWeight: 500, letterSpacing: 0, textTransform: 'none', color: '#94A3B8' }}>
+                {mBatches.length} departure{mBatches.length !== 1 ? 's' : ''}
+              </span>
+            </div>
 
-              {/* Batch cards within this month */}
-              <div style={{ padding: '10px 10px 10px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {mBatches.map((batch) => {
-                  const isSelected = selectedBatchId === batch.id;
-                  const isSoldOut = batchIsSoldOut(batch);
-                  const sColor = statusColor(batch.booking_status, batch.badge_color);
-                  const sLabel = statusLabel(batch.booking_status, batch.badge_text);
-                  const startD = new Date(batch.start_date);
-                  const endD = new Date(batch.end_date);
-                  const nights = Math.round((endD.getTime() - startD.getTime()) / 86400000);
-                  const seatsLeft = batch.available_seats;
+            {/* Grid: 4 tiles per row */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+              {mBatches.map((batch) => {
+                const isSelected = selectedBatchId === batch.id;
+                const isSoldOut  = batchIsSoldOut(batch);
+                const sColor     = statusColor(batch.booking_status, batch.badge_color);
+                const sLabel     = statusLabel(batch.booking_status, batch.badge_text);
+                const startD     = new Date(batch.start_date);
+                const seatsLeft  = batch.available_seats;
+                const showBadge  = batch.booking_status !== 'OPEN' || !!batch.badge_text;
+                const showSeats  = !isSoldOut && seatsLeft > 0 && seatsLeft <= 10;
+                const badgeLabel = showSeats ? `${seatsLeft} Spots Left` : sLabel;
+                const badgeBg    = showSeats ? '#B45309' : sColor;
 
-                  return (
-                    <div
-                      key={batch.id}
-                      onClick={() => !isSoldOut && onSelect(batch)}
-                      style={{
-                        borderRadius: 14, padding: '12px 12px',
-                        border: isSelected ? `2px solid ${T}` : '1.5px solid #EEF2F5',
-                        background: isSelected ? `${T}0A` : '#F8FAFC',
-                        cursor: isSoldOut ? 'not-allowed' : 'pointer',
-                        opacity: isSoldOut ? 0.5 : 1,
-                        filter: isSoldOut ? 'grayscale(0.6)' : 'none',
-                        transition: 'all 0.18s ease',
-                        boxShadow: isSelected ? `0 0 0 3px ${T}18` : 'none',
-                        position: 'relative',
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!isSoldOut && !isSelected) {
-                          (e.currentTarget as HTMLDivElement).style.background = '#EEF5F7';
-                          (e.currentTarget as HTMLDivElement).style.boxShadow = `0 4px 14px rgba(19,73,86,0.10)`;
-                          (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-1px)';
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!isSoldOut && !isSelected) {
-                          (e.currentTarget as HTMLDivElement).style.background = '#F8FAFC';
-                          (e.currentTarget as HTMLDivElement).style.boxShadow = 'none';
-                          (e.currentTarget as HTMLDivElement).style.transform = 'translateY(0)';
-                        }
-                      }}
-                    >
-                      {/* Date range row */}
-                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 6 }}>
-                        <div>
-                          <div style={{ fontFamily: 'var(--f-num)', fontSize: 16, fontWeight: 800, color: isSelected ? T : '#0F172A', lineHeight: 1 }}>
-                            {startD.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                          </div>
-                          <div style={{ fontFamily: 'var(--f-body)', fontSize: 10, color: '#94A3B8', marginTop: 1 }}>
-                            → {endD.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} · {nights}N
-                          </div>
-                        </div>
-                        {isSelected && !isSoldOut && (
-                          <div style={{
-                            width: 20, height: 20, borderRadius: '50%', background: T,
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                          }}>
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round"><path d="M5 13l4 4L19 7" /></svg>
-                          </div>
-                        )}
+                return (
+                  <div
+                    key={batch.id}
+                    onClick={() => !isSoldOut && onSelect(batch)}
+                    style={{
+                      position: 'relative',
+                      borderRadius: 16,
+                      paddingTop: (showBadge || showSeats) ? 22 : 14,
+                      paddingBottom: 14,
+                      paddingLeft: 6, paddingRight: 6,
+                      background: isSelected ? T : isSoldOut ? '#F8FAFC' : 'white',
+                      border: isSelected ? `2px solid ${T}` : '1.5px solid #E2E8F0',
+                      cursor: isSoldOut ? 'not-allowed' : 'pointer',
+                      opacity: isSoldOut ? 0.45 : 1,
+                      textAlign: 'center',
+                      transition: 'all 0.15s ease',
+                      boxShadow: isSelected ? `0 6px 20px ${T}35` : '0 1px 4px rgba(0,0,0,0.04)',
+                    }}
+                  >
+                    {/* Badge chip */}
+                    {(showBadge || showSeats) && (
+                      <div style={{
+                        position: 'absolute', top: -9, left: '50%', transform: 'translateX(-50%)',
+                        whiteSpace: 'nowrap', zIndex: 1,
+                      }}>
+                        <span style={{
+                          display: 'inline-block',
+                          background: badgeBg,
+                          color: 'white',
+                          borderRadius: 20, padding: '2px 8px',
+                          fontSize: 9, fontWeight: 700, fontFamily: 'var(--f-body)',
+                          boxShadow: `0 2px 6px ${badgeBg}60`,
+                        }}>
+                          {badgeLabel}
+                        </span>
                       </div>
+                    )}
 
-                      {/* Batch name */}
-                      <div style={{ fontFamily: 'var(--f-body)', fontSize: 11, color: '#475569', fontWeight: 500, marginBottom: 7, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {batch.batch_name}
-                      </div>
-
-                      {/* Bottom row: status + price */}
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                          <span style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 4,
-                            background: `${sColor}18`, color: sColor,
-                            borderRadius: 20, padding: '2px 7px', fontSize: 9.5, fontWeight: 700, fontFamily: 'var(--f-body)',
-                          }}>
-                            <span style={{ width: 4, height: 4, borderRadius: '50%', background: sColor, display: 'inline-block' }} />
-                            {sLabel}
-                          </span>
-                          {!isSoldOut && seatsLeft > 0 && seatsLeft <= 10 && (
-                            <span style={{ fontSize: 9, fontWeight: 600, color: '#EA580C', fontFamily: 'var(--f-body)', paddingLeft: 2 }}>
-                              {seatsLeft} seat{seatsLeft !== 1 ? 's' : ''} left!
-                            </span>
-                          )}
-                        </div>
-                        <div style={{ textAlign: 'right' }}>
-                          <div style={{
-                            fontFamily: 'var(--f-num)', fontSize: 15, fontWeight: 800,
-                            color: isSoldOut ? '#CBD5E1' : isSelected ? T : '#0F172A',
-                            textDecoration: isSoldOut ? 'line-through' : 'none',
-                          }}>
-                            {fmtCurrency(batch.adult_price)}
-                          </div>
-                          <div style={{ fontFamily: 'var(--f-body)', fontSize: 9, color: '#94A3B8' }}>/ adult</div>
-                        </div>
-                      </div>
+                    {/* Day number */}
+                    <div style={{
+                      fontFamily: 'var(--f-num)', fontSize: 30, fontWeight: 900, lineHeight: 1,
+                      color: isSelected ? 'white' : isSoldOut ? '#CBD5E1' : '#0F172A',
+                      marginBottom: 3,
+                    }}>
+                      {startD.getDate()}
                     </div>
-                  );
-                })}
-              </div>
+
+                    {/* Month abbreviation */}
+                    <div style={{
+                      fontFamily: 'var(--f-body)', fontSize: 11, fontWeight: 600,
+                      color: isSelected ? 'rgba(255,255,255,0.75)' : '#64748B',
+                      textTransform: 'uppercase', letterSpacing: '0.5px',
+                      marginBottom: 6,
+                    }}>
+                      {startD.toLocaleDateString('en-IN', { month: 'short' })}
+                    </div>
+
+                    {/* Price */}
+                    <div style={{
+                      fontFamily: 'var(--f-num)', fontSize: 11, fontWeight: 700,
+                      color: isSelected ? 'rgba(255,255,255,0.9)' : isSoldOut ? '#CBD5E1' : T,
+                      textDecoration: isSoldOut ? 'line-through' : 'none',
+                    }}>
+                      {fmtCurrency(batch.adult_price)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+
+        {/* Legend */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 4, flexWrap: 'wrap' }}>
+          {[
+            { dot: T, label: 'Selected' },
+            { dot: '#EA580C', label: 'Filling Fast' },
+            { dot: '#B45309', label: 'Few Spots Left' },
+          ].map((l, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 5, fontFamily: 'var(--f-body)', fontSize: 11, color: '#64748B' }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: l.dot }} />
+              {l.label}
             </div>
           ))}
         </div>
-
-        {/* Scroll hint on mobile */}
-        {months.length > 1 && (
-          <div style={{ textAlign: 'center', marginTop: 12, fontFamily: 'var(--f-body)', fontSize: 11, color: '#94A3B8', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3" /></svg>
-            Swipe to see more months
-          </div>
-        )}
       </div>
     </div>
   );
@@ -1369,26 +1368,21 @@ function GroupWhatsCovered({
         {/* ── Inclusions ── */}
         {inclusions.length > 0 && (
           <div style={{ marginTop: 24 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-              <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#16A34A', flexShrink: 0 }} />
-              <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, fontWeight: 700, color: '#15803D', letterSpacing: '0.2px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <div style={{ width: 10, height: 10, borderRadius: 3, background: '#16A34A', flexShrink: 0 }} />
+              <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, fontWeight: 800, color: '#15803D', letterSpacing: '0.2px' }}>
                 Included in Your Package
               </span>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 0, border: '1px solid #D1FAE5', borderRadius: 14, overflow: 'hidden' }}>
+            <div style={{ border: '1px solid #D1FAE5', borderRadius: 14, overflow: 'hidden' }}>
               {inclusions.map((item, idx) => (
                 <div key={item.id} style={{
-                  display: 'flex', alignItems: 'center', gap: 10,
-                  padding: '11px 16px',
+                  padding: '12px 16px',
                   background: idx % 2 === 0 ? '#F0FDF4' : 'white',
                   borderTop: idx > 0 ? '1px solid #D1FAE5' : 'none',
+                  fontFamily: 'var(--f-body)', fontSize: 13, color: '#1A3A2A', lineHeight: 1.5,
                 }}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#16A34A" strokeWidth="2.5" strokeLinecap="round" style={{ flexShrink: 0 }}>
-                    <path d="M20 6L9 17l-5-5" />
-                  </svg>
-                  <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#1A3A2A', lineHeight: 1.45 }}>
-                    {item.text}
-                  </span>
+                  {item.text}
                 </div>
               ))}
             </div>
@@ -1398,31 +1392,116 @@ function GroupWhatsCovered({
         {/* ── Exclusions ── */}
         {exclusions.length > 0 && (
           <div style={{ marginTop: 20 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-              <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#DC2626', flexShrink: 0 }} />
-              <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, fontWeight: 700, color: '#B91C1C', letterSpacing: '0.2px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <div style={{ width: 10, height: 10, borderRadius: 3, background: '#DC2626', flexShrink: 0 }} />
+              <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, fontWeight: 800, color: '#B91C1C', letterSpacing: '0.2px' }}>
                 Not Included
               </span>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 0, border: '1px solid #FECACA', borderRadius: 14, overflow: 'hidden' }}>
+            <div style={{ border: '1px solid #FECACA', borderRadius: 14, overflow: 'hidden' }}>
               {exclusions.map((item, idx) => (
                 <div key={item.id} style={{
-                  display: 'flex', alignItems: 'center', gap: 10,
-                  padding: '11px 16px',
+                  padding: '12px 16px',
                   background: idx % 2 === 0 ? '#FFF8F8' : 'white',
                   borderTop: idx > 0 ? '1px solid #FECACA' : 'none',
+                  fontFamily: 'var(--f-body)', fontSize: 13, color: '#7F1D1D', lineHeight: 1.5,
                 }}>
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2.5" strokeLinecap="round" style={{ flexShrink: 0 }}>
-                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                  <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#7F1D1D', lineHeight: 1.45 }}>
-                    {item.text}
-                  </span>
+                  {item.text}
                 </div>
               ))}
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────── GROUP: Package Options ─────────────────────────── */
+function GroupPackageOptions({
+  options, selectedTier, onSelect,
+}: {
+  options: GroupPackageOption[]; selectedTier: string | null; onSelect: (tier: string) => void;
+}) {
+  if (!options || options.length === 0) return null;
+
+  return (
+    <div style={{ background: '#F8FAFC', borderTop: '1px solid var(--tl-border)' }} data-section="packages">
+      <div className="tl-sec">
+        <div className="tl-sec-eyebrow">Pick Your Experience</div>
+        <div className="tl-sec-h">Package Options</div>
+        <div className="tl-sec-sub" style={{ marginBottom: 24 }}>
+          Same departure, different comfort levels. Choose what suits you best.
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {options.map((opt) => {
+            const isSel = selectedTier === opt.tier_name;
+            return (
+              <div
+                key={opt.tier_name}
+                onClick={() => onSelect(opt.tier_name)}
+                style={{
+                  borderRadius: 18,
+                  border: isSel ? `2px solid ${T}` : '1.5px solid #E2E8F0',
+                  background: isSel ? `${T}06` : 'white',
+                  padding: '16px 18px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  boxShadow: isSel ? `0 4px 16px ${T}20` : '0 1px 4px rgba(0,0,0,0.04)',
+                  position: 'relative',
+                }}
+              >
+                {opt.is_most_popular && (
+                  <div style={{
+                    position: 'absolute', top: -10, left: 18,
+                    background: T, color: 'white', borderRadius: 20,
+                    padding: '2px 12px', fontSize: 10, fontWeight: 700, fontFamily: 'var(--f-body)',
+                  }}>
+                    Most Popular
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: opt.inclusions.length > 0 ? 12 : 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {/* Selection circle */}
+                    <div style={{
+                      width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+                      border: isSel ? `6px solid ${T}` : '2px solid #CBD5E1',
+                      background: 'white',
+                      transition: 'all 0.15s ease',
+                    }} />
+                    <div style={{ fontFamily: 'var(--f-display)', fontSize: 17, fontWeight: 800, color: isSel ? T : '#0F172A' }}>
+                      {opt.tier_name}
+                    </div>
+                  </div>
+                  {opt.adult_price > 0 && (
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontFamily: 'var(--f-num)', fontSize: 18, fontWeight: 900, color: isSel ? T : '#0F172A' }}>
+                        {fmtCurrency(opt.adult_price)}
+                      </div>
+                      <div style={{ fontFamily: 'var(--f-body)', fontSize: 10, color: '#94A3B8' }}>/ adult</div>
+                    </div>
+                  )}
+                </div>
+
+                {opt.inclusions.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, paddingLeft: 30 }}>
+                    {opt.inclusions.map((inc, i) => (
+                      <span key={i} style={{
+                        fontFamily: 'var(--f-body)', fontSize: 11.5, color: isSel ? '#1A3A2A' : '#475569',
+                        background: isSel ? '#D1FAE5' : '#F1F5F9',
+                        borderRadius: 20, padding: '3px 10px', lineHeight: 1.4,
+                      }}>
+                        {inc}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -1745,7 +1824,7 @@ function BookingIntentModal({
 
 /* ─────────────────────────── Main Component ─────────────────────────── */
 export function ItineraryClient({ data, token }: Props) {
-  const { quote, customer, agent, state, quote_options, day_snapshots, inclusions, exclusions, policies } = data;
+  const { quote, customer, agent, state, quote_options, group_package_options, day_snapshots, inclusions, exclusions, policies } = data;
 
   const isGroup = quote.quote_type?.toUpperCase() === 'GROUP';
 
@@ -1764,6 +1843,8 @@ export function ItineraryClient({ data, token }: Props) {
   const [groupAdults, setGroupAdults]       = useState<number>(Math.max(1, quote.adults ?? 1));
   const [booking, setBooking]               = useState(false);
   const [showBookingIntent, setShowBookingIntent] = useState(false);
+  const defaultTier = group_package_options?.find(o => o.is_most_popular)?.tier_name ?? group_package_options?.[0]?.tier_name ?? null;
+  const [selectedTier, setSelectedTier]     = useState<string | null>(defaultTier);
 
   const selectedOption = quote_options.find((o) => o.id === selectedId);
   const waUrl = buildWaUrl(agent, quote.quote_number, customer.name, state.name);
@@ -1819,6 +1900,18 @@ export function ItineraryClient({ data, token }: Props) {
     } finally {
       setApproving(false);
     }
+  }
+
+  function handleTierSelect(tierName: string) {
+    setSelectedTier(tierName);
+    fetch(`/api/v1/public/itinerary/${token}/analytics`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event_type: 'package_selected',
+        metadata: { tier_name: tierName },
+      }),
+    }).catch(() => {});
   }
 
   function handleBatchSelect(b: GroupBatch) {
@@ -1893,10 +1986,19 @@ export function ItineraryClient({ data, token }: Props) {
         <Strip quote={quote} />
         <Gallery state={state} day_snapshots={day_snapshots} />
 
-        {/* Package options (all quote types) */}
-        <Packages options={quote_options} selectedId={selectedId} onSelect={handleSelectOption} />
+        {/* Package options — PRIVATE only (GROUP has its own tier selector below) */}
+        {!isGroup && <Packages options={quote_options} selectedId={selectedId} onSelect={handleSelectOption} />}
 
-        {/* ── GROUP: date picker right after packages ── */}
+        {/* ── GROUP: tier selector ── */}
+        {isGroup && (
+          <GroupPackageOptions
+            options={group_package_options ?? []}
+            selectedTier={selectedTier}
+            onSelect={handleTierSelect}
+          />
+        )}
+
+        {/* ── GROUP: date picker ── */}
         {isGroup && (
           <BatchDatePicker
             batches={batches}

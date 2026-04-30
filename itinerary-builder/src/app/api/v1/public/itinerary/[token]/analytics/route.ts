@@ -15,6 +15,7 @@ const ALLOWED_EVENTS: QuoteEventType[] = [
   'booking_intent',
   'rating_submitted',
   'batch_selected',
+  'package_selected',
 ];
 
 /* ── lightweight UA parser ───────────────────────────────────────────── */
@@ -117,6 +118,7 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
     const messages: Record<string, string> = {
       quote_viewed:     `A customer viewed your quotation`,
       whatsapp_clicked: `A customer clicked WhatsApp on your quotation`,
+      package_selected: enrichedMeta.tier_name ? `📦 Customer selected package tier: ${enrichedMeta.tier_name}` : `📦 Customer selected a package tier`,
       booking_intent:   batchDate
         ? `🎉 Booking Intent! ${enrichedMeta.customer_name ?? 'A customer'} wants ${enrichedMeta.adults ?? 1} adult(s) on ${batchDate} · ₹${enrichedMeta.total_price ?? ''}`
         : `🎉 Booking Intent! ${enrichedMeta.customer_name ?? 'A customer'} wants to book`,
