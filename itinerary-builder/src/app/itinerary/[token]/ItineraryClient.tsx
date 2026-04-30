@@ -1336,43 +1336,66 @@ function BatchDatePicker({
 }
 
 /* ─────────────────────────── GROUP: What's Covered ─────────────────────────── */
-const INCLUSION_EMOJI_MAP: Array<[RegExp, string]> = [
-  [/hotel|accommodat|stay|resort|room|villa|cottage/i, '🏨'],
-  [/flight|air(fare)?|ticket|fly/i, '✈️'],
-  [/transport|transfer|cab|taxi|bus|vehicle|car|suv/i, '🚌'],
-  [/meal|breakfast|dinner|lunch|food|dining|bb|cp|map|ap/i, '🍽️'],
-  [/guide|sightseeing|sight|tour/i, '🧭'],
-  [/photo|photography/i, '📸'],
-  [/water|boat|cruise|ferry|houseboat|backwater/i, '⛵'],
-  [/trek|hike|mountain|hill|camp/i, '🏔️'],
-  [/gst|tax/i, '📋'],
-  [/insurance/i, '🛡️'],
-  [/wifi|internet/i, '📶'],
-  [/entry|ticket|permit|pass/i, '🎫'],
-  [/activ|adventure|sport/i, '🎯'],
-  [/spa|wellness|massage/i, '💆'],
-  [/pickup|drop|airport/i, '🚐'],
-];
 
-const EXCLUSION_EMOJI_MAP: Array<[RegExp, string]> = [
-  [/visa/i, '🛂'],
-  [/personal|medicine|medical|health/i, '💊'],
-  [/shopping|shop/i, '🛍️'],
-  [/tip|gratuity/i, '💰'],
-  [/alcohol|drink|beverage/i, '🍷'],
-  [/flight|air(fare)?|fly/i, '✈️'],
-  [/camera|photography/i, '📷'],
-  [/room service|minibar/i, '🛎️'],
-  [/toll|parking/i, '🚦'],
-  [/laundry/i, '👕'],
-  [/porterage|baggage/i, '🧳'],
-];
+/* Inline SVG icon by keyword */
+function incIcon(text: string) {
+  const t = text.toLowerCase();
+  const C = T; // teal stroke colour
+  if (/hotel|accommodat|stay|resort|room|villa|cottage/.test(t))
+    return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>;
+  if (/flight|air(fare)?|fly/.test(t))
+    return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 00-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg>;
+  if (/transport|transfer|cab|taxi|bus|vehicle|car|suv|ac/.test(t))
+    return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>;
+  if (/meal|breakfast|dinner|lunch|food|dining|map\b|cp\b|ap\b/.test(t))
+    return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round"><path d="M18 8h1a4 4 0 010 8h-1"/><path d="M2 8h16v9a4 4 0 01-4 4H6a4 4 0 01-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>;
+  if (/guide|sightseeing|sight|tour/.test(t))
+    return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>;
+  if (/photo|photography/.test(t))
+    return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>;
+  if (/water|boat|cruise|ferry|houseboat|backwater/.test(t))
+    return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round"><path d="M2 20c1.67 0 3.33-1 5-1s3.33 1 5 1 3.33-1 5-1"/><path d="M12 10V4l-3 3h6l-3-3"/><path d="M5 12H2l2 8"/><path d="M19 12h3l-2 8"/><path d="M12 10c0 0-4.5 1.5-7 2"/><path d="M12 10c0 0 4.5 1.5 7 2"/></svg>;
+  if (/trek|hike|mountain|hill|camp/.test(t))
+    return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><polygon points="3 17 12 3 21 17 3 17"/></svg>;
+  if (/gst|tax/.test(t))
+    return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>;
+  if (/insurance/.test(t))
+    return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>;
+  if (/wifi|internet/.test(t))
+    return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round"><path d="M5 12.55a11 11 0 0114.08 0"/><path d="M1.42 9a16 16 0 0121.16 0"/><path d="M8.53 16.11a6 6 0 016.95 0"/><line x1="12" y1="20" x2="12.01" y2="20" strokeWidth="2.5"/></svg>;
+  if (/entry|ticket|permit|pass/.test(t))
+    return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round"><path d="M2 9a3 3 0 010-6h20a3 3 0 010 6"/><path d="M2 15a3 3 0 000 6h20a3 3 0 000-6"/><line x1="2" y1="12" x2="22" y2="12"/></svg>;
+  if (/activ|adventure|sport/.test(t))
+    return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>;
+  if (/pickup|drop|airport/.test(t))
+    return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>;
+  if (/toll|parking/.test(t))
+    return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>;
+  // default: check inside circle
+  return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="1.9" strokeLinecap="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>;
+}
 
-function getEmoji(text: string, map: Array<[RegExp, string]>, fallback: string): string {
-  for (const [regex, emoji] of map) {
-    if (regex.test(text)) return emoji;
-  }
-  return fallback;
+function excIcon(text: string) {
+  const t = text.toLowerCase();
+  const R = '#DC2626';
+  if (/visa/.test(t))
+    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={R} strokeWidth="2" strokeLinecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>;
+  if (/personal|medicine|medical|health/.test(t))
+    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={R} strokeWidth="2" strokeLinecap="round"><path d="M12 2a10 10 0 100 20A10 10 0 0012 2z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>;
+  if (/shopping|shop/.test(t))
+    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={R} strokeWidth="2" strokeLinecap="round"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>;
+  if (/flight|air(fare)?|fly/.test(t))
+    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={R} strokeWidth="2" strokeLinecap="round"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 00-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg>;
+  if (/camera|photography/.test(t))
+    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={R} strokeWidth="2" strokeLinecap="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>;
+  if (/alcohol|drink|beverage/.test(t))
+    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={R} strokeWidth="2" strokeLinecap="round"><path d="M8 22h8M12 11v11M5 3h14l-2 9a7 7 0 01-10 0L5 3z"/></svg>;
+  if (/laundry/.test(t))
+    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={R} strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="14" r="6"/><rect x="2" y="2" width="20" height="7" rx="1"/><path d="M14 14a2 2 0 01-4 0"/></svg>;
+  if (/porterage|baggage|luggage/.test(t))
+    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={R} strokeWidth="2" strokeLinecap="round"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M10 2V1M14 2V1"/><line x1="12" y1="7" x2="12" y2="17"/><line x1="8" y1="12" x2="16" y2="12"/></svg>;
+  // default: X circle
+  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={R} strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>;
 }
 
 function GroupWhatsCovered({
@@ -1392,26 +1415,31 @@ function GroupWhatsCovered({
 
         {inclusions.length > 0 && (
           <div style={{ marginTop: 24 }}>
+            {/* Section label */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-              <div style={{ width: 28, height: 28, borderRadius: 8, background: '#DCFCE7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ width: 30, height: 30, borderRadius: 9, background: '#DCFCE7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16A34A" strokeWidth="2.5" strokeLinecap="round"><path d="M20 6L9 17l-5-5" /></svg>
               </div>
-              <span style={{ fontFamily: 'var(--f-body)', fontSize: 15, fontWeight: 700, color: '#15803D' }}>Included in Your Package</span>
+              <span style={{ fontFamily: 'var(--f-body)', fontSize: 14, fontWeight: 700, color: '#15803D' }}>Included in Your Package</span>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(156px, 1fr))', gap: 10 }}>
+
+            {/* Inclusion tiles — icon left, text right */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {inclusions.map((item) => (
                 <div key={item.id} style={{
-                  display: 'flex', alignItems: 'flex-start', gap: 10,
-                  background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 12,
-                  padding: '11px 12px', transition: 'transform 0.15s, box-shadow 0.15s',
-                }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-2px)'; (e.currentTarget as HTMLDivElement).style.boxShadow = '0 4px 12px rgba(21,128,61,0.10)'; }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLDivElement).style.boxShadow = 'none'; }}
-                >
-                  <span style={{ fontSize: 18, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>
-                    {getEmoji(item.text, INCLUSION_EMOJI_MAP, '✅')}
-                  </span>
-                  <span style={{ fontFamily: 'var(--f-body)', fontSize: 12, color: '#166534', fontWeight: 500, lineHeight: 1.4 }}>
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  background: '#F8FFFE', border: '1px solid #D1FAE5', borderRadius: 12,
+                  padding: '11px 14px',
+                }}>
+                  {/* Icon in teal circle */}
+                  <div style={{
+                    width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
+                    background: `${T}12`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    {incIcon(item.text)}
+                  </div>
+                  <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#1E4A3A', fontWeight: 500, lineHeight: 1.4 }}>
                     {item.text}
                   </span>
                 </div>
@@ -1422,21 +1450,32 @@ function GroupWhatsCovered({
 
         {exclusions.length > 0 && (
           <div style={{ marginTop: 22 }}>
+            {/* Section label */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-              <div style={{ width: 28, height: 28, borderRadius: 8, background: '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ width: 30, height: 30, borderRadius: 9, background: '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
               </div>
-              <span style={{ fontFamily: 'var(--f-body)', fontSize: 15, fontWeight: 700, color: '#B91C1C' }}>Not Included</span>
+              <span style={{ fontFamily: 'var(--f-body)', fontSize: 14, fontWeight: 700, color: '#B91C1C' }}>Not Included</span>
             </div>
+
+            {/* Exclusion list */}
             <div style={{
-              background: '#FFF5F5', border: '1px solid #FCA5A5', borderRadius: 14, padding: '14px 16px',
-              display: 'flex', flexDirection: 'column', gap: 8,
+              background: '#FFF8F8', border: '1px solid #FECACA', borderRadius: 14,
+              overflow: 'hidden',
             }}>
-              {exclusions.map((item) => (
-                <div key={item.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                  <span style={{ fontSize: 15, lineHeight: 1, flexShrink: 0, marginTop: 2 }}>
-                    {getEmoji(item.text, EXCLUSION_EMOJI_MAP, '❌')}
-                  </span>
+              {exclusions.map((item, idx) => (
+                <div key={item.id} style={{
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  padding: '11px 14px',
+                  borderTop: idx > 0 ? '1px solid #FEE2E2' : 'none',
+                }}>
+                  <div style={{
+                    width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
+                    background: '#FEE2E2',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    {excIcon(item.text)}
+                  </div>
                   <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#7F1D1D', lineHeight: 1.45 }}>{item.text}</span>
                 </div>
               ))}
@@ -1676,35 +1715,50 @@ function GroupStickyCTA({
     ? (() => { const sub = batch.adult_price * adults; return sub + Math.round(sub * batch.gst_percent / 100); })()
     : 0;
 
+  const startFmt = batch
+    ? new Date(batch.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+    : null;
+
+  const isEmpty = !batch;
+
   return (
-    <div className="tl-cta-bar">
-      <div className="tl-cta-top">
-        <div style={{ minWidth: 0 }}>
-          <div className="tl-cta-label" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {batch
-              ? `${new Date(batch.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} — ${batch.batch_name}`
-              : 'Select a departure date above'}
-          </div>
-          <div className="tl-cta-val" style={{ color: batch ? undefined : '#94A3B8' }}>
-            {batch ? fmtCurrency(total) : '—'}
-          </div>
+    <div className="tl-grp-bar">
+      {/* Row: date label + price */}
+      <div className="tl-grp-bar-row">
+        <div className="tl-grp-bar-date">
+          {batch ? `${startFmt} · ${batch.batch_name}` : 'Select a departure above ↑'}
         </div>
-      </div>
-      <div className="tl-cta-bottom">
         {batch && (
-          <div style={{ fontFamily: 'var(--f-body)', fontSize: 11, color: 'rgba(255,255,255,0.55)', marginBottom: 8, textAlign: 'center' }}>
-            {adults} adult{adults !== 1 ? 's' : ''} · incl. {batch.gst_percent}% GST · No payment now
-          </div>
+          <div className="tl-grp-bar-price">{fmtCurrency(total)}</div>
         )}
-        <button
-          className="tl-cta-book"
-          onClick={onBookNow}
-          disabled={!batch || booking}
-          style={{ width: '100%' }}
-        >
-          {booking ? 'Sending…' : batch ? `Book Now — ${fmtCurrency(total)}` : 'Pick a Date First'}
-        </button>
       </div>
+
+      {/* Sub-line */}
+      {batch && (
+        <div className="tl-grp-bar-sub">
+          {adults} adult{adults !== 1 ? 's' : ''} · incl. {batch.gst_percent}% GST · No payment now
+        </div>
+      )}
+
+      {/* Book Now button */}
+      <button
+        className={`tl-grp-bar-btn${isEmpty ? ' tl-grp-bar-btn-empty' : ''}`}
+        onClick={onBookNow}
+        disabled={isEmpty || booking}
+      >
+        {booking ? (
+          'Sending…'
+        ) : isEmpty ? (
+          'Pick a Date First ↑'
+        ) : (
+          <>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--tl-teal)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+            </svg>
+            Book Now — {fmtCurrency(total)}
+          </>
+        )}
+      </button>
     </div>
   );
 }
@@ -1922,7 +1976,8 @@ export function ItineraryClient({ data, token }: Props) {
         <Policies policies={policies} />
         <AgentSection agent={agent} waUrl={waUrl} />
         <Footer quoteNum={quote.quote_number} expiryDate={quote.expiry_date} waUrl={waUrl} />
-        <div style={{ height: 'calc(env(safe-area-inset-bottom,0px) + 130px)', background: 'var(--tl-dark)' }} />
+        {/* Spacer so footer content isn't hidden behind the sticky bar */}
+        <div style={{ height: isGroup ? 'calc(env(safe-area-inset-bottom,0px) + 150px)' : 'calc(env(safe-area-inset-bottom,0px) + 120px)', background: 'var(--tl-dark)' }} />
       </div>
 
       {/* Sticky CTA */}
@@ -1945,7 +2000,7 @@ export function ItineraryClient({ data, token }: Props) {
       )}
 
       {/* WhatsApp float */}
-      <a href={waUrl} target="_blank" rel="noopener noreferrer" className="tl-wa-float" title="Chat on WhatsApp">
+      <a href={waUrl} target="_blank" rel="noopener noreferrer" className={`tl-wa-float${isGroup ? ' tl-wa-float-group' : ''}`} title="Chat on WhatsApp">
         <svg viewBox="0 0 24 24" fill="white" width="24" height="24">
           <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
         </svg>
