@@ -1152,15 +1152,24 @@ function batchIsSoldOut(b: GroupBatch): boolean {
   return b.booking_status === 'SOLD_OUT' || b.booking_status === 'CLOSED' || b.available_seats === 0;
 }
 
-function groupBatchesByMonth(batches: GroupBatch[]): Array<{ monthLabel: string; batches: GroupBatch[] }> {
+function groupBatchesByMonth(batches: GroupBatch[]): Array<{ monthKey: string; monthLabel: string; year: number; batches: GroupBatch[] }> {
   const map = new Map<string, GroupBatch[]>();
   batches.forEach((b) => {
     const d = new Date(b.start_date);
-    const key = d.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+    const key = `${d.getFullYear()}-${d.getMonth()}`;
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(b);
   });
-  return Array.from(map.entries()).map(([monthLabel, batches]) => ({ monthLabel, batches }));
+  return Array.from(map.entries()).map(([key, batches]) => {
+    const [year, month] = key.split('-').map(Number);
+    const d = new Date(year, month, 1);
+    return {
+      monthKey: key,
+      monthLabel: d.toLocaleDateString('en-IN', { month: 'long' }),
+      year,
+      batches,
+    };
+  });
 }
 
 function BatchDatePicker({
@@ -1172,144 +1181,153 @@ function BatchDatePicker({
   const months = groupBatchesByMonth(batches);
 
   return (
-    <div style={{ background: '#FAFCFF', borderTop: '1px solid var(--tl-border)', borderBottom: '1px solid var(--tl-border)' }} data-section="dates">
-      <div className="tl-sec">
+    <div style={{ background: 'linear-gradient(180deg, #F0F7F9 0%, #FAFCFF 100%)', borderTop: '1px solid var(--tl-border)' }} data-section="dates">
+      <div className="tl-sec" style={{ paddingBottom: 32 }}>
         <div className="tl-sec-eyebrow">Book Your Spot</div>
         <div className="tl-sec-h">Choose Your Travel Dates</div>
-        <div className="tl-sec-sub">Select the batch that works best for you. Prices may vary by date.</div>
+        <div className="tl-sec-sub" style={{ marginBottom: 28 }}>
+          Select from upcoming departures. Prices may vary by batch — <strong style={{ color: T }}>early bookings</strong> save more.
+        </div>
 
-        {months.map(({ monthLabel, batches: mBatches }) => (
-          <div key={monthLabel} style={{ marginTop: 28 }}>
-            {/* Month label */}
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14,
+        {/* Multi-month horizontal scroll layout */}
+        <div style={{
+          display: 'flex', gap: 14, overflowX: 'auto', paddingBottom: 8,
+          scrollSnapType: 'x mandatory',
+          msOverflowStyle: 'none', scrollbarWidth: 'none',
+        }}>
+          {months.map(({ monthKey, monthLabel, year, batches: mBatches }) => (
+            <div key={monthKey} style={{
+              flexShrink: 0, width: 'min(240px, 76vw)',
+              scrollSnapAlign: 'start',
+              background: 'white',
+              borderRadius: 20, border: '1.5px solid var(--tl-border)',
+              overflow: 'hidden',
+              boxShadow: '0 2px 12px rgba(19,73,86,0.06)',
             }}>
+              {/* Month header */}
               <div style={{
-                background: T, color: 'white', borderRadius: 8, padding: '3px 12px',
-                fontSize: 12, fontWeight: 700, fontFamily: 'var(--f-body)', letterSpacing: '0.5px',
-              }}>{monthLabel}</div>
-              <div style={{ flex: 1, height: 1, background: 'var(--tl-border)' }} />
-            </div>
+                background: `linear-gradient(135deg, ${T} 0%, #1e6b7e 100%)`,
+                padding: '14px 16px 12px',
+              }}>
+                <div style={{ fontFamily: 'var(--f-body)', fontSize: 11, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: 'rgba(255,255,255,0.6)', marginBottom: 2 }}>
+                  {year}
+                </div>
+                <div style={{ fontFamily: 'var(--f-display)', fontSize: 22, fontWeight: 800, color: 'white', lineHeight: 1 }}>
+                  {monthLabel}
+                </div>
+                <div style={{ fontFamily: 'var(--f-body)', fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 4 }}>
+                  {mBatches.length} departure{mBatches.length !== 1 ? 's' : ''}
+                </div>
+              </div>
 
-            {/* Batch cards */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {mBatches.map((batch) => {
-                const isSelected = selectedBatchId === batch.id;
-                const isSoldOut = batchIsSoldOut(batch);
-                const sColor = statusColor(batch.booking_status, batch.badge_color);
-                const sLabel = statusLabel(batch.booking_status, batch.badge_text);
-                const startD = new Date(batch.start_date);
-                const endD = new Date(batch.end_date);
-                const nights = Math.round((endD.getTime() - startD.getTime()) / 86400000);
-                const seatsLeft = batch.available_seats;
+              {/* Batch cards within this month */}
+              <div style={{ padding: '10px 10px 10px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {mBatches.map((batch) => {
+                  const isSelected = selectedBatchId === batch.id;
+                  const isSoldOut = batchIsSoldOut(batch);
+                  const sColor = statusColor(batch.booking_status, batch.badge_color);
+                  const sLabel = statusLabel(batch.booking_status, batch.badge_text);
+                  const startD = new Date(batch.start_date);
+                  const endD = new Date(batch.end_date);
+                  const nights = Math.round((endD.getTime() - startD.getTime()) / 86400000);
+                  const seatsLeft = batch.available_seats;
 
-                return (
-                  <div
-                    key={batch.id}
-                    onClick={() => !isSoldOut && onSelect(batch)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 14,
-                      border: isSelected ? `2px solid ${T}` : '1.5px solid var(--tl-border)',
-                      borderRadius: 16, padding: '14px 16px',
-                      background: isSelected ? `${T}08` : 'white',
-                      cursor: isSoldOut ? 'not-allowed' : 'pointer',
-                      opacity: isSoldOut ? 0.55 : 1,
-                      filter: isSoldOut ? 'grayscale(0.5)' : 'none',
-                      transition: 'all 0.2s ease',
-                      boxShadow: isSelected ? `0 0 0 3px ${T}22` : '0 1px 3px rgba(0,0,0,0.04)',
-                      position: 'relative',
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!isSoldOut && !isSelected) {
-                        (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-2px)';
-                        (e.currentTarget as HTMLDivElement).style.boxShadow = '0 6px 20px rgba(19,73,86,0.12)';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isSoldOut && !isSelected) {
-                        (e.currentTarget as HTMLDivElement).style.transform = 'translateY(0)';
-                        (e.currentTarget as HTMLDivElement).style.boxShadow = '0 1px 3px rgba(0,0,0,0.04)';
-                      }
-                    }}
-                  >
-                    {/* Date badge */}
-                    <div style={{
-                      flexShrink: 0, width: 54, height: 54, borderRadius: 12,
-                      background: isSelected ? T : '#EEF5F7',
-                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                      transition: 'background 0.2s',
-                    }}>
-                      <div style={{ fontFamily: 'var(--f-num)', fontSize: 20, fontWeight: 800, lineHeight: 1, color: isSelected ? 'white' : T }}>
-                        {startD.getDate()}
-                      </div>
-                      <div style={{ fontFamily: 'var(--f-body)', fontSize: 9, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: isSelected ? 'rgba(255,255,255,0.7)' : '#94A3B8', marginTop: 2 }}>
-                        {startD.toLocaleDateString('en-IN', { month: 'short' })}
-                      </div>
-                    </div>
-
-                    {/* Middle content */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontFamily: 'var(--f-body)', fontSize: 14, fontWeight: 700, color: '#0F172A', marginBottom: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {batch.batch_name}
-                      </div>
-                      <div style={{ fontFamily: 'var(--f-body)', fontSize: 12, color: '#64748B', marginBottom: 4 }}>
-                        {startD.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} – {endD.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                        {' · '}{nights} night{nights !== 1 ? 's' : ''}
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        {/* Status badge */}
-                        <span style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 4,
-                          background: `${sColor}15`, color: sColor,
-                          borderRadius: 20, padding: '2px 8px', fontSize: 10, fontWeight: 700, fontFamily: 'var(--f-body)',
-                        }}>
-                          <span style={{ width: 5, height: 5, borderRadius: '50%', background: sColor, display: 'inline-block' }} />
-                          {sLabel}
-                        </span>
-                        {/* Seats */}
-                        {!isSoldOut && seatsLeft <= 10 && seatsLeft > 0 && (
-                          <span style={{
-                            fontSize: 10, fontWeight: 600, color: '#EA580C', fontFamily: 'var(--f-body)',
-                            background: '#FFF7ED', borderRadius: 20, padding: '2px 7px',
+                  return (
+                    <div
+                      key={batch.id}
+                      onClick={() => !isSoldOut && onSelect(batch)}
+                      style={{
+                        borderRadius: 14, padding: '12px 12px',
+                        border: isSelected ? `2px solid ${T}` : '1.5px solid #EEF2F5',
+                        background: isSelected ? `${T}0A` : '#F8FAFC',
+                        cursor: isSoldOut ? 'not-allowed' : 'pointer',
+                        opacity: isSoldOut ? 0.5 : 1,
+                        filter: isSoldOut ? 'grayscale(0.6)' : 'none',
+                        transition: 'all 0.18s ease',
+                        boxShadow: isSelected ? `0 0 0 3px ${T}18` : 'none',
+                        position: 'relative',
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isSoldOut && !isSelected) {
+                          (e.currentTarget as HTMLDivElement).style.background = '#EEF5F7';
+                          (e.currentTarget as HTMLDivElement).style.boxShadow = `0 4px 14px rgba(19,73,86,0.10)`;
+                          (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-1px)';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isSoldOut && !isSelected) {
+                          (e.currentTarget as HTMLDivElement).style.background = '#F8FAFC';
+                          (e.currentTarget as HTMLDivElement).style.boxShadow = 'none';
+                          (e.currentTarget as HTMLDivElement).style.transform = 'translateY(0)';
+                        }
+                      }}
+                    >
+                      {/* Date range row */}
+                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 6 }}>
+                        <div>
+                          <div style={{ fontFamily: 'var(--f-num)', fontSize: 16, fontWeight: 800, color: isSelected ? T : '#0F172A', lineHeight: 1 }}>
+                            {startD.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                          </div>
+                          <div style={{ fontFamily: 'var(--f-body)', fontSize: 10, color: '#94A3B8', marginTop: 1 }}>
+                            → {endD.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} · {nights}N
+                          </div>
+                        </div>
+                        {isSelected && !isSoldOut && (
+                          <div style={{
+                            width: 20, height: 20, borderRadius: '50%', background: T,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                           }}>
-                            {seatsLeft} seat{seatsLeft !== 1 ? 's' : ''} left
-                          </span>
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round"><path d="M5 13l4 4L19 7" /></svg>
+                          </div>
                         )}
                       </div>
-                    </div>
 
-                    {/* Price + select */}
-                    <div style={{ flexShrink: 0, textAlign: 'right' }}>
-                      <div style={{
-                        fontFamily: 'var(--f-num)', fontSize: 16, fontWeight: 800,
-                        color: isSoldOut ? '#94A3B8' : isSelected ? T : '#0F172A',
-                        textDecoration: isSoldOut ? 'line-through' : 'none',
-                      }}>
-                        {fmtCurrency(batch.adult_price)}
+                      {/* Batch name */}
+                      <div style={{ fontFamily: 'var(--f-body)', fontSize: 11, color: '#475569', fontWeight: 500, marginBottom: 7, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {batch.batch_name}
                       </div>
-                      <div style={{ fontFamily: 'var(--f-body)', fontSize: 10, color: '#94A3B8', marginTop: 1 }}>per adult</div>
-                      {isSelected && !isSoldOut && (
-                        <div style={{ marginTop: 6 }}>
-                          <span style={{
-                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                            width: 22, height: 22, borderRadius: '50%', background: T, color: 'white',
-                          }}>
-                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round"><path d="M5 13l4 4L19 7" /></svg>
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))}
 
-        {/* No dates prompt */}
-        {batches.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '40px 20px', color: '#94A3B8', fontFamily: 'var(--f-body)', fontSize: 14 }}>
-            No upcoming batches available at this time. Contact us for details.
+                      {/* Bottom row: status + price */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                          <span style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 4,
+                            background: `${sColor}18`, color: sColor,
+                            borderRadius: 20, padding: '2px 7px', fontSize: 9.5, fontWeight: 700, fontFamily: 'var(--f-body)',
+                          }}>
+                            <span style={{ width: 4, height: 4, borderRadius: '50%', background: sColor, display: 'inline-block' }} />
+                            {sLabel}
+                          </span>
+                          {!isSoldOut && seatsLeft > 0 && seatsLeft <= 10 && (
+                            <span style={{ fontSize: 9, fontWeight: 600, color: '#EA580C', fontFamily: 'var(--f-body)', paddingLeft: 2 }}>
+                              {seatsLeft} seat{seatsLeft !== 1 ? 's' : ''} left!
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{
+                            fontFamily: 'var(--f-num)', fontSize: 15, fontWeight: 800,
+                            color: isSoldOut ? '#CBD5E1' : isSelected ? T : '#0F172A',
+                            textDecoration: isSoldOut ? 'line-through' : 'none',
+                          }}>
+                            {fmtCurrency(batch.adult_price)}
+                          </div>
+                          <div style={{ fontFamily: 'var(--f-body)', fontSize: 9, color: '#94A3B8' }}>/ adult</div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Scroll hint on mobile */}
+        {months.length > 1 && (
+          <div style={{ textAlign: 'center', marginTop: 12, fontFamily: 'var(--f-body)', fontSize: 11, color: '#94A3B8', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3" /></svg>
+            Swipe to see more months
           </div>
         )}
       </div>
@@ -1432,7 +1450,7 @@ function GroupWhatsCovered({
 
 /* ─────────────────────────── GROUP: Fare Summary ─────────────────────────── */
 function GroupFareSummary({
-  batch, adults, onAdultsChange, token, customerName, quoteNumber, onBookNow, booking,
+  batch, adults, onAdultsChange, onBookNow, booking,
 }: {
   batch: GroupBatch | null;
   adults: number;
@@ -1445,11 +1463,15 @@ function GroupFareSummary({
 }) {
   if (!batch) {
     return (
-      <div style={{ background: 'white', borderTop: '1px solid var(--tl-border)' }} data-section="fare">
+      <div style={{ background: '#F8FAFC', borderTop: '1px solid var(--tl-border)' }} data-section="fare">
         <div className="tl-sec" style={{ textAlign: 'center', paddingTop: 40, paddingBottom: 40 }}>
-          <div style={{ fontSize: 36, marginBottom: 12 }}>📅</div>
-          <div style={{ fontFamily: 'var(--f-display)', fontSize: 18, fontWeight: 700, color: '#0F172A', marginBottom: 8 }}>Select a Date First</div>
-          <div style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#64748B' }}>Choose your travel dates above to see the fare breakdown.</div>
+          <div style={{ width: 56, height: 56, borderRadius: '50%', background: `${T}12`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="1.8" strokeLinecap="round">
+              <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+            </svg>
+          </div>
+          <div style={{ fontFamily: 'var(--f-display)', fontSize: 17, fontWeight: 700, color: '#0F172A', marginBottom: 6 }}>Pick Your Departure Date</div>
+          <div style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#64748B', lineHeight: 1.5 }}>Select a batch above to see the fare breakdown and complete your booking.</div>
         </div>
       </div>
     );
@@ -1461,126 +1483,166 @@ function GroupFareSummary({
   const total = subtotal + gstAmount;
   const pricePerAdultInclGst = Math.round(total / adults);
 
-  const startFmt = new Date(batch.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-  const endFmt   = new Date(batch.end_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  const startD = new Date(batch.start_date);
+  const endD   = new Date(batch.end_date);
+  const nights = Math.round((endD.getTime() - startD.getTime()) / 86400000);
+  const startFmt = startD.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  const endFmt   = endD.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 
   return (
-    <div style={{ background: 'white', borderTop: '1px solid var(--tl-border)' }} data-section="fare">
+    <div style={{ background: '#F8FAFC', borderTop: '1px solid var(--tl-border)' }} data-section="fare">
       <div className="tl-sec">
-        <div className="tl-sec-eyebrow">Cost Breakdown</div>
+        <div className="tl-sec-eyebrow">Your Booking</div>
         <div className="tl-sec-h">Fare Summary</div>
-        <div className="tl-sec-sub">{batch.batch_name} · {startFmt} – {endFmt}</div>
+        <div className="tl-sec-sub" style={{ marginBottom: 24 }}>Adjust traveller count to see live pricing.</div>
 
-        <div className="tl-fare-card" style={{ marginTop: 20 }}>
-          {/* Adult counter */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-            <div>
-              <div style={{ fontFamily: 'var(--f-body)', fontSize: 13, fontWeight: 600, color: '#475569', marginBottom: 2 }}>Number of Adults</div>
-              <div style={{ fontFamily: 'var(--f-body)', fontSize: 11, color: '#94A3B8' }}>Adjust to see the total</div>
+        {/* Selected date banner */}
+        <div style={{
+          background: `linear-gradient(135deg, ${T} 0%, #1a6070 100%)`,
+          borderRadius: 18, padding: '18px 20px', marginBottom: 16,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+        }}>
+          <div>
+            <div style={{ fontFamily: 'var(--f-body)', fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: 'rgba(255,255,255,0.55)', marginBottom: 4 }}>
+              Selected Departure
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 0, border: `2px solid ${T}`, borderRadius: 12, overflow: 'hidden' }}>
+            <div style={{ fontFamily: 'var(--f-display)', fontSize: 18, fontWeight: 800, color: 'white', marginBottom: 2 }}>
+              {startFmt} — {endFmt}
+            </div>
+            <div style={{ fontFamily: 'var(--f-body)', fontSize: 12, color: 'rgba(255,255,255,0.6)' }}>
+              {batch.batch_name} · {nights} nights
+            </div>
+          </div>
+          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+            <div style={{ fontFamily: 'var(--f-num)', fontSize: 22, fontWeight: 900, color: 'white', lineHeight: 1 }}>
+              {fmtCurrency(pricePerAdultInclGst)}
+            </div>
+            <div style={{ fontFamily: 'var(--f-body)', fontSize: 10, color: 'rgba(255,255,255,0.55)', marginTop: 2 }}>
+              per adult incl. GST
+            </div>
+          </div>
+        </div>
+
+        {/* Main fare card — single clean surface */}
+        <div style={{
+          background: 'white', borderRadius: 18, border: '1.5px solid #E2E8F0',
+          overflow: 'hidden', boxShadow: '0 2px 16px rgba(0,0,0,0.05)',
+        }}>
+          {/* Adult counter */}
+          <div style={{ padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontFamily: 'var(--f-body)', fontSize: 14, fontWeight: 700, color: '#0F172A' }}>Travellers</div>
+              <div style={{ fontFamily: 'var(--f-body)', fontSize: 11, color: '#94A3B8', marginTop: 2 }}>Number of adults</div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 0, borderRadius: 12, overflow: 'hidden', border: `1.5px solid ${T}` }}>
               <button
                 onClick={() => onAdultsChange(Math.max(1, adults - 1))}
                 style={{
-                  width: 38, height: 38, background: adults === 1 ? '#F8FAFC' : `${T}12`,
-                  border: 'none', cursor: adults === 1 ? 'not-allowed' : 'pointer',
-                  fontSize: 18, fontWeight: 700, color: adults === 1 ? '#CBD5E1' : T,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.15s',
+                  width: 40, height: 40, background: adults <= 1 ? '#F8FAFC' : `${T}10`,
+                  border: 'none', cursor: adults <= 1 ? 'default' : 'pointer',
+                  fontSize: 20, fontWeight: 300, color: adults <= 1 ? '#CBD5E1' : T,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}
               >−</button>
               <div style={{
-                width: 44, textAlign: 'center', fontFamily: 'var(--f-num)', fontSize: 18, fontWeight: 800, color: T,
-                background: `${T}08`,
+                width: 48, textAlign: 'center',
+                fontFamily: 'var(--f-num)', fontSize: 20, fontWeight: 800, color: T,
+                background: `${T}06`, borderLeft: `1px solid ${T}22`, borderRight: `1px solid ${T}22`,
+                height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>{adults}</div>
               <button
                 onClick={() => onAdultsChange(Math.min(30, adults + 1))}
                 style={{
-                  width: 38, height: 38, background: `${T}12`,
+                  width: 40, height: 40, background: `${T}10`,
                   border: 'none', cursor: 'pointer',
-                  fontSize: 18, fontWeight: 700, color: T,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.15s',
+                  fontSize: 20, fontWeight: 300, color: T,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}
-                onMouseEnter={e => (e.currentTarget.style.background = `${T}22`)}
-                onMouseLeave={e => (e.currentTarget.style.background = `${T}12`)}
               >+</button>
             </div>
           </div>
 
-          {/* Divider */}
-          <div style={{ borderTop: '1px dashed #E2E8F0', marginBottom: 16 }} />
-
           {/* Price rows */}
-          <div className="tl-fare-row">
-            <span>Per Adult (before GST)</span>
-            <span style={{ fontWeight: 700 }}>{fmtCurrency(pricePerAdult)}</span>
-          </div>
-          <div className="tl-fare-row">
-            <span>× {adults} Adult{adults > 1 ? 's' : ''}</span>
-            <span style={{ fontWeight: 700 }}>{fmtCurrency(subtotal)}</span>
-          </div>
-          <div className="tl-fare-row">
-            <span>{batch.gst_percent}% GST</span>
-            <span>{fmtCurrency(gstAmount)}</span>
+          <div style={{ borderTop: '1px solid #F1F5F9', padding: '14px 20px 0' }}>
+            {[
+              { label: `₹${Math.round(pricePerAdult).toLocaleString('en-IN')} × ${adults} adult${adults > 1 ? 's' : ''}`, value: subtotal, dimVal: false },
+              { label: `GST ${batch.gst_percent}%`, value: gstAmount, dimVal: true },
+            ].map((row, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12 }}>
+                <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#64748B' }}>{row.label}</span>
+                <span style={{ fontFamily: 'var(--f-num)', fontSize: 14, fontWeight: 600, color: row.dimVal ? '#94A3B8' : '#0F172A' }}>
+                  {fmtCurrency(row.value)}
+                </span>
+              </div>
+            ))}
           </div>
 
-          <div className="tl-fare-total">
+          {/* Total row */}
+          <div style={{
+            margin: '0 20px 20px', padding: '14px 0 0',
+            borderTop: '2px solid #EEF2F5',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          }}>
             <div>
-              <span className="tl-fare-total-label">Total Amount</span>
-              <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2, fontFamily: 'var(--f-body)' }}>
+              <div style={{ fontFamily: 'var(--f-body)', fontSize: 13, fontWeight: 700, color: '#0F172A' }}>Total Amount</div>
+              <div style={{ fontFamily: 'var(--f-body)', fontSize: 11, color: '#94A3B8', marginTop: 2 }}>
                 {fmtCurrency(pricePerAdultInclGst)} per person · incl. GST
               </div>
             </div>
-            <span className="tl-fare-total-val">{fmtCurrency(total)}</span>
+            <div style={{ fontFamily: 'var(--f-num)', fontSize: 26, fontWeight: 900, color: T }}>
+              {fmtCurrency(total)}
+            </div>
           </div>
 
-          {/* Book Now CTA */}
-          <button
-            onClick={onBookNow}
-            disabled={booking}
-            style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-              width: '100%', height: 52, marginTop: 18, borderRadius: 14,
-              background: booking ? '#94A3B8' : `linear-gradient(135deg, ${T} 0%, #1e6b7e 100%)`,
-              color: 'white', border: 'none', cursor: booking ? 'not-allowed' : 'pointer',
-              fontFamily: 'var(--f-body)', fontSize: 16, fontWeight: 700, letterSpacing: '0.2px',
-              boxShadow: booking ? 'none' : `0 4px 16px ${T}44`,
-              transition: 'all 0.2s ease',
-            }}
-            onMouseEnter={e => { if (!booking) (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)'; }}
-          >
-            {booking ? (
-              <>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" style={{ animation: 'spin 1s linear infinite' }}>
-                  <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-                </svg>
-                Sending your interest…
-              </>
-            ) : (
-              <>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round">
-                  <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" />
-                </svg>
-                Book Now — {fmtCurrency(total)}
-              </>
-            )}
-          </button>
-          <div style={{ textAlign: 'center', fontFamily: 'var(--f-body)', fontSize: 11, color: '#94A3B8', marginTop: 10 }}>
-            Our team will contact you within 2 hours to confirm your booking.
+          {/* Book Now button */}
+          <div style={{ padding: '0 16px 16px' }}>
+            <button
+              onClick={onBookNow}
+              disabled={booking}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                width: '100%', height: 54, borderRadius: 14,
+                background: booking ? '#94A3B8' : `linear-gradient(135deg, ${T} 0%, #1e6b7e 100%)`,
+                color: 'white', border: 'none', cursor: booking ? 'not-allowed' : 'pointer',
+                fontFamily: 'var(--f-body)', fontSize: 16, fontWeight: 700,
+                boxShadow: booking ? 'none' : `0 6px 20px ${T}50`,
+                transition: 'all 0.2s ease',
+              }}
+              onMouseEnter={e => { if (!booking) { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = `0 10px 28px ${T}60`; }}}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = `0 6px 20px ${T}50`; }}
+            >
+              {booking ? 'Sending…' : (
+                <>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round">
+                    <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" />
+                  </svg>
+                  Book Now — {fmtCurrency(total)}
+                </>
+              )}
+            </button>
+            <p style={{ textAlign: 'center', fontFamily: 'var(--f-body)', fontSize: 11, color: '#94A3B8', marginTop: 9 }}>
+              We&apos;ll confirm within 2 hours · No payment needed now
+            </p>
           </div>
         </div>
 
-        {/* Trust signals */}
-        <div style={{ marginTop: 16, background: 'white', borderRadius: 16, border: '1px solid var(--tl-border)', padding: '4px 16px' }}>
+        {/* Trust strips */}
+        <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           {[
-            { icon: <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" strokeLinecap="round" /></svg>, t: 'Secure Payments', d: '100% safe via Razorpay & direct bank transfer' },
-            { icon: <WASvg size={17} color={T} />, t: '24/7 WhatsApp Support', d: 'Your agent reachable throughout the trip' },
-            { icon: <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="2"><polyline points="23 4 23 10 17 10" strokeLinecap="round" strokeLinejoin="round" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" strokeLinecap="round" strokeLinejoin="round" /></svg>, t: 'Free Cancellation', d: 'Full refund if cancelled 30+ days before departure' },
-            { icon: <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" strokeLinecap="round" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" strokeLinecap="round" /></svg>, t: '15,000+ Travellers', d: 'Verified happy travellers across India' },
+            { emoji: '🔒', t: 'Secure Booking', d: 'No payment now' },
+            { emoji: '💬', t: 'WhatsApp Support', d: '24/7 reachable' },
+            { emoji: '↩️', t: 'Free Cancellation', d: '30+ days before' },
+            { emoji: '⭐', t: '15,000+ Happy Trips', d: 'Since 2018' },
           ].map((x, i) => (
-            <div key={i} className="tl-trust-row">
-              <div className="tl-trust-icon-wrap">{x.icon}</div>
-              <div><strong>{x.t}</strong><span>{x.d}</span></div>
+            <div key={i} style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              background: 'white', border: '1px solid #F1F5F9', borderRadius: 12, padding: '10px 12px',
+            }}>
+              <span style={{ fontSize: 20 }}>{x.emoji}</span>
+              <div>
+                <div style={{ fontFamily: 'var(--f-body)', fontSize: 11, fontWeight: 700, color: '#0F172A' }}>{x.t}</div>
+                <div style={{ fontFamily: 'var(--f-body)', fontSize: 10, color: '#94A3B8' }}>{x.d}</div>
+              </div>
             </div>
           ))}
         </div>
@@ -1632,7 +1694,7 @@ function BookingIntentModal({
 export function ItineraryClient({ data, token }: Props) {
   const { quote, customer, agent, state, quote_options, day_snapshots, inclusions, exclusions, policies } = data;
 
-  const isGroup = quote.quote_type === 'GROUP';
+  const isGroup = quote.quote_type?.toUpperCase() === 'GROUP';
 
   const defaultOption = data.selected_option_id
     ? quote_options.find((o) => o.id === data.selected_option_id)?.id ?? null
@@ -1805,14 +1867,14 @@ export function ItineraryClient({ data, token }: Props) {
         <div style={{ height: 'calc(env(safe-area-inset-bottom,0px) + 130px)', background: 'var(--tl-dark)' }} />
       </div>
 
-      {/* Sticky CTA — only for non-GROUP (GROUP has inline Book Now) */}
-      {!isGroup && (
+      {/* Sticky CTA — for non-GROUP, and for GROUP when multiple package options exist */}
+      {(!isGroup || quote_options.length > 1) && (
         <StickyCTA
           options={quote_options}
           selectedId={selectedId}
           onSelect={handleSelectOption}
-          onApprove={handleApprove}
-          approving={approving}
+          onApprove={isGroup ? handleBookNow : handleApprove}
+          approving={isGroup ? booking : approving}
         />
       )}
 

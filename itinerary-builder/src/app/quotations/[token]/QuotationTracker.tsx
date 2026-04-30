@@ -20,9 +20,10 @@ const ANALYTICS_URL = (token: string) =>
 const TRACKED_SECTIONS = [
   'hero',
   'packages',
+  'dates',
   'itinerary',
-  'hotels',
   'inclusions',
+  'fare',
   'policies',
   'faqs',
 ];

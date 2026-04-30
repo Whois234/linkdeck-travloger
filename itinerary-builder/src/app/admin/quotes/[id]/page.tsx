@@ -67,6 +67,7 @@ const EVENT_ICON: Record<string, { icon: React.ElementType; color: string; bg: s
   package_selected: { icon: Package,        color: '#F59E0B', bg: '#FFFBEB', label: 'Package Selected' },
   approve_clicked:  { icon: ThumbsUp,       color: '#10B981', bg: '#ECFDF5', label: 'Approved' },
   whatsapp_clicked: { icon: MessageCircle,  color: '#22C55E', bg: '#F0FDF4', label: 'WhatsApp Clicked' },
+  booking_intent:   { icon: ThumbsUp,       color: '#EC4899', bg: '#FDF2F8', label: '🎉 Booking Intent' },
 };
 
 function formatEventTime(dateStr: string) {
@@ -310,13 +311,16 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
   const badge = STATUS_BADGE[quote.status] ?? STATUS_BADGE.DRAFT;
 
   // analytics helpers
-  const viewCount      = events.filter(e => e.event_type === 'quote_viewed').length;
+  const sessionEvents  = events.filter(e => e.event_type === 'quote_viewed' && e.metadata?.is_final === true);
+  const viewCount      = sessionEvents.length;   // unique sessions (final flush = 1 full visit)
   const whatsappClicks = events.filter(e => e.event_type === 'whatsapp_clicked').length;
   const pkgSelectedEvt = events.filter(e => e.event_type === 'package_selected');
   const approvedEvt    = events.filter(e => e.event_type === 'approve_clicked');
+  const bookingIntents = events.filter(e => e.event_type === 'booking_intent');
 
-  const SECTION_ORDER = ['hero', 'packages', 'itinerary', 'hotels', 'inclusions', 'policies', 'faqs'];
+  const SECTION_ORDER = ['hero', 'packages', 'dates', 'itinerary', 'inclusions', 'fare', 'policies', 'faqs'];
   const sectionTimeTotals: Record<string, number> = {};
+  // Use ALL quote_viewed events for section time aggregation (not just final ones)
   events.filter(e => e.event_type === 'quote_viewed').forEach(e => {
     const st = e.metadata?.section_time_seconds as Record<string, number> | undefined;
     if (st) Object.entries(st).forEach(([k, v]) => { sectionTimeTotals[k] = (sectionTimeTotals[k] ?? 0) + v; });
@@ -326,7 +330,6 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
     .filter(s => (sectionTimeTotals[s] ?? 0) > 0)
     .map(s => [s, sectionTimeTotals[s]] as [string, number]);
   const maxSectionVal = Math.max(...topSections.map(([, v]) => v), 1);
-  const sessionEvents = events.filter(e => e.event_type === 'quote_viewed' && e.metadata?.is_final === true);
 
   return (
     <div className="max-w-[1400px]">
@@ -380,10 +383,10 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
             <>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 {[
-                  { label: 'Total Views', value: viewCount, icon: Eye, color: '#8B5CF6', bg: '#F5F3FF' },
-                  { label: 'WhatsApp Clicks', value: whatsappClicks, icon: MessageCircle, color: '#22C55E', bg: '#F0FDF4' },
-                  { label: 'Pkg Selected', value: pkgSelectedEvt.length, icon: Package, color: '#F59E0B', bg: '#FFFBEB' },
-                  { label: 'Approved', value: approvedEvt.length, icon: ThumbsUp, color: '#10B981', bg: '#ECFDF5' },
+                  { label: 'Sessions', value: viewCount, icon: Eye, color: '#8B5CF6', bg: '#F5F3FF', sub: 'unique page visits' },
+                  { label: 'WhatsApp Clicks', value: whatsappClicks, icon: MessageCircle, color: '#22C55E', bg: '#F0FDF4', sub: '' },
+                  { label: 'Booking Intents', value: bookingIntents.length, icon: ThumbsUp, color: '#EC4899', bg: '#FDF2F8', sub: 'Book Now tapped' },
+                  { label: 'Approved', value: approvedEvt.length, icon: ThumbsUp, color: '#10B981', bg: '#ECFDF5', sub: '' },
                 ].map(s => (
                   <div key={s.label} className="bg-white rounded-xl border p-4" style={{ borderColor: '#E2E8F0', ...cardShadow }}>
                     <div className="flex items-center justify-between mb-3">
@@ -393,6 +396,7 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
                       </div>
                     </div>
                     <p className="text-2xl font-bold" style={{ color: '#0F172A' }}>{s.value}</p>
+                    {s.sub && <p className="text-[10px] mt-0.5" style={{ color: '#94A3B8' }}>{s.sub}</p>}
                   </div>
                 ))}
               </div>
@@ -509,7 +513,28 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
                               {evt.metadata && (
                                 <div className="mt-1 flex flex-wrap gap-1.5">
                                   {!!evt.metadata.option_name && <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ backgroundColor: '#FFFBEB', color: '#B45309' }}>{String(evt.metadata.option_name)}</span>}
-                                  {evt.metadata.time_spent_seconds != null && <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ backgroundColor: '#F1F5F9', color: '#475569' }}>{fmtSecs(Number(evt.metadata.time_spent_seconds))} on page</span>}
+                                  {/* booking_intent specific fields */}
+                                  {evt.event_type === 'booking_intent' && !!evt.metadata.customer_name && (
+                                    <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ backgroundColor: '#FDF2F8', color: '#BE185D' }}>
+                                      👤 {String(evt.metadata.customer_name)}
+                                    </span>
+                                  )}
+                                  {evt.event_type === 'booking_intent' && !!evt.metadata.adults && (
+                                    <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ backgroundColor: '#EEF2FF', color: '#4F46E5' }}>
+                                      {String(evt.metadata.adults)} adult{Number(evt.metadata.adults) !== 1 ? 's' : ''}
+                                    </span>
+                                  )}
+                                  {evt.event_type === 'booking_intent' && !!evt.metadata.batch_start_date && (
+                                    <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ backgroundColor: '#ECFDF5', color: '#065F46' }}>
+                                      📅 {new Date(String(evt.metadata.batch_start_date)).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                    </span>
+                                  )}
+                                  {evt.event_type === 'booking_intent' && !!evt.metadata.total_price && (
+                                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ backgroundColor: '#DCFCE7', color: '#15803D' }}>
+                                      ₹{Number(evt.metadata.total_price).toLocaleString('en-IN')}
+                                    </span>
+                                  )}
+                                  {evt.event_type !== 'booking_intent' && evt.metadata.time_spent_seconds != null && <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ backgroundColor: '#F1F5F9', color: '#475569' }}>{fmtSecs(Number(evt.metadata.time_spent_seconds))} on page</span>}
                                   {!!evt.metadata.device && <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ backgroundColor: '#EEF2FF', color: '#4F46E5' }}>{String(evt.metadata.device)} · {String(evt.metadata.os ?? '')}</span>}
                                   {!!(evt.metadata.city || evt.metadata.country) && <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ backgroundColor: '#FFF7ED', color: '#C2410C' }}>📍 {[evt.metadata.city, evt.metadata.country].filter(Boolean).map(String).join(', ')}</span>}
                                 </div>
