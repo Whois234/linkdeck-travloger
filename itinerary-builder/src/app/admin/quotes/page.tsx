@@ -14,8 +14,9 @@ export default async function QuotesPage({
   const statusFilter = searchParams.status ?? '';
 
   // Role-based visibility: SALES only sees own quotes
+  const privilegedRoles: string[] = [UserRole.ADMIN, UserRole.MANAGER, UserRole.FINANCE, UserRole.OPS];
   const agentFilter =
-    user && [UserRole.ADMIN, UserRole.MANAGER, UserRole.FINANCE, UserRole.OPS].includes(user.role)
+    user && privilegedRoles.includes(user.role)
       ? {}
       : { assigned_agent_id: user?.agent_id ?? undefined };
 
