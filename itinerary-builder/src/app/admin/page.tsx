@@ -3,6 +3,9 @@ import { FileText, Building2, Layout, CalendarDays, ArrowRight, TrendingUp, Plus
 import { prisma } from '@/lib/prisma';
 import { getServerUser } from '@/lib/auth-server';
 
+// Never statically pre-render — this page reads live DB data at request time
+export const dynamic = 'force-dynamic';
+
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   DRAFT:     { bg: '#F1F5F9', text: '#475569' },
   SENT:      { bg: '#DBEAFE', text: '#1D4ED8' },

@@ -1,6 +1,8 @@
 import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { cache } from 'react';
+
+export const dynamic = 'force-dynamic';
 import { ItineraryClient } from './ItineraryClient';
 import { prisma } from '@/lib/prisma';
 import { QuoteStatus } from '@prisma/client';

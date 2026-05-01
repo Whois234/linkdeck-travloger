@@ -3,6 +3,8 @@
  * Renders the same ItineraryClient used by the old /itinerary/[token] route.
  * Shows a branded "link deactivated" page instead of 404 when link_active=false.
  */
+export const dynamic = 'force-dynamic';
+
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { cache } from 'react';
