@@ -67,9 +67,22 @@ const ALL_NAV: NavGroup[] = [
   },
 ];
 
-function filterNav(role: string, moduleAccess?: string[] | null): NavGroup[] {
+export type ModulePerm = { key: string; perm: 'view' | 'edit' };
+
+/** Returns 'edit' | 'view' | 'none' for a given module key and user's access list */
+export function resolveModulePerm(
+  role: string,
+  moduleAccess: ModulePerm[] | null | undefined,
+  key: string,
+): 'edit' | 'view' | 'none' {
+  if (role === 'ADMIN') return 'edit';
+  if (!moduleAccess) return 'edit'; // null = full access for the role
+  const m = moduleAccess.find(x => x.key === key);
+  return m ? m.perm : 'none';
+}
+
+function filterNav(role: string, moduleAccess?: ModulePerm[] | null): NavGroup[] {
   const r = role as NavRole;
-  // ADMIN always sees everything — prevents lockout
   const applyModuleFilter = role !== 'ADMIN' && Array.isArray(moduleAccess);
   return ALL_NAV
     .filter(g => !g.roles || g.roles.includes(r))
@@ -79,7 +92,7 @@ function filterNav(role: string, moduleAccess?: string[] | null): NavGroup[] {
         if (item.roles && !item.roles.includes(r)) return false;
         if (applyModuleFilter) {
           const key = item.href.replace('/admin/', '');
-          return (moduleAccess as string[]).includes(key);
+          return (moduleAccess as ModulePerm[]).some(m => m.key === key);
         }
         return true;
       }),
@@ -87,7 +100,7 @@ function filterNav(role: string, moduleAccess?: string[] | null): NavGroup[] {
     .filter(g => g.items.length > 0);
 }
 
-interface AuthUser { name: string; email: string; role: string; module_access?: string[] | null }
+interface AuthUser { name: string; email: string; role: string; module_access?: ModulePerm[] | null }
 
 interface Notification {
   id: string;

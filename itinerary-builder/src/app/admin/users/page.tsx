@@ -14,7 +14,7 @@ interface User {
   status: boolean;
   last_login: string | null;
   created_at: string;
-  module_access: string[] | null;
+  module_access: Array<{ key: string; perm: 'view' | 'edit' }> | null;
 }
 
 // All modules that can be toggled, keyed by the path segment after /admin/
@@ -359,38 +359,41 @@ function ToggleStatusModal({ user, onClose, onSaved }: { user: User; onClose: ()
   );
 }
 
+type PermState = 'none' | 'view' | 'edit';
+
 /* ── Module Access Modal ── */
 function ModuleAccessModal({ user, onClose, onSaved }: { user: User; onClose: () => void; onSaved: () => void }) {
-  const allKeys = MODULE_GROUPS.flatMap(g => g.items.map(i => i.key));
-  // null = full access, array = restricted
   const [fullAccess, setFullAccess] = useState(user.module_access === null);
-  const [selected, setSelected] = useState<Set<string>>(
-    new Set(user.module_access ?? allKeys)
-  );
+  // Map of key → perm state
+  const [perms, setPerms] = useState<Record<string, PermState>>(() => {
+    const map: Record<string, PermState> = {};
+    MODULE_GROUPS.forEach(g => g.items.forEach(({ key }) => { map[key] = 'none'; }));
+    if (user.module_access) {
+      user.module_access.forEach(({ key, perm }) => { map[key] = perm; });
+    } else {
+      // full access → default everything to edit
+      Object.keys(map).forEach(k => { map[k] = 'edit'; });
+    }
+    return map;
+  });
   const [saving, setSaving] = useState(false);
   const [apiError, setApiError] = useState('');
 
-  function toggle(key: string) {
-    setSelected(prev => {
-      const n = new Set(prev);
-      n.has(key) ? n.delete(key) : n.add(key);
-      return n;
-    });
+  function setModulePerm(key: string, perm: PermState) {
+    setPerms(p => ({ ...p, [key]: perm }));
   }
 
-  function toggleGroup(keys: string[]) {
-    const allOn = keys.every(k => selected.has(k));
-    setSelected(prev => {
-      const n = new Set(prev);
-      if (allOn) keys.forEach(k => n.delete(k));
-      else keys.forEach(k => n.add(k));
-      return n;
-    });
+  function setGroupPerm(keys: string[], perm: PermState) {
+    setPerms(p => { const n = { ...p }; keys.forEach(k => { n[k] = perm; }); return n; });
   }
 
   async function handleSave() {
     setSaving(true); setApiError('');
-    const module_access = fullAccess ? null : Array.from(selected);
+    const module_access = fullAccess
+      ? null
+      : Object.entries(perms)
+          .filter(([, p]) => p !== 'none')
+          .map(([key, perm]) => ({ key, perm }));
     const res = await fetch(`/api/v1/users/${user.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -402,69 +405,108 @@ function ModuleAccessModal({ user, onClose, onSaved }: { user: User; onClose: ()
     onSaved(); onClose();
   }
 
+  const enabledCount = Object.values(perms).filter(p => p !== 'none').length;
+
   return (
-    <Modal title={`Module Access — ${user.name}`} onClose={onClose} width="max-w-xl">
+    <Modal title={`Module Access — ${user.name}`} onClose={onClose} width="max-w-2xl">
       <div className="space-y-4">
         {apiError && <div className="px-3 py-2.5 rounded-xl text-sm font-medium" style={{ backgroundColor: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>{apiError}</div>}
 
         {/* Full access toggle */}
-        <div className="flex items-start gap-3 p-4 rounded-xl" style={{ backgroundColor: fullAccess ? '#ECFDF5' : '#F8FAFC', border: `1.5px solid ${fullAccess ? '#6EE7B7' : '#E2E8F0'}` }}>
+        <div className="flex items-center gap-4 p-4 rounded-xl" style={{ backgroundColor: fullAccess ? '#ECFDF5' : '#F8FAFC', border: `1.5px solid ${fullAccess ? '#6EE7B7' : '#E2E8F0'}` }}>
           <div className="flex-1">
             <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>Full Access (no restrictions)</p>
-            <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>
-              User can see all modules allowed by their role. Turn off to restrict to specific modules.
-            </p>
+            <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>All modules allowed by this role, all with edit rights.</p>
           </div>
-          <button
-            type="button"
-            onClick={() => setFullAccess(v => !v)}
-            className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 mt-0.5"
-            style={{ backgroundColor: fullAccess ? '#134956' : '#CBD5E1' }}
-          >
+          <button type="button" onClick={() => setFullAccess(v => !v)}
+            className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0"
+            style={{ backgroundColor: fullAccess ? '#134956' : '#CBD5E1' }}>
             <span className="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
               style={{ transform: fullAccess ? 'translateX(22px)' : 'translateX(2px)' }} />
           </button>
         </div>
 
-        {/* Module checkboxes */}
+        {/* Per-module permission rows */}
         {!fullAccess && (
-          <div className="space-y-4 max-h-[340px] overflow-y-auto pr-1">
-            {MODULE_GROUPS.map(({ group, items }) => {
-              const groupKeys = items.map(i => i.key);
-              const allOn = groupKeys.every(k => selected.has(k));
-              const someOn = groupKeys.some(k => selected.has(k));
-              return (
-                <div key={group}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <button type="button" onClick={() => toggleGroup(groupKeys)}
-                      className="w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors"
-                      style={{ backgroundColor: allOn ? '#134956' : someOn ? '#93C5FD' : '#fff', borderColor: allOn || someOn ? '#134956' : '#CBD5E1' }}>
-                      {(allOn || someOn) && <span className="text-white text-[10px] font-bold leading-none">{allOn ? '✓' : '−'}</span>}
-                    </button>
-                    <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#94A3B8' }}>{group}</p>
-                  </div>
-                  <div className="grid grid-cols-2 gap-1.5 pl-1">
-                    {items.map(({ key, label }) => {
-                      const on = selected.has(key);
-                      return (
-                        <label key={key} className="flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-colors"
-                          style={{ backgroundColor: on ? '#EFF6FF' : '#F8FAFC', border: `1px solid ${on ? '#BFDBFE' : '#E2E8F0'}` }}>
-                          <input type="checkbox" checked={on} onChange={() => toggle(key)} className="w-3.5 h-3.5 rounded accent-[#134956]" />
-                          <span className="text-xs font-medium" style={{ color: on ? '#1D4ED8' : '#475569' }}>{label}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+          <>
+            {/* Legend */}
+            <div className="flex items-center gap-3 text-[11px] font-semibold" style={{ color: '#94A3B8' }}>
+              <span className="flex-1">MODULE</span>
+              <div className="flex items-center gap-1 w-[195px]">
+                <span className="w-[60px] text-center">No Access</span>
+                <span className="w-[60px] text-center">View Only</span>
+                <span className="w-[60px] text-center">Edit</span>
+              </div>
+            </div>
 
-        {!fullAccess && (
-          <p className="text-xs" style={{ color: '#94A3B8' }}>
-            {selected.size} module{selected.size !== 1 ? 's' : ''} selected · Dashboard is always visible
-          </p>
+            <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1 -mr-1">
+              {MODULE_GROUPS.map(({ group, items }) => {
+                const groupKeys = items.map(i => i.key);
+                const groupPerms = groupKeys.map(k => perms[k]);
+                const allEdit = groupPerms.every(p => p === 'edit');
+                const allView = groupPerms.every(p => p === 'view');
+                const allNone = groupPerms.every(p => p === 'none');
+
+                return (
+                  <div key={group}>
+                    {/* Group header row */}
+                    <div className="flex items-center gap-3 px-3 py-2 rounded-lg mb-1"
+                      style={{ backgroundColor: '#F1F5F9' }}>
+                      <span className="flex-1 text-[11px] font-bold uppercase tracking-widest" style={{ color: '#64748B' }}>{group}</span>
+                      <div className="flex items-center gap-1 w-[195px]">
+                        {(['none', 'view', 'edit'] as PermState[]).map(p => (
+                          <button key={p} type="button" onClick={() => setGroupPerm(groupKeys, p)}
+                            className="w-[60px] h-6 rounded text-[11px] font-semibold transition-all"
+                            style={
+                              (p === 'none' && allNone) ? { backgroundColor: '#94A3B8', color: '#fff' } :
+                              (p === 'view' && allView) ? { backgroundColor: '#3B82F6', color: '#fff' } :
+                              (p === 'edit' && allEdit) ? { backgroundColor: '#134956', color: '#fff' } :
+                              { backgroundColor: '#E2E8F0', color: '#94A3B8' }
+                            }>
+                            {p === 'none' ? 'None' : p === 'view' ? 'View' : 'Edit'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Module rows */}
+                    <div className="space-y-1 pl-2">
+                      {items.map(({ key, label }) => {
+                        const cur = perms[key] ?? 'none';
+                        return (
+                          <div key={key} className="flex items-center gap-3 px-3 py-2 rounded-lg"
+                            style={{ backgroundColor: cur === 'none' ? '#fff' : cur === 'view' ? '#EFF6FF' : '#F0FDF4', border: `1px solid ${cur === 'none' ? '#E2E8F0' : cur === 'view' ? '#BFDBFE' : '#BBF7D0'}` }}>
+                            <span className="flex-1 text-sm font-medium" style={{ color: cur === 'none' ? '#94A3B8' : '#0F172A' }}>{label}</span>
+                            <div className="flex items-center gap-1 w-[195px]">
+                              {(['none', 'view', 'edit'] as PermState[]).map(p => (
+                                <button key={p} type="button" onClick={() => setModulePerm(key, p)}
+                                  className="w-[60px] h-7 rounded-lg text-[11px] font-semibold transition-all"
+                                  style={
+                                    cur === p
+                                      ? p === 'none'
+                                        ? { backgroundColor: '#F1F5F9', color: '#64748B', border: '1.5px solid #CBD5E1' }
+                                        : p === 'view'
+                                          ? { backgroundColor: '#DBEAFE', color: '#1D4ED8', border: '1.5px solid #93C5FD' }
+                                          : { backgroundColor: '#DCFCE7', color: '#15803D', border: '1.5px solid #86EFAC' }
+                                      : { backgroundColor: '#F8FAFC', color: '#CBD5E1', border: '1px solid #E2E8F0' }
+                                  }>
+                                  {p === 'none' ? '✕' : p === 'view' ? 'View' : 'Edit'}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <p className="text-xs" style={{ color: '#94A3B8' }}>
+              {enabledCount} module{enabledCount !== 1 ? 's' : ''} with access · Dashboard always visible
+            </p>
+          </>
         )}
 
         <div className="flex gap-3 pt-1">
@@ -599,10 +641,23 @@ export default function UsersPage() {
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold" style={{ backgroundColor: '#DCFCE7', color: '#15803D' }}>
                           Full Access
                         </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold" style={{ backgroundColor: '#FEF3C7', color: '#B45309' }}>
-                          {u.module_access.length} module{u.module_access.length !== 1 ? 's' : ''}
+                      ) : u.module_access.length === 0 ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold" style={{ backgroundColor: '#FEE2E2', color: '#DC2626' }}>
+                          No Access
                         </span>
+                      ) : (
+                        <div className="flex flex-col gap-0.5">
+                          {(() => {
+                            const editCount = u.module_access.filter(m => m.perm === 'edit').length;
+                            const viewCount = u.module_access.filter(m => m.perm === 'view').length;
+                            return (
+                              <>
+                                {editCount > 0 && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold w-fit" style={{ backgroundColor: '#DCFCE7', color: '#15803D' }}>{editCount} edit</span>}
+                                {viewCount > 0 && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold w-fit" style={{ backgroundColor: '#DBEAFE', color: '#1D4ED8' }}>{viewCount} view</span>}
+                              </>
+                            );
+                          })()}
+                        </div>
                       )}
                     </td>
                     {/* Status */}

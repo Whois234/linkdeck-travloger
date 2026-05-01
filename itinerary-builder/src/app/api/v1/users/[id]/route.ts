@@ -14,11 +14,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     where: { id: params.id },
     select: {
       id: true, name: true, email: true, role: true,
-      agent_id: true, status: true, last_login: true, created_at: true,
+      agent_id: true, status: true, last_login: true, created_at: true, module_access: true,
     },
   });
   if (!found) return notFound('User not found');
-  return ok(found);
+  return ok({ ...found, module_access: found.module_access ? JSON.parse(found.module_access) : null });
 }
 
 const UpdateUserSchema = z.object({
@@ -27,7 +27,7 @@ const UpdateUserSchema = z.object({
   role: z.nativeEnum(UserRole).optional(),
   agent_id: z.string().optional().nullable(),
   status: z.boolean().optional(),
-  module_access: z.array(z.string()).nullable().optional(), // null = full access
+  module_access: z.array(z.object({ key: z.string(), perm: z.enum(['view', 'edit']) })).nullable().optional(),
 });
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
