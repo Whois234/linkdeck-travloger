@@ -25,16 +25,23 @@ export default async function QuotesPage({
     ...(statusFilter ? { status: statusFilter as QuoteStatus } : {}),
   };
 
-  const quotes = await prisma.quote.findMany({
+  const raw = await prisma.quote.findMany({
     where,
     orderBy: { created_at: 'desc' },
     include: {
-      customer:      { select: { id: true, name: true, phone: true } },
+      customer:       { select: { id: true, name: true, phone: true } },
       assigned_agent: { select: { name: true } },
-      state:         { select: { name: true, code: true } },
-      quote_options: { select: { final_price: true, is_most_popular: true } },
+      state:          { select: { name: true, code: true } },
+      quote_options:  { select: { final_price: true, is_most_popular: true } },
     },
   });
 
-  return <QuotesTable quotes={quotes as QuoteRow[]} statusFilter={statusFilter} />;
+  // Prisma returns Date objects — serialize to string for the client component
+  const quotes: QuoteRow[] = raw.map((q) => ({
+    ...q,
+    start_date:  q.start_date instanceof Date  ? q.start_date.toISOString()  : String(q.start_date),
+    created_at:  q.created_at instanceof Date  ? q.created_at.toISOString()  : String(q.created_at),
+  }));
+
+  return <QuotesTable quotes={quotes} statusFilter={statusFilter} />;
 }
