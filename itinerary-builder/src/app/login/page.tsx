@@ -33,8 +33,8 @@ function LoginForm() {
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error ?? 'Invalid email or password'); return; }
-      router.push('/admin');
-      router.refresh();
+      // Hard redirect so the browser sends the new cookie on the very first admin request
+      window.location.href = '/admin';
     } catch {
       setError('Network error. Please try again.');
     } finally {

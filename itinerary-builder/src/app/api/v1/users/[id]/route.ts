@@ -27,6 +27,7 @@ const UpdateUserSchema = z.object({
   role: z.nativeEnum(UserRole).optional(),
   agent_id: z.string().optional().nullable(),
   status: z.boolean().optional(),
+  module_access: z.array(z.string()).nullable().optional(), // null = full access
 });
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
@@ -71,6 +72,9 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   if (parsed.data.role !== undefined) data.role = parsed.data.role;
   if (parsed.data.agent_id !== undefined) data.agent_id = parsed.data.agent_id;
   if (parsed.data.status !== undefined) data.status = parsed.data.status;
+  if (parsed.data.module_access !== undefined) {
+    data.module_access = parsed.data.module_access === null ? null : JSON.stringify(parsed.data.module_access);
+  }
 
   if (Object.keys(data).length === 0) return err('No valid fields to update', 400);
 

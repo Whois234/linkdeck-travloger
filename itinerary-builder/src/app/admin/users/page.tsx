@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from '@/components/admin/PageHeader';
-import { Plus, Search, Pencil, KeyRound, UserX, UserCheck, X, Eye, EyeOff, RefreshCw } from 'lucide-react';
+import { Plus, Search, Pencil, KeyRound, UserX, UserCheck, X, Eye, EyeOff, RefreshCw, ShieldCheck } from 'lucide-react';
 
 type UserRole = 'ADMIN' | 'MANAGER' | 'OPS' | 'SALES' | 'FINANCE';
 
@@ -14,7 +14,46 @@ interface User {
   status: boolean;
   last_login: string | null;
   created_at: string;
+  module_access: string[] | null;
 }
+
+// All modules that can be toggled, keyed by the path segment after /admin/
+const MODULE_GROUPS: { group: string; items: { key: string; label: string }[] }[] = [
+  {
+    group: 'QUOTES & CRM',
+    items: [
+      { key: 'quotes',     label: 'Quotes' },
+      { key: 'customers',  label: 'Customers' },
+      { key: 'leads',      label: 'Leads' },
+    ],
+  },
+  {
+    group: 'ITINERARY',
+    items: [
+      { key: 'private-templates', label: 'Private Templates' },
+      { key: 'group-templates',   label: 'Group Templates' },
+      { key: 'group-batches',     label: 'Group Batches' },
+    ],
+  },
+  {
+    group: 'MASTERS',
+    items: [
+      { key: 'hotels',                 label: 'Hotels' },
+      { key: 'destinations',           label: 'Destinations' },
+      { key: 'states',                 label: 'States' },
+      { key: 'suppliers',              label: 'Suppliers' },
+      { key: 'activities',             label: 'Activities' },
+      { key: 'day-plans',              label: 'Day Plans' },
+      { key: 'inclusions-exclusions',  label: 'Inclusions / Excl.' },
+      { key: 'policies',               label: 'Policies' },
+      { key: 'vehicle-types',          label: 'Vehicle Types' },
+      { key: 'vehicle-package-rates',  label: 'Vehicle Rates' },
+      { key: 'media-library',          label: 'Media Library' },
+      { key: 'agents',                 label: 'Agents' },
+      { key: 'pricing-rules',          label: 'Pricing Rules' },
+    ],
+  },
+];
 
 const ROLES: UserRole[] = ['ADMIN', 'MANAGER', 'OPS', 'SALES', 'FINANCE'];
 
@@ -320,6 +359,125 @@ function ToggleStatusModal({ user, onClose, onSaved }: { user: User; onClose: ()
   );
 }
 
+/* ── Module Access Modal ── */
+function ModuleAccessModal({ user, onClose, onSaved }: { user: User; onClose: () => void; onSaved: () => void }) {
+  const allKeys = MODULE_GROUPS.flatMap(g => g.items.map(i => i.key));
+  // null = full access, array = restricted
+  const [fullAccess, setFullAccess] = useState(user.module_access === null);
+  const [selected, setSelected] = useState<Set<string>>(
+    new Set(user.module_access ?? allKeys)
+  );
+  const [saving, setSaving] = useState(false);
+  const [apiError, setApiError] = useState('');
+
+  function toggle(key: string) {
+    setSelected(prev => {
+      const n = new Set(prev);
+      n.has(key) ? n.delete(key) : n.add(key);
+      return n;
+    });
+  }
+
+  function toggleGroup(keys: string[]) {
+    const allOn = keys.every(k => selected.has(k));
+    setSelected(prev => {
+      const n = new Set(prev);
+      if (allOn) keys.forEach(k => n.delete(k));
+      else keys.forEach(k => n.add(k));
+      return n;
+    });
+  }
+
+  async function handleSave() {
+    setSaving(true); setApiError('');
+    const module_access = fullAccess ? null : Array.from(selected);
+    const res = await fetch(`/api/v1/users/${user.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ module_access }),
+    });
+    const data = await res.json();
+    setSaving(false);
+    if (!res.ok) { setApiError(data.error ?? 'Failed to save permissions'); return; }
+    onSaved(); onClose();
+  }
+
+  return (
+    <Modal title={`Module Access — ${user.name}`} onClose={onClose} width="max-w-xl">
+      <div className="space-y-4">
+        {apiError && <div className="px-3 py-2.5 rounded-xl text-sm font-medium" style={{ backgroundColor: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>{apiError}</div>}
+
+        {/* Full access toggle */}
+        <div className="flex items-start gap-3 p-4 rounded-xl" style={{ backgroundColor: fullAccess ? '#ECFDF5' : '#F8FAFC', border: `1.5px solid ${fullAccess ? '#6EE7B7' : '#E2E8F0'}` }}>
+          <div className="flex-1">
+            <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>Full Access (no restrictions)</p>
+            <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>
+              User can see all modules allowed by their role. Turn off to restrict to specific modules.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFullAccess(v => !v)}
+            className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 mt-0.5"
+            style={{ backgroundColor: fullAccess ? '#134956' : '#CBD5E1' }}
+          >
+            <span className="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform"
+              style={{ transform: fullAccess ? 'translateX(22px)' : 'translateX(2px)' }} />
+          </button>
+        </div>
+
+        {/* Module checkboxes */}
+        {!fullAccess && (
+          <div className="space-y-4 max-h-[340px] overflow-y-auto pr-1">
+            {MODULE_GROUPS.map(({ group, items }) => {
+              const groupKeys = items.map(i => i.key);
+              const allOn = groupKeys.every(k => selected.has(k));
+              const someOn = groupKeys.some(k => selected.has(k));
+              return (
+                <div key={group}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <button type="button" onClick={() => toggleGroup(groupKeys)}
+                      className="w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors"
+                      style={{ backgroundColor: allOn ? '#134956' : someOn ? '#93C5FD' : '#fff', borderColor: allOn || someOn ? '#134956' : '#CBD5E1' }}>
+                      {(allOn || someOn) && <span className="text-white text-[10px] font-bold leading-none">{allOn ? '✓' : '−'}</span>}
+                    </button>
+                    <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#94A3B8' }}>{group}</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5 pl-1">
+                    {items.map(({ key, label }) => {
+                      const on = selected.has(key);
+                      return (
+                        <label key={key} className="flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-colors"
+                          style={{ backgroundColor: on ? '#EFF6FF' : '#F8FAFC', border: `1px solid ${on ? '#BFDBFE' : '#E2E8F0'}` }}>
+                          <input type="checkbox" checked={on} onChange={() => toggle(key)} className="w-3.5 h-3.5 rounded accent-[#134956]" />
+                          <span className="text-xs font-medium" style={{ color: on ? '#1D4ED8' : '#475569' }}>{label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {!fullAccess && (
+          <p className="text-xs" style={{ color: '#94A3B8' }}>
+            {selected.size} module{selected.size !== 1 ? 's' : ''} selected · Dashboard is always visible
+          </p>
+        )}
+
+        <div className="flex gap-3 pt-1">
+          <button onClick={onClose} className="flex-1 h-10 rounded-xl border text-sm font-semibold transition-colors hover:bg-[#F8FAFC]" style={{ borderColor: '#E2E8F0', color: '#64748B' }}>Cancel</button>
+          <button onClick={handleSave} disabled={saving} className="flex-1 h-10 rounded-xl text-white text-sm font-semibold transition-all disabled:opacity-60 flex items-center justify-center gap-2" style={{ backgroundColor: '#134956' }}>
+            {saving ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Saving…</> : 'Save Permissions'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 /* ── Main Page ── */
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
@@ -333,6 +491,7 @@ export default function UsersPage() {
   const [editUser, setEditUser] = useState<User | null>(null);
   const [resetUser, setResetUser] = useState<User | null>(null);
   const [toggleUser, setToggleUser] = useState<User | null>(null);
+  const [moduleUser, setModuleUser] = useState<User | null>(null);
 
   const LIMIT = 20;
 
@@ -397,16 +556,16 @@ export default function UsersPage() {
           <table className="w-full text-sm">
             <thead>
               <tr style={{ backgroundColor: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
-                {['User', 'Role', 'Agent ID', 'Status', 'Last Login', 'Actions'].map(h => (
+                {['User', 'Role', 'Agent ID', 'Access', 'Status', 'Last Login', 'Actions'].map(h => (
                   <th key={h} className="px-5 py-3 text-left text-[11px] font-bold uppercase tracking-wider" style={{ color: '#64748B' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={6} className="py-16 text-center text-sm" style={{ color: '#94A3B8' }}>Loading users…</td></tr>
+                <tr><td colSpan={7} className="py-16 text-center text-sm" style={{ color: '#94A3B8' }}>Loading users…</td></tr>
               ) : users.length === 0 ? (
-                <tr><td colSpan={6} className="py-16 text-center text-sm" style={{ color: '#94A3B8' }}>No users found</td></tr>
+                <tr><td colSpan={7} className="py-16 text-center text-sm" style={{ color: '#94A3B8' }}>No users found</td></tr>
               ) : users.map((u, i) => {
                 const initials = u.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
                 const rs = ROLE_STYLE[u.role];
@@ -432,6 +591,20 @@ export default function UsersPage() {
                     <td className="px-5 py-3.5">
                       <span className="text-sm font-mono" style={{ color: u.agent_id ? '#0F172A' : '#CBD5E1' }}>{u.agent_id ?? '—'}</span>
                     </td>
+                    {/* Module Access */}
+                    <td className="px-5 py-3.5">
+                      {u.role === 'ADMIN' ? (
+                        <span className="text-xs font-medium" style={{ color: '#94A3B8' }}>Full (Admin)</span>
+                      ) : u.module_access === null ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold" style={{ backgroundColor: '#DCFCE7', color: '#15803D' }}>
+                          Full Access
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold" style={{ backgroundColor: '#FEF3C7', color: '#B45309' }}>
+                          {u.module_access.length} module{u.module_access.length !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </td>
                     {/* Status */}
                     <td className="px-5 py-3.5">
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold"
@@ -450,6 +623,11 @@ export default function UsersPage() {
                         <button onClick={() => setEditUser(u)} title="Edit" className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors hover:bg-[#F1F5F9]" style={{ color: '#64748B' }}>
                           <Pencil className="w-3.5 h-3.5" />
                         </button>
+                        {u.role !== 'ADMIN' && (
+                          <button onClick={() => setModuleUser(u)} title="Manage Module Access" className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors hover:bg-[#EFF6FF]" style={{ color: '#3B82F6' }}>
+                            <ShieldCheck className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         <button onClick={() => setResetUser(u)} title="Reset Password" className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors hover:bg-[#F1F5F9]" style={{ color: '#64748B' }}>
                           <KeyRound className="w-3.5 h-3.5" />
                         </button>
@@ -487,6 +665,7 @@ export default function UsersPage() {
       {/* Modals */}
       {addOpen && <AddUserModal onClose={() => setAddOpen(false)} onSaved={load} />}
       {editUser && <EditUserModal user={editUser} onClose={() => setEditUser(null)} onSaved={load} />}
+      {moduleUser && <ModuleAccessModal user={moduleUser} onClose={() => setModuleUser(null)} onSaved={load} />}
       {resetUser && <ResetPasswordModal user={resetUser} onClose={() => setResetUser(null)} />}
       {toggleUser && <ToggleStatusModal user={toggleUser} onClose={() => setToggleUser(null)} onSaved={load} />}
     </div>

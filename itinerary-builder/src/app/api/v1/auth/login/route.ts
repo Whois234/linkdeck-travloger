@@ -33,6 +33,7 @@ export async function POST(req: NextRequest) {
     name: user.name,
     role: user.role,
     agent_id: user.agent_id ?? undefined,
+    module_access: user.module_access ? (JSON.parse(user.module_access) as string[]) : null,
   });
 
   const maxAge = remember ? 60 * 60 * 24 * 30 : 60 * 60 * 8; // 30 days or 8 hours

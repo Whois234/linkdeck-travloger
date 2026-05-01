@@ -12,6 +12,7 @@ export interface JWTPayload {
   name: string;
   role: UserRole;
   agent_id?: string;
+  module_access?: string[] | null;  // null = full role-based access; array = restricted to those modules
   iat?: number;
   exp?: number;
 }

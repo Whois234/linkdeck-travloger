@@ -26,16 +26,18 @@ export async function middleware(req: NextRequest) {
       req.headers.get('authorization')?.replace('Bearer ', '');
 
     if (!token) {
+      // No token at all — first visit or logged out normally, no "expired" message
       if (pathname.startsWith('/api')) {
         return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
       }
-      return NextResponse.redirect(new URL('/login?reason=session_expired', req.url));
+      return NextResponse.redirect(new URL('/login', req.url));
     }
 
     try {
       await verifyToken(token);
       return NextResponse.next();
     } catch {
+      // Token exists but is invalid or expired — show the session expired banner
       if (pathname.startsWith('/api')) {
         return NextResponse.json({ success: false, error: 'Invalid token' }, { status: 401 });
       }

@@ -10,11 +10,14 @@ export async function GET(req: NextRequest) {
 
   const dbUser = await prisma.user.findUnique({
     where: { id: user.sub },
-    select: { id: true, name: true, email: true, role: true, agent_id: true },
+    select: { id: true, name: true, email: true, role: true, agent_id: true, module_access: true },
   });
   if (!dbUser) return unauthorized();
 
-  return ok(dbUser);
+  return ok({
+    ...dbUser,
+    module_access: dbUser.module_access ? (JSON.parse(dbUser.module_access) as string[]) : null,
+  });
 }
 
 const UpdateProfileSchema = z.object({

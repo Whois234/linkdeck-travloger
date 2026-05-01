@@ -945,16 +945,17 @@ model QuoteSequence {
 }
 
 model User {
-  id           String    @id @default(cuid())
-  name         String
-  email        String    @unique
-  password     String
-  role         UserRole
-  agent_id     String?   @unique
-  status       Boolean   @default(true)
-  last_login   DateTime?
-  created_at   DateTime  @default(now())
-  updated_at   DateTime  @updatedAt
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  password      String
+  role          UserRole
+  agent_id      String?   @unique
+  status        Boolean   @default(true)
+  last_login    DateTime?
+  module_access String?   // JSON array of module keys; null = full access for the role
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
 
   notifications Notification[]
 

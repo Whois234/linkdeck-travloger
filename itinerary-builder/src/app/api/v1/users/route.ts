@@ -41,6 +41,7 @@ export async function GET(req: NextRequest) {
         status: true,
         last_login: true,
         created_at: true,
+        module_access: true,
       },
       orderBy: { created_at: 'desc' },
       skip: (page - 1) * limit,
@@ -49,7 +50,12 @@ export async function GET(req: NextRequest) {
     prisma.user.count({ where }),
   ]);
 
-  return ok({ items, total, page, limit, pages: Math.ceil(total / limit) });
+  const parsed_items = items.map(u => ({
+    ...u,
+    module_access: u.module_access ? (JSON.parse(u.module_access) as string[]) : null,
+  }));
+
+  return ok({ items: parsed_items, total, page, limit, pages: Math.ceil(total / limit) });
 }
 
 const CreateUserSchema = z.object({

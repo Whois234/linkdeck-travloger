@@ -67,18 +67,27 @@ const ALL_NAV: NavGroup[] = [
   },
 ];
 
-function filterNav(role: string): NavGroup[] {
+function filterNav(role: string, moduleAccess?: string[] | null): NavGroup[] {
   const r = role as NavRole;
+  // ADMIN always sees everything — prevents lockout
+  const applyModuleFilter = role !== 'ADMIN' && Array.isArray(moduleAccess);
   return ALL_NAV
     .filter(g => !g.roles || g.roles.includes(r))
     .map(g => ({
       ...g,
-      items: g.items.filter(item => !item.roles || item.roles.includes(r)),
+      items: g.items.filter(item => {
+        if (item.roles && !item.roles.includes(r)) return false;
+        if (applyModuleFilter) {
+          const key = item.href.replace('/admin/', '');
+          return (moduleAccess as string[]).includes(key);
+        }
+        return true;
+      }),
     }))
     .filter(g => g.items.length > 0);
 }
 
-interface AuthUser { name: string; email: string; role: string }
+interface AuthUser { name: string; email: string; role: string; module_access?: string[] | null }
 
 interface Notification {
   id: string;
@@ -122,7 +131,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     fetch('/api/v1/auth/me').then(r => r.json()).then(d => {
-      if (d.success) setUser(d.data);
+      if (d.success) setUser({ ...d.data, module_access: d.data.module_access ?? null });
     }).catch(() => {});
   }, []);
 
@@ -202,7 +211,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }
 
   const initials = user?.name?.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2) ?? 'AU';
-  const visibleNav = filterNav(user?.role ?? 'SALES');
+  const visibleNav = filterNav(user?.role ?? 'SALES', user?.module_access);
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full" style={{ backgroundColor: '#0D3340' }}>
