@@ -1,58 +1,44 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Gzip/Brotli compression for all responses
   compress: true,
 
-  images: {
-    remotePatterns: [
-      { protocol: 'https', hostname: '**' },
-    ],
-    // Cache remote images for 7 days on Vercel
-    minimumCacheTTL: 604800,
+  // Prevent Prisma from being bundled — it must run as a native Node module
+  serverExternalPackages: ['@prisma/client', 'prisma'],
+
+  // Tree-shake large icon/component libraries at build time
+  experimental: {
+    optimizePackageImports: ['lucide-react', '@radix-ui/react-accordion', '@radix-ui/react-dialog'],
   },
 
-  // Cache-control headers for static assets and API routes
+  images: {
+    remotePatterns: [{ protocol: 'https', hostname: '**' }],
+    // Serve modern formats (WebP/AVIF) automatically — cuts image size 30-60%
+    formats: ['image/avif', 'image/webp'],
+    minimumCacheTTL: 604800, // 7 days
+  },
+
   async headers() {
     return [
-      // Immutable cache for hashed Next.js static chunks (_next/static)
       {
         source: '/_next/static/:path*',
-        headers: [
-          {
-            key: 'Cache-Control',
-            value: 'public, max-age=31536000, immutable',
-          },
-        ],
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
       },
-      // Public assets (images, fonts, icons in /public)
       {
-        source: '/:path(.*\\.(?:ico|png|jpg|jpeg|svg|webp|woff|woff2|ttf|otf))',
-        headers: [
-          {
-            key: 'Cache-Control',
-            value: 'public, max-age=86400, stale-while-revalidate=604800',
-          },
-        ],
+        source: '/:path(.*\\.(?:ico|png|jpg|jpeg|svg|webp|avif|woff|woff2|ttf|otf))',
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=86400, stale-while-revalidate=604800' }],
       },
-      // Public itinerary pages — short SWR so updates are visible quickly
+      // Customer itinerary pages — short SWR so republished quotes show quickly
       {
         source: '/itinerary/:token*',
-        headers: [
-          {
-            key: 'Cache-Control',
-            value: 'public, max-age=60, stale-while-revalidate=300',
-          },
-        ],
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=60, stale-while-revalidate=300' }],
       },
-      // API routes — no caching by default
+      {
+        source: '/quotations/:token*',
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=60, stale-while-revalidate=300' }],
+      },
       {
         source: '/api/:path*',
-        headers: [
-          {
-            key: 'Cache-Control',
-            value: 'no-store',
-          },
-        ],
+        headers: [{ key: 'Cache-Control', value: 'no-store' }],
       },
     ];
   },

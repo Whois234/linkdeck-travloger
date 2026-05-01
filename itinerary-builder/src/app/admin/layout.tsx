@@ -140,8 +140,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     fetchNotifications();
-    pollRef.current = setInterval(fetchNotifications, 30_000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+    pollRef.current = setInterval(() => {
+      // Skip poll when the tab is in the background — saves unnecessary requests
+      if (document.visibilityState === 'visible') fetchNotifications();
+    }, 30_000);
+
+    // Resume immediately when user returns to the tab
+    function onVisible() {
+      if (document.visibilityState === 'visible') fetchNotifications();
+    }
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, []);
 
   async function markOneRead(id: string) {

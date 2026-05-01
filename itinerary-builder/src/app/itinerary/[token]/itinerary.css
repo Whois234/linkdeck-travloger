@@ -11,11 +11,11 @@
   --tl-warm: #c9a97a;
   --tl-green: #25D366;
   --tl-r: 16px;
-  --f-serif: 'Cormorant Garamond', Georgia, serif;
-  --f-display: 'Playfair Display', Georgia, serif;
-  --f-body: 'DM Sans', sans-serif;
-  --f-num: 'Inter', sans-serif;
-  --f-brand: 'Comfortaa', 'DM Sans', sans-serif;
+  --f-serif: var(--font-cormorant), 'Cormorant Garamond', Georgia, serif;
+  --f-display: var(--font-playfair), 'Playfair Display', Georgia, serif;
+  --f-body: var(--font-dm-sans), 'DM Sans', sans-serif;
+  --f-num: var(--font-inter), 'Inter', sans-serif;
+  --f-brand: var(--font-comfortaa), 'Comfortaa', 'DM Sans', sans-serif;
 }
 
 .tl-page *, .tl-page *::before, .tl-page *::after {
