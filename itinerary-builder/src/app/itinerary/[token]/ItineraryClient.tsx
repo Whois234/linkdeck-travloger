@@ -527,7 +527,7 @@ function ItinerarySection({ days }: { days: DaySnapshot[] }) {
   );
 }
 
-/* ─────────────────────────── Inclusions / Exclusions ─────────────────────────── */
+/* ─────────────────────────── Inclusions / Exclusions (Private) ─────────────────────────── */
 function IncExc({ inclusions, exclusions }: { inclusions: ItineraryData['inclusions']; exclusions: ItineraryData['exclusions'] }) {
   if (inclusions.length === 0 && exclusions.length === 0) return null;
   return (
@@ -535,52 +535,32 @@ function IncExc({ inclusions, exclusions }: { inclusions: ItineraryData['inclusi
       <div className="tl-sec">
         <div className="tl-sec-eyebrow">Know Before You Go</div>
         <div className="tl-sec-h">What&apos;s Covered</div>
-        <div style={{ marginTop: 24 }}>
-          {inclusions.length > 0 && (
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                <div style={{ width: 10, height: 10, borderRadius: 3, background: '#16A34A', flexShrink: 0 }} />
-                <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, fontWeight: 800, color: '#15803D' }}>
-                  Included in Your Package
-                </span>
+        {inclusions.length > 0 && (
+          <div style={{ marginTop: 24, marginBottom: exclusions.length > 0 ? 20 : 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <div style={{ width: 28, height: 28, borderRadius: 8, background: '#D1FAE5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16A34A" strokeWidth="3" strokeLinecap="round"><path d="M20 6L9 17l-5-5"/></svg>
               </div>
-              <div style={{ border: '1px solid #D1FAE5', borderRadius: 14, overflow: 'hidden' }}>
-                {inclusions.map((item, idx) => (
-                  <div key={item.id} style={{
-                    padding: '12px 16px',
-                    background: idx % 2 === 0 ? '#F0FDF4' : 'white',
-                    borderTop: idx > 0 ? '1px solid #D1FAE5' : 'none',
-                    fontFamily: 'var(--f-body)', fontSize: 13, color: '#1A3A2A', lineHeight: 1.5,
-                  }}>
-                    {item.text}
-                  </div>
-                ))}
-              </div>
+              <span style={{ fontFamily: 'var(--f-body)', fontSize: 14, fontWeight: 800, color: '#15803D' }}>
+                Included in Your Package
+              </span>
             </div>
-          )}
-          {exclusions.length > 0 && (
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                <div style={{ width: 10, height: 10, borderRadius: 3, background: '#DC2626', flexShrink: 0 }} />
-                <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, fontWeight: 800, color: '#B91C1C' }}>
-                  Not Included
-                </span>
+            <IncExcList items={inclusions} isInclusion={true} />
+          </div>
+        )}
+        {exclusions.length > 0 && (
+          <div style={{ marginTop: inclusions.length > 0 ? 0 : 24 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <div style={{ width: 28, height: 28, borderRadius: 8, background: '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="3" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
               </div>
-              <div style={{ border: '1px solid #FECACA', borderRadius: 14, overflow: 'hidden' }}>
-                {exclusions.map((item, idx) => (
-                  <div key={item.id} style={{
-                    padding: '12px 16px',
-                    background: idx % 2 === 0 ? '#FFF8F8' : 'white',
-                    borderTop: idx > 0 ? '1px solid #FECACA' : 'none',
-                    fontFamily: 'var(--f-body)', fontSize: 13, color: '#7F1D1D', lineHeight: 1.5,
-                  }}>
-                    {item.text}
-                  </div>
-                ))}
-              </div>
+              <span style={{ fontFamily: 'var(--f-body)', fontSize: 14, fontWeight: 800, color: '#B91C1C' }}>
+                Not Included
+              </span>
             </div>
-          )}
-        </div>
+            <IncExcList items={exclusions} isInclusion={false} />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1221,7 +1201,7 @@ function BatchDatePicker({
   const months = groupBatchesByMonth(batches);
 
   return (
-    <div style={{ background: 'white', borderTop: '1px solid var(--tl-border)' }} data-section="dates">
+    <div style={{ background: '#F8FAFC', borderTop: '1px solid var(--tl-border)' }} data-section="dates">
       <div className="tl-sec" style={{ paddingBottom: 32 }}>
         <div className="tl-sec-eyebrow">Book Your Spot</div>
         <div className="tl-sec-h">Choose Your Travel Dates</div>
@@ -1233,14 +1213,23 @@ function BatchDatePicker({
           <div key={monthKey} style={{ marginBottom: 32 }}>
             {/* Month header */}
             <div style={{
-              fontFamily: 'var(--f-body)', fontSize: 13, fontWeight: 800,
-              color: '#0F172A', letterSpacing: '1.5px', textTransform: 'uppercase',
-              marginBottom: 14, paddingBottom: 10,
-              borderBottom: '2px solid #E2E8F0',
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              marginBottom: 14,
             }}>
-              <span>{monthLabel} {year}</span>
-              <span style={{ fontSize: 11, fontWeight: 500, letterSpacing: 0, textTransform: 'none', color: '#94A3B8' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 3, height: 20, borderRadius: 2, background: T }} />
+                <span style={{
+                  fontFamily: 'var(--f-display)', fontSize: 16, fontWeight: 800,
+                  color: '#0F172A', letterSpacing: '-0.2px',
+                }}>
+                  {monthLabel} <span style={{ color: '#94A3B8', fontWeight: 500, fontSize: 14 }}>{year}</span>
+                </span>
+              </div>
+              <span style={{
+                fontFamily: 'var(--f-body)', fontSize: 11, fontWeight: 600,
+                color: '#94A3B8', background: 'white', border: '1px solid #E2E8F0',
+                borderRadius: 20, padding: '3px 10px',
+              }}>
                 {mBatches.length} departure{mBatches.length !== 1 ? 's' : ''}
               </span>
             </div>
@@ -1256,7 +1245,7 @@ function BatchDatePicker({
                 const seatsLeft  = batch.available_seats;
                 const showBadge  = batch.booking_status !== 'OPEN' || !!batch.badge_text;
                 const showSeats  = !isSoldOut && seatsLeft > 0 && seatsLeft <= 10;
-                const badgeLabel = showSeats ? `${seatsLeft} Spots Left` : sLabel;
+                const badgeLabel = showSeats ? `${seatsLeft} left` : sLabel;
                 const badgeBg    = showSeats ? '#B45309' : sColor;
 
                 return (
@@ -1265,17 +1254,21 @@ function BatchDatePicker({
                     onClick={() => !isSoldOut && onSelect(batch)}
                     style={{
                       position: 'relative',
-                      borderRadius: 16,
-                      paddingTop: (showBadge || showSeats) ? 22 : 14,
+                      borderRadius: 18,
+                      paddingTop: (showBadge || showSeats) ? 24 : 16,
                       paddingBottom: 14,
                       paddingLeft: 6, paddingRight: 6,
-                      background: isSelected ? T : isSoldOut ? '#F8FAFC' : 'white',
+                      background: isSelected
+                        ? `linear-gradient(145deg, ${T} 0%, #1a6070 100%)`
+                        : isSoldOut ? '#F8FAFC' : 'white',
                       border: isSelected ? `2px solid ${T}` : '1.5px solid #E2E8F0',
                       cursor: isSoldOut ? 'not-allowed' : 'pointer',
-                      opacity: isSoldOut ? 0.45 : 1,
+                      opacity: isSoldOut ? 0.4 : 1,
                       textAlign: 'center',
-                      transition: 'all 0.15s ease',
-                      boxShadow: isSelected ? `0 6px 20px ${T}35` : '0 1px 4px rgba(0,0,0,0.04)',
+                      transition: 'all 0.18s ease',
+                      boxShadow: isSelected
+                        ? `0 8px 24px rgba(19,73,86,0.32)`
+                        : '0 2px 8px rgba(0,0,0,0.05)',
                     }}
                   >
                     {/* Badge chip */}
@@ -1286,11 +1279,12 @@ function BatchDatePicker({
                       }}>
                         <span style={{
                           display: 'inline-block',
-                          background: badgeBg,
+                          background: isSelected ? 'rgba(255,255,255,0.25)' : badgeBg,
                           color: 'white',
                           borderRadius: 20, padding: '2px 8px',
                           fontSize: 9, fontWeight: 700, fontFamily: 'var(--f-body)',
-                          boxShadow: `0 2px 6px ${badgeBg}60`,
+                          boxShadow: `0 2px 6px ${badgeBg}55`,
+                          backdropFilter: isSelected ? 'blur(4px)' : 'none',
                         }}>
                           {badgeLabel}
                         </span>
@@ -1299,27 +1293,34 @@ function BatchDatePicker({
 
                     {/* Day number */}
                     <div style={{
-                      fontFamily: 'var(--f-num)', fontSize: 30, fontWeight: 900, lineHeight: 1,
+                      fontFamily: 'var(--f-num)', fontSize: 32, fontWeight: 900, lineHeight: 1,
                       color: isSelected ? 'white' : isSoldOut ? '#CBD5E1' : '#0F172A',
-                      marginBottom: 3,
+                      marginBottom: 2,
                     }}>
                       {startD.getDate()}
                     </div>
 
                     {/* Month abbreviation */}
                     <div style={{
-                      fontFamily: 'var(--f-body)', fontSize: 11, fontWeight: 600,
-                      color: isSelected ? 'rgba(255,255,255,0.75)' : '#64748B',
-                      textTransform: 'uppercase', letterSpacing: '0.5px',
-                      marginBottom: 6,
+                      fontFamily: 'var(--f-body)', fontSize: 10.5, fontWeight: 700,
+                      color: isSelected ? 'rgba(255,255,255,0.65)' : '#64748B',
+                      textTransform: 'uppercase', letterSpacing: '0.8px',
+                      marginBottom: 8,
                     }}>
                       {startD.toLocaleDateString('en-IN', { month: 'short' })}
                     </div>
 
+                    {/* Divider */}
+                    <div style={{
+                      height: 1,
+                      background: isSelected ? 'rgba(255,255,255,0.18)' : '#F1F5F9',
+                      marginBottom: 8, marginLeft: 4, marginRight: 4,
+                    }} />
+
                     {/* Price */}
                     <div style={{
-                      fontFamily: 'var(--f-num)', fontSize: 11, fontWeight: 700,
-                      color: isSelected ? 'rgba(255,255,255,0.9)' : isSoldOut ? '#CBD5E1' : T,
+                      fontFamily: 'var(--f-num)', fontSize: 11, fontWeight: 800,
+                      color: isSelected ? 'rgba(255,255,255,0.95)' : isSoldOut ? '#CBD5E1' : T,
                       textDecoration: isSoldOut ? 'line-through' : 'none',
                     }}>
                       {fmtCurrency(batch.adult_price)}
@@ -1332,11 +1333,16 @@ function BatchDatePicker({
         ))}
 
         {/* Legend */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 4, flexWrap: 'wrap' }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 14, marginTop: 4, flexWrap: 'wrap',
+          background: 'white', borderRadius: 12, padding: '10px 14px',
+          border: '1px solid #E2E8F0',
+        }}>
           {[
             { dot: T, label: 'Selected' },
             { dot: '#EA580C', label: 'Filling Fast' },
             { dot: '#B45309', label: 'Few Spots Left' },
+            { dot: '#CBD5E1', label: 'Sold Out' },
           ].map((l, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 5, fontFamily: 'var(--f-body)', fontSize: 11, color: '#64748B' }}>
               <div style={{ width: 8, height: 8, borderRadius: '50%', background: l.dot }} />
@@ -1345,6 +1351,53 @@ function BatchDatePicker({
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────── Shared: Inc/Exc List ─────────────────────────── */
+function IncExcList({
+  items, isInclusion,
+}: {
+  items: Array<{ id: string; text: string }>;
+  isInclusion: boolean;
+}) {
+  const accentColor = isInclusion ? '#16A34A' : '#DC2626';
+  const bgStripe    = isInclusion ? '#F0FDF4' : '#FFF8F8';
+  const borderColor = isInclusion ? '#D1FAE5' : '#FECACA';
+  const textColor   = isInclusion ? '#15493A' : '#7F1D1D';
+  const iconStroke  = isInclusion ? '#16A34A' : '#DC2626';
+
+  return (
+    <div style={{
+      border: `1px solid ${borderColor}`,
+      borderRadius: 16,
+      overflow: 'hidden',
+      boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
+    }}>
+      {items.map((item, idx) => (
+        <div key={item.id} style={{
+          display: 'flex', alignItems: 'flex-start', gap: 12,
+          padding: '13px 16px',
+          background: idx % 2 === 0 ? bgStripe : 'white',
+          borderTop: idx > 0 ? `1px solid ${borderColor}` : 'none',
+          borderLeft: `3px solid ${accentColor}`,
+        }}>
+          <div style={{ flexShrink: 0, marginTop: 2, width: 16, height: 16,
+            borderRadius: '50%', background: `${accentColor}15`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            {isInclusion ? (
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={iconStroke} strokeWidth="3.5" strokeLinecap="round"><path d="M20 6L9 17l-5-5"/></svg>
+            ) : (
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={iconStroke} strokeWidth="3.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            )}
+          </div>
+          <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: textColor, lineHeight: 1.55, fontWeight: 450 }}>
+            {item.text}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -1365,51 +1418,31 @@ function GroupWhatsCovered({
         <div className="tl-sec-h">What&apos;s Covered</div>
         <div className="tl-sec-sub">Everything included in your group package — and what&apos;s not.</div>
 
-        {/* ── Inclusions ── */}
         {inclusions.length > 0 && (
           <div style={{ marginTop: 24 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-              <div style={{ width: 10, height: 10, borderRadius: 3, background: '#16A34A', flexShrink: 0 }} />
-              <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, fontWeight: 800, color: '#15803D', letterSpacing: '0.2px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <div style={{ width: 28, height: 28, borderRadius: 8, background: '#D1FAE5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16A34A" strokeWidth="3" strokeLinecap="round"><path d="M20 6L9 17l-5-5"/></svg>
+              </div>
+              <span style={{ fontFamily: 'var(--f-body)', fontSize: 14, fontWeight: 800, color: '#15803D' }}>
                 Included in Your Package
               </span>
             </div>
-            <div style={{ border: '1px solid #D1FAE5', borderRadius: 14, overflow: 'hidden' }}>
-              {inclusions.map((item, idx) => (
-                <div key={item.id} style={{
-                  padding: '12px 16px',
-                  background: idx % 2 === 0 ? '#F0FDF4' : 'white',
-                  borderTop: idx > 0 ? '1px solid #D1FAE5' : 'none',
-                  fontFamily: 'var(--f-body)', fontSize: 13, color: '#1A3A2A', lineHeight: 1.5,
-                }}>
-                  {item.text}
-                </div>
-              ))}
-            </div>
+            <IncExcList items={inclusions} isInclusion={true} />
           </div>
         )}
 
-        {/* ── Exclusions ── */}
         {exclusions.length > 0 && (
           <div style={{ marginTop: 20 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-              <div style={{ width: 10, height: 10, borderRadius: 3, background: '#DC2626', flexShrink: 0 }} />
-              <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, fontWeight: 800, color: '#B91C1C', letterSpacing: '0.2px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <div style={{ width: 28, height: 28, borderRadius: 8, background: '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="3" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+              </div>
+              <span style={{ fontFamily: 'var(--f-body)', fontSize: 14, fontWeight: 800, color: '#B91C1C' }}>
                 Not Included
               </span>
             </div>
-            <div style={{ border: '1px solid #FECACA', borderRadius: 14, overflow: 'hidden' }}>
-              {exclusions.map((item, idx) => (
-                <div key={item.id} style={{
-                  padding: '12px 16px',
-                  background: idx % 2 === 0 ? '#FFF8F8' : 'white',
-                  borderTop: idx > 0 ? '1px solid #FECACA' : 'none',
-                  fontFamily: 'var(--f-body)', fontSize: 13, color: '#7F1D1D', lineHeight: 1.5,
-                }}>
-                  {item.text}
-                </div>
-              ))}
-            </div>
+            <IncExcList items={exclusions} isInclusion={false} />
           </div>
         )}
       </div>
@@ -1426,15 +1459,15 @@ function GroupPackageOptions({
   if (!options || options.length === 0) return null;
 
   return (
-    <div style={{ background: '#F8FAFC', borderTop: '1px solid var(--tl-border)' }} data-section="packages">
+    <div style={{ background: 'white', borderTop: '1px solid var(--tl-border)' }} data-section="packages">
       <div className="tl-sec">
         <div className="tl-sec-eyebrow">Pick Your Experience</div>
         <div className="tl-sec-h">Package Options</div>
-        <div className="tl-sec-sub" style={{ marginBottom: 24 }}>
-          Same departure, different comfort levels. Choose what suits you best.
+        <div className="tl-sec-sub" style={{ marginBottom: 28 }}>
+          Same departure, different comfort levels — choose what suits you best.
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {options.map((opt) => {
             const isSel = selectedTier === opt.tier_name;
             return (
@@ -1442,57 +1475,83 @@ function GroupPackageOptions({
                 key={opt.tier_name}
                 onClick={() => onSelect(opt.tier_name)}
                 style={{
-                  borderRadius: 18,
+                  borderRadius: 20,
                   border: isSel ? `2px solid ${T}` : '1.5px solid #E2E8F0',
-                  background: isSel ? `${T}06` : 'white',
-                  padding: '16px 18px',
+                  background: isSel ? '#F0F7F9' : 'white',
+                  overflow: 'hidden',
                   cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                  boxShadow: isSel ? `0 4px 16px ${T}20` : '0 1px 4px rgba(0,0,0,0.04)',
+                  transition: 'all 0.18s ease',
+                  boxShadow: isSel ? `0 6px 24px rgba(19,73,86,0.14)` : '0 1px 6px rgba(0,0,0,0.05)',
                   position: 'relative',
+                  marginTop: opt.is_most_popular ? 12 : 0,
                 }}
               >
+                {/* Most Popular banner */}
                 {opt.is_most_popular && (
                   <div style={{
-                    position: 'absolute', top: -10, left: 18,
-                    background: T, color: 'white', borderRadius: 20,
-                    padding: '2px 12px', fontSize: 10, fontWeight: 700, fontFamily: 'var(--f-body)',
+                    position: 'absolute', top: -1, left: 0, right: 0,
+                    background: 'var(--tl-warm)',
+                    textAlign: 'center',
+                    padding: '5px 0',
+                    fontSize: 10, fontWeight: 800, fontFamily: 'var(--f-body)',
+                    color: 'white', letterSpacing: '1.5px', textTransform: 'uppercase',
                   }}>
-                    Most Popular
+                    ★ Most Popular
                   </div>
                 )}
 
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: opt.inclusions.length > 0 ? 12 : 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    {/* Selection circle */}
+                {/* Top header row */}
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: opt.is_most_popular ? '42px 20px 16px' : '20px 20px 16px',
+                  borderBottom: opt.inclusions.length > 0 ? '1px solid #F1F5F9' : 'none',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    {/* Radio indicator */}
                     <div style={{
-                      width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
-                      border: isSel ? `6px solid ${T}` : '2px solid #CBD5E1',
+                      width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
+                      border: isSel ? `7px solid ${T}` : '2px solid #CBD5E1',
                       background: 'white',
                       transition: 'all 0.15s ease',
+                      boxShadow: isSel ? `0 0 0 3px ${T}18` : 'none',
                     }} />
-                    <div style={{ fontFamily: 'var(--f-display)', fontSize: 17, fontWeight: 800, color: isSel ? T : '#0F172A' }}>
-                      {opt.tier_name}
+                    <div>
+                      <div style={{ fontFamily: 'var(--f-display)', fontSize: 18, fontWeight: 800, color: isSel ? T : '#0F172A', lineHeight: 1.1 }}>
+                        {opt.tier_name}
+                      </div>
+                      {opt.child_price > 0 && (
+                        <div style={{ fontFamily: 'var(--f-body)', fontSize: 10.5, color: '#94A3B8', marginTop: 2 }}>
+                          Child: {fmtCurrency(opt.child_price)}
+                        </div>
+                      )}
                     </div>
                   </div>
                   {opt.adult_price > 0 && (
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontFamily: 'var(--f-num)', fontSize: 18, fontWeight: 900, color: isSel ? T : '#0F172A' }}>
+                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                      <div style={{
+                        fontFamily: 'var(--f-num)', fontSize: 22, fontWeight: 900,
+                        color: isSel ? T : '#0F172A', lineHeight: 1,
+                      }}>
                         {fmtCurrency(opt.adult_price)}
                       </div>
-                      <div style={{ fontFamily: 'var(--f-body)', fontSize: 10, color: '#94A3B8' }}>/ adult</div>
+                      <div style={{ fontFamily: 'var(--f-body)', fontSize: 10.5, color: '#94A3B8', marginTop: 3 }}>per adult</div>
                     </div>
                   )}
                 </div>
 
+                {/* Inclusions chips */}
                 {opt.inclusions.length > 0 && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, paddingLeft: 30 }}>
+                  <div style={{ padding: '12px 20px 16px', display: 'flex', flexWrap: 'wrap', gap: 7 }}>
                     {opt.inclusions.map((inc, i) => (
                       <span key={i} style={{
-                        fontFamily: 'var(--f-body)', fontSize: 11.5, color: isSel ? '#1A3A2A' : '#475569',
-                        background: isSel ? '#D1FAE5' : '#F1F5F9',
-                        borderRadius: 20, padding: '3px 10px', lineHeight: 1.4,
+                        display: 'inline-flex', alignItems: 'center', gap: 5,
+                        fontFamily: 'var(--f-body)', fontSize: 12, color: isSel ? '#134956' : '#475569',
+                        background: isSel ? '#D1FAE5' : '#F8FAFC',
+                        border: isSel ? '1px solid #A7F3D0' : '1px solid #E2E8F0',
+                        borderRadius: 20, padding: '4px 11px', lineHeight: 1.4,
+                        fontWeight: 500,
                       }}>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={isSel ? '#16A34A' : '#94A3B8'} strokeWidth="3" strokeLinecap="round"><path d="M20 6L9 17l-5-5"/></svg>
                         {inc}
                       </span>
                     ))}
