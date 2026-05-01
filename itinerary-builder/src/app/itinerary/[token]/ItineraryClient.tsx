@@ -163,10 +163,10 @@ function Nav({ quoteNum, pkgName }: { quoteNum: string; pkgName?: string }) {
   return (
     <nav className="tl-nav">
       <div className="tl-nav-logo-wrap">
-        <div className="tl-nav-logo-pill">
+        <a href="https://travloger.in/" target="_blank" rel="noopener noreferrer" className="tl-nav-logo-pill" style={{ textDecoration: 'none' }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/travloger-logo-white.png" alt="Travloger" style={{ height: 36, width: 'auto', objectFit: 'contain' }} />
-        </div>
+        </a>
       </div>
       <div className="tl-nav-right">
         <span className="tl-nav-pill">#{quoteNum}</span>
@@ -957,8 +957,10 @@ function Footer({ quoteNum, expiryDate, waUrl }: { quoteNum: string; expiryDate?
     <footer className="tl-footer">
       {/* Logo */}
       <div style={{ marginBottom: 18 }}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/travloger-logo-white.png" alt="Travloger" style={{ height: 40, width: 'auto', objectFit: 'contain', marginBottom: 8 }} />
+        <a href="https://travloger.in/" target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', textDecoration: 'none' }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/travloger-logo-white.png" alt="Travloger" style={{ height: 40, width: 'auto', objectFit: 'contain', marginBottom: 8 }} />
+        </a>
         <div style={{ fontSize: '11.5px', color: 'rgba(255,255,255,0.35)', fontStyle: 'italic', fontFamily: 'var(--f-body)' }}>
           Crafting memories, one trip at a time.
         </div>
