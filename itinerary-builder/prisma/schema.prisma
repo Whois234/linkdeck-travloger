@@ -951,6 +951,8 @@ model User {
   password      String
   role          UserRole
   agent_id      String?   @unique
+  phone         String?
+  gender        String?
   status        Boolean   @default(true)
   last_login    DateTime?
   module_access String?   // JSON array of module keys; null = full access for the role

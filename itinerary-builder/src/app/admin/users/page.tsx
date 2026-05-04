@@ -11,6 +11,8 @@ interface User {
   email: string;
   role: UserRole;
   agent_id: string | null;
+  phone: string | null;
+  gender: string | null;
   status: boolean;
   last_login: string | null;
   created_at: string;
@@ -142,7 +144,7 @@ function PasswordInput({ value, onChange, placeholder }: { value: string; onChan
 
 /* ── Add User Modal ── */
 function AddUserModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '', role: 'OPS' as UserRole, agent_id: '', status: true });
+  const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '', role: 'OPS' as UserRole, agent_id: '', phone: '', gender: '', status: true });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [apiError, setApiError] = useState('');
@@ -163,7 +165,7 @@ function AddUserModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
     const res = await fetch('/api/v1/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: form.name.trim(), email: form.email.trim(), password: form.password, role: form.role, agent_id: form.agent_id || null, status: form.status }),
+      body: JSON.stringify({ name: form.name.trim(), email: form.email.trim(), password: form.password, role: form.role, agent_id: form.agent_id || null, phone: form.phone || null, gender: form.gender || null, status: form.status }),
     });
     const data = await res.json();
     setSaving(false);
@@ -184,6 +186,17 @@ function AddUserModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
               {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
             </Select>
           </Field>
+          <Field label="Gender">
+            <Select value={form.gender} onChange={e => set('gender', e.target.value)}>
+              <option value="">Select gender</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+              <option value="Other">Other</option>
+            </Select>
+          </Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Mobile Number (WhatsApp)"><Input value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="9876543210" /></Field>
           <Field label="Agent ID (optional)"><Input value={form.agent_id} onChange={e => set('agent_id', e.target.value)} placeholder="AGT-001" /></Field>
         </div>
         <Field label="Password" error={errors.password}><PasswordInput value={form.password} onChange={v => set('password', v)} /></Field>
@@ -205,7 +218,7 @@ function AddUserModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
 
 /* ── Edit User Modal ── */
 function EditUserModal({ user, onClose, onSaved }: { user: User; onClose: () => void; onSaved: () => void }) {
-  const [form, setForm] = useState({ name: user.name, email: user.email, role: user.role, agent_id: user.agent_id ?? '', status: user.status });
+  const [form, setForm] = useState({ name: user.name, email: user.email, role: user.role, agent_id: user.agent_id ?? '', phone: user.phone ?? '', gender: user.gender ?? '', status: user.status });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [apiError, setApiError] = useState('');
@@ -223,7 +236,7 @@ function EditUserModal({ user, onClose, onSaved }: { user: User; onClose: () => 
     const res = await fetch(`/api/v1/users/${user.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: form.name.trim(), email: form.email.trim(), role: form.role, agent_id: form.agent_id || null, status: form.status }),
+      body: JSON.stringify({ name: form.name.trim(), email: form.email.trim(), role: form.role, agent_id: form.agent_id || null, phone: form.phone || null, gender: form.gender || null, status: form.status }),
     });
     const data = await res.json();
     setSaving(false);
@@ -244,6 +257,17 @@ function EditUserModal({ user, onClose, onSaved }: { user: User; onClose: () => 
               {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
             </Select>
           </Field>
+          <Field label="Gender">
+            <Select value={form.gender} onChange={e => set('gender', e.target.value)}>
+              <option value="">Select gender</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+              <option value="Other">Other</option>
+            </Select>
+          </Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Mobile Number (WhatsApp)"><Input value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="9876543210" /></Field>
           <Field label="Agent ID (optional)"><Input value={form.agent_id} onChange={e => set('agent_id', e.target.value)} placeholder="AGT-001" /></Field>
         </div>
         <div className="flex items-center gap-2.5">

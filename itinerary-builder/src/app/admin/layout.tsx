@@ -85,15 +85,26 @@ function filterNav(role: string, moduleAccess?: ModulePerm[] | null): NavGroup[]
   const r = role as NavRole;
   const applyModuleFilter = role !== 'ADMIN' && Array.isArray(moduleAccess);
   return ALL_NAV
-    .filter(g => !g.roles || g.roles.includes(r))
+    .filter(g => {
+      if (!g.roles || g.roles.includes(r)) return true;
+      // When explicit module access is configured, allow the group if any item has granted access
+      if (applyModuleFilter) {
+        return g.items.some(item => {
+          const key = item.href.replace('/admin/', '');
+          return (moduleAccess as ModulePerm[]).some(m => m.key === key);
+        });
+      }
+      return false;
+    })
     .map(g => ({
       ...g,
       items: g.items.filter(item => {
-        if (item.roles && !item.roles.includes(r)) return false;
         if (applyModuleFilter) {
+          // Explicit module access takes full precedence — ignore role restrictions
           const key = item.href.replace('/admin/', '');
           return (moduleAccess as ModulePerm[]).some(m => m.key === key);
         }
+        if (item.roles && !item.roles.includes(r)) return false;
         return true;
       }),
     }))

@@ -20,6 +20,44 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
 
   if (!quote) throw new Error(`Quote ${quote_id} not found`);
 
+  // If no agent assigned to the quote, look up the Agent linked to the user who created this quote
+  let resolvedAgent = quote.assigned_agent;
+  if (!resolvedAgent && quote.created_by) {
+    // First try Agent.user_account_id = created_by
+    const linkedAgent = await prisma.agent.findFirst({
+      where: { user_account_id: quote.created_by, status: true },
+    });
+    if (linkedAgent) {
+      resolvedAgent = linkedAgent;
+    } else {
+      // Fall back: find the User's phone and use it to build a minimal agent stub
+      const creatorUser = await prisma.user.findUnique({
+        where: { id: quote.created_by },
+        select: { id: true, name: true, phone: true },
+      });
+      if (creatorUser) {
+        resolvedAgent = {
+          id: creatorUser.id,
+          user_account_id: creatorUser.id,
+          name: creatorUser.name,
+          role: 'Travel Expert',
+          phone: creatorUser.phone ?? null,
+          whatsapp: creatorUser.phone ?? null,
+          email: null,
+          photo: null,
+          designation: 'Travel Consultant',
+          rating: null,
+          years_experience: null,
+          speciality: null,
+          available_hours: null,
+          status: true,
+          created_at: new Date(),
+          updated_at: new Date(),
+        };
+      }
+    }
+  }
+
   // For group quotes: fetch the group template for name + hero image + policy IDs + cms_data inclusions
   let groupTemplate: {
     group_template_name: string;
@@ -292,7 +330,7 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
     quote: {
       id: quote.id,
       quote_number: quote.quote_number,
-      quote_name: quote.quote_name ?? groupTemplate?.group_template_name ?? null,
+      quote_name: quote.quote_name ?? (templateCmsData as Record<string,unknown>)?.tab_title as string | null ?? (groupCms as Record<string,unknown>)?.tab_title as string | null ?? groupTemplate?.group_template_name ?? null,
       quote_type: quote.quote_type,
       group_template_id: quote.group_template_id ?? null,
       status: quote.status,
@@ -309,7 +347,7 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
       expiry_date: quote.expiry_date,
     },
     customer: quote.customer,
-    agent: quote.assigned_agent,
+    agent: resolvedAgent,
     // state hero_image: state > group template > private template hero > first destination hero
     state: {
       ...quote.state,

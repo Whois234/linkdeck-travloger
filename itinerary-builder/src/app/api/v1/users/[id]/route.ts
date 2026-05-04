@@ -14,7 +14,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     where: { id: params.id },
     select: {
       id: true, name: true, email: true, role: true,
-      agent_id: true, status: true, last_login: true, created_at: true, module_access: true,
+      agent_id: true, phone: true, gender: true, status: true, last_login: true, created_at: true, module_access: true,
     },
   });
   if (!found) return notFound('User not found');
@@ -26,6 +26,8 @@ const UpdateUserSchema = z.object({
   email: z.string().email().optional(),
   role: z.nativeEnum(UserRole).optional(),
   agent_id: z.string().optional().nullable(),
+  phone: z.string().optional().nullable(),
+  gender: z.string().optional().nullable(),
   status: z.boolean().optional(),
   module_access: z.array(z.object({ key: z.string(), perm: z.enum(['view', 'edit']) })).nullable().optional(),
 });
@@ -71,6 +73,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   if (parsed.data.email !== undefined) data.email = parsed.data.email;
   if (parsed.data.role !== undefined) data.role = parsed.data.role;
   if (parsed.data.agent_id !== undefined) data.agent_id = parsed.data.agent_id;
+  if (parsed.data.phone !== undefined) data.phone = parsed.data.phone;
+  if (parsed.data.gender !== undefined) data.gender = parsed.data.gender;
   if (parsed.data.status !== undefined) data.status = parsed.data.status;
   if (parsed.data.module_access !== undefined) {
     data.module_access = parsed.data.module_access === null ? null : JSON.stringify(parsed.data.module_access);

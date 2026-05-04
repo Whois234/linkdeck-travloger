@@ -38,6 +38,8 @@ export async function GET(req: NextRequest) {
         email: true,
         role: true,
         agent_id: true,
+        phone: true,
+        gender: true,
         status: true,
         last_login: true,
         created_at: true,
@@ -64,6 +66,8 @@ const CreateUserSchema = z.object({
   password: z.string().min(8, 'Password must be at least 8 characters'),
   role: z.nativeEnum(UserRole),
   agent_id: z.string().optional().nullable(),
+  phone: z.string().optional().nullable(),
+  gender: z.string().optional().nullable(),
   status: z.boolean().optional().default(true),
 });
 
@@ -76,7 +80,7 @@ export async function POST(req: NextRequest) {
   const parsed = CreateUserSchema.safeParse(body);
   if (!parsed.success) return err('Invalid request', 400, parsed.error.flatten());
 
-  const { name, email, password, role, agent_id, status } = parsed.data;
+  const { name, email, password, role, agent_id, phone, gender, status } = parsed.data;
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) return err('A user with this email already exists', 409);
@@ -89,8 +93,8 @@ export async function POST(req: NextRequest) {
   const hashed = await bcrypt.hash(password, 12);
 
   const newUser = await prisma.user.create({
-    data: { name, email, password: hashed, role, agent_id: agent_id ?? null, status },
-    select: { id: true, name: true, email: true, role: true, agent_id: true, status: true, created_at: true },
+    data: { name, email, password: hashed, role, agent_id: agent_id ?? null, phone: phone ?? null, gender: gender ?? null, status },
+    select: { id: true, name: true, email: true, role: true, agent_id: true, phone: true, gender: true, status: true, created_at: true },
   });
 
   return created(newUser);

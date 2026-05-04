@@ -16,7 +16,7 @@ const SORT_OPTIONS: { value: SortKey; label: string }[] = [
 ];
 
 interface State { id: string; name: string }
-interface Dest  { id: string; name: string; state_id: string }
+interface Dest  { id: string; name: string; state_id: string; hero_image?: string | null }
 interface PT {
   id: string; template_name: string; duration_days: number; duration_nights: number;
   theme?: string | null; start_city?: string | null; end_city?: string | null;
@@ -55,7 +55,7 @@ function PrivateTemplatesPageInner() {
 
   const [setup, setSetup] = useState({
     template_name: '', state_id: '', duration_nights: '4', duration_days: '5',
-    pax_count: '2', start_city: '', end_city: '', theme: '',
+    pax_count: '2', start_city: '', end_city: '', theme: '', tab_title: '',
     destination_ids: [] as string[],
   });
 
@@ -93,17 +93,21 @@ function PrivateTemplatesPageInner() {
     // Build initial cms_data
     const cms_data = {
       pax_count: Number(setup.pax_count) || 2,
+      tab_title: setup.tab_title.trim() || null,
       hero_heading: setup.template_name,
       hero_subheading: '',
       hero_tags: setup.destination_ids
         .map(id => dests.find(d => d.id === id)?.name)
         .filter(Boolean),
-      destination_cards: setup.destination_ids.map(id => ({
-        destination_id: id,
-        custom_name: null,
-        description: '',
-        image_url: '',
-      })),
+      destination_cards: setup.destination_ids.map(id => {
+        const dest = dests.find(d => d.id === id);
+        return {
+          destination_id: id,
+          custom_name: null,
+          description: '',
+          image_url: dest?.hero_image ?? '',
+        };
+      }),
       package_options: DEFAULT_OPTIONS,
       why_choose: [
         'Ranked Professionals',
@@ -170,7 +174,7 @@ function PrivateTemplatesPageInner() {
         subtitle="Build and manage itinerary templates for private tours"
         crumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Private Templates' }]}
         action={
-          <button onClick={() => { setSetup({ template_name:'', state_id:'', duration_nights:'4', duration_days:'5', pax_count:'2', start_city:'', end_city:'', theme:'', destination_ids:[] }); setErr(''); setStep(1); setShowSetup(true); }}
+          <button onClick={() => { setSetup({ template_name:'', state_id:'', duration_nights:'4', duration_days:'5', pax_count:'2', start_city:'', end_city:'', theme:'', tab_title:'', destination_ids:[] }); setErr(''); setStep(1); setShowSetup(true); }}
             className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white hover:opacity-90" style={{ backgroundColor: T }}>
             <Plus className="w-4 h-4" /> Create Template
           </button>
@@ -322,6 +326,10 @@ function PrivateTemplatesPageInner() {
           <div>
             <label className={lbl}>Template Name <span className="text-red-500">*</span></label>
             <input className={inp} style={inpSt} value={setup.template_name} onChange={e => setSetup(p => ({ ...p, template_name: e.target.value }))} placeholder="Kerala Backwaters 5D/4N" />
+          </div>
+          <div>
+            <label className={lbl}>Browser Tab Title <span className="text-[#94A3B8] font-normal normal-case text-[10px]">(optional — shows in browser tab when customer opens quote)</span></label>
+            <input className={inp} style={inpSt} value={setup.tab_title} onChange={e => setSetup(p => ({ ...p, tab_title: e.target.value }))} placeholder="e.g. Gokarna & Dandeli Trip" />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>

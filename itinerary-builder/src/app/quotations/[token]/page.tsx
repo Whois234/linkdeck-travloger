@@ -45,10 +45,12 @@ const getItinerary = cache(async (token: string) => {
 export async function generateMetadata({ params }: { params: { token: string } }): Promise<Metadata> {
   const data = await getItinerary(params.token);
   if (!data) return { title: 'Quote Unavailable | travloger.in' };
+  const quote    = (data.quote    as { quote_name?: string | null } | null);
   const state    = (data.state    as { name?: string } | null);
   const customer = (data.customer as { name?: string } | null);
+  const tripTitle = quote?.quote_name?.trim() || state?.name || 'Your Trip';
   return {
-    title: `${state?.name ?? 'Your Trip'} — ${customer?.name ?? 'Itinerary'} | travloger.in`,
+    title: `${tripTitle} — ${customer?.name ?? 'Itinerary'} | travloger.in`,
     description: `View your personalised ${state?.name ?? ''} itinerary from Travloger.`,
   };
 }
