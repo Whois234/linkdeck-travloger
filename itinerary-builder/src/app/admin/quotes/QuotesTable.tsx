@@ -178,7 +178,8 @@ export function QuotesTable({ quotes, statusFilter, isPrivileged }: { quotes: Qu
             <p className="text-sm mt-1" style={{ color: '#64748B' }}>{search ? 'Try a different search' : 'Create your first quote'}</p>
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto -mx-6">
+          <table className="w-full text-sm" style={{ minWidth: 900 }}>
             <thead>
               <tr style={{ backgroundColor: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
                 <th className="px-4 py-3.5 w-10">
@@ -254,6 +255,7 @@ export function QuotesTable({ quotes, statusFilter, isPrivileged }: { quotes: Qu
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>
