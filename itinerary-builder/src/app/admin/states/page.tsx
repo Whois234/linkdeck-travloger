@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
 import { Plus, Pencil, Trash2, Search } from 'lucide-react';
+import ExcelIO from '@/components/ExcelIO';
 
 interface State { id: string; name: string; country: string; code: string; trip_id_prefix: string; description?: string | null; status: boolean }
 const EMPTY = { name: '', country: 'India', code: '', trip_id_prefix: '', description: '' };
@@ -55,9 +56,26 @@ export default function StatesPage() {
     <div className="max-w-[1400px]">
       <PageHeader title="States" subtitle="Manage travel states and regions" crumbs={[{ label: 'Admin', href: '/admin' }, { label: 'States' }]}
         action={
-          <button onClick={openCreate} className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white transition-colors hover:opacity-90" style={{ backgroundColor: '#134956' }}>
-            <Plus className="w-4 h-4" /> Add State
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <ExcelIO
+              moduleName="States"
+              columns={[
+                { key: 'name', label: 'State Name *', example: 'Kerala' },
+                { key: 'country', label: 'Country', example: 'India' },
+                { key: 'code', label: 'Code *', example: 'KER' },
+                { key: 'trip_id_prefix', label: 'Trip ID Prefix', example: 'TRV-KER' },
+                { key: 'description', label: 'Description', example: 'Coastal state in South India' },
+              ]}
+              rows={rows}
+              rowMapper={r => ({ 'State Name *': r.name, 'Country': r.country, 'Code *': r.code, 'Trip ID Prefix': r.trip_id_prefix, 'Description': r.description ?? '' })}
+              importMapper={r => ({ name: r['State Name *'], country: r['Country'] || 'India', code: r['Code *'], trip_id_prefix: r['Trip ID Prefix'] || '', description: r['Description'] || '' })}
+              importUrl="/api/v1/states"
+              onImportDone={load}
+            />
+            <button onClick={openCreate} className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white transition-colors hover:opacity-90" style={{ backgroundColor: '#134956' }}>
+              <Plus className="w-4 h-4" /> Add State
+            </button>
+          </div>
         }
       />
 

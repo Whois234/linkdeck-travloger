@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
 import { Plus, Pencil, Trash2, Search } from 'lucide-react';
+import ExcelIO from '@/components/ExcelIO';
 
 interface State { id: string; name: string }
 interface VehicleType { id: string; vehicle_type: string; display_name: string }
@@ -69,7 +70,39 @@ export default function VehicleRatesPage() {
   return (
     <div className="max-w-[1400px]">
       <PageHeader title="Vehicle Package Rates" subtitle="Route-based vehicle pricing and cost management" crumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Vehicle Rates' }]}
-        action={<button onClick={openCreate} className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white transition-colors hover:opacity-90" style={{ backgroundColor: '#134956' }}><Plus className="w-4 h-4" /> Add Rate</button>}
+        action={
+          <div className="flex items-center gap-2 flex-wrap">
+            <ExcelIO
+              moduleName="Vehicle_Rates"
+              columns={[
+                { key: 'route_name', label: 'Route Name *', example: 'Cochin – Munnar – Alleppey' },
+                { key: 'state', label: 'State Name *', example: 'Kerala' },
+                { key: 'start_city', label: 'Start City *', example: 'Cochin' },
+                { key: 'end_city', label: 'End City *', example: 'Alleppey' },
+                { key: 'vehicle_type', label: 'Vehicle Type Code *', example: 'SUV' },
+                { key: 'base_cost', label: 'Base Cost (₹) *', example: '12000' },
+                { key: 'duration_days', label: 'Duration Days *', example: '3' },
+                { key: 'duration_nights', label: 'Duration Nights', example: '2' },
+                { key: 'valid_from', label: 'Valid From (YYYY-MM-DD) *', example: '2026-01-01' },
+                { key: 'valid_to', label: 'Valid To (YYYY-MM-DD) *', example: '2026-12-31' },
+              ]}
+              rows={rows}
+              rowMapper={r => {
+                const st = states.find(s => s.id === r.state_id);
+                const vt = vehicleTypes.find(v => v.id === r.vehicle_type_id);
+                return { 'Route Name *': r.route_name, 'State Name *': st?.name ?? '', 'Start City *': r.start_city, 'End City *': r.end_city, 'Vehicle Type Code *': vt?.vehicle_type ?? '', 'Base Cost (₹) *': r.base_cost, 'Duration Days *': '', 'Duration Nights': '', 'Valid From (YYYY-MM-DD) *': r.valid_from.slice(0, 10), 'Valid To (YYYY-MM-DD) *': r.valid_to.slice(0, 10) };
+              }}
+              importMapper={r => {
+                const st = states.find(s => s.name.toLowerCase() === (r['State Name *'] ?? '').toLowerCase());
+                const vt = vehicleTypes.find(v => v.vehicle_type.toLowerCase() === (r['Vehicle Type Code *'] ?? '').toLowerCase());
+                return { route_name: r['Route Name *'], state_id: st?.id ?? '', start_city: r['Start City *'], end_city: r['End City *'], vehicle_type_id: vt?.id ?? '', base_cost: Number(r['Base Cost (₹) *']) || 0, duration_days: Number(r['Duration Days *']) || 1, duration_nights: Number(r['Duration Nights']) || 0, valid_from: new Date(r['Valid From (YYYY-MM-DD) *']).toISOString(), valid_to: new Date(r['Valid To (YYYY-MM-DD) *']).toISOString() };
+              }}
+              importUrl="/api/v1/vehicle-package-rates"
+              onImportDone={load}
+            />
+            <button onClick={openCreate} className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white transition-colors hover:opacity-90" style={{ backgroundColor: '#134956' }}><Plus className="w-4 h-4" /> Add Rate</button>
+          </div>
+        }
       />
       <Modal open={showForm} onClose={() => setShowForm(false)} title={editing ? 'Edit Vehicle Rate' : 'Add New Vehicle Rate'} subtitle="Define route pricing details">
 {error && <div className="mb-4 p-3.5 rounded-lg text-sm font-medium" style={{ backgroundColor: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>{error}</div>}

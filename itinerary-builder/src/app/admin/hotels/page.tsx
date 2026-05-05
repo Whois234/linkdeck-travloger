@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
 import { Plus, Search, Star, ChevronRight, Building2, LayoutGrid, List, ArrowUpDown } from 'lucide-react';
+import ExcelIO from '@/components/ExcelIO';
 
 const HOTEL_TYPES = ['HOTEL','RESORT','VILLA','HOMESTAY','HOUSEBOAT'];
 const HOTEL_CATS  = ['BUDGET','STANDARD','DELUXE','PREMIUM','LUXURY'];
@@ -121,11 +122,32 @@ export default function HotelsPage() {
         subtitle="Manage hotel inventory, room categories and rates"
         crumbs={[{label:'Admin',href:'/admin'},{label:'Hotels'}]}
         action={
-          <button onClick={()=>{ setForm({...EMPTY}); setError(''); setShowForm(true); }}
-            className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white hover:opacity-90"
-            style={{backgroundColor:T}}>
-            <Plus className="w-4 h-4" /> Add Hotel
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <ExcelIO
+              moduleName="Hotels"
+              columns={[
+                { key: 'hotel_name', label: 'Hotel Name *', example: 'The Windermere Hotel' },
+                { key: 'destination', label: 'Destination Name *', example: 'Munnar' },
+                { key: 'hotel_type', label: 'Hotel Type (HOTEL/RESORT/VILLA/HOMESTAY/HOUSEBOAT)', example: 'RESORT' },
+                { key: 'category_label', label: 'Category (BUDGET/STANDARD/DELUXE/PREMIUM/LUXURY)', example: 'DELUXE' },
+                { key: 'star_rating', label: 'Star Rating (1-5)', example: '4' },
+                { key: 'address', label: 'Address', example: 'Pothamedu, Munnar' },
+              ]}
+              rows={rows}
+              rowMapper={r => ({ 'Hotel Name *': r.hotel_name, 'Destination Name *': r.destination.name, 'Hotel Type (HOTEL/RESORT/VILLA/HOMESTAY/HOUSEBOAT)': r.hotel_type, 'Category (BUDGET/STANDARD/DELUXE/PREMIUM/LUXURY)': r.category_label, 'Star Rating (1-5)': r.star_rating ?? '', 'Address': r.address ?? '' })}
+              importMapper={r => {
+                const dest = dests.find(d => d.name.toLowerCase() === (r['Destination Name *'] ?? '').toLowerCase());
+                return { hotel_name: r['Hotel Name *'], destination_id: dest?.id ?? '', hotel_type: r['Hotel Type (HOTEL/RESORT/VILLA/HOMESTAY/HOUSEBOAT)'] || 'HOTEL', category_label: r['Category (BUDGET/STANDARD/DELUXE/PREMIUM/LUXURY)'] || 'STANDARD', star_rating: r['Star Rating (1-5)'] ? Number(r['Star Rating (1-5)']) : null, address: r['Address'] || '' };
+              }}
+              importUrl="/api/v1/hotels"
+              onImportDone={load}
+            />
+            <button onClick={()=>{ setForm({...EMPTY}); setError(''); setShowForm(true); }}
+              className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white hover:opacity-90"
+              style={{backgroundColor:T}}>
+              <Plus className="w-4 h-4" /> Add Hotel
+            </button>
+          </div>
         }
       />
 

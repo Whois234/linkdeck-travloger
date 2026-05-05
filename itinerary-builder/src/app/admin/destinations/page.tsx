@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
 import { Plus, Pencil, Trash2, Search } from 'lucide-react';
+import ExcelIO from '@/components/ExcelIO';
 
 interface State { id: string; name: string }
 interface Dest { id: string; name: string; state: { name: string }; state_id: string; hero_image: string | null; status: boolean }
@@ -59,7 +60,28 @@ export default function DestinationsPage() {
   return (
     <div className="max-w-[1400px]">
       <PageHeader title="Destinations" subtitle="Manage travel destinations by state" crumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Destinations' }]}
-        action={<button onClick={openCreate} className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white transition-colors hover:opacity-90" style={{ backgroundColor: '#134956' }}><Plus className="w-4 h-4" /> Add Destination</button>}
+        action={
+          <div className="flex items-center gap-2 flex-wrap">
+            <ExcelIO
+              moduleName="Destinations"
+              columns={[
+                { key: 'name', label: 'Destination Name *', example: 'Munnar' },
+                { key: 'state', label: 'State Name *', example: 'Kerala' },
+                { key: 'description', label: 'Description', example: 'Hill station in Western Ghats' },
+                { key: 'hero_image', label: 'Hero Image URL', example: 'https://…' },
+              ]}
+              rows={rows}
+              rowMapper={r => ({ 'Destination Name *': r.name, 'State Name *': r.state.name, 'Description': '', 'Hero Image URL': r.hero_image ?? '' })}
+              importMapper={r => {
+                const st = states.find(s => s.name.toLowerCase() === (r['State Name *'] ?? '').toLowerCase());
+                return { name: r['Destination Name *'], state_id: st?.id ?? '', description: r['Description'] || '', hero_image: r['Hero Image URL'] || '' };
+              }}
+              importUrl="/api/v1/destinations"
+              onImportDone={load}
+            />
+            <button onClick={openCreate} className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white transition-colors hover:opacity-90" style={{ backgroundColor: '#134956' }}><Plus className="w-4 h-4" /> Add Destination</button>
+          </div>
+        }
       />
 
       <Modal open={showForm} onClose={() => setShowForm(false)} title={editing ? 'Edit Destination' : 'Add New Destination'} subtitle="Fill in the details below">

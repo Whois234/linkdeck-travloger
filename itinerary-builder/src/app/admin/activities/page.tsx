@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
 import { Plus, Pencil, Trash2, Search } from 'lucide-react';
+import ExcelIO from '@/components/ExcelIO';
 
 const RATE_TYPES = ['PER_PERSON', 'PER_GROUP'];
 interface Dest { id: string; name: string }
@@ -61,7 +62,31 @@ export default function ActivitiesPage() {
   return (
     <div className="max-w-[1400px]">
       <PageHeader title="Activities" subtitle="Manage sightseeing and experience activities" crumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Activities' }]}
-        action={<button onClick={openCreate} className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white transition-colors hover:opacity-90" style={{ backgroundColor: '#134956' }}><Plus className="w-4 h-4" /> Add Activity</button>}
+        action={
+          <div className="flex items-center gap-2 flex-wrap">
+            <ExcelIO
+              moduleName="Activities"
+              columns={[
+                { key: 'destination', label: 'Destination Name *', example: 'Munnar' },
+                { key: 'activity_name', label: 'Activity Name *', example: 'Boat Ride' },
+                { key: 'activity_type', label: 'Activity Type', example: 'Adventure' },
+                { key: 'duration', label: 'Duration', example: '2 hrs' },
+                { key: 'adult_cost', label: 'Adult Cost (₹) *', example: '500' },
+                { key: 'child_cost', label: 'Child Cost (₹)', example: '300' },
+                { key: 'rate_type', label: 'Rate Type (PER_PERSON/PER_GROUP)', example: 'PER_PERSON' },
+              ]}
+              rows={rows}
+              rowMapper={r => ({ 'Destination Name *': r.destination.name, 'Activity Name *': r.activity_name, 'Activity Type': r.activity_type ?? '', 'Duration': r.duration ?? '', 'Adult Cost (₹) *': r.adult_cost, 'Child Cost (₹)': r.child_cost ?? '', 'Rate Type (PER_PERSON/PER_GROUP)': r.rate_type })}
+              importMapper={r => {
+                const dest = dests.find(d => d.name.toLowerCase() === (r['Destination Name *'] ?? '').toLowerCase());
+                return { destination_id: dest?.id ?? '', activity_name: r['Activity Name *'], activity_type: r['Activity Type'] || '', duration: r['Duration'] || '', adult_cost: Number(r['Adult Cost (₹) *']) || 0, child_cost: r['Child Cost (₹)'] ? Number(r['Child Cost (₹)']) : null, rate_type: r['Rate Type (PER_PERSON/PER_GROUP)'] || 'PER_PERSON' };
+              }}
+              importUrl="/api/v1/activities"
+              onImportDone={load}
+            />
+            <button onClick={openCreate} className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white transition-colors hover:opacity-90" style={{ backgroundColor: '#134956' }}><Plus className="w-4 h-4" /> Add Activity</button>
+          </div>
+        }
       />
 
       <Modal open={showForm} onClose={() => setShowForm(false)} title={editing ? 'Edit Activity' : 'Add New Activity'} subtitle="Fill in the activity details">

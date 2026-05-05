@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
 import { Plus, Pencil, Trash2, Search } from 'lucide-react';
+import ExcelIO from '@/components/ExcelIO';
 
 const SUPPLIER_TYPES = ['HOTEL', 'VEHICLE', 'ACTIVITY', 'DMC', 'OTHER'];
 interface Supplier { id: string; name: string; supplier_type: string; contact_person?: string | null; phone?: string | null; status: boolean }
@@ -58,7 +59,27 @@ export default function SuppliersPage() {
   return (
     <div className="max-w-[1400px]">
       <PageHeader title="Suppliers" subtitle="Manage hotel, vehicle and activity suppliers" crumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Suppliers' }]}
-        action={<button onClick={openCreate} className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white transition-colors hover:opacity-90" style={{ backgroundColor: '#134956' }}><Plus className="w-4 h-4" /> Add Supplier</button>}
+        action={
+          <div className="flex items-center gap-2 flex-wrap">
+            <ExcelIO
+              moduleName="Suppliers"
+              columns={[
+                { key: 'name', label: 'Supplier Name *', example: 'Ratan Hotels Pvt Ltd' },
+                { key: 'supplier_type', label: 'Type * (HOTEL/VEHICLE/ACTIVITY/DMC/OTHER)', example: 'HOTEL' },
+                { key: 'contact_person', label: 'Contact Person', example: 'John Doe' },
+                { key: 'phone', label: 'Phone', example: '+91 98765 43210' },
+                { key: 'email', label: 'Email', example: 'supplier@email.com' },
+                { key: 'address', label: 'Address', example: 'Munnar, Kerala' },
+              ]}
+              rows={rows}
+              rowMapper={r => ({ 'Supplier Name *': r.name, 'Type * (HOTEL/VEHICLE/ACTIVITY/DMC/OTHER)': r.supplier_type, 'Contact Person': r.contact_person ?? '', 'Phone': r.phone ?? '', 'Email': '', 'Address': '' })}
+              importMapper={r => ({ name: r['Supplier Name *'], supplier_type: r['Type * (HOTEL/VEHICLE/ACTIVITY/DMC/OTHER)'] || 'OTHER', contact_person: r['Contact Person'] || '', phone: r['Phone'] || '', email: r['Email'] || '', address: r['Address'] || '' })}
+              importUrl="/api/v1/suppliers"
+              onImportDone={load}
+            />
+            <button onClick={openCreate} className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white transition-colors hover:opacity-90" style={{ backgroundColor: '#134956' }}><Plus className="w-4 h-4" /> Add Supplier</button>
+          </div>
+        }
       />
 
       <Modal open={showForm} onClose={() => setShowForm(false)} title={editing ? 'Edit Supplier' : 'Add New Supplier'} subtitle="Fill in the supplier details">

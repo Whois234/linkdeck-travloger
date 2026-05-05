@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
 import { Plus, Pencil, Trash2, Search, Check } from 'lucide-react';
+import ExcelIO from '@/components/ExcelIO';
 
 interface VehicleType { id: string; vehicle_type: string; display_name: string; capacity: number; luggage_capacity?: number | null; ac_available: boolean; description?: string | null; status: boolean }
 const EMPTY = { vehicle_type: '', display_name: '', capacity: '', luggage_capacity: '', ac_available: true, description: '' };
@@ -55,7 +56,27 @@ export default function VehicleTypesPage() {
   return (
     <div className="max-w-[1400px]">
       <PageHeader title="Vehicle Types" subtitle="Manage fleet vehicle types and capacities" crumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Vehicle Types' }]}
-        action={<button onClick={openCreate} className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white transition-colors hover:opacity-90" style={{ backgroundColor: '#134956' }}><Plus className="w-4 h-4" /> Add Vehicle Type</button>}
+        action={
+          <div className="flex items-center gap-2 flex-wrap">
+            <ExcelIO
+              moduleName="Vehicle_Types"
+              columns={[
+                { key: 'vehicle_type', label: 'Type Code *', example: 'SUV' },
+                { key: 'display_name', label: 'Display Name *', example: 'Toyota Innova Crysta' },
+                { key: 'capacity', label: 'Passenger Capacity *', example: '7' },
+                { key: 'luggage_capacity', label: 'Luggage Capacity', example: '4' },
+                { key: 'ac_available', label: 'AC Available (YES/NO)', example: 'YES' },
+                { key: 'description', label: 'Description', example: 'Comfortable SUV for hills' },
+              ]}
+              rows={rows}
+              rowMapper={r => ({ 'Type Code *': r.vehicle_type, 'Display Name *': r.display_name, 'Passenger Capacity *': r.capacity, 'Luggage Capacity': r.luggage_capacity ?? '', 'AC Available (YES/NO)': r.ac_available ? 'YES' : 'NO', 'Description': r.description ?? '' })}
+              importMapper={r => ({ vehicle_type: r['Type Code *'], display_name: r['Display Name *'], capacity: Number(r['Passenger Capacity *']) || 1, luggage_capacity: r['Luggage Capacity'] ? Number(r['Luggage Capacity']) : null, ac_available: (r['AC Available (YES/NO)'] ?? '').toUpperCase() === 'YES', description: r['Description'] || '' })}
+              importUrl="/api/v1/vehicle-types"
+              onImportDone={load}
+            />
+            <button onClick={openCreate} className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white transition-colors hover:opacity-90" style={{ backgroundColor: '#134956' }}><Plus className="w-4 h-4" /> Add Vehicle Type</button>
+          </div>
+        }
       />
       <Modal open={showForm} onClose={() => setShowForm(false)} title={editing ? 'Edit Vehicle Type' : 'Add New Vehicle Type'} subtitle="Fill in the vehicle details">
 {error && <div className="mb-4 p-3.5 rounded-lg text-sm font-medium" style={{ backgroundColor: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>{error}</div>}

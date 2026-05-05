@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
 import { Plus, Pencil, Trash2, Search } from 'lucide-react';
+import ExcelIO from '@/components/ExcelIO';
 
 interface Dest { id: string; name: string }
 interface DayPlan { id: string; title: string; duration_label?: string | null; description?: string | null; destination: { name: string }; destination_id: string; status: boolean }
@@ -59,7 +60,30 @@ export default function DayPlansPage() {
   return (
     <div className="max-w-[1400px]">
       <PageHeader title="Day Plans" subtitle="Manage daily itinerary templates" crumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Day Plans' }]}
-        action={<button onClick={openCreate} className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white transition-colors hover:opacity-90" style={{ backgroundColor: '#134956' }}><Plus className="w-4 h-4" /> Add Day Plan</button>}
+        action={
+          <div className="flex items-center gap-2 flex-wrap">
+            <ExcelIO
+              moduleName="Day_Plans"
+              columns={[
+                { key: 'destination', label: 'Destination Name *', example: 'Munnar' },
+                { key: 'title', label: 'Title *', example: 'Munnar Sightseeing' },
+                { key: 'duration_label', label: 'Duration Label', example: 'Full Day' },
+                { key: 'short_description', label: 'Short Description', example: 'Explore tea gardens and viewpoints' },
+                { key: 'description', label: 'Description (Full)', example: 'Visit Eravikulam National Park, Tea Museum…' },
+                { key: 'internal_notes', label: 'Internal Notes', example: 'Confirm vehicle availability' },
+              ]}
+              rows={rows}
+              rowMapper={r => ({ 'Destination Name *': r.destination.name, 'Title *': r.title, 'Duration Label': r.duration_label ?? '', 'Short Description': '', 'Description (Full)': r.description ?? '', 'Internal Notes': '' })}
+              importMapper={r => {
+                const dest = dests.find(d => d.name.toLowerCase() === (r['Destination Name *'] ?? '').toLowerCase());
+                return { destination_id: dest?.id ?? '', title: r['Title *'], duration_label: r['Duration Label'] || '', short_description: r['Short Description'] || '', description: r['Description (Full)'] || '', internal_notes: r['Internal Notes'] || '' };
+              }}
+              importUrl="/api/v1/day-plans"
+              onImportDone={load}
+            />
+            <button onClick={openCreate} className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white transition-colors hover:opacity-90" style={{ backgroundColor: '#134956' }}><Plus className="w-4 h-4" /> Add Day Plan</button>
+          </div>
+        }
       />
       <Modal open={showForm} onClose={() => setShowForm(false)} title={editing ? 'Edit Day Plan' : 'Add New Day Plan'} subtitle="Fill in the day plan details">
 {error && <div className="mb-4 p-3.5 rounded-lg text-sm font-medium" style={{ backgroundColor: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>{error}</div>}
