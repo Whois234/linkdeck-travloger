@@ -109,6 +109,7 @@ interface ItineraryData {
   state: { name: string; description?: string | null; hero_image?: string | null; hero_images?: string[] | null };
   quote_options: QuoteOption[];
   group_package_options?: GroupPackageOption[];
+  group_pricing_mode?: 'date_based' | 'package_based';
   day_snapshots: DaySnapshot[];
   inclusions: Array<{ id: string; text: string }>;
   exclusions: Array<{ id: string; text: string }>;
@@ -2002,9 +2003,12 @@ function BookingIntentModal({
 
 /* ─────────────────────────── Main Component ─────────────────────────── */
 export function ItineraryClient({ data, token }: Props) {
-  const { quote, customer, agent, state, quote_options, group_package_options, day_snapshots, inclusions, exclusions, policies } = data;
+  const { quote, customer, agent, state, quote_options, group_package_options, group_pricing_mode, day_snapshots, inclusions, exclusions, policies } = data;
 
   const isGroup = quote.quote_type?.toUpperCase() === 'GROUP';
+  // date_based = show batch date picker + fare summary (default for backwards compat)
+  // package_based = show package options with fixed prices, hide date picker
+  const pricingMode: 'date_based' | 'package_based' = group_pricing_mode ?? 'date_based';
 
   const defaultOption = data.selected_option_id
     ? quote_options.find((o) => o.id === data.selected_option_id)?.id ?? null
@@ -2167,8 +2171,8 @@ export function ItineraryClient({ data, token }: Props) {
         {/* Package options — PRIVATE only (GROUP has its own tier selector below) */}
         {!isGroup && <Packages options={quote_options} selectedId={selectedId} onSelect={handleSelectOption} />}
 
-        {/* ── GROUP: tier selector ── */}
-        {isGroup && (
+        {/* ── GROUP: package_based mode → show tier options, hide date picker ── */}
+        {isGroup && pricingMode === 'package_based' && (
           <GroupPackageOptions
             options={group_package_options ?? []}
             selectedTier={selectedTier}
@@ -2176,8 +2180,8 @@ export function ItineraryClient({ data, token }: Props) {
           />
         )}
 
-        {/* ── GROUP: date picker ── */}
-        {isGroup && (
+        {/* ── GROUP: date_based mode → show batch date picker only ── */}
+        {isGroup && pricingMode === 'date_based' && (
           <BatchDatePicker
             batches={batches}
             selectedBatchId={selectedBatch?.id ?? null}
@@ -2194,8 +2198,8 @@ export function ItineraryClient({ data, token }: Props) {
           : <IncExc inclusions={inclusions} exclusions={exclusions} />
         }
 
-        {/* ── GROUP: fare summary with adult counter + Book Now ── */}
-        {isGroup && (
+        {/* ── GROUP: fare summary — only in date_based mode (batch drives the price) ── */}
+        {isGroup && pricingMode === 'date_based' && (
           <GroupFareSummary
             batch={selectedBatch}
             adults={groupAdults}

@@ -278,6 +278,7 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
     },
     quote_options:         enrichedOptions,
     group_package_options: groupPackageOptions,
+    group_pricing_mode:    (groupCms as Record<string,unknown>)?.pricing_mode ?? 'date_based',
     day_snapshots:         enrichedDaySnapshots,
     inclusions, exclusions, policies,
   };

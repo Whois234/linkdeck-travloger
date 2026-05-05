@@ -51,6 +51,7 @@ interface CmsData {
   hero_images: string[];
   state_gallery_image: string;
   destination_cards: Array<{ destination_id: string; custom_name: string | null; description: string; image_url: string }>;
+  pricing_mode: 'date_based' | 'package_based';
   package_options: CmsOption[];
   inclusions: string[];
   exclusions: string[];
@@ -94,6 +95,7 @@ const DEFAULT_CMS: CmsData = {
   min_pax: 10, max_pax: 25,
   hero_heading: '', hero_subheading: '',
   hero_tags: [], hero_images: [], state_gallery_image: '', destination_cards: [],
+  pricing_mode: 'date_based',
   package_options: [
     { tier_name: 'Standard', display_order: 1, is_most_popular: false, inclusions: [], adult_price: 0, child_price: 0 },
     { tier_name: 'Deluxe',   display_order: 2, is_most_popular: true,  inclusions: [], adult_price: 0, child_price: 0 },
@@ -201,6 +203,7 @@ export default function GroupTemplateEditPage() {
       if (!Array.isArray(c.exclusions)) c.exclusions = [...DEFAULT_CMS.exclusions];
       if (!Array.isArray(c.hero_images)) c.hero_images = [];
       if (typeof c.state_gallery_image !== 'string') c.state_gallery_image = '';
+      if (c.pricing_mode !== 'date_based' && c.pricing_mode !== 'package_based') c.pricing_mode = 'date_based';
       setCms(c);
       setDays(t.group_template_days.map(d => ({
         ...d,
@@ -584,7 +587,52 @@ export default function GroupTemplateEditPage() {
           {/* ═══ PACKAGE OPTIONS ═══ */}
           {activeSection === 'options' && (
             <div className="bg-white rounded-2xl p-6" style={card}>
-              <SectionHeader title="Package Options" desc="Define 1–3 options with direct pricing. Each option can have its own adult/child price." />
+              <SectionHeader title="Package Options" desc="Choose how customers see pricing: date-based (batch price from departure dates) or fixed package pricing." />
+
+              {/* Pricing mode toggle */}
+              <div className="mb-6 p-4 rounded-xl" style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: '#64748B' }}>Pricing Mode</p>
+                <div className="flex gap-3">
+                  {([
+                    { value: 'date_based',    label: 'Date-based Pricing',    desc: 'Price comes from departure batch dates' },
+                    { value: 'package_based', label: 'Fixed Package Pricing', desc: 'Price set directly on each package option' },
+                  ] as const).map(({ value, label, desc }) => (
+                    <button
+                      key={value}
+                      onClick={() => updCms('pricing_mode', value)}
+                      className="flex-1 p-3 rounded-xl text-left transition-all"
+                      style={{
+                        border: `2px solid ${cms.pricing_mode === value ? T : '#E2E8F0'}`,
+                        backgroundColor: cms.pricing_mode === value ? `${T}08` : '#fff',
+                      }}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="w-3.5 h-3.5 rounded-full flex-shrink-0" style={{
+                          border: `2px solid ${cms.pricing_mode === value ? T : '#CBD5E1'}`,
+                          backgroundColor: cms.pricing_mode === value ? T : 'transparent',
+                        }} />
+                        <span className="text-sm font-semibold" style={{ color: cms.pricing_mode === value ? T : '#0F172A' }}>{label}</span>
+                      </div>
+                      <p className="text-xs ml-5" style={{ color: '#64748B' }}>{desc}</p>
+                    </button>
+                  ))}
+                </div>
+                {cms.pricing_mode === 'date_based' && (
+                  <p className="text-xs mt-3 flex items-center gap-1.5" style={{ color: '#64748B' }}>
+                    <span style={{ color: '#F59E0B' }}>ℹ</span>
+                    Customer will see a date picker with prices from your batches. Package options below are hidden.
+                  </p>
+                )}
+                {cms.pricing_mode === 'package_based' && (
+                  <p className="text-xs mt-3 flex items-center gap-1.5" style={{ color: '#64748B' }}>
+                    <span style={{ color: '#F59E0B' }}>ℹ</span>
+                    Customer will see the package options below with fixed prices. Date picker is hidden.
+                  </p>
+                )}
+              </div>
+
+              {/* Package options — only shown when package_based */}
+              {cms.pricing_mode === 'package_based' && (
               <div className="flex gap-3 mb-2 flex-wrap">
                 {cms.package_options.map((opt, oi) => (
                   <div key={oi} className="flex-1 min-w-[180px] rounded-xl p-4" style={{ border: `2px solid ${opt.is_most_popular ? T : '#E2E8F0'}` }}>
@@ -648,6 +696,7 @@ export default function GroupTemplateEditPage() {
                   </button>
                 )}
               </div>
+              )} {/* end pricing_mode === package_based */}
             </div>
           )}
 
