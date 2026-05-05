@@ -47,8 +47,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   if (!quote) return notFound('Quote');
 
-  // SALES can only see own quotes
-  if (requireRole(user, UserRole.SALES) && quote.assigned_agent_id !== user.agent_id) {
+  // Non-privileged users can only view quotes they created
+  const isPrivileged = requireRole(user, UserRole.ADMIN, UserRole.MANAGER, UserRole.FINANCE, UserRole.OPS);
+  if (!isPrivileged && quote.created_by !== user.sub) {
     return forbidden();
   }
 
