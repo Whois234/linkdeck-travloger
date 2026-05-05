@@ -744,14 +744,23 @@ model Lead {
   status               LeadStatus @default(NEW)
   assigned_agent_id    String?
   notes                String?
+  pipeline_id          String?
+  stage_id             String?
   created_at           DateTime   @default(now())
   updated_at           DateTime   @updatedAt
 
   customers            Customer[]
   quotes               Quote[]
+  pipeline             Pipeline?       @relation(fields: [pipeline_id], references: [id])
+  stage                PipelineStage?  @relation(fields: [stage_id], references: [id])
+  lead_notes           LeadNote[]
+  call_logs            CallLog[]
+  lead_tasks           LeadTask[]
+  lead_activities      LeadActivity[]
 
   @@index([status])
   @@index([assigned_agent_id])
+  @@index([pipeline_id, stage_id])
 }
 
 model Customer {
@@ -986,4 +995,91 @@ model Notification {
 
   @@index([user_id, is_read])
   @@index([created_at])
+}
+
+// ─── CRM Pipeline Models ──────────────────────────────────────────────────────
+
+model Pipeline {
+  id         String          @id @default(cuid())
+  name       String
+  is_default Boolean         @default(false)
+  status     Boolean         @default(true)
+  created_at DateTime        @default(now())
+  updated_at DateTime        @updatedAt
+
+  stages     PipelineStage[]
+  leads      Lead[]
+}
+
+model PipelineStage {
+  id          String   @id @default(cuid())
+  pipeline_id String
+  name        String
+  order       Int
+  color       String   @default("#64748B")
+  status      Boolean  @default(true)
+  created_at  DateTime @default(now())
+
+  pipeline    Pipeline @relation(fields: [pipeline_id], references: [id], onDelete: Cascade)
+  leads       Lead[]
+
+  @@index([pipeline_id, order])
+}
+
+model LeadNote {
+  id         String   @id @default(cuid())
+  lead_id    String
+  content    String
+  created_by String
+  created_at DateTime @default(now())
+
+  lead       Lead     @relation(fields: [lead_id], references: [id], onDelete: Cascade)
+
+  @@index([lead_id])
+}
+
+model CallLog {
+  id              String   @id @default(cuid())
+  lead_id         String
+  duration        Int?
+  outcome         String
+  notes           String?
+  next_task_type  String?
+  next_task_time  DateTime?
+  created_by      String
+  created_at      DateTime @default(now())
+
+  lead            Lead     @relation(fields: [lead_id], references: [id], onDelete: Cascade)
+
+  @@index([lead_id])
+}
+
+model LeadTask {
+  id         String   @id @default(cuid())
+  lead_id    String
+  type       String
+  due_time   DateTime
+  status     String   @default("pending")
+  notes      String?
+  notified   Boolean  @default(false)
+  created_by String
+  created_at DateTime @default(now())
+
+  lead       Lead     @relation(fields: [lead_id], references: [id], onDelete: Cascade)
+
+  @@index([lead_id])
+  @@index([due_time, notified, status])
+}
+
+model LeadActivity {
+  id         String   @id @default(cuid())
+  lead_id    String
+  type       String
+  metadata   Json?
+  created_by String
+  created_at DateTime @default(now())
+
+  lead       Lead     @relation(fields: [lead_id], references: [id], onDelete: Cascade)
+
+  @@index([lead_id, created_at])
 }
