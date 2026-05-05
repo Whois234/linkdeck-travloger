@@ -3,10 +3,5 @@
   "buildCommand": "prisma generate && next build",
   "installCommand": "npm install",
   "outputDirectory": ".next",
-  "crons": [
-    {
-      "path": "/api/v1/cron/task-reminders",
-      "schedule": "* * * * *"
-    }
-  ]
+  "crons": []
 }
