@@ -154,7 +154,7 @@ export function QuotesTable({ quotes, statusFilter, isPrivileged }: { quotes: Qu
         </div>
       )}
 
-      <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E2E8F0', ...cardShadow }}>
+      <div className="bg-white rounded-xl" style={{ border: '1px solid #E2E8F0', ...cardShadow }}>
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #F1F5F9' }}>
           <p className="text-sm font-semibold" style={{ color: '#64748B' }}>
             {loading ? 'Loading…' : `${filtered.length} quote${filtered.length !== 1 ? 's' : ''}`}
@@ -178,8 +178,8 @@ export function QuotesTable({ quotes, statusFilter, isPrivileged }: { quotes: Qu
             <p className="text-sm mt-1" style={{ color: '#64748B' }}>{search ? 'Try a different search' : 'Create your first quote'}</p>
           </div>
         ) : (
-          <div className="overflow-x-auto -mx-6">
-          <table className="w-full text-sm" style={{ minWidth: 900 }}>
+          <div style={{ overflowX: 'auto' }}>
+          <table className="w-full text-sm" style={{ minWidth: 860 }}>
             <thead>
               <tr style={{ backgroundColor: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
                 <th className="px-4 py-3.5 w-10">
