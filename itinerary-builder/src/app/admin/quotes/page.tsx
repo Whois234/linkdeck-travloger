@@ -5,6 +5,8 @@ import { QuotesTable, QuoteRow } from './QuotesTable';
 
 export const dynamic = 'force-dynamic'; // always fetch fresh data, never cache
 
+const PRIVILEGED = [UserRole.ADMIN, UserRole.MANAGER, UserRole.FINANCE, UserRole.OPS] as string[];
+
 export default async function QuotesPage({
   searchParams,
 }: {
@@ -13,15 +15,13 @@ export default async function QuotesPage({
   const user = await getServerUser();
   const statusFilter = searchParams.status ?? '';
 
-  // Role-based visibility: SALES only sees own quotes
-  const privilegedRoles: string[] = [UserRole.ADMIN, UserRole.MANAGER, UserRole.FINANCE, UserRole.OPS];
-  const agentFilter =
-    user && privilegedRoles.includes(user.role)
-      ? {}
-      : { assigned_agent_id: user?.agent_id ?? undefined };
+  const isPrivileged = user && PRIVILEGED.includes(user.role);
+
+  // Privileged users see all quotes; non-privileged only see quotes they created
+  const ownerFilter = isPrivileged ? {} : { created_by: user?.sub ?? '' };
 
   const where = {
-    ...agentFilter,
+    ...ownerFilter,
     ...(statusFilter ? { status: statusFilter as QuoteStatus } : {}),
   };
 
@@ -36,12 +36,24 @@ export default async function QuotesPage({
     },
   });
 
+  // For privileged users, fetch creator names
+  let creatorNames: Record<string, string> = {};
+  if (isPrivileged && raw.length > 0) {
+    const creatorIds = Array.from(new Set(raw.map(q => q.created_by).filter(Boolean)));
+    const creators = await prisma.user.findMany({
+      where: { id: { in: creatorIds } },
+      select: { id: true, name: true },
+    });
+    creatorNames = Object.fromEntries(creators.map(u => [u.id, u.name]));
+  }
+
   // Prisma returns Date objects — serialize to string for the client component
   const quotes: QuoteRow[] = raw.map((q) => ({
     ...q,
-    start_date:  q.start_date instanceof Date  ? q.start_date.toISOString()  : String(q.start_date),
-    created_at:  q.created_at instanceof Date  ? q.created_at.toISOString()  : String(q.created_at),
+    start_date:      q.start_date instanceof Date  ? q.start_date.toISOString()  : String(q.start_date),
+    created_at:      q.created_at instanceof Date  ? q.created_at.toISOString()  : String(q.created_at),
+    created_by_name: creatorNames[q.created_by] ?? null,
   }));
 
-  return <QuotesTable quotes={quotes} statusFilter={statusFilter} />;
+  return <QuotesTable quotes={quotes} statusFilter={statusFilter} isPrivileged={!!isPrivileged} />;
 }

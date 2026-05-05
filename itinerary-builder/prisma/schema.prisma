@@ -764,6 +764,7 @@ model Customer {
   nationality String?
   lead_id     String?
   notes       String?
+  created_by  String?
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 
@@ -772,6 +773,7 @@ model Customer {
 
   @@index([phone])
   @@index([lead_id])
+  @@index([created_by])
 }
 
 model Quote {

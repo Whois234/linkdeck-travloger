@@ -17,6 +17,8 @@ const Schema = z.object({
   notes: z.string().optional().nullable(),
 });
 
+const PRIVILEGED = [UserRole.ADMIN, UserRole.MANAGER, UserRole.FINANCE, UserRole.OPS] as UserRole[];
+
 export async function GET(req: NextRequest) {
   const user = await getAuthUser(req);
   if (!user) return unauthorized();
@@ -24,12 +26,18 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const q = searchParams.get('q');
 
+  const isPrivileged = requireRole(user, ...PRIVILEGED);
+
+  // Non-privileged users only see customers they created
+  const ownerFilter = isPrivileged ? {} : { created_by: user.sub };
+
   const customers = await prisma.customer.findMany({
-    where: q
-      ? { OR: [{ name: { contains: q, mode: 'insensitive' } }, { phone: { contains: q } }] }
-      : undefined,
+    where: {
+      ...ownerFilter,
+      ...(q ? { OR: [{ name: { contains: q, mode: 'insensitive' } }, { phone: { contains: q } }] } : {}),
+    },
     orderBy: { name: 'asc' },
-    take: 50,
+    take: 100,
   });
   return ok(customers);
 }
@@ -45,8 +53,16 @@ export async function POST(req: NextRequest) {
 
   // Deduplicate by phone — if number already exists, return that customer
   const existing = await prisma.customer.findFirst({ where: { phone: parsed.data.phone } });
-  if (existing) return ok(existing);
+  if (existing) {
+    // If existing customer has no owner, claim it for this user
+    if (!existing.created_by) {
+      await prisma.customer.update({ where: { id: existing.id }, data: { created_by: user.sub } });
+    }
+    return ok({ ...existing, created_by: existing.created_by ?? user.sub });
+  }
 
-  const record = await prisma.customer.create({ data: parsed.data as Parameters<typeof prisma.customer.create>[0]['data'] });
+  const record = await prisma.customer.create({
+    data: { ...(parsed.data as Parameters<typeof prisma.customer.create>[0]['data']), created_by: user.sub },
+  });
   return created(record);
 }

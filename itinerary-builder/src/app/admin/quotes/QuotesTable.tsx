@@ -38,12 +38,13 @@ export interface QuoteRow {
   assigned_agent?: { name: string } | null;
   state: { name: string; code: string };
   quote_options: Array<{ final_price: number | null; is_most_popular: boolean }>;
+  created_by_name?: string | null;
 }
 
 const T = '#134956';
 const cardShadow = { boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)' };
 
-export function QuotesTable({ quotes, statusFilter }: { quotes: QuoteRow[]; statusFilter: string }) {
+export function QuotesTable({ quotes, statusFilter, isPrivileged }: { quotes: QuoteRow[]; statusFilter: string; isPrivileged?: boolean }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [search, setSearch]           = useState('');
@@ -184,7 +185,7 @@ export function QuotesTable({ quotes, statusFilter }: { quotes: QuoteRow[]; stat
                   <input type="checkbox" checked={allChecked} onChange={toggleAll}
                     className="w-4 h-4 rounded" style={{ accentColor: T, cursor: 'pointer' }} />
                 </th>
-                {['Quote #', 'Customer', 'Destination', 'Type', 'Date', 'Pax', 'Price', 'Status', 'Agent', ''].map(h => (
+                {['Quote #', 'Customer', 'Destination', 'Type', 'Date', 'Pax', 'Price', 'Status', ...(isPrivileged ? ['Created By', 'Agent'] : []), ''].map(h => (
                   <th key={h} className="px-5 py-3.5 text-left text-[11px] font-semibold uppercase tracking-wider whitespace-nowrap" style={{ color: '#64748B' }}>{h}</th>
                 ))}
               </tr>
@@ -232,7 +233,12 @@ export function QuotesTable({ quotes, statusFilter }: { quotes: QuoteRow[]; stat
                         {q.status}
                       </span>
                     </td>
-                    <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>{q.assigned_agent?.name ?? '—'}</td>
+                    {isPrivileged && (
+                      <td className="px-5 py-0 text-sm font-medium" style={{ color: '#0F172A' }}>{q.created_by_name ?? '—'}</td>
+                    )}
+                    {isPrivileged && (
+                      <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>{q.assigned_agent?.name ?? '—'}</td>
+                    )}
                     <td className="px-5 py-0">
                       <div className="flex items-center justify-end gap-2">
                         <Link href={`/admin/quotes/${q.id}`} className="text-xs font-semibold" style={{ color: T }}>View</Link>

@@ -30,6 +30,8 @@ const QuoteSchema = z.object({
   group_batch_id: z.string().optional().nullable(),
 });
 
+const PRIVILEGED_ROLES = [UserRole.ADMIN, UserRole.MANAGER, UserRole.FINANCE, UserRole.OPS] as UserRole[];
+
 export async function GET(req: NextRequest) {
   const user = await getAuthUser(req);
   if (!user) return unauthorized();
@@ -42,14 +44,15 @@ export async function GET(req: NextRequest) {
   const limit = parseInt(searchParams.get('limit') ?? '20');
   const skip = (page - 1) * limit;
 
-  // SALES only sees own quotes unless MANAGER/ADMIN
-  const agentFilter =
-    requireRole(user, UserRole.ADMIN, UserRole.MANAGER, UserRole.FINANCE, UserRole.OPS)
-      ? agent_id ? { assigned_agent_id: agent_id } : {}
-      : { assigned_agent_id: user.agent_id ?? undefined };
+  const isPrivileged = requireRole(user, ...PRIVILEGED_ROLES);
+
+  // Privileged users see all (optionally filtered by agent); non-privileged see only their own
+  const ownerFilter = isPrivileged
+    ? (agent_id ? { assigned_agent_id: agent_id } : {})
+    : { created_by: user.sub };
 
   const where = {
-    ...agentFilter,
+    ...ownerFilter,
     ...(status ? { status } : {}),
     ...(type ? { quote_type: type } : {}),
   };
@@ -70,7 +73,23 @@ export async function GET(req: NextRequest) {
     prisma.quote.count({ where }),
   ]);
 
-  return ok({ quotes, total, page, limit });
+  // Attach creator names for privileged users
+  let creatorNames: Record<string, string> = {};
+  if (isPrivileged && quotes.length > 0) {
+    const creatorIds = Array.from(new Set(quotes.map(q => q.created_by).filter(Boolean)));
+    const creators = await prisma.user.findMany({
+      where: { id: { in: creatorIds } },
+      select: { id: true, name: true },
+    });
+    creatorNames = Object.fromEntries(creators.map(u => [u.id, u.name]));
+  }
+
+  const enriched = quotes.map(q => ({
+    ...q,
+    created_by_name: creatorNames[q.created_by] ?? null,
+  }));
+
+  return ok({ quotes: enriched, total, page, limit });
 }
 
 export async function POST(req: NextRequest) {

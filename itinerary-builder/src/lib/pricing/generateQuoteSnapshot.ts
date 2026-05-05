@@ -354,10 +354,12 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
     },
     customer: quote.customer,
     agent: resolvedAgent,
-    // state hero_image: state > group template > private template hero > first destination hero
+    // state hero_image priority: cms state_gallery_image > template hero > state entity > first destination
     state: {
       ...quote.state,
-      hero_image: quote.state.hero_image ?? groupTemplate?.hero_image ?? privateTemplateHero ?? firstDestHero ?? null,
+      hero_image: ((groupCms as Record<string,unknown>)?.state_gallery_image as string | undefined || null)
+        ?? ((templateCmsData as Record<string,unknown>)?.state_gallery_image as string | undefined || null)
+        ?? groupTemplate?.hero_image ?? privateTemplateHero ?? quote.state.hero_image ?? firstDestHero ?? null,
       hero_images: (Array.isArray((templateCmsData as Record<string,unknown>)?.hero_images) && ((templateCmsData as Record<string,unknown>).hero_images as string[]).filter(Boolean).length > 1)
         ? ((templateCmsData as Record<string,unknown>).hero_images as string[]).filter(Boolean)
         : (Array.isArray((groupCms as Record<string,unknown>)?.hero_images) && ((groupCms as Record<string,unknown>).hero_images as string[]).filter(Boolean).length > 1)

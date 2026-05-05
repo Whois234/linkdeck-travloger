@@ -49,6 +49,7 @@ interface CmsData {
   hero_subheading: string;
   hero_tags: string[];
   hero_images: string[];
+  state_gallery_image: string;
   destination_cards: Array<{ destination_id: string; custom_name: string | null; description: string; image_url: string }>;
   package_options: CmsOption[];
   inclusions: string[];
@@ -92,7 +93,7 @@ interface Template {
 const DEFAULT_CMS: CmsData = {
   min_pax: 10, max_pax: 25,
   hero_heading: '', hero_subheading: '',
-  hero_tags: [], hero_images: [], destination_cards: [],
+  hero_tags: [], hero_images: [], state_gallery_image: '', destination_cards: [],
   package_options: [
     { tier_name: 'Standard', display_order: 1, is_most_popular: false, inclusions: [], adult_price: 0, child_price: 0 },
     { tier_name: 'Deluxe',   display_order: 2, is_most_popular: true,  inclusions: [], adult_price: 0, child_price: 0 },
@@ -199,6 +200,7 @@ export default function GroupTemplateEditPage() {
       if (!Array.isArray(c.inclusions)) c.inclusions = [...DEFAULT_CMS.inclusions];
       if (!Array.isArray(c.exclusions)) c.exclusions = [...DEFAULT_CMS.exclusions];
       if (!Array.isArray(c.hero_images)) c.hero_images = [];
+      if (typeof c.state_gallery_image !== 'string') c.state_gallery_image = '';
       setCms(c);
       setDays(t.group_template_days.map(d => ({
         ...d,
@@ -528,6 +530,21 @@ export default function GroupTemplateEditPage() {
             <div className="bg-white rounded-2xl p-6" style={card}>
               <SectionHeader title="Destination Cards" desc="One card per destination shown in the gallery grid." />
               <div className="flex flex-col gap-4">
+                {/* State card — always first in the gallery */}
+                <div className="rounded-xl p-4" style={{ border: '1px solid #C7D2FE', background: '#F5F3FF' }}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-sm font-semibold text-[#4338CA]">{tpl?.state?.name ?? 'State'}</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-600 font-medium">Gallery Cover Card</span>
+                  </div>
+                  <ImageUploader
+                    label="State Gallery Photo"
+                    folder="templates/destinations"
+                    value={cms.state_gallery_image || null}
+                    onChange={url => updCms('state_gallery_image', url ?? '')}
+                    placeholder="Upload photo for state gallery card"
+                    sizeHint="800 × 600 px (4:3)"
+                  />
+                </div>
                 {cms.destination_cards.map((dc, i) => {
                   const dest = dests.find(d => d.id === dc.destination_id);
                   return (
