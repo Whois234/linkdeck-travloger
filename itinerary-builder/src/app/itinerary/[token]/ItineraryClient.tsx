@@ -111,7 +111,7 @@ interface ItineraryData {
   quote_options: QuoteOption[];
   group_package_options?: GroupPackageOption[];
   group_pricing_mode?: 'date_based' | 'package_based';
-  group_trip_dates?: Array<{ start_date: string; end_date: string; label: string }>;
+  group_trip_dates?: Array<{ start_date: string; end_date: string; label: string; availability?: 'available' | 'few_left' | 'filling_fast' | 'sold_out' }>;
   day_snapshots: DaySnapshot[];
   inclusions: Array<{ id: string; text: string }>;
   exclusions: Array<{ id: string; text: string }>;
@@ -1573,10 +1573,17 @@ function GroupWhatsCovered({
 }
 
 /* ─────────────────────────── GROUP: Selectable Trip Dates (package_based) ─── */
+const AVAIL_CONFIG = {
+  available:    { label: 'Available',      bg: '#DCFCE7', color: '#15803D', border: '#BBF7D0' },
+  few_left:     { label: 'Few Slots Left', bg: '#FEF3C7', color: '#B45309', border: '#FDE68A' },
+  filling_fast: { label: '🔥 Filling Fast', bg: '#FEE2E2', color: '#DC2626', border: '#FECACA' },
+  sold_out:     { label: 'Sold Out',        bg: '#F1F5F9', color: '#94A3B8', border: '#E2E8F0' },
+} as const;
+
 function TripDates({
   dates, selectedIdx, onSelect,
 }: {
-  dates: Array<{ start_date: string; end_date: string; label: string }>;
+  dates: Array<{ start_date: string; end_date: string; label: string; availability?: 'available' | 'few_left' | 'filling_fast' | 'sold_out' }>;
   selectedIdx: number | null;
   onSelect: (i: number) => void;
 }) {
@@ -1588,36 +1595,65 @@ function TripDates({
       <p style={{ fontSize: 13, color: '#64748B', marginBottom: 20 }}>Select a departure window to confirm your travel dates</p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {dates.map((d, i) => {
+          const avail = d.availability ?? 'available';
+          const isSoldOut = avail === 'sold_out';
           const isSelected = selectedIdx === i;
+          const cfg = AVAIL_CONFIG[avail];
           return (
             <div key={i}
-              onClick={() => onSelect(i)}
+              onClick={() => !isSoldOut && onSelect(i)}
               style={{
-                background: '#fff', borderRadius: 12, padding: '14px 18px',
-                border: `2px solid ${isSelected ? '#134956' : '#E2E8F0'}`,
+                borderRadius: 12, padding: '14px 18px',
+                border: isSoldOut ? '2px solid #E2E8F0' : `2px solid ${isSelected ? '#134956' : '#E2E8F0'}`,
                 display: 'flex', alignItems: 'center', gap: 14,
                 boxShadow: isSelected ? '0 0 0 3px rgba(19,73,86,0.10)' : '0 1px 4px rgba(0,0,0,0.05)',
-                cursor: 'pointer', transition: 'border-color 0.15s, box-shadow 0.15s',
-                backgroundColor: isSelected ? 'rgba(19,73,86,0.03)' : '#fff',
+                cursor: isSoldOut ? 'not-allowed' : 'pointer',
+                transition: 'border-color 0.15s, box-shadow 0.15s',
+                backgroundColor: isSoldOut ? '#F8FAFC' : isSelected ? 'rgba(19,73,86,0.03)' : '#fff',
+                opacity: isSoldOut ? 0.75 : 1,
+                position: 'relative', overflow: 'hidden',
               }}
             >
+              {/* Sold-out diagonal strikethrough line */}
+              {isSoldOut && (
+                <div style={{
+                  position: 'absolute', inset: 0, pointerEvents: 'none',
+                  background: 'repeating-linear-gradient(135deg, transparent, transparent 10px, rgba(239,68,68,0.08) 10px, rgba(239,68,68,0.08) 12px)',
+                }} />
+              )}
+
               <div style={{
                 width: 40, height: 40, borderRadius: 10,
-                background: isSelected ? '#134956' : '#E8F4F6',
+                background: isSoldOut ? '#E2E8F0' : isSelected ? '#134956' : '#E8F4F6',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                 transition: 'background 0.15s',
               }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
-                  stroke={isSelected ? '#fff' : '#134956'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
-                </svg>
+                {isSoldOut ? (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round">
+                    <circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+                  </svg>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                    stroke={isSelected ? '#fff' : '#134956'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+                  </svg>
+                )}
               </div>
+
               <div style={{ flex: 1 }}>
-                {d.label && <p style={{ fontSize: 12, fontWeight: 600, color: '#134956', marginBottom: 2 }}>{d.label}</p>}
-                <p style={{ fontSize: 14, fontWeight: 700, color: '#0F172A' }}>
-                  {fmt(d.start_date)} <span style={{ color: '#94A3B8', fontWeight: 400 }}>→</span> {fmt(d.end_date)}
+                {d.label && (
+                  <p style={{ fontSize: 12, fontWeight: 600, color: isSoldOut ? '#94A3B8' : '#134956', marginBottom: 2, textDecoration: isSoldOut ? 'line-through' : 'none' }}>
+                    {d.label}
+                  </p>
+                )}
+                <p style={{ fontSize: 14, fontWeight: 700, color: isSoldOut ? '#94A3B8' : '#0F172A', textDecoration: isSoldOut ? 'line-through' : 'none' }}>
+                  {fmt(d.start_date)} <span style={{ color: '#CBD5E1', fontWeight: 400 }}>→</span> {fmt(d.end_date)}
                 </p>
+                {isSoldOut && (
+                  <p style={{ fontSize: 11, color: '#EF4444', fontWeight: 600, marginTop: 2 }}>This departure is full — pick another date</p>
+                )}
               </div>
+
               {isSelected ? (
                 <div style={{ width: 22, height: 22, borderRadius: '50%', background: '#134956', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
@@ -1625,7 +1661,9 @@ function TripDates({
                   </svg>
                 </div>
               ) : (
-                <div style={{ fontSize: 11, fontWeight: 700, color: '#15803D', background: '#DCFCE7', padding: '4px 10px', borderRadius: 20 }}>Available</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: cfg.color, background: cfg.bg, border: `1px solid ${cfg.border}`, padding: '4px 10px', borderRadius: 20, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                  {cfg.label}
+                </div>
               )}
             </div>
           );

@@ -52,7 +52,7 @@ interface CmsData {
   state_gallery_image: string;
   destination_cards: Array<{ destination_id: string; custom_name: string | null; description: string; image_url: string }>;
   pricing_mode: 'date_based' | 'package_based';
-  trip_dates: Array<{ start_date: string; end_date: string; label: string }>;
+  trip_dates: Array<{ start_date: string; end_date: string; label: string; availability: 'available' | 'few_left' | 'filling_fast' | 'sold_out' }>;
   package_options: CmsOption[];
   inclusions: string[];
   exclusions: string[];
@@ -207,6 +207,8 @@ export default function GroupTemplateEditPage() {
       if (typeof c.state_gallery_image !== 'string') c.state_gallery_image = '';
       if (c.pricing_mode !== 'date_based' && c.pricing_mode !== 'package_based') c.pricing_mode = 'date_based';
       if (!Array.isArray(c.trip_dates)) c.trip_dates = [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      c.trip_dates = (c.trip_dates as any[]).map((td) => ({ ...td, availability: td.availability ?? 'available' }));
       setCms(c);
       setDays(t.group_template_days.map(d => ({
         ...d,
@@ -710,7 +712,7 @@ export default function GroupTemplateEditPage() {
                       <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>Add available departure windows — shown on the itinerary as simple date info, no price.</p>
                     </div>
                     <button
-                      onClick={() => updCms('trip_dates', [...cms.trip_dates, { start_date: '', end_date: '', label: '' }])}
+                      onClick={() => updCms('trip_dates', [...cms.trip_dates, { start_date: '', end_date: '', label: '', availability: 'available' }])}
                       className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold text-white hover:opacity-90"
                       style={{ backgroundColor: T }}>
                       <Plus className="w-3.5 h-3.5" /> Add Date
@@ -725,7 +727,7 @@ export default function GroupTemplateEditPage() {
 
                   <div className="flex flex-col gap-2">
                     {cms.trip_dates.map((td, i) => (
-                      <div key={i} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-end p-3 rounded-xl" style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                      <div key={i} className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] gap-2 items-end p-3 rounded-xl" style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
                         <div>
                           <label className="block text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: '#94A3B8' }}>Start Date</label>
                           <input type="date" className="w-full h-8 px-2 rounded-lg border text-sm focus:outline-none" style={{ borderColor: '#E2E8F0' }}
@@ -743,6 +745,17 @@ export default function GroupTemplateEditPage() {
                           <input type="text" placeholder="e.g. May Long Weekend" className="w-full h-8 px-2 rounded-lg border text-sm focus:outline-none" style={{ borderColor: '#E2E8F0' }}
                             value={td.label}
                             onChange={e => { const d = [...cms.trip_dates]; d[i] = { ...d[i], label: e.target.value }; updCms('trip_dates', d); }} />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: '#94A3B8' }}>Availability</label>
+                          <select className="w-full h-8 px-2 rounded-lg border text-sm focus:outline-none" style={{ borderColor: '#E2E8F0' }}
+                            value={td.availability ?? 'available'}
+                            onChange={e => { const d = [...cms.trip_dates]; d[i] = { ...d[i], availability: e.target.value as 'available' | 'few_left' | 'filling_fast' | 'sold_out' }; updCms('trip_dates', d); }}>
+                            <option value="available">✅ Available</option>
+                            <option value="few_left">🔴 Few Slots Left</option>
+                            <option value="filling_fast">🔥 Filling Fast</option>
+                            <option value="sold_out">❌ Sold Out</option>
+                          </select>
                         </div>
                         <button onClick={() => updCms('trip_dates', cms.trip_dates.filter((_, j) => j !== i))}
                           className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-[#94A3B8] hover:text-red-500">
