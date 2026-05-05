@@ -186,14 +186,19 @@ export default function GroupTemplateEditPage() {
       const t: Template = td.data;
       setTpl(t);
       const c: CmsData = (t.cms_data as CmsData) ?? { ...DEFAULT_CMS };
-      if (c.destination_cards.length === 0 && t.destinations?.length) {
-        c.destination_cards = (t.destinations as string[]).map((did: string) => ({
-          destination_id: did, custom_name: null, description: '', image_url: '',
-        }));
+      // Ensure every destination in the template has a card (handles missing/new destinations)
+      const existingCardIds = new Set(c.destination_cards.map(dc => dc.destination_id));
+      const missingDests = (t.destinations as string[] ?? []).filter(did => !existingCardIds.has(did));
+      if (missingDests.length > 0) {
+        c.destination_cards = [
+          ...c.destination_cards,
+          ...missingDests.map((did: string) => ({ destination_id: did, custom_name: null, description: '', image_url: '' })),
+        ];
       }
       // Backfill new fields that may not exist in older cms_data
       if (!Array.isArray(c.inclusions)) c.inclusions = [...DEFAULT_CMS.inclusions];
       if (!Array.isArray(c.exclusions)) c.exclusions = [...DEFAULT_CMS.exclusions];
+      if (!Array.isArray(c.hero_images)) c.hero_images = [];
       setCms(c);
       setDays(t.group_template_days.map(d => ({
         ...d,

@@ -132,12 +132,16 @@ export default function TemplateEditPage() {
       const t: Template = td.data;
       setTpl(t);
       const c: CmsData = t.cms_data ?? { ...DEFAULT_CMS };
-      // Ensure destination_cards are in sync with template destinations
-      if (c.destination_cards.length === 0 && t.destinations?.length) {
-        c.destination_cards = (t.destinations as string[]).map((did: string) => ({
-          destination_id: did, custom_name: null, description: '', image_url: '',
-        }));
+      // Backfill any destinations missing from destination_cards
+      const existingCardIds = new Set(c.destination_cards.map((dc: { destination_id: string }) => dc.destination_id));
+      const missingDests = (t.destinations as string[] ?? []).filter((did: string) => !existingCardIds.has(did));
+      if (missingDests.length > 0) {
+        c.destination_cards = [
+          ...c.destination_cards,
+          ...missingDests.map((did: string) => ({ destination_id: did, custom_name: null, description: '', image_url: '' })),
+        ];
       }
+      if (!Array.isArray(c.hero_images)) c.hero_images = [];
       setCms(c);
       setDays(t.template_days.map(d => ({ ...d, description_override: d.description_override ?? null, image_override: d.image_override ?? null, gallery_images: (d as unknown as { gallery_images?: string[] | null }).gallery_images ?? null, day_plan_id: d.day_plan_id ?? null, meals: d.meals as Record<string,boolean> | null ?? null })));
       setTiers(t.template_hotel_tiers);
