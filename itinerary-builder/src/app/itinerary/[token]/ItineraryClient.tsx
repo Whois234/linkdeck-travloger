@@ -1645,7 +1645,9 @@ function PackageStickyCTA({
   onBookNow: () => void;
   booking: boolean;
 }) {
-  const price = selectedOption ? selectedOption.adult_price * adults : 0;
+  const gstPct = selectedOption?.gst_percent ?? 5;
+  const pricePerAdultInclGst = selectedOption ? Math.round(selectedOption.adult_price * (1 + gstPct / 100)) : 0;
+  const price = pricePerAdultInclGst * adults;
   const fmt = (s: string) => s ? new Date(s).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
   const dateLabel = selectedDate
     ? (selectedDate.label || `${fmt(selectedDate.start_date)} → ${fmt(selectedDate.end_date)}`)
@@ -1707,6 +1709,9 @@ function GroupPackageOptions({
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {options.map((opt) => {
             const isSel = selectedTier === opt.tier_name;
+            const gstPct = opt.gst_percent ?? 5;
+            const adultInclGst = Math.round(opt.adult_price * (1 + gstPct / 100));
+            const childInclGst = opt.child_price > 0 ? Math.round(opt.child_price * (1 + gstPct / 100)) : 0;
             return (
               <div
                 key={opt.tier_name}
@@ -1756,22 +1761,22 @@ function GroupPackageOptions({
                       <div style={{ fontFamily: 'var(--f-display)', fontSize: 18, fontWeight: 800, color: isSel ? T : '#0F172A', lineHeight: 1.1 }}>
                         {opt.tier_name}
                       </div>
-                      {opt.child_price > 0 && (
+                      {childInclGst > 0 && (
                         <div style={{ fontFamily: 'var(--f-body)', fontSize: 10.5, color: '#94A3B8', marginTop: 2 }}>
-                          Child: {fmtCurrency(opt.child_price)}
+                          Child: {fmtCurrency(childInclGst)}
                         </div>
                       )}
                     </div>
                   </div>
-                  {opt.adult_price > 0 && (
+                  {adultInclGst > 0 && (
                     <div style={{ textAlign: 'right', flexShrink: 0 }}>
                       <div style={{
                         fontFamily: 'var(--f-num)', fontSize: 22, fontWeight: 900,
                         color: isSel ? T : '#0F172A', lineHeight: 1,
                       }}>
-                        {fmtCurrency(opt.adult_price)}
+                        {fmtCurrency(adultInclGst)}
                       </div>
-                      <div style={{ fontFamily: 'var(--f-body)', fontSize: 10.5, color: '#94A3B8', marginTop: 3 }}>per adult</div>
+                      <div style={{ fontFamily: 'var(--f-body)', fontSize: 10.5, color: '#94A3B8', marginTop: 3 }}>per adult · incl. GST</div>
                     </div>
                   )}
                 </div>
@@ -2055,10 +2060,10 @@ function PackageFareSummary({
     );
   }
 
-  const gstPct      = packageOption.gst_percent ?? 5;
-  const priceInclGst = packageOption.adult_price; // stored price is incl. GST
-  const priceExclGst = Math.round(priceInclGst / (1 + gstPct / 100));
-  const gstPerAdult  = priceInclGst - priceExclGst;
+  const gstPct       = packageOption.gst_percent ?? 5;
+  const priceExclGst = packageOption.adult_price; // stored price is ex-GST
+  const gstPerAdult  = Math.round(priceExclGst * gstPct / 100);
+  const priceInclGst = priceExclGst + gstPerAdult;
   const subtotalExcl = priceExclGst * adults;
   const gstTotal     = gstPerAdult * adults;
   const total        = priceInclGst * adults;
@@ -2417,7 +2422,8 @@ export function ItineraryClient({ data, token }: Props) {
       const tripDate  = (group_trip_dates ?? [])[selectedTripDateIdx!];
       if (!pkgOption || !tripDate) return;
       setBooking(true);
-      const total = pkgOption.adult_price * groupAdults;
+      const pkgGstPct = pkgOption.gst_percent ?? 5;
+      const total = Math.round(pkgOption.adult_price * (1 + pkgGstPct / 100)) * groupAdults;
       try {
         await fetch(`/api/v1/public/itinerary/${token}/analytics`, {
           method: 'POST',
@@ -2629,7 +2635,8 @@ export function ItineraryClient({ data, token }: Props) {
         const tripDt  = (group_trip_dates ?? [])[selectedTripDateIdx!];
         if (!pkgOpt || !tripDt) return null;
         const fmt = (s: string) => new Date(s).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-        const total = pkgOpt.adult_price * groupAdults;
+        const modalGstPct = pkgOpt.gst_percent ?? 5;
+        const total = Math.round(pkgOpt.adult_price * (1 + modalGstPct / 100)) * groupAdults;
         return (
           <div className="tl-overlay" onClick={() => setShowBookingIntent(false)}>
             <div className="tl-modal" onClick={(e) => e.stopPropagation()}>
