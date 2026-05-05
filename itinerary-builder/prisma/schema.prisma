@@ -622,6 +622,7 @@ model TemplateDay {
   day_plan_id          String?
   description_override String?
   image_override       String?
+  gallery_images       Json?
   activities           Json?
   transfers            Json?
   meals                Json?
@@ -685,6 +686,7 @@ model GroupTemplateDay {
   day_plan_id          String?
   description_override String?
   image_override       String?
+  gallery_images       Json?
   activities           Json?
   transfers            Json?
   meals                Json?
@@ -892,6 +894,7 @@ model QuoteDaySnapshot {
   title          String
   description    String?
   image_url      String?
+  gallery_images Json?
   tags           Json?
   activities     Json?
   transfers      Json?

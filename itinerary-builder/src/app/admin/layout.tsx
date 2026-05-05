@@ -82,33 +82,33 @@ export function resolveModulePerm(
 }
 
 function filterNav(role: string, moduleAccess?: ModulePerm[] | null): NavGroup[] {
+  if (role === 'ADMIN') return ALL_NAV;
+  // null = admin explicitly granted full access — bypass all role restrictions
+  if (moduleAccess === null) return ALL_NAV;
+  // undefined = user not yet loaded — fall back to role-based defaults
+  if (moduleAccess === undefined) {
+    const r = role as NavRole;
+    return ALL_NAV
+      .filter(g => !g.roles || g.roles.includes(r))
+      .map(g => ({ ...g, items: g.items.filter(item => !item.roles || item.roles.includes(r)) }))
+      .filter(g => g.items.length > 0);
+  }
+  // array = explicit module grants — bypass role restrictions, show only granted items
   const r = role as NavRole;
-  const applyModuleFilter = role !== 'ADMIN' && Array.isArray(moduleAccess);
   return ALL_NAV
-    .filter(g => {
-      if (!g.roles || g.roles.includes(r)) return true;
-      // When explicit module access is configured, allow the group if any item has granted access
-      if (applyModuleFilter) {
-        return g.items.some(item => {
-          const key = item.href.replace('/admin/', '');
-          return (moduleAccess as ModulePerm[]).some(m => m.key === key);
-        });
-      }
-      return false;
-    })
+    .filter(g => g.items.some(item => {
+      const key = item.href.replace('/admin/', '');
+      return (moduleAccess as ModulePerm[]).some(m => m.key === key);
+    }))
     .map(g => ({
       ...g,
       items: g.items.filter(item => {
-        if (applyModuleFilter) {
-          // Explicit module access takes full precedence — ignore role restrictions
-          const key = item.href.replace('/admin/', '');
-          return (moduleAccess as ModulePerm[]).some(m => m.key === key);
-        }
-        if (item.roles && !item.roles.includes(r)) return false;
-        return true;
+        const key = item.href.replace('/admin/', '');
+        return (moduleAccess as ModulePerm[]).some(m => m.key === key);
       }),
     }))
     .filter(g => g.items.length > 0);
+  void r;
 }
 
 interface AuthUser { name: string; email: string; role: string; module_access?: ModulePerm[] | null }

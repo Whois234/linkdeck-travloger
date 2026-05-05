@@ -40,6 +40,7 @@
 /* ── HERO ── */
 .tl-hero { min-height: 78svh; display: flex; flex-direction: column; justify-content: flex-end; background: linear-gradient(155deg,#7a9da8 0%,#8fb3bc 30%,#a8c4ca 60%,#93b2bb 100%); position: relative; overflow: hidden; padding-top: 58px; }
 .tl-hero-bg-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center top; opacity: 0.40; }
+.tl-hero-slide { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center top; }
 .tl-hero-noise { position: absolute; inset: 0; opacity: 0.04; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); background-size: 200px; }
 .tl-hero-overlay { position: absolute; inset: 0; background: linear-gradient(to top, rgba(8,28,38,0.92) 0%, rgba(10,34,46,0.55) 50%, rgba(10,30,42,0.20) 100%); }
 .tl-hero-body { position: relative; z-index: 2; padding: 0 22px 110px; }
@@ -200,10 +201,42 @@
 .tl-terms-li::before { content: '—'; position: absolute; left: 0; color: var(--tl-teal); font-weight: 700; }
 
 /* ── AGENT ── */
-.tl-agent-wrap { background: linear-gradient(160deg,#061e26 0%,#0a2e38 45%,#0f3d4a 100%); padding: 48px 18px; position: relative; overflow: hidden; }
-.tl-agent-card { max-width: 680px; margin: 0 auto; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.14); border-radius: 24px; padding: 24px 20px; backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%); box-shadow: 0 8px 40px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.1); }
-.tl-wa-cta { display: flex; align-items: center; justify-content: center; gap: 10px; background: var(--tl-green); color: white; border: none; border-radius: 14px; padding: 15px; font-family: var(--f-body); font-size: 15px; font-weight: 700; cursor: pointer; text-decoration: none; transition: all 0.2s; width: 100%; box-shadow: 0 4px 18px rgba(37,211,102,0.4); }
-.tl-wa-cta:hover { background: #20ba5a; box-shadow: 0 6px 24px rgba(37,211,102,0.55); transform: translateY(-1px); }
+.tl-agent-wrap {
+  background: linear-gradient(160deg,#030f14 0%,#061e26 35%,#0a2e38 70%,#0d3540 100%);
+  padding: 56px 18px 60px;
+  position: relative;
+  overflow: hidden;
+}
+.tl-agent-wrap::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E") 200px / 200px;
+  opacity: 0.025;
+  pointer-events: none;
+}
+.tl-agent-card {
+  max-width: 480px;
+  margin: 0 auto;
+  background: rgba(255,255,255,0.065);
+  border: 1px solid rgba(255,255,255,0.13);
+  border-radius: 28px;
+  padding: 28px 22px;
+  backdrop-filter: blur(28px) saturate(200%);
+  -webkit-backdrop-filter: blur(28px) saturate(200%);
+  box-shadow: 0 24px 64px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(0,0,0,0.15);
+  position: relative;
+}
+.tl-agent-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 28px;
+  background: linear-gradient(145deg, rgba(255,255,255,0.04) 0%, transparent 60%);
+  pointer-events: none;
+}
+.tl-wa-cta { display: flex; align-items: center; justify-content: center; gap: 10px; background: linear-gradient(135deg,#25D366,#1aad54); color: white; border: none; border-radius: 16px; padding: 16px; font-family: var(--f-body); font-size: 15px; font-weight: 800; cursor: pointer; text-decoration: none; transition: all 0.25s; width: 100%; box-shadow: 0 4px 20px rgba(37,211,102,0.45), inset 0 1px 0 rgba(255,255,255,0.2); letter-spacing: -0.2px; }
+.tl-wa-cta:hover { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(37,211,102,0.6), inset 0 1px 0 rgba(255,255,255,0.2); }
 
 /* ── FOOTER ── */
 .tl-footer { background: var(--tl-dark); padding: 40px 18px 36px; }

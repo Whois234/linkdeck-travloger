@@ -118,6 +118,9 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
         title: td.title,
         description: td.description_override ?? null,
         image_url: td.image_override ?? null,
+        gallery_images: Array.isArray((td as unknown as { gallery_images?: string[] }).gallery_images)
+          ? (td as unknown as { gallery_images: string[] }).gallery_images
+          : null,
         tags: null,
         transfers: td.transfers ?? null,
       };
@@ -139,6 +142,9 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
         title: gd.title,
         description: gd.description_override ?? null,
         image_url: gd.image_override ?? null,
+        gallery_images: Array.isArray((gd as unknown as { gallery_images?: string[] }).gallery_images)
+          ? (gd as unknown as { gallery_images: string[] }).gallery_images
+          : null,
         tags: null,
         transfers: gd.transfers ?? null,
       };
@@ -352,6 +358,11 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
     state: {
       ...quote.state,
       hero_image: quote.state.hero_image ?? groupTemplate?.hero_image ?? privateTemplateHero ?? firstDestHero ?? null,
+      hero_images: (Array.isArray((templateCmsData as Record<string,unknown>)?.hero_images) && ((templateCmsData as Record<string,unknown>).hero_images as string[]).filter(Boolean).length > 1)
+        ? ((templateCmsData as Record<string,unknown>).hero_images as string[]).filter(Boolean)
+        : (Array.isArray((groupCms as Record<string,unknown>)?.hero_images) && ((groupCms as Record<string,unknown>).hero_images as string[]).filter(Boolean).length > 1)
+          ? ((groupCms as Record<string,unknown>).hero_images as string[]).filter(Boolean)
+          : null,
     },
     quote_options: enrichedOptions,
     group_package_options: groupPackageOptions,

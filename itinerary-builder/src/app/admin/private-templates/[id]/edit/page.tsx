@@ -37,6 +37,7 @@ interface CmsData {
   hero_heading: string;
   hero_subheading: string;
   hero_tags: string[];
+  hero_images: string[];
   destination_cards: Array<{ destination_id: string; custom_name: string | null; description: string; image_url: string }>;
   package_options: CmsOption[];
   why_choose: (string | WhyItem)[];
@@ -51,6 +52,7 @@ function normaliseWhy(items: (string | WhyItem)[]): WhyItem[] {
 interface TDay {
   id?: string; day_number: number; destination_id: string; title: string;
   description_override: string | null; image_override: string | null;
+  gallery_images: string[] | null;
   day_plan_id: string | null; meals: Record<string, boolean> | null; sort_order: number;
 }
 interface HTier {
@@ -69,7 +71,7 @@ interface Template {
 
 const DEFAULT_CMS: CmsData = {
   pax_count: 2, hero_heading: '', hero_subheading: '',
-  hero_tags: [], destination_cards: [], package_options: [
+  hero_tags: [], hero_images: [], destination_cards: [], package_options: [
     { tier_name: 'Standard', display_order: 1, is_most_popular: false, inclusions: [] },
     { tier_name: 'Deluxe',   display_order: 2, is_most_popular: true,  inclusions: [] },
   ],
@@ -137,7 +139,7 @@ export default function TemplateEditPage() {
         }));
       }
       setCms(c);
-      setDays(t.template_days.map(d => ({ ...d, description_override: d.description_override ?? null, image_override: d.image_override ?? null, day_plan_id: d.day_plan_id ?? null, meals: d.meals as Record<string,boolean> | null ?? null })));
+      setDays(t.template_days.map(d => ({ ...d, description_override: d.description_override ?? null, image_override: d.image_override ?? null, gallery_images: (d as unknown as { gallery_images?: string[] | null }).gallery_images ?? null, day_plan_id: d.day_plan_id ?? null, meals: d.meals as Record<string,boolean> | null ?? null })));
       setTiers(t.template_hotel_tiers);
       setSelectedPolicies((t as unknown as { default_policy_ids?: string[] }).default_policy_ids ?? []);
     }
@@ -162,6 +164,7 @@ export default function TemplateEditPage() {
       title: `Day ${i + 1}`,
       description_override: null,
       image_override: null,
+      gallery_images: null,
       day_plan_id: null,
       meals: null,
       sort_order: i + 1,
@@ -317,14 +320,73 @@ export default function TemplateEditPage() {
               <div className="grid gap-4">
                 <div>
                   <ImageUploader
-                    label="Hero Image"
+                    label="Hero Image (Primary)"
                     folder="templates/hero"
                     value={cms.hero_tags[0] ?? null}
-                    onChange={url => updCms('hero_tags', [url ?? '', ...cms.hero_tags.slice(1)])}
+                    onChange={url => {
+                      updCms('hero_tags', [url ?? '', ...cms.hero_tags.slice(1)]);
+                      // Keep hero_images in sync: replace or set primary slot
+                      const imgs = [...(cms.hero_images ?? [])];
+                      if (url) { imgs[0] = url; } else { imgs.splice(0, 1); }
+                      updCms('hero_images', imgs);
+                    }}
                     placeholder="Upload hero banner image"
                     sizeHint="1200 × 630 px (landscape 16:9)"
                   />
                 </div>
+
+                {/* Hero Slideshow */}
+                <div className="rounded-xl p-4" style={{ border: '1px dashed #CBD5E1', backgroundColor: '#F8FAFC' }}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <p className={lbl} style={{ marginBottom: 2 }}>Hero Slideshow Images</p>
+                      <p className="text-[11px] text-[#94A3B8]">Add extra slides — they auto-cycle every 5 s in the itinerary. Leave empty for a single static image.</p>
+                    </div>
+                    <button
+                      onClick={() => updCms('hero_images', [...(cms.hero_images ?? []), ''])}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white hover:opacity-90 flex-shrink-0"
+                      style={{ backgroundColor: T }}
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Add Slide
+                    </button>
+                  </div>
+                  {(cms.hero_images ?? []).length === 0 ? (
+                    <p className="text-xs text-[#94A3B8] text-center py-3">No slides yet. Click "Add Slide" to build a carousel.</p>
+                  ) : (
+                    <div className="flex flex-col gap-3">
+                      {(cms.hero_images ?? []).map((url, si) => (
+                        <div key={si} className="flex items-start gap-2">
+                          <div className="flex-1">
+                            <ImageUploader
+                              label={si === 0 ? 'Slide 1 (Primary)' : `Slide ${si + 1}`}
+                              folder="templates/hero"
+                              value={url || null}
+                              onChange={imgUrl => {
+                                const imgs = [...(cms.hero_images ?? [])];
+                                imgs[si] = imgUrl ?? '';
+                                updCms('hero_images', imgs);
+                                if (si === 0) updCms('hero_tags', [imgUrl ?? '', ...cms.hero_tags.slice(1)]);
+                              }}
+                              placeholder={`Upload slide ${si + 1}`}
+                              sizeHint="1200 × 630 px"
+                            />
+                          </div>
+                          <button
+                            onClick={() => {
+                              const imgs = (cms.hero_images ?? []).filter((_, j) => j !== si);
+                              updCms('hero_images', imgs);
+                              if (si === 0) updCms('hero_tags', [imgs[0] ?? '', ...cms.hero_tags.slice(1)]);
+                            }}
+                            className="mt-6 p-1.5 rounded-lg text-[#94A3B8] hover:text-red-500 hover:bg-red-50 flex-shrink-0"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <div>
                   <label className={lbl}>Main Heading</label>
                   <input className={inp} style={inpSt} value={cms.hero_heading}
@@ -558,13 +620,59 @@ export default function TemplateEditPage() {
                           </div>
                           <div className="col-span-2">
                             <ImageUploader
-                              label="Day Image"
+                              label="Day Image (Primary)"
                               folder="templates/days"
                               value={day.image_override ?? null}
                               onChange={url => updDay(i, { image_override: url })}
                               placeholder="Upload day image"
                               sizeHint="1200 × 800 px (3:2) — shown full-width in itinerary"
                             />
+                          </div>
+                          {/* Day Gallery Slideshow */}
+                          <div className="col-span-2 rounded-xl p-3" style={{ border: '1px dashed #CBD5E1', backgroundColor: '#F8FAFC' }}>
+                            <div className="flex items-center justify-between mb-2">
+                              <div>
+                                <p className={lbl} style={{ marginBottom: 1 }}>Day Slideshow Photos</p>
+                                <p className="text-[11px] text-[#94A3B8]">Extra images shown as a swipeable gallery on this day card.</p>
+                              </div>
+                              <button
+                                onClick={() => updDay(i, { gallery_images: [...(day.gallery_images ?? []), ''] })}
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-white hover:opacity-90 flex-shrink-0"
+                                style={{ backgroundColor: T }}
+                              >
+                                <Plus className="w-3 h-3" /> Add
+                              </button>
+                            </div>
+                            {(day.gallery_images ?? []).length === 0 ? (
+                              <p className="text-xs text-[#94A3B8] text-center py-2">No extra photos yet.</p>
+                            ) : (
+                              <div className="flex flex-col gap-2">
+                                {(day.gallery_images ?? []).map((gUrl, gi) => (
+                                  <div key={gi} className="flex items-start gap-2">
+                                    <div className="flex-1">
+                                      <ImageUploader
+                                        label={`Photo ${gi + 1}`}
+                                        folder="templates/days"
+                                        value={gUrl || null}
+                                        onChange={imgUrl => {
+                                          const g = [...(day.gallery_images ?? [])];
+                                          g[gi] = imgUrl ?? '';
+                                          updDay(i, { gallery_images: g });
+                                        }}
+                                        placeholder={`Upload photo ${gi + 1}`}
+                                        sizeHint="1200 × 800 px"
+                                      />
+                                    </div>
+                                    <button
+                                      onClick={() => updDay(i, { gallery_images: (day.gallery_images ?? []).filter((_, j) => j !== gi) })}
+                                      className="mt-6 p-1.5 rounded-lg text-[#94A3B8] hover:text-red-500 hover:bg-red-50 flex-shrink-0"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                           <div className="col-span-2">
                             <label className={lbl}>Meals included</label>

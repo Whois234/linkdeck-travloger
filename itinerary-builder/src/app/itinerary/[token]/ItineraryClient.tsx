@@ -37,6 +37,7 @@ interface DaySnapshot {
   title: string;
   description?: string | null;
   image_url?: string | null;
+  gallery_images?: string[] | null;
   tags?: string[] | null;
   transfers?: { note?: string } | null;
 }
@@ -105,7 +106,7 @@ interface ItineraryData {
     speciality?: string | null;
     available_hours?: string | null;
   } | null;
-  state: { name: string; description?: string | null; hero_image?: string | null };
+  state: { name: string; description?: string | null; hero_image?: string | null; hero_images?: string[] | null };
   quote_options: QuoteOption[];
   group_package_options?: GroupPackageOption[];
   day_snapshots: DaySnapshot[];
@@ -199,10 +200,42 @@ function Hero({ data }: { data: ItineraryData }) {
     ? destNames.join(' · ')
     : (state.description ?? null);
 
+  // Slideshow: use hero_images if multiple, else fall back to single hero_image
+  const slides = (state.hero_images && state.hero_images.length > 1)
+    ? state.hero_images
+    : (state.hero_image ? [state.hero_image] : []);
+
+  const [activeSlide, setActiveSlide] = useState(0);
+  useEffect(() => {
+    if (slides.length <= 1) return;
+    const t = setInterval(() => setActiveSlide(i => (i + 1) % slides.length), 5000);
+    return () => clearInterval(t);
+  }, [slides.length]);
+
   return (
     <div className="tl-hero" data-section="hero">
-      {state.hero_image && (
-        <img src={state.hero_image} alt={heroTitle} className="tl-hero-bg-img" loading="eager" />
+      {/* Slideshow layers */}
+      {slides.map((src, idx) => (
+        <img
+          key={src}
+          src={src}
+          alt={heroTitle}
+          className="tl-hero-bg-img tl-hero-slide"
+          loading={idx === 0 ? 'eager' : 'lazy'}
+          style={{ opacity: idx === activeSlide ? 0.40 : 0, transition: 'opacity 1.2s ease-in-out', zIndex: idx === activeSlide ? 1 : 0 }}
+        />
+      ))}
+      {/* Slide dots */}
+      {slides.length > 1 && (
+        <div style={{ position: 'absolute', bottom: 90, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 6, zIndex: 5 }}>
+          {slides.map((_, idx) => (
+            <button key={idx} onClick={() => setActiveSlide(idx)} style={{
+              width: idx === activeSlide ? 20 : 6, height: 6, borderRadius: 3,
+              background: idx === activeSlide ? 'white' : 'rgba(255,255,255,0.4)',
+              border: 'none', cursor: 'pointer', transition: 'all 0.3s ease', padding: 0,
+            }} />
+          ))}
+        </div>
       )}
       <div className="tl-hero-noise" />
       <div className="tl-hero-overlay" />
@@ -459,6 +492,56 @@ function DayDescription({ text }: { text: string }) {
   return <p className="tl-day-desc">{text}</p>;
 }
 
+/* ─────────────────────────── Day Gallery ─────────────────────────── */
+function DayGallery({ images, title }: { images: string[]; title: string }) {
+  const [active, setActive] = useState(0);
+  return (
+    <div style={{ position: 'relative', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', transition: 'transform 0.4s ease', transform: `translateX(-${active * 100}%)` }}>
+        {images.map((src, i) => (
+          <img key={i} src={src} alt={`${title} — ${i + 1}`} className="tl-day-img"
+            style={{ minWidth: '100%', flexShrink: 0 }} loading="lazy" />
+        ))}
+      </div>
+      {/* Prev / Next */}
+      {active > 0 && (
+        <button onClick={() => setActive(a => a - 1)} style={{
+          position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)',
+          background: 'rgba(0,0,0,0.45)', border: 'none', borderRadius: '50%',
+          width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+        }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+      )}
+      {active < images.length - 1 && (
+        <button onClick={() => setActive(a => a + 1)} style={{
+          position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+          background: 'rgba(0,0,0,0.45)', border: 'none', borderRadius: '50%',
+          width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+        }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      )}
+      {/* Dots */}
+      <div style={{ position: 'absolute', bottom: 8, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 5 }}>
+        {images.map((_, i) => (
+          <button key={i} onClick={() => setActive(i)} style={{
+            width: i === active ? 16 : 5, height: 5, borderRadius: 2.5,
+            background: i === active ? 'white' : 'rgba(255,255,255,0.45)',
+            border: 'none', cursor: 'pointer', transition: 'all 0.25s', padding: 0,
+          }} />
+        ))}
+      </div>
+      {/* Counter */}
+      <div style={{
+        position: 'absolute', top: 10, right: 10,
+        background: 'rgba(0,0,0,0.45)', color: 'white', borderRadius: 20,
+        padding: '3px 10px', fontSize: 10, fontWeight: 600, fontFamily: 'var(--f-body)',
+      }}>{active + 1} / {images.length}</div>
+    </div>
+  );
+}
+
 /* ─────────────────────────── Day Cards ─────────────────────────── */
 function DayCard({ day, open, onToggle }: { day: DaySnapshot; open: boolean; onToggle: () => void }) {
   return (
@@ -482,9 +565,13 @@ function DayCard({ day, open, onToggle }: { day: DaySnapshot; open: boolean; onT
         </div>
         {open && (
           <>
-            {day.image_url && (
-              <img src={day.image_url} alt={day.title} className="tl-day-img" loading="lazy" />
-            )}
+            {/* Day image / gallery slideshow */}
+            {(() => {
+              const allImgs = [day.image_url, ...(day.gallery_images ?? [])].filter(Boolean) as string[];
+              if (allImgs.length === 0) return null;
+              if (allImgs.length === 1) return <img src={allImgs[0]} alt={day.title} className="tl-day-img" loading="lazy" />;
+              return <DayGallery images={allImgs} title={day.title} />;
+            })()}
             <div className="tl-day-body">
               {day.description && <DayDescription text={day.description} />}
               {Array.isArray(day.tags) && day.tags.length > 0 && (
@@ -849,101 +936,131 @@ function Policies({ policies }: { policies: PolicyRecord[] }) {
 /* ─────────────────────────── Agent Section ─────────────────────────── */
 function AgentSection({ agent, waUrl }: { agent: ItineraryData['agent']; waUrl: string }) {
   const name        = agent?.name        ?? 'Your Travel Expert';
-  const designation = agent?.designation ?? 'Senior Travel Consultant';
+  const designation = agent?.designation ?? 'Travel Consultant';
   const phone       = agent?.phone       ?? '';
   const email       = agent?.email       ?? '';
   const rating      = agent?.rating      ?? 4.9;
-  const speciality  = agent?.speciality  ?? 'South India Specialist';
 
   const TRUST = [
-    { icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--tl-warm)" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>, label: '24 / 7 Reachable' },
-    { icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--tl-warm)" strokeWidth="2.2" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>, label: 'Verified Expert' },
-    { icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--tl-warm)" strokeWidth="2.2" strokeLinecap="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>, label: 'Replies in ~2 hrs' },
-    { icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--tl-warm)" strokeWidth="2.2" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>, label: 'Free Trip Support' },
+    { icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--tl-warm)" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>, label: '24 / 7 Reachable', sub: 'Always available' },
+    { icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--tl-warm)" strokeWidth="2" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>, label: 'Verified Expert', sub: 'Background checked' },
+    { icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--tl-warm)" strokeWidth="2" strokeLinecap="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>, label: 'Fast Replies', sub: 'Responds within 2 hrs' },
+    { icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--tl-warm)" strokeWidth="2" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>, label: 'Free Support', sub: 'End-to-end trip care' },
   ];
 
   return (
     <div className="tl-agent-wrap">
-      {/* Subtle palm deco */}
-      <svg style={{ position: 'absolute', right: -8, bottom: 0, opacity: 0.05, pointerEvents: 'none', width: 130, height: 200 }} viewBox="0 0 140 210" fill="white">
-        <ellipse cx="70" cy="45" rx="14" ry="42" transform="rotate(-13 70 45)" />
-        <ellipse cx="70" cy="45" rx="14" ry="42" transform="rotate(13 70 45)" />
-        <ellipse cx="46" cy="62" rx="12" ry="36" transform="rotate(-35 46 62)" />
-        <ellipse cx="94" cy="62" rx="12" ry="36" transform="rotate(35 94 62)" />
-        <rect x="67" y="80" width="7" height="125" rx="3.5" />
-      </svg>
+      {/* Decorative radial glow */}
+      <div style={{ position: 'absolute', top: -40, left: '50%', transform: 'translateX(-50%)', width: 300, height: 200, background: 'radial-gradient(ellipse at center, rgba(201,169,122,0.12) 0%, transparent 70%)', pointerEvents: 'none' }} />
 
       {/* Section header */}
-      <div style={{ textAlign: 'center', marginBottom: 24, position: 'relative' }}>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(201,169,122,0.13)', border: '1px solid rgba(201,169,122,0.25)', borderRadius: 20, padding: '5px 14px', marginBottom: 14 }}>
-          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="var(--tl-warm)" strokeWidth="2.5" strokeLinecap="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-          <span style={{ fontFamily: 'var(--f-body)', fontSize: '9px', letterSpacing: '2.5px', textTransform: 'uppercase', color: 'var(--tl-warm)', fontWeight: 700 }}>Your Dedicated Expert</span>
+      <div style={{ textAlign: 'center', marginBottom: 28, position: 'relative' }}>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: 'rgba(201,169,122,0.12)', border: '1px solid rgba(201,169,122,0.3)', borderRadius: 20, padding: '6px 16px', marginBottom: 16, backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="var(--tl-warm)" stroke="none"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          <span style={{ fontFamily: 'var(--f-body)', fontSize: '9.5px', letterSpacing: '2.5px', textTransform: 'uppercase', color: 'var(--tl-warm)', fontWeight: 700 }}>Your Dedicated Expert</span>
         </div>
-        <div style={{ fontFamily: 'var(--f-display)', fontSize: 28, fontWeight: 800, color: 'white', lineHeight: 1.1, marginBottom: 6 }}>
+        <div style={{ fontFamily: 'var(--f-display)', fontSize: 'clamp(24px,6vw,32px)', fontWeight: 800, color: 'white', lineHeight: 1.1, marginBottom: 8, letterSpacing: '-0.5px' }}>
           Your trip, handled personally
         </div>
-        <div style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>
-          One point of contact from planning to homecoming
+        <div style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: 'rgba(255,255,255,0.38)', maxWidth: 260, margin: '0 auto', lineHeight: 1.5 }}>
+          One expert. One number. From booking to homecoming.
         </div>
       </div>
 
       <div className="tl-agent-card">
-        {/* Profile row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 18 }}>
-          <div style={{ width: 60, height: 60, borderRadius: '50%', background: 'rgba(255,255,255,0.08)', border: '1.5px solid rgba(201,169,122,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, position: 'relative', overflow: 'hidden' }}>
-            {agent?.photo ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={agent.photo} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            ) : (
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="1.3" strokeLinecap="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-            )}
+        {/* Profile */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 22 }}>
+          {/* Avatar with ring */}
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            <div style={{
+              width: 72, height: 72, borderRadius: '50%', overflow: 'hidden',
+              border: '2px solid rgba(201,169,122,0.5)',
+              background: 'linear-gradient(135deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04))',
+              boxShadow: '0 0 0 4px rgba(201,169,122,0.12), 0 8px 24px rgba(0,0,0,0.3)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              {agent?.photo ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={agent.photo} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="1.2" strokeLinecap="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              )}
+            </div>
+            {/* Online indicator */}
+            <div style={{ position: 'absolute', bottom: 2, right: 2, width: 12, height: 12, borderRadius: '50%', background: '#22C55E', border: '2px solid rgba(13,51,64,0.9)', boxShadow: '0 0 6px rgba(34,197,94,0.6)' }} />
           </div>
-          <div>
-            <div style={{ fontFamily: 'var(--f-body)', fontSize: 17, fontWeight: 700, color: 'white', letterSpacing: '-0.3px' }}>{name}</div>
-            <div style={{ fontFamily: 'var(--f-body)', fontSize: 11.5, color: 'rgba(255,255,255,0.4)', marginTop: 2, marginBottom: 7 }}>{designation}</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ fontFamily: 'var(--f-num)', fontSize: 11, fontWeight: 700, color: 'var(--tl-warm)' }}>★ {rating}</span>
-              <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 10 }}>·</span>
-              <span style={{ fontFamily: 'var(--f-body)', fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>{speciality}</span>
+
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontFamily: 'var(--f-body)', fontSize: 18, fontWeight: 800, color: 'white', letterSpacing: '-0.4px', marginBottom: 3 }}>{name}</div>
+            <div style={{ fontFamily: 'var(--f-body)', fontSize: 12, color: 'rgba(255,255,255,0.45)', marginBottom: 8 }}>{designation}</div>
+            {/* Star rating */}
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'rgba(201,169,122,0.12)', border: '1px solid rgba(201,169,122,0.2)', borderRadius: 20, padding: '4px 10px' }}>
+              {[1,2,3,4,5].map(s => (
+                <svg key={s} width="10" height="10" viewBox="0 0 24 24" fill={s <= Math.round(rating) ? 'var(--tl-warm)' : 'rgba(255,255,255,0.15)'} stroke="none"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+              ))}
+              <span style={{ fontFamily: 'var(--f-num)', fontSize: 11, fontWeight: 700, color: 'var(--tl-warm)', marginLeft: 2 }}>{rating.toFixed(1)}</span>
             </div>
           </div>
         </div>
 
-        {/* Divider */}
-        <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', marginBottom: 16 }} />
+        {/* Glass divider */}
+        <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', marginBottom: 18 }} />
 
-        {/* Trust badges */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 18 }}>
+        {/* Trust badges — premium glass pills */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 20 }}>
           {TRUST.map((t, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 10, padding: '9px 11px' }}>
-              {t.icon}
-              <span style={{ fontFamily: 'var(--f-body)', fontSize: 11, color: 'rgba(255,255,255,0.65)', fontWeight: 500 }}>{t.label}</span>
-            </div>
-          ))}
-        </div>
-
-        {/* Divider */}
-        <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', marginBottom: 16 }} />
-
-        {/* Contacts */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 18 }}>
-          {[
-            phone ? { icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--tl-warm)" strokeWidth="2" strokeLinecap="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.8a19.79 19.79 0 01-3.07-8.67A2 2 0 012.18 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 7.17a16 16 0 006.08 6.08l1.54-1.54a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>, main: phone, sub: 'Call or WhatsApp anytime' } : null,
-            email ? { icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--tl-warm)" strokeWidth="2" strokeLinecap="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>, main: email, sub: 'Replies within 2 hours' } : null,
-          ].filter(Boolean).map((c, i) => c && (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-              <div style={{ width: 34, height: 34, borderRadius: 9, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{c.icon}</div>
+            <div key={i} style={{
+              display: 'flex', alignItems: 'center', gap: 9,
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid rgba(255,255,255,0.09)',
+              borderRadius: 12, padding: '10px 12px',
+              backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+            }}>
+              <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(201,169,122,0.12)', border: '1px solid rgba(201,169,122,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                {t.icon}
+              </div>
               <div>
-                <div style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: 'rgba(255,255,255,0.8)', fontWeight: 500 }}>{c.main}</div>
-                <div style={{ fontFamily: 'var(--f-body)', fontSize: 10.5, color: 'rgba(255,255,255,0.35)', marginTop: 1 }}>{c.sub}</div>
+                <div style={{ fontFamily: 'var(--f-body)', fontSize: 11, color: 'rgba(255,255,255,0.8)', fontWeight: 600, lineHeight: 1.2 }}>{t.label}</div>
+                <div style={{ fontFamily: 'var(--f-body)', fontSize: 9.5, color: 'rgba(255,255,255,0.35)', marginTop: 1 }}>{t.sub}</div>
               </div>
             </div>
           ))}
         </div>
 
-        {/* WhatsApp CTA */}
-        <a href={waUrl} target="_blank" rel="noopener noreferrer" className="tl-wa-cta">
-          <WASvg size={18} color="white" />
+        {/* Glass divider */}
+        <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', marginBottom: 18 }} />
+
+        {/* Contacts */}
+        {(phone || email) && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
+            {phone && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--tl-warm)" strokeWidth="2" strokeLinecap="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.8a19.79 19.79 0 01-3.07-8.67A2 2 0 012.18 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 7.17a16 16 0 006.08 6.08l1.54-1.54a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+                </div>
+                <div>
+                  <div style={{ fontFamily: 'var(--f-body)', fontSize: 13.5, color: 'rgba(255,255,255,0.85)', fontWeight: 600 }}>{phone}</div>
+                  <div style={{ fontFamily: 'var(--f-body)', fontSize: 10.5, color: 'rgba(255,255,255,0.35)', marginTop: 1 }}>Call or WhatsApp anytime</div>
+                </div>
+              </div>
+            )}
+            {email && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--tl-warm)" strokeWidth="2" strokeLinecap="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                </div>
+                <div>
+                  <div style={{ fontFamily: 'var(--f-body)', fontSize: 13.5, color: 'rgba(255,255,255,0.85)', fontWeight: 600 }}>{email}</div>
+                  <div style={{ fontFamily: 'var(--f-body)', fontSize: 10.5, color: 'rgba(255,255,255,0.35)', marginTop: 1 }}>Replies within 2 hours</div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* WhatsApp CTA — premium glow button */}
+        <a href={waUrl} target="_blank" rel="noopener noreferrer" className="tl-wa-cta" style={{ borderRadius: 16 }}>
+          <WASvg size={20} color="white" />
           Chat with {name.split(' ')[0]} on WhatsApp
         </a>
       </div>
