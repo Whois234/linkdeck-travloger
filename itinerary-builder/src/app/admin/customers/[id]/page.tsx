@@ -32,6 +32,8 @@ interface Customer {
 interface Quote {
   id: string; quote_number: string; quote_type: 'GROUP' | 'PRIVATE'; status: QuoteStatus;
   start_date: string; adults: number; public_token: string; duration_nights: number; duration_days: number;
+  created_by: string;
+  created_by_name?: string | null;
   state: { name: string };
   assigned_agent?: { name: string } | null;
   quote_options: Array<{ final_price: number; is_most_popular: boolean }>;
@@ -212,10 +214,10 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                   <p className="font-semibold text-sm" style={{ color: '#0F172A' }}>No quotes yet</p>
                   <p className="text-sm mt-1" style={{ color: '#64748B' }}>Create a quote for this customer</p>
                 </div>
-              : <table className="w-full text-sm">
+              : <div style={{ overflowX: 'auto' }}><table className="w-full text-sm" style={{ minWidth: 780 }}>
                   <thead>
                     <tr style={{ backgroundColor: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
-                      {['Quote #', 'Destination', 'Type', 'Date', 'Nights', 'Pax', 'Price', 'Status', ''].map(h => (
+                      {['Quote #', 'Destination', 'Type', 'Date', 'Nights', 'Pax', 'Price', 'Status', 'Created By', ''].map(h => (
                         <th key={h} className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider whitespace-nowrap" style={{ color: '#64748B' }}>{h}</th>
                       ))}
                     </tr>
@@ -253,6 +255,9 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                               {q.status}
                             </span>
                           </td>
+                          <td className="px-4 py-0 text-xs font-medium whitespace-nowrap" style={{ color: '#475569' }}>
+                            {q.created_by_name ?? '—'}
+                          </td>
                           <td className="px-4 py-0">
                             <div className="flex items-center justify-end gap-1.5">
                               <Link href={`/admin/quotes/${q.id}`} className="text-xs font-semibold" style={{ color: T }}>View</Link>
@@ -267,7 +272,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                       );
                     })}
                   </tbody>
-                </table>
+                </table></div>
             }
           </div>
         </div>

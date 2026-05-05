@@ -21,7 +21,15 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     orderBy: { created_at: 'desc' },
   });
 
-  return ok({ customer, quotes });
+  // Attach creator names
+  const creatorIds = Array.from(new Set(quotes.map(q => q.created_by).filter(Boolean)));
+  const creators = creatorIds.length
+    ? await prisma.user.findMany({ where: { id: { in: creatorIds } }, select: { id: true, name: true } })
+    : [];
+  const nameMap = Object.fromEntries(creators.map(u => [u.id, u.name]));
+  const enriched = quotes.map(q => ({ ...q, created_by_name: nameMap[q.created_by] ?? null }));
+
+  return ok({ customer, quotes: enriched });
 }
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
