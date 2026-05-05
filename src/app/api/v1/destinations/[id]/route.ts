@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma';
 import { getAuthUser, requireRole } from '@/lib/auth';
 import { ok, err, unauthorized, forbidden, notFound } from '@/lib/api-response';
 import { UserRole, Prisma } from '@prisma/client';
+import { revalidateTag } from 'next/cache';
 
 const UpdateSchema = z.object({
   name: z.string().min(1).optional(),
@@ -39,6 +40,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       ...(tags !== undefined ? { tags: tags as Prisma.InputJsonValue } : {}),
     },
   });
+  revalidateTag('master-destinations');
   return ok(updated);
 }
 
@@ -51,5 +53,6 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   if (!dest) return notFound('Destination');
 
   await prisma.destination.update({ where: { id: params.id }, data: { status: false } });
+  revalidateTag('master-destinations');
   return ok({ message: 'Destination deactivated' });
 }

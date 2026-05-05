@@ -5,6 +5,8 @@ import { prisma } from '@/lib/prisma';
 import { getAuthUser, requireRole } from '@/lib/auth';
 import { ok, created, err, unauthorized, forbidden } from '@/lib/api-response';
 import { UserRole } from '@prisma/client';
+import { getCachedStates } from '@/lib/cache/masterData';
+import { revalidateTag } from 'next/cache';
 
 const StateSchema = z.object({
   name: z.string().min(1),
@@ -23,10 +25,10 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const status = searchParams.get('status');
 
-  const states = await prisma.state.findMany({
-    where: status !== null ? { status: status === 'true' } : undefined,
-    orderBy: { name: 'asc' },
-  });
+  // Use cache for the common active-only case; fall back to direct query for status filters
+  const states = status !== null
+    ? await prisma.state.findMany({ where: { status: status === 'true' }, orderBy: { name: 'asc' } })
+    : await getCachedStates();
   return ok(states);
 }
 
@@ -43,5 +45,6 @@ export async function POST(req: NextRequest) {
   if (existing) return err('State code already exists', 409);
 
   const state = await prisma.state.create({ data: parsed.data });
+  revalidateTag('master-states');
   return created(state);
 }

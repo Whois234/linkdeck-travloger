@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma';
 import { getAuthUser, requireRole } from '@/lib/auth';
 import { ok, created, err, unauthorized, forbidden } from '@/lib/api-response';
 import { UserRole } from '@prisma/client';
+import { getCachedVehicleTypes } from '@/lib/cache/masterData';
 
 const Schema = z.object({
   vehicle_type: z.string().min(1),
@@ -20,8 +21,7 @@ const Schema = z.object({
 export async function GET(req: NextRequest) {
   const user = await getAuthUser(req);
   if (!user) return unauthorized();
-  const types = await prisma.vehicleType.findMany({ where: { status: true }, orderBy: { capacity: 'asc' } });
-  return ok(types);
+  return ok(await getCachedVehicleTypes());
 }
 
 export async function POST(req: NextRequest) {
