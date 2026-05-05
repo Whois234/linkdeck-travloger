@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
@@ -7,7 +7,9 @@ import { ImageUploader } from '@/components/admin/ImageUploader';
 import {
   Plus, Pencil, Trash2, ChevronDown, ChevronRight,
   Image as ImageIcon, X, Bed, Calendar, CheckCircle2,
+  Download, Upload, FileSpreadsheet,
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 /* ── Shared style tokens ── */
 const inp = 'w-full h-9 px-3 rounded-lg border text-sm placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white';
@@ -62,6 +64,237 @@ const EMPTY_RATE = {
 
 function fmt(n: number) { return '₹' + n.toLocaleString('en-IN'); }
 function fmtDate(d: string) { return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }); }
+
+/* ─── Hotel Room + Rate Excel Import/Export ──────────────────────────────── */
+const ROOM_RATE_COLS = [
+  { label: 'Room Category *',             example: 'Deluxe Room' },
+  { label: 'Bed Type',                    example: 'King' },
+  { label: 'Max Adults',                  example: '2' },
+  { label: 'Max Children',               example: '1' },
+  { label: 'Max Total Occupancy',         example: '3' },
+  { label: 'Extra Bed Allowed (YES/NO)',   example: 'YES' },
+  { label: 'Child With Bed Allowed (YES/NO)', example: 'YES' },
+  { label: 'Child Without Bed Allowed (YES/NO)', example: 'YES' },
+  { label: 'Meal Plan Code * (EP/CP/MAP/AP/FAP)', example: 'MAP' },
+  { label: 'Season Name',                 example: 'Peak Season' },
+  { label: 'Valid From (YYYY-MM-DD) *',   example: '2026-01-01' },
+  { label: 'Valid To (YYYY-MM-DD) *',     example: '2026-12-31' },
+  { label: 'Single Occupancy Cost (₹) *', example: '3500' },
+  { label: 'Double Occupancy Cost (₹) *', example: '5000' },
+  { label: 'Triple Occupancy Cost (₹)',   example: '6500' },
+  { label: 'Quad Occupancy Cost (₹)',     example: '8000' },
+  { label: 'Extra Adult Cost (₹)',        example: '1200' },
+  { label: 'Child With Bed Cost (₹)',     example: '800' },
+  { label: 'Child Without Bed Cost (₹)',  example: '400' },
+  { label: 'Weekend Surcharge (₹)',       example: '500' },
+  { label: 'Tax Included (YES/NO)',        example: 'NO' },
+  { label: 'Notes',                       example: 'Mountain view rooms' },
+];
+
+function HotelExcelIO({
+  hotelId, hotelName, rooms, rates, mealPlans, onDone,
+}: {
+  hotelId: string;
+  hotelName: string;
+  rooms: RoomCategory[];
+  rates: HotelRate[];
+  mealPlans: MealPlan[];
+  onDone: () => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+  const [result, setResult] = useState<{ ok: number; failed: number } | null>(null);
+
+  function downloadTemplate() {
+    const header  = ROOM_RATE_COLS.map(c => c.label);
+    const example = ROOM_RATE_COLS.map(c => c.example);
+    const ws = XLSX.utils.aoa_to_sheet([header, example]);
+    ws['!cols'] = ROOM_RATE_COLS.map(() => ({ wch: 28 }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Rooms & Rates');
+    XLSX.writeFile(wb, `${hotelName.replace(/\s+/g, '_')}_Rooms_Rates_Template.xlsx`);
+  }
+
+  function exportData() {
+    if (!rooms.length) { alert('No room categories to export.'); return; }
+    const rowsOut: Record<string, string | number>[] = [];
+    for (const room of rooms) {
+      const roomRates = rates.filter(r => r.room_category_id === room.id);
+      if (roomRates.length === 0) {
+        // Room with no rates — export just the room row
+        rowsOut.push({
+          'Room Category *': room.room_category_name,
+          'Bed Type': room.bed_type ?? '',
+          'Max Adults': room.max_adults,
+          'Max Children': room.max_children,
+          'Max Total Occupancy': room.max_total_occupancy,
+          'Extra Bed Allowed (YES/NO)': room.extra_bed_allowed ? 'YES' : 'NO',
+          'Child With Bed Allowed (YES/NO)': room.cwb_allowed ? 'YES' : 'NO',
+          'Child Without Bed Allowed (YES/NO)': room.cwob_allowed ? 'YES' : 'NO',
+          'Meal Plan Code * (EP/CP/MAP/AP/FAP)': '',
+          'Season Name': '', 'Valid From (YYYY-MM-DD) *': '', 'Valid To (YYYY-MM-DD) *': '',
+          'Single Occupancy Cost (₹) *': '', 'Double Occupancy Cost (₹) *': '',
+          'Triple Occupancy Cost (₹)': '', 'Quad Occupancy Cost (₹)': '',
+          'Extra Adult Cost (₹)': '', 'Child With Bed Cost (₹)': '',
+          'Child Without Bed Cost (₹)': '', 'Weekend Surcharge (₹)': '',
+          'Tax Included (YES/NO)': '', 'Notes': '',
+        });
+      } else {
+        for (const rate of roomRates) {
+          rowsOut.push({
+            'Room Category *': room.room_category_name,
+            'Bed Type': room.bed_type ?? '',
+            'Max Adults': room.max_adults,
+            'Max Children': room.max_children,
+            'Max Total Occupancy': room.max_total_occupancy,
+            'Extra Bed Allowed (YES/NO)': room.extra_bed_allowed ? 'YES' : 'NO',
+            'Child With Bed Allowed (YES/NO)': room.cwb_allowed ? 'YES' : 'NO',
+            'Child Without Bed Allowed (YES/NO)': room.cwob_allowed ? 'YES' : 'NO',
+            'Meal Plan Code * (EP/CP/MAP/AP/FAP)': rate.meal_plan.code,
+            'Season Name': rate.season_name ?? '',
+            'Valid From (YYYY-MM-DD) *': rate.valid_from.slice(0, 10),
+            'Valid To (YYYY-MM-DD) *': rate.valid_to.slice(0, 10),
+            'Single Occupancy Cost (₹) *': rate.single_occupancy_cost,
+            'Double Occupancy Cost (₹) *': rate.double_occupancy_cost,
+            'Triple Occupancy Cost (₹)': rate.triple_occupancy_cost ?? '',
+            'Quad Occupancy Cost (₹)': rate.quad_occupancy_cost ?? '',
+            'Extra Adult Cost (₹)': rate.extra_adult_cost ?? '',
+            'Child With Bed Cost (₹)': rate.child_with_bed_cost ?? '',
+            'Child Without Bed Cost (₹)': rate.child_without_bed_cost ?? '',
+            'Weekend Surcharge (₹)': rate.weekend_surcharge ?? '',
+            'Tax Included (YES/NO)': rate.tax_included ? 'YES' : 'NO',
+            'Notes': rate.notes ?? '',
+          });
+        }
+      }
+    }
+    const ws = XLSX.utils.json_to_sheet(rowsOut, { header: ROOM_RATE_COLS.map(c => c.label) });
+    ws['!cols'] = ROOM_RATE_COLS.map(() => ({ wch: 28 }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Rooms & Rates');
+    XLSX.writeFile(wb, `${hotelName.replace(/\s+/g, '_')}_Rooms_Rates_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  }
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true); setResult(null);
+
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const parsed = XLSX.utils.sheet_to_json<Record<string, string>>(ws, { defval: '' });
+
+    // Strip example row
+    const dataRows = parsed.filter((r, i) => {
+      if (i === 0) {
+        const vals = Object.values(r).map(v => String(v).trim());
+        const examples = ROOM_RATE_COLS.map(c => c.example);
+        return !examples.every((ex, j) => !ex || vals[j] === ex);
+      }
+      return true;
+    }).filter(r => Object.values(r).some(v => String(v).trim() !== ''));
+
+    let ok = 0, failed = 0;
+
+    // Room category cache: name → id (existing or just-created)
+    const roomCache = new Map<string, string>(rooms.map(r => [r.room_category_name.toLowerCase(), r.id]));
+
+    for (const row of dataRows) {
+      const catName = (row['Room Category *'] ?? '').trim();
+      if (!catName) { failed++; continue; }
+
+      // Ensure room category exists
+      let roomId = roomCache.get(catName.toLowerCase());
+      if (!roomId) {
+        try {
+          const res = await fetch(`/api/v1/hotels/${hotelId}/room-categories`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              room_category_name: catName,
+              bed_type: row['Bed Type'] || null,
+              max_adults: Number(row['Max Adults']) || 2,
+              max_children: Number(row['Max Children']) || 1,
+              max_total_occupancy: Number(row['Max Total Occupancy']) || 3,
+              extra_bed_allowed: (row['Extra Bed Allowed (YES/NO)'] ?? '').toUpperCase() === 'YES',
+              cwb_allowed: (row['Child With Bed Allowed (YES/NO)'] ?? '').toUpperCase() === 'YES',
+              cwob_allowed: (row['Child Without Bed Allowed (YES/NO)'] ?? '').toUpperCase() === 'YES',
+            }),
+          });
+          if (res.ok) { const d = await res.json(); roomId = d.data?.id; if (roomId) roomCache.set(catName.toLowerCase(), roomId); }
+        } catch { /* continue */ }
+      }
+      if (!roomId) { failed++; continue; }
+
+      // If no rate columns filled, skip rate creation (just room)
+      const mpCode = (row['Meal Plan Code * (EP/CP/MAP/AP/FAP)'] ?? '').trim().toUpperCase();
+      const validFrom = (row['Valid From (YYYY-MM-DD) *'] ?? '').trim();
+      const validTo   = (row['Valid To (YYYY-MM-DD) *'] ?? '').trim();
+      const singleCost = row['Single Occupancy Cost (₹) *'];
+      const doubleCost = row['Double Occupancy Cost (₹) *'];
+
+      if (!mpCode || !validFrom || !validTo || !singleCost || !doubleCost) {
+        ok++; // room created/found — rate row skipped (no rate data)
+        continue;
+      }
+
+      const mp = mealPlans.find(m => m.code.toUpperCase() === mpCode);
+      if (!mp) { failed++; continue; }
+
+      try {
+        const res = await fetch(`/api/v1/hotels/${hotelId}/rates`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            room_category_id: roomId,
+            meal_plan_id: mp.id,
+            season_name: row['Season Name'] || null,
+            valid_from: new Date(validFrom).toISOString(),
+            valid_to:   new Date(validTo).toISOString(),
+            single_occupancy_cost: Number(singleCost),
+            double_occupancy_cost: Number(doubleCost),
+            triple_occupancy_cost: row['Triple Occupancy Cost (₹)'] ? Number(row['Triple Occupancy Cost (₹)']) : null,
+            quad_occupancy_cost:   row['Quad Occupancy Cost (₹)'] ? Number(row['Quad Occupancy Cost (₹)']) : null,
+            extra_adult_cost:      row['Extra Adult Cost (₹)'] ? Number(row['Extra Adult Cost (₹)']) : null,
+            child_with_bed_cost:   row['Child With Bed Cost (₹)'] ? Number(row['Child With Bed Cost (₹)']) : null,
+            child_without_bed_cost: row['Child Without Bed Cost (₹)'] ? Number(row['Child Without Bed Cost (₹)']) : null,
+            weekend_surcharge:     row['Weekend Surcharge (₹)'] ? Number(row['Weekend Surcharge (₹)']) : null,
+            tax_included: (row['Tax Included (YES/NO)'] ?? '').toUpperCase() === 'YES',
+            notes: row['Notes'] || null,
+          }),
+        });
+        if (res.ok) ok++; else failed++;
+      } catch { failed++; }
+    }
+
+    setImporting(false);
+    setResult({ ok, failed });
+    if (fileRef.current) fileRef.current.value = '';
+    if (ok > 0) onDone();
+  }
+
+  const btn = 'flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold transition-colors';
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      {result && (
+        <span className="text-xs font-semibold px-3 py-1 rounded-full" style={{ background: result.failed ? '#FEF3C7' : '#DCFCE7', color: result.failed ? '#B45309' : '#15803D' }}>
+          ✓ {result.ok} rows imported{result.failed ? ` · ${result.failed} failed` : ''}
+        </span>
+      )}
+      <button onClick={downloadTemplate} className={btn} style={{ border: '1px solid #E2E8F0', color: '#134956', background: '#F0F7F9' }}>
+        <FileSpreadsheet className="w-3 h-3" /> Template
+      </button>
+      <label className={`${btn} cursor-pointer`} style={{ border: '1px solid #134956', color: '#134956', background: 'white' }}>
+        <Upload className="w-3 h-3" /> {importing ? 'Importing…' : 'Import'}
+        <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFile} disabled={importing} />
+      </label>
+      <button onClick={exportData} className={btn} style={{ border: '1px solid #E2E8F0', color: '#64748B', background: 'white' }}>
+        <Download className="w-3 h-3" /> Export
+      </button>
+    </div>
+  );
+}
 
 /* ═══════════════════════════════════════════════════════════════ */
 export default function HotelDetailPage() {
@@ -363,11 +596,21 @@ export default function HotelDetailPage() {
       {/* ═══ ROOM CATEGORIES TAB ═══ */}
       {tab === 'rooms' && (
         <div>
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
             <p className="text-sm font-medium text-[#64748B]">{rooms.length} room categor{rooms.length !== 1 ? 'ies' : 'y'}</p>
-            <button onClick={openAddRoom} className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white hover:opacity-90" style={{ backgroundColor: T }}>
-              <Plus className="w-4 h-4" /> Add Room Category
-            </button>
+            <div className="flex items-center gap-2 flex-wrap">
+              <HotelExcelIO
+                hotelId={id}
+                hotelName={hotel.hotel_name}
+                rooms={rooms}
+                rates={rates}
+                mealPlans={mealPlans}
+                onDone={loadRates}
+              />
+              <button onClick={openAddRoom} className="flex items-center gap-2 h-8 px-4 rounded-lg text-sm font-semibold text-white hover:opacity-90" style={{ backgroundColor: T }}>
+                <Plus className="w-4 h-4" /> Add Room Category
+              </button>
+            </div>
           </div>
 
           {rooms.length === 0 ? (
