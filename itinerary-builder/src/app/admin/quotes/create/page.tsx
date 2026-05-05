@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { PageHeader } from '@/components/admin/PageHeader';
 import {
   Users, MapPin, LayoutList, DollarSign, FileText, Link2,
@@ -76,6 +76,7 @@ const OPTION_NAMES = ['Option A', 'Option B', 'Option C'];
 /* ════════════════════════════════════════════════════════ */
 export default function CreateQuotePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   /* ─── Global ─── */
   const [step, setStep]           = useState(1);
@@ -87,9 +88,9 @@ export default function CreateQuotePage() {
 
   /* ─── Step 1 fields ─── */
   const [quoteName, setQuoteName]     = useState('');
-  const [custName, setCustName]       = useState('');
-  const [custMobile, setCustMobile]   = useState('');
-  const [custEmail, setCustEmail]     = useState('');
+  const [custName, setCustName]       = useState(searchParams.get('lead_name') ?? '');
+  const [custMobile, setCustMobile]   = useState(searchParams.get('lead_phone') ?? '');
+  const [custEmail, setCustEmail]     = useState(searchParams.get('lead_email') ?? '');
   const [stateId, setStateId]         = useState('');
   const [startDate, setStartDate]     = useState('');
   const [durationDays, setDurationDays] = useState(5);
@@ -534,6 +535,13 @@ export default function CreateQuotePage() {
       {/* ══════════════════════════════════════════════════════════════ */}
       {step === 1 && (
         <div className="flex flex-col gap-4">
+          {/* Lead pre-fill banner */}
+          {searchParams.get('lead_id') && (
+            <div className="flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium" style={{ backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0', color: '#15803D' }}>
+              <FileText className="w-4 h-4 flex-shrink-0" />
+              Customer details pre-filled from lead. Select quote type, fill trip details and proceed.
+            </div>
+          )}
           {/* Quote type */}
           <div className="bg-white rounded-2xl p-5" style={card}>
             <p className={lbl}>Quote Type</p>

@@ -644,10 +644,11 @@ function LeadDrawer({
                       <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>{formatDate(lead.created_at)}</p>
                     </div>
                     <div className="pt-2">
-                      <Link href={`/admin/quotes?lead_id=${lead.id}&lead_name=${encodeURIComponent(lead.name)}`}
-                        className="flex items-center justify-center gap-2 w-full py-2.5 rounded-lg text-sm font-semibold transition-colors hover:opacity-90"
-                        style={{ border: '1px dashed #134956', color: '#134956' }}>
-                        <FileText className="w-4 h-4" /> Create Quote from this Lead
+                      <Link
+                        href={`/admin/quotes/create?lead_id=${lead.id}&lead_name=${encodeURIComponent(lead.name)}&lead_phone=${encodeURIComponent(lead.phone)}&lead_email=${encodeURIComponent(lead.email ?? '')}`}
+                        className="flex items-center justify-center gap-2 w-full py-2.5 rounded-lg text-sm font-bold text-white transition-opacity hover:opacity-90"
+                        style={{ backgroundColor: '#134956' }}>
+                        <FileText className="w-4 h-4" /> Create Quote for this Lead
                       </Link>
                     </div>
                   </>
