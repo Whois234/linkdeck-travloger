@@ -149,11 +149,11 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
 
   // All hotel-related IDs across all options — for batch lookup
   const allOptionHotels = quote.quote_options.flatMap(o => o.option_hotels);
-  const hotelIds       = [...new Set(allOptionHotels.map(h => h.hotel_id).filter(Boolean))];
-  const roomIds        = [...new Set(allOptionHotels.map(h => h.room_category_id).filter(Boolean))];
-  const mealIds        = [...new Set(allOptionHotels.map(h => h.meal_plan_id).filter(Boolean))];
-  const optionDestIds  = [...new Set(allOptionHotels.map(h => h.destination_id).filter(Boolean))];
-  const allDestIds     = [...new Set([...itineraryDestIds, ...optionDestIds])];
+  const hotelIds       = Array.from(new Set(allOptionHotels.map(h => h.hotel_id).filter(Boolean) as string[]));
+  const roomIds        = Array.from(new Set(allOptionHotels.map(h => h.room_category_id).filter(Boolean) as string[]));
+  const mealIds        = Array.from(new Set(allOptionHotels.map(h => h.meal_plan_id).filter(Boolean) as string[]));
+  const optionDestIds  = Array.from(new Set(allOptionHotels.map(h => h.destination_id).filter(Boolean) as string[]));
+  const allDestIds     = Array.from(new Set([...itineraryDestIds, ...optionDestIds]));
 
   // ── STEP 5: ALL remaining DB reads in ONE parallel batch ─────────────────────
   const [
