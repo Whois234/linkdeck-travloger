@@ -10,6 +10,7 @@ import type { Metadata } from 'next';
 import { cache } from 'react';
 import { ItineraryClient } from '@/app/itinerary/[token]/ItineraryClient';
 import QuotationTracker from './QuotationTracker';
+import SnapshotPending from './SnapshotPending';
 import { prisma } from '@/lib/prisma';
 import { QuoteStatus } from '@prisma/client';
 
@@ -43,8 +44,8 @@ const getItinerary = cache(async (token: string) => {
 });
 
 export async function generateMetadata({ params }: { params: { token: string } }): Promise<Metadata> {
-  const data = await getItinerary(params.token);
-  if (!data) return { title: 'Quote Unavailable | travloger.in' };
+  const data = await getItinerary(params.token).catch(() => null);
+  if (!data) return { title: 'Preparing Your Itinerary | travloger.in' };
   const quote    = (data.quote    as { quote_name?: string | null } | null);
   const state    = (data.state    as { name?: string } | null);
   const customer = (data.customer as { name?: string } | null);
@@ -156,7 +157,10 @@ export default async function QuotationPage({ params }: { params: { token: strin
   const quote = await getQuoteRaw(params.token);
 
   // Quote doesn't exist at all → true 404
-  if (!quote || quote.snapshots.length === 0) notFound();
+  if (!quote) notFound();
+
+  // Quote exists but snapshot not ready yet (async generation in progress) → poll
+  if (quote.snapshots.length === 0) return <SnapshotPending token={params.token} />;
 
   // Link deactivated → branded message page (not 404)
   const linkActive = (quote as unknown as { link_active: boolean }).link_active;
