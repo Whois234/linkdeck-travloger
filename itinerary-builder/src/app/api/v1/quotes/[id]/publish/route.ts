@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getAuthUser, requireRole } from '@/lib/auth';
-import { ok, unauthorized, forbidden, notFound } from '@/lib/api-response';
+import { ok, err, unauthorized, forbidden, notFound } from '@/lib/api-response';
 import { UserRole, QuoteStatus } from '@prisma/client';
 import { generateQuoteSnapshot } from '@/lib/pricing/generateQuoteSnapshot';
 
