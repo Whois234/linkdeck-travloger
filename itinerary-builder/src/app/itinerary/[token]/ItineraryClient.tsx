@@ -1571,42 +1571,117 @@ function GroupWhatsCovered({
   );
 }
 
-/* ─────────────────────────── GROUP: Simple Trip Dates (package_based mode) ─── */
-function TripDates({ dates }: { dates: Array<{ start_date: string; end_date: string; label: string }> }) {
+/* ─────────────────────────── GROUP: Selectable Trip Dates (package_based) ─── */
+function TripDates({
+  dates, selectedIdx, onSelect,
+}: {
+  dates: Array<{ start_date: string; end_date: string; label: string }>;
+  selectedIdx: number | null;
+  onSelect: (i: number) => void;
+}) {
   if (!dates || dates.length === 0) return null;
   const fmt = (s: string) => s ? new Date(s).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
   return (
     <div className="tl-sec" data-section="dates" style={{ background: 'rgb(248, 250, 252)', borderTop: '1px solid var(--tl-border)' }}>
-      <div className="tl-sec-h" style={{ marginBottom: 4 }}>Trip Dates</div>
-      <p style={{ fontSize: 13, color: '#64748B', marginBottom: 20 }}>Available departure windows for this tour</p>
+      <div className="tl-sec-h" style={{ marginBottom: 4 }}>Choose Your Travel Dates</div>
+      <p style={{ fontSize: 13, color: '#64748B', marginBottom: 20 }}>Select a departure window to confirm your travel dates</p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {dates.map((d, i) => (
-          <div key={i} style={{
-            background: '#fff', borderRadius: 12, padding: '14px 18px',
-            border: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', gap: 14,
-            boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
-          }}>
-            <div style={{
-              width: 40, height: 40, borderRadius: 10, background: '#E8F4F6',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-            }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#134956" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
-              </svg>
+        {dates.map((d, i) => {
+          const isSelected = selectedIdx === i;
+          return (
+            <div key={i}
+              onClick={() => onSelect(i)}
+              style={{
+                background: '#fff', borderRadius: 12, padding: '14px 18px',
+                border: `2px solid ${isSelected ? '#134956' : '#E2E8F0'}`,
+                display: 'flex', alignItems: 'center', gap: 14,
+                boxShadow: isSelected ? '0 0 0 3px rgba(19,73,86,0.10)' : '0 1px 4px rgba(0,0,0,0.05)',
+                cursor: 'pointer', transition: 'border-color 0.15s, box-shadow 0.15s',
+                backgroundColor: isSelected ? 'rgba(19,73,86,0.03)' : '#fff',
+              }}
+            >
+              <div style={{
+                width: 40, height: 40, borderRadius: 10,
+                background: isSelected ? '#134956' : '#E8F4F6',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                transition: 'background 0.15s',
+              }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                  stroke={isSelected ? '#fff' : '#134956'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+                </svg>
+              </div>
+              <div style={{ flex: 1 }}>
+                {d.label && <p style={{ fontSize: 12, fontWeight: 600, color: '#134956', marginBottom: 2 }}>{d.label}</p>}
+                <p style={{ fontSize: 14, fontWeight: 700, color: '#0F172A' }}>
+                  {fmt(d.start_date)} <span style={{ color: '#94A3B8', fontWeight: 400 }}>→</span> {fmt(d.end_date)}
+                </p>
+              </div>
+              {isSelected ? (
+                <div style={{ width: 22, height: 22, borderRadius: '50%', background: '#134956', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M5 13l4.5 4.5L19 7"/>
+                  </svg>
+                </div>
+              ) : (
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#15803D', background: '#DCFCE7', padding: '4px 10px', borderRadius: 20 }}>Available</div>
+              )}
             </div>
-            <div style={{ flex: 1 }}>
-              {d.label && <p style={{ fontSize: 12, fontWeight: 600, color: '#134956', marginBottom: 2 }}>{d.label}</p>}
-              <p style={{ fontSize: 14, fontWeight: 700, color: '#0F172A' }}>
-                {fmt(d.start_date)} <span style={{ color: '#94A3B8', fontWeight: 400 }}>→</span> {fmt(d.end_date)}
-              </p>
-            </div>
-            <div style={{
-              fontSize: 11, fontWeight: 700, color: '#15803D', background: '#DCFCE7',
-              padding: '4px 10px', borderRadius: 20,
-            }}>Available</div>
-          </div>
-        ))}
+          );
+        })}
       </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────── GROUP: Package-based sticky CTA ─────────────── */
+function PackageStickyCTA({
+  selectedOption, selectedDate, adults, onBookNow, booking,
+}: {
+  selectedOption: GroupPackageOption | null;
+  selectedDate: { start_date: string; end_date: string; label: string } | null;
+  adults: number;
+  onBookNow: () => void;
+  booking: boolean;
+}) {
+  const price = selectedOption ? selectedOption.adult_price * adults : 0;
+  const fmt = (s: string) => s ? new Date(s).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+  const dateLabel = selectedDate
+    ? (selectedDate.label || `${fmt(selectedDate.start_date)} → ${fmt(selectedDate.end_date)}`)
+    : null;
+  const isEmpty = !selectedOption || !selectedDate;
+
+  return (
+    <div className="tl-grp-bar">
+      <div className="tl-grp-bar-row">
+        <div className="tl-grp-bar-date">
+          {selectedOption && selectedDate
+            ? `${selectedOption.tier_name} · ${dateLabel}`
+            : !selectedOption
+              ? 'Choose a package above ↑'
+              : 'Pick a date above ↑'}
+        </div>
+        {selectedOption && <div className="tl-grp-bar-price">{fmtCurrency(price)}</div>}
+      </div>
+      {selectedOption && selectedDate && (
+        <div className="tl-grp-bar-sub">
+          {adults} adult{adults !== 1 ? 's' : ''} · {selectedOption.tier_name} · No payment now
+        </div>
+      )}
+      <button
+        className={`tl-grp-bar-btn${isEmpty ? ' tl-grp-bar-btn-empty' : ''}`}
+        onClick={onBookNow}
+        disabled={isEmpty || booking}
+      >
+        {booking ? 'Sending…' : isEmpty ? (selectedOption ? 'Pick a Date First ↑' : 'Choose a Package ↑') : (
+          <>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--tl-teal)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+            </svg>
+            Book Now — {fmtCurrency(price)}
+          </>
+        )}
+      </button>
     </div>
   );
 }
@@ -2067,7 +2142,8 @@ export function ItineraryClient({ data, token }: Props) {
   const [booking, setBooking]               = useState(false);
   const [showBookingIntent, setShowBookingIntent] = useState(false);
   const defaultTier = group_package_options?.find(o => o.is_most_popular)?.tier_name ?? group_package_options?.[0]?.tier_name ?? null;
-  const [selectedTier, setSelectedTier]     = useState<string | null>(defaultTier);
+  const [selectedTier, setSelectedTier]         = useState<string | null>(defaultTier);
+  const [selectedTripDateIdx, setSelectedTripDateIdx] = useState<number | null>(null);
 
   const selectedOption = quote_options.find((o) => o.id === selectedId);
   const waUrl = buildWaUrl(agent, quote.quote_number, customer.name, state.name);
@@ -2158,7 +2234,42 @@ export function ItineraryClient({ data, token }: Props) {
   }
 
   async function handleBookNow() {
-    if (!selectedBatch || booking) return;
+    if (booking) return;
+
+    // package_based: need a tier + a date selected
+    if (pricingMode === 'package_based') {
+      const pkgOption = group_package_options?.find(o => o.tier_name === selectedTier);
+      const tripDate  = (group_trip_dates ?? [])[selectedTripDateIdx!];
+      if (!pkgOption || !tripDate) return;
+      setBooking(true);
+      const total = pkgOption.adult_price * groupAdults;
+      try {
+        await fetch(`/api/v1/public/itinerary/${token}/analytics`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            event_type: 'booking_intent',
+            metadata: {
+              customer_name:    customer.name,
+              adults:           groupAdults,
+              package_tier:     pkgOption.tier_name,
+              trip_start_date:  tripDate.start_date,
+              trip_end_date:    tripDate.end_date,
+              total_price:      total,
+              quote_number:     quote.quote_number,
+            },
+          }),
+        });
+      } catch { /* non-critical */ }
+      finally {
+        setBooking(false);
+        setShowBookingIntent(true);
+      }
+      return;
+    }
+
+    // date_based: need a batch selected
+    if (!selectedBatch) return;
     setBooking(true);
 
     const pricePerAdult = selectedBatch.adult_price;
@@ -2184,9 +2295,8 @@ export function ItineraryClient({ data, token }: Props) {
           },
         }),
       });
-    } catch {
-      // non-critical — show confirmation anyway
-    } finally {
+    } catch { /* non-critical */ }
+    finally {
       setBooking(false);
       setShowBookingIntent(true);
     }
@@ -2212,7 +2322,7 @@ export function ItineraryClient({ data, token }: Props) {
         {/* Package options — PRIVATE only (GROUP has its own tier selector below) */}
         {!isGroup && <Packages options={quote_options} selectedId={selectedId} onSelect={handleSelectOption} />}
 
-        {/* ── GROUP: package_based → fixed package tiers + simple trip dates ── */}
+        {/* ── GROUP: package_based → fixed package tiers + selectable trip dates ── */}
         {isGroup && pricingMode === 'package_based' && (
           <>
             <GroupPackageOptions
@@ -2220,7 +2330,11 @@ export function ItineraryClient({ data, token }: Props) {
               selectedTier={selectedTier}
               onSelect={handleTierSelect}
             />
-            <TripDates dates={group_trip_dates ?? []} />
+            <TripDates
+              dates={group_trip_dates ?? []}
+              selectedIdx={selectedTripDateIdx}
+              onSelect={setSelectedTripDateIdx}
+            />
           </>
         )}
 
@@ -2270,8 +2384,16 @@ export function ItineraryClient({ data, token }: Props) {
       </div>
 
       {/* Sticky CTA */}
-      {isGroup ? (
-        /* GROUP: fixed bottom bar with selected batch + Book Now */
+      {isGroup && pricingMode === 'package_based' ? (
+        <PackageStickyCTA
+          selectedOption={group_package_options?.find(o => o.tier_name === selectedTier) ?? null}
+          selectedDate={(group_trip_dates ?? [])[selectedTripDateIdx!] ?? null}
+          adults={groupAdults}
+          onBookNow={handleBookNow}
+          booking={booking}
+        />
+      ) : isGroup ? (
+        /* GROUP date_based: fixed bottom bar with selected batch + Book Now */
         <GroupStickyCTA
           batch={selectedBatch}
           adults={groupAdults}
@@ -2305,7 +2427,8 @@ export function ItineraryClient({ data, token }: Props) {
           onClose={() => setShowSuccess(false)}
         />
       )}
-      {showBookingIntent && selectedBatch && (
+      {/* Booking intent modal — date_based uses batch, package_based uses package tier + trip date */}
+      {showBookingIntent && pricingMode === 'date_based' && selectedBatch && (
         <BookingIntentModal
           batch={selectedBatch}
           adults={groupAdults}
@@ -2316,6 +2439,40 @@ export function ItineraryClient({ data, token }: Props) {
           onClose={() => setShowBookingIntent(false)}
         />
       )}
+      {showBookingIntent && pricingMode === 'package_based' && (() => {
+        const pkgOpt  = group_package_options?.find(o => o.tier_name === selectedTier);
+        const tripDt  = (group_trip_dates ?? [])[selectedTripDateIdx!];
+        if (!pkgOpt || !tripDt) return null;
+        const fmt = (s: string) => new Date(s).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+        const total = pkgOpt.adult_price * groupAdults;
+        return (
+          <div className="tl-overlay" onClick={() => setShowBookingIntent(false)}>
+            <div className="tl-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="tl-modal-tick">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+                  <path d="M5 13l4.5 4.5L19 7" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </div>
+              <div className="tl-modal-h">Booking Interest Noted! 🎉</div>
+              <div className="tl-modal-pkg">
+                You&apos;ve selected <strong>{pkgOpt.tier_name}</strong> — <strong>{fmt(tripDt.start_date)}</strong> to <strong>{fmt(tripDt.end_date)}</strong>
+              </div>
+              <div className="tl-modal-price-box">
+                <div className="tl-modal-price-main">{fmtCurrency(total)} for {groupAdults} adult{groupAdults > 1 ? 's' : ''}</div>
+                <div className="tl-modal-price-sub">No payment required now</div>
+              </div>
+              <div className="tl-modal-agent">
+                <strong>{(agent?.name ?? 'Your Agent').split(' ')[0]}</strong> will call you within <strong>2 hours</strong> to confirm your booking.
+              </div>
+              <a href={waUrl} target="_blank" rel="noopener noreferrer" className="tl-modal-wa">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                Chat on WhatsApp
+              </a>
+              <button className="tl-modal-close" onClick={() => setShowBookingIntent(false)}>Close</button>
+            </div>
+          </div>
+        );
+      })()}
       {showReview && <ReviewModal onClose={() => setShowReview(false)} token={token} />}
     </div>
   );
