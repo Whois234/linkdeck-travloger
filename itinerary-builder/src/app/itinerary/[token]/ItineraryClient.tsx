@@ -72,6 +72,7 @@ interface GroupPackageOption {
   inclusions: string[];
   adult_price: number;
   child_price: number;
+  gst_percent?: number;
 }
 
 interface ItineraryData {
@@ -2054,9 +2055,13 @@ function PackageFareSummary({
     );
   }
 
-  const pricePerAdult = packageOption.adult_price;
-  const subtotal = pricePerAdult * adults;
-  const total = subtotal; // no GST line for package_based (can add if needed)
+  const gstPct      = packageOption.gst_percent ?? 5;
+  const priceInclGst = packageOption.adult_price; // stored price is incl. GST
+  const priceExclGst = Math.round(priceInclGst / (1 + gstPct / 100));
+  const gstPerAdult  = priceInclGst - priceExclGst;
+  const subtotalExcl = priceExclGst * adults;
+  const gstTotal     = gstPerAdult * adults;
+  const total        = priceInclGst * adults;
   const startFmt = fmt(tripDate.start_date);
   const endFmt   = tripDate.end_date ? new Date(tripDate.end_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '';
   const nights   = tripDate.start_date && tripDate.end_date
@@ -2089,10 +2094,10 @@ function PackageFareSummary({
           </div>
           <div style={{ textAlign: 'right', flexShrink: 0 }}>
             <div style={{ fontFamily: 'var(--f-num)', fontSize: 22, fontWeight: 900, color: 'white', lineHeight: 1 }}>
-              {fmtCurrency(pricePerAdult)}
+              {fmtCurrency(priceInclGst)}
             </div>
             <div style={{ fontFamily: 'var(--f-body)', fontSize: 10, color: 'rgba(255,255,255,0.55)', marginTop: 2 }}>
-              per adult
+              per adult · incl. GST
             </div>
           </div>
         </div>
@@ -2116,16 +2121,16 @@ function PackageFareSummary({
 
           {/* Price rows */}
           <div style={{ borderTop: '1px solid #F1F5F9', padding: '14px 20px 0' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12 }}>
-              <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#64748B' }}>
-                {fmtCurrency(pricePerAdult)} × {adults} adult{adults > 1 ? 's' : ''}
-              </span>
-              <span style={{ fontFamily: 'var(--f-num)', fontSize: 14, fontWeight: 600, color: '#0F172A' }}>{fmtCurrency(subtotal)}</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12 }}>
-              <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#64748B' }}>{packageOption.tier_name} package</span>
-              <span style={{ fontFamily: 'var(--f-num)', fontSize: 12, fontWeight: 600, color: '#94A3B8' }}>incl.</span>
-            </div>
+            {[
+              { label: `${fmtCurrency(priceExclGst)} × ${adults} adult${adults > 1 ? 's' : ''}`, value: fmtCurrency(subtotalExcl), dim: false },
+              { label: packageOption.tier_name + ' package', value: 'incl.', dim: true },
+              { label: `GST ${gstPct}%`, value: fmtCurrency(gstTotal), dim: true },
+            ].map((row, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12 }}>
+                <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: row.dim ? '#94A3B8' : '#64748B' }}>{row.label}</span>
+                <span style={{ fontFamily: 'var(--f-num)', fontSize: row.dim ? 12 : 14, fontWeight: 600, color: row.dim ? '#94A3B8' : '#0F172A' }}>{row.value}</span>
+              </div>
+            ))}
           </div>
 
           {/* Total */}
@@ -2133,7 +2138,7 @@ function PackageFareSummary({
             <div>
               <div style={{ fontFamily: 'var(--f-body)', fontSize: 13, fontWeight: 700, color: '#0F172A' }}>Total Amount</div>
               <div style={{ fontFamily: 'var(--f-body)', fontSize: 11, color: '#94A3B8', marginTop: 2 }}>
-                {fmtCurrency(pricePerAdult)} per person
+                {fmtCurrency(priceInclGst)} per person · incl. {gstPct}% GST
               </div>
             </div>
             <div style={{ fontFamily: 'var(--f-num)', fontSize: 26, fontWeight: 900, color: T }}>{fmtCurrency(total)}</div>
