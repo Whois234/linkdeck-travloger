@@ -28,14 +28,15 @@ export async function GET(req: NextRequest) {
 
   const isPrivileged = requireRole(user, ...PRIVILEGED);
 
-  // Non-privileged users only see customers they created
-  const ownerFilter = isPrivileged ? {} : { created_by: user.sub };
+  // Non-privileged users see customers they created OR customers linked to their quotes
+  const ownerFilter = isPrivileged
+    ? {}
+    : { OR: [{ created_by: user.sub }, { quotes: { some: { created_by: user.sub } } }] };
 
   const customers = await prisma.customer.findMany({
-    where: {
-      ...ownerFilter,
-      ...(q ? { OR: [{ name: { contains: q, mode: 'insensitive' } }, { phone: { contains: q } }] } : {}),
-    },
+    where: q
+      ? { AND: [ownerFilter, { OR: [{ name: { contains: q, mode: 'insensitive' } }, { phone: { contains: q } }] }] }
+      : ownerFilter,
     orderBy: { name: 'asc' },
     take: 100,
   });
