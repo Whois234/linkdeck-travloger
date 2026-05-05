@@ -110,6 +110,7 @@ interface ItineraryData {
   quote_options: QuoteOption[];
   group_package_options?: GroupPackageOption[];
   group_pricing_mode?: 'date_based' | 'package_based';
+  group_trip_dates?: Array<{ start_date: string; end_date: string; label: string }>;
   day_snapshots: DaySnapshot[];
   inclusions: Array<{ id: string; text: string }>;
   exclusions: Array<{ id: string; text: string }>;
@@ -1570,6 +1571,46 @@ function GroupWhatsCovered({
   );
 }
 
+/* ─────────────────────────── GROUP: Simple Trip Dates (package_based mode) ─── */
+function TripDates({ dates }: { dates: Array<{ start_date: string; end_date: string; label: string }> }) {
+  if (!dates || dates.length === 0) return null;
+  const fmt = (s: string) => s ? new Date(s).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+  return (
+    <div className="tl-sec" data-section="dates" style={{ background: 'rgb(248, 250, 252)', borderTop: '1px solid var(--tl-border)' }}>
+      <div className="tl-sec-h" style={{ marginBottom: 4 }}>Trip Dates</div>
+      <p style={{ fontSize: 13, color: '#64748B', marginBottom: 20 }}>Available departure windows for this tour</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {dates.map((d, i) => (
+          <div key={i} style={{
+            background: '#fff', borderRadius: 12, padding: '14px 18px',
+            border: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', gap: 14,
+            boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
+          }}>
+            <div style={{
+              width: 40, height: 40, borderRadius: 10, background: '#E8F4F6',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#134956" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+              </svg>
+            </div>
+            <div style={{ flex: 1 }}>
+              {d.label && <p style={{ fontSize: 12, fontWeight: 600, color: '#134956', marginBottom: 2 }}>{d.label}</p>}
+              <p style={{ fontSize: 14, fontWeight: 700, color: '#0F172A' }}>
+                {fmt(d.start_date)} <span style={{ color: '#94A3B8', fontWeight: 400 }}>→</span> {fmt(d.end_date)}
+              </p>
+            </div>
+            <div style={{
+              fontSize: 11, fontWeight: 700, color: '#15803D', background: '#DCFCE7',
+              padding: '4px 10px', borderRadius: 20,
+            }}>Available</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ─────────────────────────── GROUP: Package Options ─────────────────────────── */
 function GroupPackageOptions({
   options, selectedTier, onSelect,
@@ -2003,7 +2044,7 @@ function BookingIntentModal({
 
 /* ─────────────────────────── Main Component ─────────────────────────── */
 export function ItineraryClient({ data, token }: Props) {
-  const { quote, customer, agent, state, quote_options, group_package_options, group_pricing_mode, day_snapshots, inclusions, exclusions, policies } = data;
+  const { quote, customer, agent, state, quote_options, group_package_options, group_pricing_mode, group_trip_dates, day_snapshots, inclusions, exclusions, policies } = data;
 
   const isGroup = quote.quote_type?.toUpperCase() === 'GROUP';
   // date_based = show batch date picker + fare summary (default for backwards compat)
@@ -2171,16 +2212,19 @@ export function ItineraryClient({ data, token }: Props) {
         {/* Package options — PRIVATE only (GROUP has its own tier selector below) */}
         {!isGroup && <Packages options={quote_options} selectedId={selectedId} onSelect={handleSelectOption} />}
 
-        {/* ── GROUP: package_based mode → show tier options, hide date picker ── */}
+        {/* ── GROUP: package_based → fixed package tiers + simple trip dates ── */}
         {isGroup && pricingMode === 'package_based' && (
-          <GroupPackageOptions
-            options={group_package_options ?? []}
-            selectedTier={selectedTier}
-            onSelect={handleTierSelect}
-          />
+          <>
+            <GroupPackageOptions
+              options={group_package_options ?? []}
+              selectedTier={selectedTier}
+              onSelect={handleTierSelect}
+            />
+            <TripDates dates={group_trip_dates ?? []} />
+          </>
         )}
 
-        {/* ── GROUP: date_based mode → show batch date picker only ── */}
+        {/* ── GROUP: date_based → batch date picker with prices ── */}
         {isGroup && pricingMode === 'date_based' && (
           <BatchDatePicker
             batches={batches}

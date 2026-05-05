@@ -279,6 +279,8 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
     quote_options:         enrichedOptions,
     group_package_options: groupPackageOptions,
     group_pricing_mode:    (groupCms as Record<string,unknown>)?.pricing_mode ?? 'date_based',
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    group_trip_dates:      Array.isArray((groupCms as any)?.trip_dates) ? (groupCms as any).trip_dates : [],
     day_snapshots:         enrichedDaySnapshots,
     inclusions, exclusions, policies,
   };
