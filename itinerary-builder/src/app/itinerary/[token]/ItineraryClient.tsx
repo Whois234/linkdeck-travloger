@@ -2020,6 +2020,176 @@ function GroupFareSummary({
   );
 }
 
+/* ─────────────────────────── GROUP: Package-based Fare Summary ──────────── */
+function PackageFareSummary({
+  packageOption, tripDate, adults, onAdultsChange, onBookNow, booking,
+}: {
+  packageOption: GroupPackageOption | null;
+  tripDate: { start_date: string; end_date: string; label: string } | null;
+  adults: number;
+  onAdultsChange: (n: number) => void;
+  onBookNow: () => void;
+  booking: boolean;
+}) {
+  const fmt = (s: string) => s ? new Date(s).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+
+  // Empty state — prompt to choose package + date
+  if (!packageOption || !tripDate) {
+    return (
+      <div style={{ background: '#F8FAFC', borderTop: '1px solid var(--tl-border)' }} data-section="fare">
+        <div className="tl-sec" style={{ textAlign: 'center', paddingTop: 40, paddingBottom: 40 }}>
+          <div style={{ width: 56, height: 56, borderRadius: '50%', background: `${T}12`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="1.8" strokeLinecap="round">
+              <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+            </svg>
+          </div>
+          <div style={{ fontFamily: 'var(--f-display)', fontSize: 17, fontWeight: 700, color: '#0F172A', marginBottom: 6 }}>
+            {!packageOption ? 'Pick a Package' : 'Pick Your Travel Dates'}
+          </div>
+          <div style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#64748B', lineHeight: 1.5 }}>
+            {!packageOption ? 'Choose a package option above to see pricing.' : 'Select a departure date above to see the fare breakdown.'}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const pricePerAdult = packageOption.adult_price;
+  const subtotal = pricePerAdult * adults;
+  const total = subtotal; // no GST line for package_based (can add if needed)
+  const startFmt = fmt(tripDate.start_date);
+  const endFmt   = tripDate.end_date ? new Date(tripDate.end_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '';
+  const nights   = tripDate.start_date && tripDate.end_date
+    ? Math.round((new Date(tripDate.end_date).getTime() - new Date(tripDate.start_date).getTime()) / 86400000)
+    : null;
+
+  return (
+    <div style={{ background: '#F8FAFC', borderTop: '1px solid var(--tl-border)' }} data-section="fare">
+      <div className="tl-sec">
+        <div className="tl-sec-eyebrow">Your Booking</div>
+        <div className="tl-sec-h">Fare Summary</div>
+        <div className="tl-sec-sub" style={{ marginBottom: 24 }}>Adjust traveller count to see live pricing.</div>
+
+        {/* Selected package + date banner */}
+        <div style={{
+          background: `linear-gradient(135deg, ${T} 0%, #1a6070 100%)`,
+          borderRadius: 18, padding: '18px 20px', marginBottom: 16,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+        }}>
+          <div>
+            <div style={{ fontFamily: 'var(--f-body)', fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: 'rgba(255,255,255,0.55)', marginBottom: 4 }}>
+              Selected Departure
+            </div>
+            <div style={{ fontFamily: 'var(--f-display)', fontSize: 18, fontWeight: 800, color: 'white', marginBottom: 2 }}>
+              {startFmt} — {endFmt}
+            </div>
+            <div style={{ fontFamily: 'var(--f-body)', fontSize: 12, color: 'rgba(255,255,255,0.6)' }}>
+              {tripDate.label || packageOption.tier_name}{nights ? ` · ${nights} nights` : ''}
+            </div>
+          </div>
+          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+            <div style={{ fontFamily: 'var(--f-num)', fontSize: 22, fontWeight: 900, color: 'white', lineHeight: 1 }}>
+              {fmtCurrency(pricePerAdult)}
+            </div>
+            <div style={{ fontFamily: 'var(--f-body)', fontSize: 10, color: 'rgba(255,255,255,0.55)', marginTop: 2 }}>
+              per adult
+            </div>
+          </div>
+        </div>
+
+        {/* Fare card */}
+        <div style={{ background: 'white', borderRadius: 18, border: '1.5px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 2px 16px rgba(0,0,0,0.05)' }}>
+          {/* Adult counter */}
+          <div style={{ padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontFamily: 'var(--f-body)', fontSize: 14, fontWeight: 700, color: '#0F172A' }}>Travellers</div>
+              <div style={{ fontFamily: 'var(--f-body)', fontSize: 11, color: '#94A3B8', marginTop: 2 }}>Number of adults</div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 0, borderRadius: 12, overflow: 'hidden', border: `1.5px solid ${T}` }}>
+              <button onClick={() => onAdultsChange(Math.max(1, adults - 1))}
+                style={{ width: 40, height: 40, background: adults <= 1 ? '#F8FAFC' : `${T}10`, border: 'none', cursor: adults <= 1 ? 'default' : 'pointer', fontSize: 20, fontWeight: 300, color: adults <= 1 ? '#CBD5E1' : T, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
+              <div style={{ width: 48, textAlign: 'center', fontFamily: 'var(--f-num)', fontSize: 20, fontWeight: 800, color: T, background: `${T}06`, borderLeft: `1px solid ${T}22`, borderRight: `1px solid ${T}22`, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{adults}</div>
+              <button onClick={() => onAdultsChange(Math.min(30, adults + 1))}
+                style={{ width: 40, height: 40, background: `${T}10`, border: 'none', cursor: 'pointer', fontSize: 20, fontWeight: 300, color: T, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+            </div>
+          </div>
+
+          {/* Price rows */}
+          <div style={{ borderTop: '1px solid #F1F5F9', padding: '14px 20px 0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12 }}>
+              <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#64748B' }}>
+                {fmtCurrency(pricePerAdult)} × {adults} adult{adults > 1 ? 's' : ''}
+              </span>
+              <span style={{ fontFamily: 'var(--f-num)', fontSize: 14, fontWeight: 600, color: '#0F172A' }}>{fmtCurrency(subtotal)}</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12 }}>
+              <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#64748B' }}>{packageOption.tier_name} package</span>
+              <span style={{ fontFamily: 'var(--f-num)', fontSize: 12, fontWeight: 600, color: '#94A3B8' }}>incl.</span>
+            </div>
+          </div>
+
+          {/* Total */}
+          <div style={{ margin: '0 20px 20px', padding: '14px 0 0', borderTop: '2px solid #EEF2F5', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontFamily: 'var(--f-body)', fontSize: 13, fontWeight: 700, color: '#0F172A' }}>Total Amount</div>
+              <div style={{ fontFamily: 'var(--f-body)', fontSize: 11, color: '#94A3B8', marginTop: 2 }}>
+                {fmtCurrency(pricePerAdult)} per person
+              </div>
+            </div>
+            <div style={{ fontFamily: 'var(--f-num)', fontSize: 26, fontWeight: 900, color: T }}>{fmtCurrency(total)}</div>
+          </div>
+
+          {/* Book Now */}
+          <div style={{ padding: '0 16px 16px' }}>
+            <button onClick={onBookNow} disabled={booking}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                width: '100%', height: 54, borderRadius: 14,
+                background: booking ? '#94A3B8' : `linear-gradient(135deg, ${T} 0%, #1e6b7e 100%)`,
+                color: 'white', border: 'none', cursor: booking ? 'not-allowed' : 'pointer',
+                fontFamily: 'var(--f-body)', fontSize: 16, fontWeight: 700,
+                boxShadow: booking ? 'none' : `0 6px 20px ${T}50`, transition: 'all 0.2s ease',
+              }}
+              onMouseEnter={e => { if (!booking) { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = `0 10px 28px ${T}60`; }}}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = `0 6px 20px ${T}50`; }}
+            >
+              {booking ? 'Sending…' : (
+                <>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round">
+                    <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
+                  </svg>
+                  Book Now — {fmtCurrency(total)}
+                </>
+              )}
+            </button>
+            <p style={{ textAlign: 'center', fontFamily: 'var(--f-body)', fontSize: 11, color: '#94A3B8', marginTop: 9 }}>
+              We&apos;ll confirm within 2 hours · No payment needed now
+            </p>
+          </div>
+        </div>
+
+        {/* Trust strips */}
+        <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {[
+            { icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="2" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>, bg: '#EEF5F7', t: 'Secure Booking', d: 'No payment now' },
+            { icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="#25D366"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>, bg: '#F0FDF4', t: 'WhatsApp Support', d: '24/7 reachable' },
+            { icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="2" strokeLinecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>, bg: '#EEF5F7', t: 'Free Cancellation', d: '30+ days before' },
+            { icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>, bg: '#FFFBEB', t: '15,000+ Trips', d: 'Since 2018' },
+          ].map((x, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'white', border: '1px solid #F1F5F9', borderRadius: 12, padding: '11px 12px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+              <div style={{ width: 32, height: 32, borderRadius: 9, background: x.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{x.icon}</div>
+              <div>
+                <div style={{ fontFamily: 'var(--f-body)', fontSize: 11, fontWeight: 700, color: '#0F172A' }}>{x.t}</div>
+                <div style={{ fontFamily: 'var(--f-body)', fontSize: 10, color: '#94A3B8', marginTop: 1 }}>{x.d}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─────────────────────────── GROUP: Sticky Bottom Bar ─────────────────────────── */
 function GroupStickyCTA({
   batch, adults, onBookNow, booking,
@@ -2356,7 +2526,7 @@ export function ItineraryClient({ data, token }: Props) {
           : <IncExc inclusions={inclusions} exclusions={exclusions} />
         }
 
-        {/* ── GROUP: fare summary — only in date_based mode (batch drives the price) ── */}
+        {/* ── GROUP: fare summary — date_based uses batch, package_based uses tier ── */}
         {isGroup && pricingMode === 'date_based' && (
           <GroupFareSummary
             batch={selectedBatch}
@@ -2365,6 +2535,16 @@ export function ItineraryClient({ data, token }: Props) {
             token={token}
             customerName={customer.name}
             quoteNumber={quote.quote_number}
+            onBookNow={handleBookNow}
+            booking={booking}
+          />
+        )}
+        {isGroup && pricingMode === 'package_based' && (
+          <PackageFareSummary
+            packageOption={group_package_options?.find(o => o.tier_name === selectedTier) ?? null}
+            tripDate={(group_trip_dates ?? [])[selectedTripDateIdx!] ?? null}
+            adults={groupAdults}
+            onAdultsChange={setGroupAdults}
             onBookNow={handleBookNow}
             booking={booking}
           />
