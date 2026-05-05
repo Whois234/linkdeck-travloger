@@ -1,9 +1,9 @@
 import Link from 'next/link';
+import { Suspense } from 'react';
 import { FileText, Building2, Layout, CalendarDays, ArrowRight, TrendingUp, Plus } from 'lucide-react';
 import { prisma } from '@/lib/prisma';
 import { getServerUser } from '@/lib/auth-server';
 
-// Never statically pre-render — this page reads live DB data at request time
 export const dynamic = 'force-dynamic';
 
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
@@ -24,16 +24,34 @@ const QUICK_ACTIONS = [
   { label: 'Group Batches',        desc: 'Manage fixed departures',        href: '/admin/group-batches',  icon: CalendarDays, color: '#F59E0B' },
 ];
 
-export default async function AdminDashboard() {
-  const user = await getServerUser();
-  const firstName = user?.name?.split(' ')[0] ?? '';
+// ── Skeleton for stat cards + recent quotes ──────────────────────────────────
+function DashboardSkeleton() {
+  return (
+    <>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[1, 2, 3, 4].map(i => (
+          <div key={i} className="bg-white rounded-xl p-6 animate-pulse" style={{ border: '1px solid #E2E8F0' }}>
+            <div className="h-3 w-24 bg-slate-100 rounded mb-4" />
+            <div className="h-8 w-16 bg-slate-100 rounded" />
+          </div>
+        ))}
+      </div>
+      <div className="bg-white rounded-xl p-6 animate-pulse" style={{ border: '1px solid #E2E8F0' }}>
+        <div className="h-4 w-32 bg-slate-100 rounded mb-4" />
+        {[1, 2, 3].map(i => (
+          <div key={i} className="flex gap-4 py-4 border-b border-slate-50">
+            <div className="h-4 w-20 bg-slate-100 rounded" />
+            <div className="h-4 w-32 bg-slate-100 rounded" />
+            <div className="h-4 w-20 bg-slate-100 rounded" />
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
 
-  // IST greeting (UTC+5:30)
-  const istHour = (new Date().getUTCHours() + 5) % 24;
-  const greeting = istHour < 12 ? 'Good morning' : istHour < 17 ? 'Good afternoon' : 'Good evening';
-  const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-
-  // Single parallel Prisma call — no API round-trips, no cold-starts
+// ── Async component — streams in after shell ──────────────────────────────────
+async function DashboardData() {
   const [recentQuotes, totalQuotes, totalHotels, totalTemplates, totalBatches] = await Promise.all([
     prisma.quote.findMany({
       take: 5,
@@ -58,27 +76,7 @@ export default async function AdminDashboard() {
   ];
 
   return (
-    <div className="space-y-7 max-w-[1400px]">
-
-      {/* Welcome Banner */}
-      <div className="rounded-xl p-7 relative overflow-hidden"
-        style={{ background: 'linear-gradient(135deg, #134956 0%, #1a6b82 60%, #0f5a70 100%)', boxShadow: '0 4px 24px rgba(19,73,86,0.25)' }}>
-        <div className="relative z-10 flex items-center justify-between">
-          <div>
-            <p className="text-white/70 text-sm font-medium mb-1">{today}</p>
-            <h1 className="text-[28px] font-bold text-white leading-tight">
-              {greeting}{firstName ? `, ${firstName}` : ''} 👋
-            </h1>
-            <p className="mt-2 text-white/70 text-[15px] font-medium">
-              Here&apos;s what&apos;s happening with your quotes today.
-            </p>
-          </div>
-          <div className="hidden md:flex items-center justify-center w-24 h-24 rounded-2xl text-5xl opacity-20 text-white font-bold">✈</div>
-        </div>
-        <div className="absolute -right-8 -top-8 w-48 h-48 rounded-full opacity-10" style={{ backgroundColor: '#fff' }} />
-        <div className="absolute -right-4 -bottom-12 w-36 h-36 rounded-full opacity-10" style={{ backgroundColor: '#fff' }} />
-      </div>
-
+    <>
       {/* Stats Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {STAT_CARDS.map(({ label, value, icon: Icon, accent, iconBg }) => (
@@ -99,33 +97,6 @@ export default async function AdminDashboard() {
             </div>
           </div>
         ))}
-      </div>
-
-      {/* Quick Actions */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-base font-bold" style={{ color: '#0F172A' }}>Quick Actions</h2>
-            <p className="text-sm mt-0.5" style={{ color: '#64748B' }}>Jump to frequently used tasks</p>
-          </div>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {QUICK_ACTIONS.map(({ label, desc, href, icon: Icon, color }) => (
-            <Link key={href} href={href}
-              className="bg-white rounded-xl p-5 group flex items-start gap-4 transition-all duration-200 hover:-translate-y-0.5"
-              style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-transform group-hover:scale-110"
-                style={{ backgroundColor: `${color}15` }}>
-                <Icon className="w-5 h-5" style={{ color }} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold leading-tight" style={{ color: '#0F172A' }}>{label}</p>
-                <p className="text-xs mt-1 leading-relaxed" style={{ color: '#64748B' }}>{desc}</p>
-              </div>
-              <ArrowRight className="w-4 h-4 mt-0.5 flex-shrink-0 transition-transform group-hover:translate-x-1" style={{ color: '#CBD5E1' }} />
-            </Link>
-          ))}
-        </div>
       </div>
 
       {/* Recent Quotes */}
@@ -202,6 +173,72 @@ export default async function AdminDashboard() {
           )}
         </div>
       </div>
+    </>
+  );
+}
+
+// ── Shell — renders immediately (greeting + quick actions, no DB needed) ──────
+export default async function AdminDashboard() {
+  const user = await getServerUser();
+  const firstName = user?.name?.split(' ')[0] ?? '';
+
+  const istHour = (new Date().getUTCHours() + 5) % 24;
+  const greeting = istHour < 12 ? 'Good morning' : istHour < 17 ? 'Good afternoon' : 'Good evening';
+  const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+  return (
+    <div className="space-y-7 max-w-[1400px]">
+
+      {/* Welcome Banner — no DB, renders instantly */}
+      <div className="rounded-xl p-7 relative overflow-hidden"
+        style={{ background: 'linear-gradient(135deg, #134956 0%, #1a6b82 60%, #0f5a70 100%)', boxShadow: '0 4px 24px rgba(19,73,86,0.25)' }}>
+        <div className="relative z-10 flex items-center justify-between">
+          <div>
+            <p className="text-white/70 text-sm font-medium mb-1">{today}</p>
+            <h1 className="text-[28px] font-bold text-white leading-tight">
+              {greeting}{firstName ? `, ${firstName}` : ''} 👋
+            </h1>
+            <p className="mt-2 text-white/70 text-[15px] font-medium">
+              Here&apos;s what&apos;s happening with your quotes today.
+            </p>
+          </div>
+          <div className="hidden md:flex items-center justify-center w-24 h-24 rounded-2xl text-5xl opacity-20 text-white font-bold">✈</div>
+        </div>
+        <div className="absolute -right-8 -top-8 w-48 h-48 rounded-full opacity-10" style={{ backgroundColor: '#fff' }} />
+        <div className="absolute -right-4 -bottom-12 w-36 h-36 rounded-full opacity-10" style={{ backgroundColor: '#fff' }} />
+      </div>
+
+      {/* Quick Actions — no DB, renders instantly */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-base font-bold" style={{ color: '#0F172A' }}>Quick Actions</h2>
+            <p className="text-sm mt-0.5" style={{ color: '#64748B' }}>Jump to frequently used tasks</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {QUICK_ACTIONS.map(({ label, desc, href, icon: Icon, color }) => (
+            <Link key={href} href={href}
+              className="bg-white rounded-xl p-5 group flex items-start gap-4 transition-all duration-200 hover:-translate-y-0.5"
+              style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-transform group-hover:scale-110"
+                style={{ backgroundColor: `${color}15` }}>
+                <Icon className="w-5 h-5" style={{ color }} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold leading-tight" style={{ color: '#0F172A' }}>{label}</p>
+                <p className="text-xs mt-1 leading-relaxed" style={{ color: '#64748B' }}>{desc}</p>
+              </div>
+              <ArrowRight className="w-4 h-4 mt-0.5 flex-shrink-0 transition-transform group-hover:translate-x-1" style={{ color: '#CBD5E1' }} />
+            </Link>
+          ))}
+        </div>
+      </div>
+
+      {/* Stats + Recent Quotes — stream in after shell */}
+      <Suspense fallback={<DashboardSkeleton />}>
+        <DashboardData />
+      </Suspense>
     </div>
   );
 }

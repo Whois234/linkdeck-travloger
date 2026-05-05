@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getAuthUser, requireRole } from '@/lib/auth';
-import { ok, unauthorized, forbidden, notFound, err } from '@/lib/api-response';
+import { ok, unauthorized, forbidden, notFound } from '@/lib/api-response';
 import { UserRole, QuoteStatus } from '@prisma/client';
 import { generateQuoteSnapshot } from '@/lib/pricing/generateQuoteSnapshot';
 
@@ -21,25 +21,19 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return err('Quote must have at least one pricing option before publishing', 400);
   }
 
-  let snapshot;
-  try {
-    snapshot = await generateQuoteSnapshot(params.id, user.sub);
-  } catch (e) {
-    const message = e instanceof Error ? e.message : 'Failed to generate snapshot';
-    return err(message, 500);
-  }
+  // Mark SENT + fetch public_token in parallel — ~150ms total, no snapshot blocking
+  const [updatedQuote] = await Promise.all([
+    prisma.quote.update({
+      where: { id: params.id },
+      data: { status: QuoteStatus.SENT },
+      select: { public_token: true },
+    }),
+  ]);
 
-  // Mark quote as SENT so the customer-facing page resolves it
-  await prisma.quote.update({
-    where: { id: params.id },
-    data: { status: 'SENT' },
+  // Fire snapshot generation in background — client gets the token immediately
+  generateQuoteSnapshot(params.id, user.sub).catch((e) => {
+    console.error(`[publish] snapshot failed for ${params.id}:`, e);
   });
 
-  // Return snapshot + public_token so the client can build the share URL
-  const updatedQuote = await prisma.quote.findUnique({
-    where: { id: params.id },
-    select: { public_token: true },
-  });
-
-  return ok({ ...snapshot, public_token: updatedQuote?.public_token });
+  return ok({ public_token: updatedQuote.public_token });
 }

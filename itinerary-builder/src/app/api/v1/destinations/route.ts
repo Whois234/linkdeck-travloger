@@ -5,6 +5,8 @@ import { prisma } from '@/lib/prisma';
 import { getAuthUser, requireRole } from '@/lib/auth';
 import { ok, created, err, unauthorized, forbidden } from '@/lib/api-response';
 import { UserRole, Prisma } from '@prisma/client';
+import { getCachedDestinations } from '@/lib/cache/masterData';
+import { revalidateTag } from 'next/cache';
 
 const DestinationSchema = z.object({
   state_id: z.string(),
@@ -32,14 +34,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const state_id = searchParams.get('state_id');
 
-  const destinations = await prisma.destination.findMany({
-    where: {
-      status: true,
-      ...(state_id ? { state_id } : {}),
-    },
-    include: { state: { select: { name: true, code: true } } },
-    orderBy: { name: 'asc' },
-  });
+  const destinations = await getCachedDestinations(state_id ?? undefined);
   return ok(destinations);
 }
 
@@ -64,5 +59,6 @@ export async function POST(req: NextRequest) {
       ...(tags !== undefined ? { tags: tags as Prisma.InputJsonValue } : {}),
     },
   });
+  revalidateTag('master-destinations');
   return created(destination);
 }

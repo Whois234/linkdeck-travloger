@@ -13,16 +13,16 @@ export async function GET(req: NextRequest, { params }: { params: { token: strin
 
   if (!quote || quote.snapshots.length === 0) return notFound('Itinerary');
 
-  // Record quote_viewed event
-  await prisma.quoteEvent.create({
-    data: { quote_id: quote.id, event_type: 'quote_viewed' },
-  });
-
-  // Update status to VIEWED if currently SENT
-  if (quote.status === QuoteStatus.SENT) {
-    await prisma.quote.update({ where: { id: quote.id }, data: { status: QuoteStatus.VIEWED } });
-  }
-
   const snapshotJson = quote.snapshots[0].snapshot_json as Record<string, unknown>;
-  return ok({ ...snapshotJson, selected_option_id: quote.selected_quote_option_id ?? null });
+  const response = ok({ ...snapshotJson, selected_option_id: quote.selected_quote_option_id ?? null });
+
+  // Fire analytics writes after response is built — non-blocking
+  Promise.all([
+    prisma.quoteEvent.create({ data: { quote_id: quote.id, event_type: 'quote_viewed' } }),
+    quote.status === QuoteStatus.SENT
+      ? prisma.quote.update({ where: { id: quote.id }, data: { status: QuoteStatus.VIEWED } })
+      : Promise.resolve(null),
+  ]).catch((e) => console.error('[itinerary] analytics write failed:', e));
+
+  return response;
 }

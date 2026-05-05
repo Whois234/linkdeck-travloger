@@ -823,6 +823,8 @@ model Quote {
   @@index([assigned_agent_id])
   @@index([public_token])
   @@index([created_at])
+  @@index([created_by])
+  @@index([created_by, status])
 }
 
 model QuoteOption {

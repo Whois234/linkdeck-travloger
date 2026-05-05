@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma';
 import { getAuthUser, requireRole } from '@/lib/auth';
 import { ok, err, unauthorized, forbidden, notFound } from '@/lib/api-response';
 import { UserRole } from '@prisma/client';
+import { revalidateTag } from 'next/cache';
 
 const UpdateSchema = z.object({
   name: z.string().min(1).optional(),
@@ -28,6 +29,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   if (!state) return notFound('State');
 
   const updated = await prisma.state.update({ where: { id: params.id }, data: parsed.data });
+  revalidateTag('master-states');
   return ok(updated);
 }
 
@@ -40,5 +42,6 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   if (!state) return notFound('State');
 
   await prisma.state.update({ where: { id: params.id }, data: { status: false } });
+  revalidateTag('master-states');
   return ok({ message: 'State deactivated' });
 }

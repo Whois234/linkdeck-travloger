@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, Suspense } from 'react';
+import { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Eye, EyeOff } from 'lucide-react';
 
@@ -13,13 +13,7 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const sessionExpired = searchParams.get('reason') === 'session_expired';
-
-  // If already logged in, redirect to admin
-  useEffect(() => {
-    fetch('/api/v1/auth/me').then(r => {
-      if (r.ok) router.replace('/admin');
-    }).catch(() => {});
-  }, [router]);
+  // No pre-check needed — middleware already redirects authenticated users away from /login
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
