@@ -50,6 +50,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     if (body.city !== undefined) data.city = body.city;
     if (body.nationality !== undefined) data.nationality = body.nationality;
     if (body.notes !== undefined) data.notes = body.notes;
+    if (body.status !== undefined) data.status = body.status;
 
   if (Object.keys(data).length === 0) return err('No valid fields to update', 400);
 

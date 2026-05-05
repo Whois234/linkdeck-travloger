@@ -764,6 +764,7 @@ model Customer {
   nationality String?
   lead_id     String?
   notes       String?
+  status      Boolean  @default(true)
   created_by  String?
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
