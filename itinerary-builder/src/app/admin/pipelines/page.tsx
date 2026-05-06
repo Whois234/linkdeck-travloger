@@ -851,6 +851,17 @@ function LeadDrawer({
                       <p className="text-[10px] font-bold uppercase tracking-wide mb-0.5" style={{ color: '#94A3B8' }}>Created</p>
                       <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>{formatDate(lead.created_at)}</p>
                     </div>
+                    <div className="rounded-lg p-3 flex items-center justify-between" style={{ backgroundColor: '#F8FAFC', border: '1px solid #F1F5F9' }}>
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-bold uppercase tracking-wide mb-0.5" style={{ color: '#94A3B8' }}>Lead ID</p>
+                        <p className="text-xs font-mono truncate" style={{ color: '#64748B' }}>{lead.id}</p>
+                      </div>
+                      <button onClick={() => navigator.clipboard.writeText(lead.id)}
+                        className="ml-3 flex-shrink-0 px-2.5 py-1 rounded-md text-[10px] font-bold transition-colors hover:bg-[#E2E8F0]"
+                        style={{ color: '#134956', border: '1px solid #E2E8F0' }}>
+                        Copy
+                      </button>
+                    </div>
                     <Link
                       href={`/admin/quotes/create?lead_id=${lead.id}&lead_name=${encodeURIComponent(lead.name)}&lead_phone=${encodeURIComponent(lead.phone)}&lead_email=${encodeURIComponent(lead.email ?? '')}`}
                       className="flex items-center justify-center gap-2 w-full py-2.5 rounded-lg text-sm font-bold text-white transition-opacity hover:opacity-90"
