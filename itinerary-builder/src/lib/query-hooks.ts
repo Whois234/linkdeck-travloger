@@ -143,7 +143,28 @@ export function useLeadStageMutation(pipelineId: string, params: URLSearchParams
   });
 }
 
-// ─── Note / Call / Task mutations with cache invalidation ─────────────────────
+// ─── Lead data shape (minimal, for optimistic updates) ────────────────────────
+
+interface LeadCache {
+  lead_notes?:      { id: string; content: string; created_at: string; created_by: string }[];
+  call_logs?:       { id: string; duration: number | null; outcome: string; notes: string | null; created_at: string; created_by: string }[];
+  lead_tasks?:      { id: string; type: string; due_time: string; status: string; notes: string | null }[];
+  lead_activities?: { id: string; type: string; metadata: Record<string, unknown> | null; created_at: string; created_by: string }[];
+}
+
+function optimisticUpdate<T extends LeadCache>(
+  qc: ReturnType<typeof useQueryClient>,
+  leadId: string,
+  updater: (old: T) => T,
+): T | undefined {
+  const key = QK.lead(leadId);
+  qc.cancelQueries({ queryKey: key });
+  const previous = qc.getQueryData<T>(key);
+  if (previous) qc.setQueryData<T>(key, updater(previous));
+  return previous;
+}
+
+// ─── Note / Call / Task mutations with optimistic updates ─────────────────────
 
 export function useAddNote(leadId: string) {
   const qc = useQueryClient();
@@ -154,7 +175,17 @@ export function useAddNote(leadId: string) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content }),
       }).then(r => r.json()),
-    onSuccess: () => qc.invalidateQueries({ queryKey: QK.lead(leadId) }),
+
+    onMutate: (content: string) => {
+      const tempNote = { id: `temp-${Date.now()}`, content, created_at: new Date().toISOString(), created_by: 'You' };
+      const previous = optimisticUpdate<LeadCache>(qc, leadId, old => ({
+        ...old,
+        lead_notes: [tempNote, ...(old.lead_notes ?? [])],
+      }));
+      return { previous };
+    },
+    onError: (_e, _v, ctx) => { if (ctx?.previous) qc.setQueryData(QK.lead(leadId), ctx.previous); },
+    onSettled: () => qc.invalidateQueries({ queryKey: QK.lead(leadId) }),
   });
 }
 
@@ -167,7 +198,24 @@ export function useLogCall(leadId: string) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       }).then(r => r.json()),
-    onSuccess: () => qc.invalidateQueries({ queryKey: QK.lead(leadId) }),
+
+    onMutate: (payload: Record<string, unknown>) => {
+      const tempCall = {
+        id: `temp-${Date.now()}`,
+        duration: (payload.duration as number) ?? null,
+        outcome: (payload.outcome as string) ?? 'ANSWERED',
+        notes: (payload.notes as string) ?? null,
+        created_at: new Date().toISOString(),
+        created_by: 'You',
+      };
+      const previous = optimisticUpdate<LeadCache>(qc, leadId, old => ({
+        ...old,
+        call_logs: [tempCall, ...(old.call_logs ?? [])],
+      }));
+      return { previous };
+    },
+    onError: (_e, _v, ctx) => { if (ctx?.previous) qc.setQueryData(QK.lead(leadId), ctx.previous); },
+    onSettled: () => qc.invalidateQueries({ queryKey: QK.lead(leadId) }),
   });
 }
 
@@ -180,7 +228,23 @@ export function useAddTask(leadId: string) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       }).then(r => r.json()),
-    onSuccess: () => qc.invalidateQueries({ queryKey: QK.lead(leadId) }),
+
+    onMutate: (payload: Record<string, unknown>) => {
+      const tempTask = {
+        id: `temp-${Date.now()}`,
+        type: (payload.type as string) ?? 'other',
+        due_time: (payload.due_time as string) ?? new Date().toISOString(),
+        status: 'pending',
+        notes: (payload.notes as string) ?? null,
+      };
+      const previous = optimisticUpdate<LeadCache>(qc, leadId, old => ({
+        ...old,
+        lead_tasks: [...(old.lead_tasks ?? []), tempTask],
+      }));
+      return { previous };
+    },
+    onError: (_e, _v, ctx) => { if (ctx?.previous) qc.setQueryData(QK.lead(leadId), ctx.previous); },
+    onSettled: () => qc.invalidateQueries({ queryKey: QK.lead(leadId) }),
   });
 }
 
@@ -193,7 +257,16 @@ export function useMarkTaskDone(leadId: string) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'done' }),
       }).then(r => r.json()),
-    onSuccess: () => qc.invalidateQueries({ queryKey: QK.lead(leadId) }),
+
+    onMutate: (taskId: string) => {
+      const previous = optimisticUpdate<LeadCache>(qc, leadId, old => ({
+        ...old,
+        lead_tasks: (old.lead_tasks ?? []).map(t => t.id === taskId ? { ...t, status: 'done' } : t),
+      }));
+      return { previous };
+    },
+    onError: (_e, _v, ctx) => { if (ctx?.previous) qc.setQueryData(QK.lead(leadId), ctx.previous); },
+    onSettled: () => qc.invalidateQueries({ queryKey: QK.lead(leadId) }),
   });
 }
 

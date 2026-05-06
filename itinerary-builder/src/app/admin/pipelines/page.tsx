@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { usePipelines, usePipeline, useUsers, useLeadStageMutation, QK } from '@/lib/query-hooks';
+import { usePipelines, usePipeline, useUsers, useLead, useLeadStageMutation, useAddNote, useLogCall, useAddTask, useMarkTaskDone, QK } from '@/lib/query-hooks';
 import {
   Plus, Search, Phone, MessageCircle, ChevronDown, X, User,
   Clock, CheckCircle2, AlertCircle, FileText, Loader2,
@@ -364,26 +364,21 @@ function CallLogPopup({
   const [scheduleNext, setScheduleNext] = useState(false);
   const [nextType, setNextType] = useState('call');
   const [nextTime, setNextTime] = useState('');
-  const [saving, setSaving] = useState(false);
+  const logCallMutation = useLogCall(leadId);
 
   // When coming from banner: save exact seconds; fallback to manual minutes input
   const durationForApi = initialElapsed > 0
     ? Math.max(1, Math.round(initialElapsed / 60))
     : (manualDuration ? parseInt(manualDuration) : null);
 
-  async function save() {
-    setSaving(true);
-    await fetch(`/api/v1/leads/${leadId}/calls`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        duration: durationForApi, outcome, notes,
-        next_task_type: scheduleNext ? nextType : undefined,
-        next_task_time: scheduleNext && nextTime ? nextTime : undefined,
-      }),
+  function save() {
+    logCallMutation.mutate({
+      duration: durationForApi, outcome, notes,
+      next_task_type: scheduleNext ? nextType : undefined,
+      next_task_time: scheduleNext && nextTime ? nextTime : undefined,
+    }, {
+      onSuccess: () => { onSaved(); onClose(); },
     });
-    setSaving(false);
-    onSaved();
-    onClose();
   }
 
   return (
@@ -454,10 +449,10 @@ function CallLogPopup({
         </div>
         <div className="px-6 py-4 flex gap-3" style={{ borderTop: '1px solid #F1F5F9' }}>
           <button onClick={onClose} className="flex-1 py-2.5 rounded-lg text-sm font-semibold" style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>Cancel</button>
-          <button onClick={save} disabled={saving}
+          <button onClick={save} disabled={logCallMutation.isPending}
             className="flex-1 py-2.5 rounded-lg text-sm font-bold text-white flex items-center justify-center gap-2"
             style={{ backgroundColor: '#134956' }}>
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+            {logCallMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
             Save Call
           </button>
         </div>
@@ -673,21 +668,23 @@ function LeadDrawer({
 }: {
   leadId: string; stages: Stage[]; onClose: () => void; onUpdated: () => void;
 }) {
-  const [lead, setLead] = useState<Lead | null>(null);
-  const [notes, setNotes] = useState<Note[]>([]);
-  const [calls, setCalls] = useState<CallLog[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [activities, setActivities] = useState<Activity[]>([]);
-  const [quotes, setQuotes] = useState<QuoteRef[]>([]);
+  const { data: leadData } = useLead(leadId);
+  const ld = leadData as (Lead & { lead_notes: Note[]; call_logs: CallLog[]; lead_tasks: Task[]; lead_activities: Activity[]; quotes: QuoteRef[] }) | undefined;
+
+  const lead       = ld ?? null;
+  const notes      = ld?.lead_notes      ?? [];
+  const calls      = ld?.call_logs       ?? [];
+  const tasks      = ld?.lead_tasks      ?? [];
+  const activities = ld?.lead_activities ?? [];
+  const quotes     = ld?.quotes          ?? [];
+
   const [tab, setTab] = useState<'overview' | 'notes' | 'calls' | 'tasks' | 'quotes' | 'activity'>('overview');
   const [noteText, setNoteText] = useState('');
-  const [savingNote, setSavingNote] = useState(false);
   const [showCallPopup, setShowCallPopup] = useState(false);
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [taskType, setTaskType] = useState('call');
   const [taskDue, setTaskDue] = useState('');
   const [taskNotes, setTaskNotes] = useState('');
-  const [savingTask, setSavingTask] = useState(false);
   const [movingStage, setMovingStage] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editForm, setEditForm] = useState({ name: '', phone: '', email: '', destination_interest: '', travel_month: '', budget_range: '' });
@@ -696,35 +693,28 @@ function LeadDrawer({
   const [callBannerActive, setCallBannerActive] = useState(false);
   const [callPopupState, setCallPopupState] = useState<{ elapsed: number; outcome: string } | null>(null);
 
-  const load = useCallback(async () => {
-    const res = await fetch(`/api/v1/leads/${leadId}`);
-    const d = await res.json();
-    if (d.success) {
-      setLead(d.data);
-      setNotes(d.data.lead_notes ?? []);
-      setCalls(d.data.call_logs ?? []);
-      setTasks(d.data.lead_tasks ?? []);
-      setActivities(d.data.lead_activities ?? []);
-      setQuotes(d.data.quotes ?? []);
+  // Sync edit form when lead data first arrives
+  useEffect(() => {
+    if (lead && !editMode) {
       setEditForm({
-        name: d.data.name, phone: d.data.phone, email: d.data.email ?? '',
-        destination_interest: d.data.destination_interest ?? '',
-        travel_month: d.data.travel_month ?? '',
-        budget_range: d.data.budget_range ?? '',
+        name: lead.name, phone: lead.phone, email: lead.email ?? '',
+        destination_interest: lead.destination_interest ?? '',
+        travel_month: lead.travel_month ?? '',
+        budget_range: lead.budget_range ?? '',
       });
     }
-  }, [leadId]);
+  }, [lead?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { load(); }, [load]);
+  // Optimistic mutation hooks
+  const addNoteMutation    = useAddNote(leadId);
+  const addTaskMutation    = useAddTask(leadId);
+  const markTaskMutation   = useMarkTaskDone(leadId);
+  const logCallMutation    = useLogCall(leadId);
+  const qc = useQueryClient();
 
-  async function addNote() {
+  function addNote() {
     if (!noteText.trim()) return;
-    setSavingNote(true);
-    await fetch(`/api/v1/leads/${leadId}/notes`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: noteText }),
-    });
-    setNoteText(''); setSavingNote(false); load();
+    addNoteMutation.mutate(noteText, { onSuccess: () => setNoteText('') });
   }
 
   async function moveStage(stageId: string) {
@@ -733,25 +723,21 @@ function LeadDrawer({
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ stage_id: stageId }),
     });
-    setMovingStage(false); load(); onUpdated();
+    setMovingStage(false);
+    qc.invalidateQueries({ queryKey: QK.lead(leadId) });
+    onUpdated();
   }
 
-  async function addTask() {
+  function addTask() {
     if (!taskDue) return;
-    setSavingTask(true);
-    await fetch(`/api/v1/leads/${leadId}/tasks`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: taskType, due_time: new Date(taskDue).toISOString(), notes: taskNotes }),
-    });
-    setShowTaskForm(false); setTaskDue(''); setTaskNotes(''); setSavingTask(false); load();
+    addTaskMutation.mutate(
+      { type: taskType, due_time: new Date(taskDue).toISOString(), notes: taskNotes },
+      { onSuccess: () => { setShowTaskForm(false); setTaskDue(''); setTaskNotes(''); } },
+    );
   }
 
-  async function markTaskDone(taskId: string) {
-    await fetch(`/api/v1/leads/${leadId}/tasks?taskId=${taskId}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'done' }),
-    });
-    load();
+  function markTaskDone(taskId: string) {
+    markTaskMutation.mutate(taskId);
   }
 
   async function saveEdit() {
@@ -760,7 +746,9 @@ function LeadDrawer({
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(editForm),
     });
-    setSavingEdit(false); setEditMode(false); load(); onUpdated();
+    setSavingEdit(false); setEditMode(false);
+    qc.invalidateQueries({ queryKey: QK.lead(leadId) });
+    onUpdated();
   }
 
   const TABS = [
@@ -801,7 +789,7 @@ function LeadDrawer({
           initialElapsed={callPopupState?.elapsed ?? 0}
           initialOutcome={callPopupState?.outcome ?? 'ANSWERED'}
           onClose={() => { setShowCallPopup(false); setCallPopupState(null); }}
-          onSaved={() => { load(); onUpdated(); setShowCallPopup(false); setCallPopupState(null); }}
+          onSaved={() => { qc.invalidateQueries({ queryKey: QK.lead(leadId) }); onUpdated(); setShowCallPopup(false); setCallPopupState(null); }}
         />
       )}
       {selectedQuote && <QuotePopup quote={selectedQuote} onClose={() => setSelectedQuote(null)} />}
@@ -939,10 +927,10 @@ function LeadDrawer({
                 <div className="flex gap-2">
                   <textarea value={noteText} onChange={e => setNoteText(e.target.value)} placeholder="Add a note..." rows={3}
                     className="flex-1 text-sm rounded-lg px-3 py-2.5 outline-none resize-none" style={{ border: '1px solid #D1D5DB' }} />
-                  <button onClick={addNote} disabled={savingNote || !noteText.trim()}
+                  <button onClick={addNote} disabled={addNoteMutation.isPending || !noteText.trim()}
                     className="px-4 py-2 rounded-lg text-sm font-bold text-white self-start flex items-center gap-1"
                     style={{ backgroundColor: '#134956', opacity: !noteText.trim() ? 0.5 : 1 }}>
-                    {savingNote ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Add'}
+                    {addNoteMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Add'}
                   </button>
                 </div>
                 {notes.length === 0 && <p className="text-sm text-center py-6" style={{ color: '#94A3B8' }}>No notes yet</p>}
@@ -1002,10 +990,10 @@ function LeadDrawer({
                       className="w-full text-sm rounded-lg px-3 py-2.5 outline-none resize-none" style={{ border: '1px solid #D1D5DB' }} />
                     <div className="flex gap-2">
                       <button onClick={() => setShowTaskForm(false)} className="flex-1 py-2 rounded-lg text-sm font-semibold" style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>Cancel</button>
-                      <button onClick={addTask} disabled={savingTask || !taskDue}
+                      <button onClick={addTask} disabled={addTaskMutation.isPending || !taskDue}
                         className="flex-1 py-2 rounded-lg text-sm font-bold text-white flex items-center justify-center gap-1"
                         style={{ backgroundColor: '#134956' }}>
-                        {savingTask && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Save Task
+                        {addTaskMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Save Task
                       </button>
                     </div>
                   </div>
