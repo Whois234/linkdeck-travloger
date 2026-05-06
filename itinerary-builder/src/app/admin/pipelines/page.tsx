@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { usePipelines, usePipeline, useUsers, useLead, useLeadStageMutation, useAddNote, useLogCall, useAddTask, useMarkTaskDone, QK } from '@/lib/query-hooks';
+import { usePipelines, usePipeline, useUsers, useLead, useLeadStageMutation, useAddNote, useLogCall, useAddTask, useMarkTaskDone, usePrefetchLead, QK } from '@/lib/query-hooks';
 import {
   Plus, Search, Phone, MessageCircle, ChevronDown, X, User,
   Clock, CheckCircle2, AlertCircle, FileText, Loader2,
@@ -92,19 +92,21 @@ function formatDateTime(d: string) {
 // ─── Lead Card ───────────────────────────────────────────────────────────────
 
 function LeadCard({
-  lead, stageColor, onDragStart, onClick, selected, onToggleSelect,
+  lead, stageColor, onDragStart, onClick, selected, onToggleSelect, onPrefetch,
 }: {
   lead: Lead; stageColor: string;
   onDragStart: (e: React.DragEvent, leadId: string) => void;
   onClick: (lead: Lead) => void;
   selected: boolean;
   onToggleSelect: (id: string, e: React.MouseEvent) => void;
+  onPrefetch: (leadId: string) => void;
 }) {
   const isUntouched = (lead._count?.call_logs ?? 0) + (lead._count?.lead_notes ?? 0) === 0;
   return (
     <div
       draggable
       onDragStart={e => onDragStart(e, lead.id)}
+      onMouseEnter={() => onPrefetch(lead.id)}
       onClick={() => onClick(lead)}
       className="bg-white rounded-xl p-4 cursor-pointer transition-shadow hover:shadow-md select-none relative"
       style={{
@@ -162,7 +164,7 @@ function LeadCard({
 // ─── Kanban Column ───────────────────────────────────────────────────────────
 
 function KanbanColumn({
-  stage, leads, onDragStart, onDrop, onLeadClick, selectedIds, onToggleSelect, onSelectAllInStage,
+  stage, leads, onDragStart, onDrop, onLeadClick, selectedIds, onToggleSelect, onSelectAllInStage, onPrefetch,
 }: {
   stage: Stage; leads: Lead[];
   onDragStart: (e: React.DragEvent, leadId: string) => void;
@@ -171,6 +173,7 @@ function KanbanColumn({
   selectedIds: Set<string>;
   onToggleSelect: (id: string, e: React.MouseEvent) => void;
   onSelectAllInStage: (stageId: string, leads: Lead[]) => void;
+  onPrefetch: (leadId: string) => void;
 }) {
   const [over, setOver] = useState(false);
   const allSelected = leads.length > 0 && leads.every(l => selectedIds.has(l.id));
@@ -200,7 +203,8 @@ function KanbanColumn({
         {leads.map(lead => (
           <LeadCard key={lead.id} lead={lead} stageColor={stage.color}
             onDragStart={onDragStart} onClick={onLeadClick}
-            selected={selectedIds.has(lead.id)} onToggleSelect={onToggleSelect} />
+            selected={selectedIds.has(lead.id)} onToggleSelect={onToggleSelect}
+            onPrefetch={onPrefetch} />
         ))}
         {leads.length === 0 && (
           <div className="flex items-center justify-center h-16 rounded-lg border-2 border-dashed text-xs"
@@ -1289,6 +1293,7 @@ export default function PipelinesPage() {
   const users: CrmUser[] = (usersData as CrmUser[] | undefined) ?? [];
 
   const stageMutation = useLeadStageMutation(resolvedPipelineId, filterParams);
+  const prefetchLead  = usePrefetchLead();
 
   // Merge pipeline list with live detail data
   const pipelines: Pipeline[] = rawPipelines.map(p =>
@@ -1555,6 +1560,7 @@ export default function PipelinesPage() {
                 selectedIds={selectedIds}
                 onToggleSelect={toggleSelect}
                 onSelectAllInStage={() => toggleSelectAllInStage(stage.id, stageLeads)}
+                onPrefetch={prefetchLead}
               />
             );
           })}
