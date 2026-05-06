@@ -766,6 +766,8 @@ model Lead {
   @@index([status])
   @@index([assigned_agent_id])
   @@index([pipeline_id, stage_id])
+  @@index([pipeline_id, owner_id])
+  @@index([pipeline_id, created_at])
   @@index([crm_contact_id])
   @@index([owner_id])
   @@index([is_converted])
@@ -1083,6 +1085,7 @@ model CallLog {
   lead            Lead     @relation(fields: [lead_id], references: [id], onDelete: Cascade)
 
   @@index([lead_id])
+  @@index([lead_id, created_at])
 }
 
 model LeadTask {

@@ -1,5 +1,7 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { usePipelines, usePipeline, useUsers, useLeadStageMutation, QK } from '@/lib/query-hooks';
 import {
   Plus, Search, Phone, MessageCircle, ChevronDown, X, User,
   Clock, CheckCircle2, AlertCircle, FileText, Loader2,
@@ -1265,7 +1267,6 @@ function BulkActionBar({
 interface CrmUser { id: string; name: string; role: string }
 
 export default function PipelinesPage() {
-  const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [activePipelineId, setActivePipelineId] = useState<string>('');
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'name'>('newest');
@@ -1273,66 +1274,53 @@ export default function PipelinesPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [showAddLead, setShowAddLead] = useState(false);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
-  const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [users, setUsers] = useState<CrmUser[]>([]);
   const [filterOwner, setFilterOwner] = useState<string>('');
   const [filterDateFrom, setFilterDateFrom] = useState('');
   const [filterDateTo, setFilterDateTo] = useState('');
   const [showDateFilter, setShowDateFilter] = useState(false);
   const draggingLeadId = useRef<string | null>(null);
+  const qc = useQueryClient();
 
-  const loadPipelines = useCallback(async () => {
-    const res = await fetch('/api/v1/pipelines');
-    const d = await res.json();
-    if (d.success) {
-      setPipelines(d.data);
-      if (!activePipelineId && d.data.length > 0) {
-        const def = d.data.find((p: Pipeline) => p.is_default) ?? d.data[0];
-        setActivePipelineId(def.id);
-      }
-    }
-    setLoading(false);
-  }, [activePipelineId]);
+  // ─── React Query data ───────────────────────────────────────────────────────
+  const { data: pipelinesData, isLoading: loadingPipelines } = usePipelines();
+  const rawPipelines = (pipelinesData as Pipeline[] | undefined) ?? [];
 
-  const loadActivePipeline = useCallback(async () => {
-    if (!activePipelineId) return;
-    const params = new URLSearchParams();
-    if (filterOwner)    params.set('owner_id',  filterOwner);
-    if (filterDateFrom) params.set('date_from', filterDateFrom);
-    if (filterDateTo)   params.set('date_to',   filterDateTo);
-    const res = await fetch(`/api/v1/pipelines/${activePipelineId}?${params}`);
-    const d = await res.json();
-    if (d.success) {
-      setPipelines(prev => prev.map(p => p.id === activePipelineId ? { ...p, stages: d.data.stages, leads: d.data.leads } : p));
-    }
-  }, [activePipelineId, filterOwner, filterDateFrom, filterDateTo]);
+  // Auto-select default pipeline on first load
+  const resolvedPipelineId = activePipelineId ||
+    (rawPipelines.find(p => p.is_default)?.id ?? rawPipelines[0]?.id ?? '');
 
-  useEffect(() => {
-    loadPipelines();
-    fetch('/api/v1/users').then(r => r.json()).then(d => { if (d.success) setUsers(Array.isArray(d.data) ? d.data : (d.data?.items ?? [])); });
-  }, []);
-  useEffect(() => { if (activePipelineId) loadActivePipeline(); }, [activePipelineId, loadActivePipeline]);
+  const filterParams = new URLSearchParams();
+  if (filterOwner)    filterParams.set('owner_id',  filterOwner);
+  if (filterDateFrom) filterParams.set('date_from', filterDateFrom);
+  if (filterDateTo)   filterParams.set('date_to',   filterDateTo);
 
-  const activePipeline = pipelines.find(p => p.id === activePipelineId);
+  const { data: pipelineDetail } = usePipeline(resolvedPipelineId, filterParams);
+
+  const { data: usersData } = useUsers();
+  const users: CrmUser[] = (usersData as CrmUser[] | undefined) ?? [];
+
+  const stageMutation = useLeadStageMutation(resolvedPipelineId, filterParams);
+
+  // Merge pipeline list with live detail data
+  const pipelines: Pipeline[] = rawPipelines.map(p =>
+    p.id === resolvedPipelineId && pipelineDetail
+      ? { ...p, stages: (pipelineDetail as Pipeline).stages, leads: (pipelineDetail as Pipeline).leads }
+      : p
+  );
+
+  const activePipeline = pipelines.find(p => p.id === resolvedPipelineId);
 
   function handleDragStart(e: React.DragEvent, leadId: string) {
     draggingLeadId.current = leadId;
     e.dataTransfer.effectAllowed = 'move';
   }
 
-  async function handleDrop(stageId: string) {
+  function handleDrop(stageId: string) {
     const leadId = draggingLeadId.current;
     if (!leadId) return;
     draggingLeadId.current = null;
-    setPipelines(prev => prev.map(p =>
-      p.id !== activePipelineId ? p : { ...p, leads: p.leads.map(l => l.id === leadId ? { ...l, stage_id: stageId } : l) }
-    ));
-    await fetch(`/api/v1/leads/${leadId}/stage`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stage_id: stageId }),
-    });
-    loadActivePipeline();
+    stageMutation.mutate({ leadId, stageId });
   }
 
   function toggleSelect(id: string, e: React.MouseEvent) {
@@ -1361,7 +1349,7 @@ export default function PipelinesPage() {
       })
     ));
     setSelectedIds(new Set());
-    loadActivePipeline();
+    qc.invalidateQueries({ queryKey: [...QK.pipeline(resolvedPipelineId), filterParams.toString()] });
   }
 
   function toggleSelectAllInStage(stageId: string, stageLeads: Lead[]) {
@@ -1379,7 +1367,7 @@ export default function PipelinesPage() {
       fetch(`/api/v1/leads/${leadId}`, { method: 'DELETE' })
     ));
     setSelectedIds(new Set());
-    loadActivePipeline();
+    qc.invalidateQueries({ queryKey: [...QK.pipeline(resolvedPipelineId), filterParams.toString()] });
   }
 
   // Filter + sort leads
@@ -1399,7 +1387,7 @@ export default function PipelinesPage() {
 
   const allLeads = processLeads(activePipeline?.leads ?? []);
 
-  if (loading) {
+  if (loadingPipelines) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#134956' }} />
@@ -1429,9 +1417,9 @@ export default function PipelinesPage() {
               <button key={p.id} onClick={() => { setActivePipelineId(p.id); setSelectedIds(new Set()); }}
                 className="px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-colors flex-shrink-0"
                 style={{
-                  backgroundColor: activePipelineId === p.id ? '#134956' : '#F8FAFC',
-                  color: activePipelineId === p.id ? '#fff' : '#64748B',
-                  border: '1px solid', borderColor: activePipelineId === p.id ? '#134956' : '#E2E8F0',
+                  backgroundColor: resolvedPipelineId === p.id ? '#134956' : '#F8FAFC',
+                  color: resolvedPipelineId === p.id ? '#fff' : '#64748B',
+                  border: '1px solid', borderColor: resolvedPipelineId === p.id ? '#134956' : '#E2E8F0',
                 }}>
                 {p.name}{p.is_default && <span className="ml-1.5 text-[10px] opacity-70">★</span>}
               </button>
@@ -1447,7 +1435,7 @@ export default function PipelinesPage() {
               : <Square className="w-3.5 h-3.5" />}
             {selectedIds.size > 0 ? `${selectedIds.size} selected` : 'Select All'}
           </button>
-          {activePipelineId && (
+          {resolvedPipelineId && (
             <button onClick={() => setShowAddLead(true)}
               className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold text-white transition-opacity hover:opacity-90"
               style={{ backgroundColor: '#134956' }}>
@@ -1590,13 +1578,13 @@ export default function PipelinesPage() {
         </div>
       </div>
 
-      {showAddLead && activePipelineId && (
-        <AddLeadDrawer pipelineId={activePipelineId} onClose={() => setShowAddLead(false)} onCreated={() => loadActivePipeline()} />
+      {showAddLead && resolvedPipelineId && (
+        <AddLeadDrawer pipelineId={resolvedPipelineId} onClose={() => setShowAddLead(false)} onCreated={() => qc.invalidateQueries({ queryKey: [...QK.pipeline(resolvedPipelineId), filterParams.toString()] })} />
       )}
       {selectedLead && (
         <LeadDrawer
           leadId={selectedLead.id} stages={activePipeline?.stages ?? []}
-          onClose={() => setSelectedLead(null)} onUpdated={() => loadActivePipeline()}
+          onClose={() => setSelectedLead(null)} onUpdated={() => qc.invalidateQueries({ queryKey: [...QK.pipeline(resolvedPipelineId), filterParams.toString()] })}
         />
       )}
     </div>
