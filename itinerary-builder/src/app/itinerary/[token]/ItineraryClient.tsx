@@ -325,7 +325,7 @@ function Strip({ quote }: { quote: ItineraryData['quote'] }) {
   return (
     <div className="tl-strip">
       <span className="tl-strip-dot" />
-      Quote valid until <strong>{expiry}</strong>
+      Quote valid until <strong>{expiry}</strong><span className="tl-strip-sep">·</span>#{quote.quote_number}
       <span className="tl-strip-dot" />
     </div>
   );
