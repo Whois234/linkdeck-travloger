@@ -307,37 +307,41 @@ function CallBanner({
   }, []);
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-[80] flex justify-center pb-4 px-4 pointer-events-none">
-      <div className="pointer-events-auto flex items-center gap-4 px-5 py-3.5 rounded-2xl shadow-2xl w-full max-w-[540px]"
-        style={{ background: 'linear-gradient(135deg, #0D3340, #134956)', border: '1px solid rgba(255,255,255,0.1)' }}>
-        {/* Pulse dot */}
-        <div className="relative flex-shrink-0">
-          <div className="w-3 h-3 rounded-full bg-green-400" />
-          <div className="absolute inset-0 w-3 h-3 rounded-full bg-green-400 animate-ping opacity-60" />
+    <div className="fixed bottom-0 left-0 right-0 z-[80] flex justify-center pointer-events-none" style={{ padding: '0 16px 20px' }}>
+      <div className="pointer-events-auto w-full max-w-[480px] rounded-2xl overflow-hidden"
+        style={{ backgroundColor: '#0F172A', boxShadow: '0 20px 60px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.06)' }}>
+
+        {/* Top row — name + timer */}
+        <div className="flex items-center justify-between px-5 pt-4 pb-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="relative flex-shrink-0 mt-0.5">
+              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#4ADE80' }} />
+              <div className="absolute inset-0 w-2 h-2 rounded-full animate-ping" style={{ backgroundColor: '#4ADE80', opacity: 0.5 }} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[11px] font-medium leading-none mb-1" style={{ color: 'rgba(255,255,255,0.4)' }}>Call in progress</p>
+              <p className="text-sm font-semibold text-white truncate leading-none">{leadName}</p>
+            </div>
+          </div>
+          <p className="text-xl font-bold font-mono flex-shrink-0 tabular-nums" style={{ color: '#4ADE80', letterSpacing: '-0.5px' }}>{fmtSecs(elapsed)}</p>
         </div>
 
-        {/* Info */}
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-semibold text-white/60 leading-none mb-0.5">Call in progress</p>
-          <p className="text-sm font-bold text-white truncate">{leadName} · {phone}</p>
+        {/* Divider */}
+        <div style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.06)', margin: '0 20px' }} />
+
+        {/* Bottom row — actions */}
+        <div className="flex gap-2 px-5 py-3">
+          <button onClick={() => onEndCall(elapsed)}
+            className="flex-1 py-2.5 rounded-xl text-xs font-bold text-white transition-opacity hover:opacity-90"
+            style={{ backgroundColor: '#16A34A' }}>
+            End Call
+          </button>
+          <button onClick={onNotAnswered}
+            className="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-opacity hover:opacity-90"
+            style={{ backgroundColor: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.55)' }}>
+            Not Answered
+          </button>
         </div>
-
-        {/* Timer */}
-        <p className="text-lg font-bold font-mono flex-shrink-0" style={{ color: '#7DD3C0' }}>{fmtSecs(elapsed)}</p>
-
-        <div className="w-px h-6 bg-white/15 flex-shrink-0" />
-
-        {/* Actions */}
-        <button onClick={() => onEndCall(elapsed)}
-          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-white transition-all hover:scale-105"
-          style={{ backgroundColor: '#16A34A' }}>
-          ✅ End Call
-        </button>
-        <button onClick={onNotAnswered}
-          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all hover:scale-105"
-          style={{ backgroundColor: 'rgba(255,255,255,0.12)', color: '#FCA5A5' }}>
-          ❌ Not Answered
-        </button>
       </div>
     </div>
   );
@@ -352,7 +356,7 @@ function CallLogPopup({
   leadId: string; leadName: string; onClose: () => void; onSaved: () => void;
   initialElapsed?: number; initialOutcome?: string;
 }) {
-  const [duration, setDuration] = useState(initialElapsed > 0 ? String(Math.ceil(initialElapsed / 60)) : '');
+  const [manualDuration, setManualDuration] = useState('');
   const [outcome, setOutcome] = useState(initialOutcome);
   const [notes, setNotes] = useState('');
   const [scheduleNext, setScheduleNext] = useState(false);
@@ -360,13 +364,17 @@ function CallLogPopup({
   const [nextTime, setNextTime] = useState('');
   const [saving, setSaving] = useState(false);
 
+  // When coming from banner: save exact seconds; fallback to manual minutes input
+  const durationForApi = initialElapsed > 0
+    ? Math.max(1, Math.round(initialElapsed / 60))
+    : (manualDuration ? parseInt(manualDuration) : null);
+
   async function save() {
     setSaving(true);
-    const mins = duration ? parseInt(duration) : null;
     await fetch(`/api/v1/leads/${leadId}/calls`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        duration: mins, outcome, notes,
+        duration: durationForApi, outcome, notes,
         next_task_type: scheduleNext ? nextType : undefined,
         next_task_time: scheduleNext && nextTime ? nextTime : undefined,
       }),
@@ -388,12 +396,24 @@ function CallLogPopup({
           <button onClick={onClose}><X className="w-4 h-4" style={{ color: '#94A3B8' }} /></button>
         </div>
         <div className="px-6 py-5 space-y-4">
-          {/* Duration (pre-filled from banner timer if available) */}
-          <div>
-            <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Duration (minutes)</label>
-            <input type="number" value={duration} onChange={e => setDuration(e.target.value)} placeholder="e.g. 5"
-              className="w-full text-sm rounded-lg px-3 py-2.5 outline-none" style={{ border: '1px solid #D1D5DB' }} />
-          </div>
+          {/* Duration */}
+          {initialElapsed > 0 ? (
+            <div className="rounded-xl px-4 py-3 flex items-center justify-between" style={{ backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0' }}>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: '#15803D' }}>Call Duration</p>
+                <p className="text-2xl font-bold font-mono tabular-nums" style={{ color: '#0F172A', letterSpacing: '-0.5px' }}>{fmtSecs(initialElapsed)}</p>
+              </div>
+              <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ backgroundColor: '#DCFCE7' }}>
+                <Phone className="w-4 h-4" style={{ color: '#16A34A' }} />
+              </div>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Duration (minutes)</label>
+              <input type="number" value={manualDuration} onChange={e => setManualDuration(e.target.value)} placeholder="e.g. 5"
+                className="w-full text-sm rounded-lg px-3 py-2.5 outline-none" style={{ border: '1px solid #D1D5DB' }} />
+            </div>
+          )}
 
           <div>
             <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Outcome</label>
