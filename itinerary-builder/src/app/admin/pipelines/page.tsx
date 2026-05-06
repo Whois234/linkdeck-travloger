@@ -943,7 +943,7 @@ export default function PipelinesPage() {
 
   useEffect(() => {
     loadPipelines();
-    fetch('/api/v1/users').then(r => r.json()).then(d => { if (d.success) setUsers(d.data); });
+    fetch('/api/v1/users').then(r => r.json()).then(d => { if (d.success) setUsers(Array.isArray(d.data) ? d.data : (d.data?.items ?? [])); });
   }, []);
   useEffect(() => { if (activePipelineId) loadActivePipeline(); }, [activePipelineId, loadActivePipeline]);
 

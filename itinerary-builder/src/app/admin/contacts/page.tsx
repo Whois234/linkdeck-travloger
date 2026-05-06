@@ -292,7 +292,7 @@ export default function ContactsPage() {
     ]);
     const [cData, uData] = await Promise.all([cRes.json(), uRes.json()]);
     if (cData.success) setContacts(cData.data);
-    if (uData.success) setUsers(uData.data);
+    if (uData.success) setUsers(Array.isArray(uData.data) ? uData.data : (uData.data?.items ?? []));
     setLoading(false);
     setPage(1);
   }, [search, sortBy, dateRange, dateFrom, dateTo]);
