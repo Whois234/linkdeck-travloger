@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { usePipelines, usePipeline, useUsers, useLead, useLeadStageMutation, useAddNote, useLogCall, useAddTask, useMarkTaskDone, usePrefetchLead, QK } from '@/lib/query-hooks';
 import {
@@ -91,7 +91,7 @@ function formatDateTime(d: string) {
 
 // ─── Lead Card ───────────────────────────────────────────────────────────────
 
-function LeadCard({
+const LeadCard = memo(function LeadCard({
   lead, stageColor, onDragStart, onClick, selected, onToggleSelect, onPrefetch,
 }: {
   lead: Lead; stageColor: string;
@@ -159,11 +159,11 @@ function LeadCard({
       </div>
     </div>
   );
-}
+});
 
 // ─── Kanban Column ───────────────────────────────────────────────────────────
 
-function KanbanColumn({
+const KanbanColumn = memo(function KanbanColumn({
   stage, leads, onDragStart, onDrop, onLeadClick, selectedIds, onToggleSelect, onSelectAllInStage, onPrefetch,
 }: {
   stage: Stage; leads: Lead[];
@@ -228,7 +228,7 @@ function KanbanColumn({
       </div>
     </div>
   );
-}
+});
 
 // ─── Add Lead Drawer ──────────────────────────────────────────────────────────
 
@@ -1295,48 +1295,57 @@ export default function PipelinesPage() {
   const resolvedPipelineId = activePipelineId ||
     (rawPipelines.find(p => p.is_default)?.id ?? rawPipelines[0]?.id ?? '');
 
-  const filterParams = new URLSearchParams();
-  if (filterOwner)    filterParams.set('owner_id',  filterOwner);
-  if (filterDateFrom) filterParams.set('date_from', filterDateFrom);
-  if (filterDateTo)   filterParams.set('date_to',   filterDateTo);
+  const filterParams = useMemo(() => {
+    const p = new URLSearchParams();
+    if (filterOwner)    p.set('owner_id',  filterOwner);
+    if (filterDateFrom) p.set('date_from', filterDateFrom);
+    if (filterDateTo)   p.set('date_to',   filterDateTo);
+    return p;
+  }, [filterOwner, filterDateFrom, filterDateTo]);
 
   const { data: pipelineDetail } = usePipeline(resolvedPipelineId, filterParams);
 
   const { data: usersData } = useUsers();
-  const users: CrmUser[] = (usersData as CrmUser[] | undefined) ?? [];
+  const users: CrmUser[] = useMemo(
+    () => (usersData as CrmUser[] | undefined) ?? [],
+    [usersData],
+  );
 
   const stageMutation = useLeadStageMutation(resolvedPipelineId, filterParams);
   const prefetchLead  = usePrefetchLead();
 
   // Merge pipeline list with live detail data
-  const pipelines: Pipeline[] = rawPipelines.map(p =>
+  const pipelines = useMemo<Pipeline[]>(() => rawPipelines.map(p =>
     p.id === resolvedPipelineId && pipelineDetail
       ? { ...p, stages: (pipelineDetail as Pipeline).stages, leads: (pipelineDetail as Pipeline).leads }
       : p
+  ), [rawPipelines, resolvedPipelineId, pipelineDetail]);
+
+  const activePipeline = useMemo(
+    () => pipelines.find(p => p.id === resolvedPipelineId),
+    [pipelines, resolvedPipelineId],
   );
 
-  const activePipeline = pipelines.find(p => p.id === resolvedPipelineId);
-
-  function handleDragStart(e: React.DragEvent, leadId: string) {
+  const handleDragStart = useCallback((e: React.DragEvent, leadId: string) => {
     draggingLeadId.current = leadId;
     e.dataTransfer.effectAllowed = 'move';
-  }
+  }, []);
 
-  function handleDrop(stageId: string) {
+  const handleDrop = useCallback((stageId: string) => {
     const leadId = draggingLeadId.current;
     if (!leadId) return;
     draggingLeadId.current = null;
     stageMutation.mutate({ leadId, stageId });
-  }
+  }, [stageMutation]);
 
-  function toggleSelect(id: string, e: React.MouseEvent) {
+  const toggleSelect = useCallback((id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setSelectedIds(prev => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
-  }
+  }, []);
 
   function toggleSelectAll() {
     const allIds = (activePipeline?.leads ?? []).map(l => l.id);
@@ -1358,14 +1367,14 @@ export default function PipelinesPage() {
     qc.invalidateQueries({ queryKey: [...QK.pipeline(resolvedPipelineId), filterParams.toString()] });
   }
 
-  function toggleSelectAllInStage(stageId: string, stageLeads: Lead[]) {
+  const toggleSelectAllInStage = useCallback((stageId: string, stageLeads: Lead[]) => {
     const allSelected = stageLeads.every(l => selectedIds.has(l.id));
     setSelectedIds(prev => {
       const next = new Set(prev);
       stageLeads.forEach(l => allSelected ? next.delete(l.id) : next.add(l.id));
       return next;
     });
-  }
+  }, [selectedIds]);
 
   async function bulkDelete() {
     if (!confirm(`Delete ${selectedIds.size} lead(s)? This cannot be undone.`)) return;
@@ -1376,22 +1385,20 @@ export default function PipelinesPage() {
     qc.invalidateQueries({ queryKey: [...QK.pipeline(resolvedPipelineId), filterParams.toString()] });
   }
 
-  // Filter + sort leads
-  function processLeads(leads: Lead[]) {
-    let result = leads;
-    if (search) result = result.filter(l => l.name.toLowerCase().includes(search.toLowerCase()) || l.phone.includes(search));
+  // Filter + sort — memoised so it only re-runs when leads or filter state change
+  const allLeads = useMemo(() => {
+    let result = activePipeline?.leads ?? [];
+    if (search)       result = result.filter(l => l.name.toLowerCase().includes(search.toLowerCase()) || l.phone.includes(search));
     if (filterStatus) result = result.filter(l => l.status === filterStatus);
     if (sortBy === 'newest') result = [...result].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     if (sortBy === 'oldest') result = [...result].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-    if (sortBy === 'name') result = [...result].sort((a, b) => a.name.localeCompare(b.name));
+    if (sortBy === 'name')   result = [...result].sort((a, b) => a.name.localeCompare(b.name));
     return result;
-  }
+  }, [activePipeline?.leads, search, filterStatus, sortBy]);
 
-  function leadsForStage(stageId: string) {
-    return processLeads((activePipeline?.leads ?? []).filter(l => l.stage_id === stageId));
-  }
-
-  const allLeads = processLeads(activePipeline?.leads ?? []);
+  const leadsForStage = useCallback((stageId: string) =>
+    allLeads.filter(l => l.stage_id === stageId),
+  [allLeads]);
 
   if (loadingPipelines) {
     return (
