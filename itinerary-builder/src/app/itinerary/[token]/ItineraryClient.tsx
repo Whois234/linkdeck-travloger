@@ -229,17 +229,17 @@ function Hero({ data }: { data: ItineraryData }) {
           alt={heroTitle}
           className="tl-hero-bg-img tl-hero-slide"
           loading={idx === 0 ? 'eager' : 'lazy'}
-          style={{ opacity: idx === activeSlide ? 0.40 : 0, transition: 'opacity 1.2s ease-in-out', zIndex: idx === activeSlide ? 1 : 0 }}
+          style={{ opacity: idx === activeSlide ? 0.58 : 0, transition: 'opacity 1.4s ease-in-out', zIndex: idx === activeSlide ? 1 : 0 }}
         />
       ))}
       {/* Slide dots */}
       {slides.length > 1 && (
-        <div style={{ position: 'absolute', bottom: 90, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 6, zIndex: 5 }}>
+        <div style={{ position: 'absolute', bottom: 108, right: 22, display: 'flex', flexDirection: 'column', gap: 5, zIndex: 5 }}>
           {slides.map((_, idx) => (
             <button key={idx} onClick={() => setActiveSlide(idx)} style={{
-              width: idx === activeSlide ? 20 : 6, height: 6, borderRadius: 3,
-              background: idx === activeSlide ? 'white' : 'rgba(255,255,255,0.4)',
-              border: 'none', cursor: 'pointer', transition: 'all 0.3s ease', padding: 0,
+              width: 3, height: idx === activeSlide ? 22 : 6, borderRadius: 2,
+              background: idx === activeSlide ? '#C9A97A' : 'rgba(255,255,255,0.3)',
+              border: 'none', cursor: 'pointer', transition: 'all 0.35s cubic-bezier(0.4,0,0.2,1)', padding: 0,
             }} />
           ))}
         </div>
@@ -259,24 +259,60 @@ function Hero({ data }: { data: ItineraryData }) {
       </svg>
 
       <div className="tl-hero-body">
-        <div className="tl-hero-eyebrow">Travloger Exclusive Itinerary</div>
+        {/* Eyebrow */}
+        <div className="tl-hero-eyebrow">
+          <span className="tl-hero-eyebrow-line" />
+          Travloger Exclusive Itinerary
+          <span className="tl-hero-eyebrow-line" />
+        </div>
+
+        {/* Main title */}
         <div className="tl-hero-title">{heroTitle}</div>
-        {heroSub && <div className="tl-hero-sub">{heroSub}</div>}
-        {quote.pickup_point && (
-          <div className="tl-hero-dest">Ex-{quote.pickup_point}</div>
+
+        {/* Destinations as an elegant dot-separated row */}
+        {heroSub && (
+          <div className="tl-hero-sub">
+            {heroSub.split(' · ').map((d, i, arr) => (
+              <span key={i}>
+                {d}
+                {i < arr.length - 1 && <span className="tl-hero-sub-dot" />}
+              </span>
+            ))}
+          </div>
         )}
+
+        {/* Departure city */}
+        {quote.pickup_point && (
+          <div className="tl-hero-from">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            Departing from {quote.pickup_point}
+          </div>
+        )}
+
+        {/* Divider accent */}
+        <div className="tl-hero-divider" />
+
+        {/* Chips row */}
         <div className="tl-hero-chips">
-          <span className="tl-hero-chip">{customer.name}</span>
+          <span className="tl-hero-chip">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            {customer.name}
+          </span>
           {quote.adults > 0 && (
             <span className="tl-hero-chip">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
               {quote.adults} Adult{quote.adults > 1 ? 's' : ''}
-              {(quote.children_5_12 ?? 0) > 0 ? ` + ${quote.children_5_12} Child${(quote.children_5_12 ?? 0) > 1 ? 'ren' : ''}` : ''}
-              {(quote.children_below_5 ?? 0) > 0 ? ` + ${quote.children_below_5} Infant${(quote.children_below_5 ?? 0) > 1 ? 's' : ''}` : ''}
+              {(quote.children_5_12 ?? 0) > 0 ? ` · ${quote.children_5_12} Child` : ''}
             </span>
           )}
-          <span className="tl-hero-chip">{dateRange}</span>
-          <span className="tl-hero-chip">{quote.duration_days} Days · {quote.duration_nights} Nights</span>
-          {quote.pickup_point && <span className="tl-hero-chip">✈ {quote.pickup_point}</span>}
+          <span className="tl-hero-chip">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            {dateRange}
+          </span>
+          <span className="tl-hero-chip">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            {quote.duration_days}D · {quote.duration_nights}N
+          </span>
         </div>
       </div>
     </div>
@@ -288,11 +324,13 @@ function Strip({ quote }: { quote: ItineraryData['quote'] }) {
   const expiry = quote.expiry_date ? fmtDate(quote.expiry_date) : null;
   return (
     <div className="tl-strip">
+      <span className="tl-strip-dot" />
       {expiry ? (
-        <>Quote valid until <strong>{expiry}</strong> · #{quote.quote_number}</>
+        <>Quote valid until <strong>{expiry}</strong><span className="tl-strip-sep">·</span>#{quote.quote_number}</>
       ) : (
-        <>Quote Reference: <strong>#{quote.quote_number}</strong></>
+        <>Quote Reference<span className="tl-strip-sep">·</span><strong>#{quote.quote_number}</strong></>
       )}
+      <span className="tl-strip-dot" />
     </div>
   );
 }
@@ -2800,8 +2838,8 @@ export function ItineraryClient({ data, token }: Props) {
       <Nav quoteNum={quote.quote_number} pkgName={selectedOption?.option_name} />
 
       <div style={{ marginTop: 58 }}>
-        <Hero data={data} />
         <Strip quote={quote} />
+        <Hero data={data} />
         <Gallery state={state} day_snapshots={day_snapshots} />
 
         {/* Package options — PRIVATE only (GROUP has its own tier selector below) */}
