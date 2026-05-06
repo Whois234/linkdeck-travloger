@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
   });
 
   // Attach owner name
-  const ownerIds = [...new Set(contacts.map(c => c.owner_id))];
+  const ownerIds = Array.from(new Set(contacts.map(c => c.owner_id)));
   const owners   = await prisma.user.findMany({
     where: { id: { in: ownerIds } },
     select: { id: true, name: true, email: true },
