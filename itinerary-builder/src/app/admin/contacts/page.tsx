@@ -352,11 +352,25 @@ export default function ContactsPage() {
   const withoutPipeline = contacts.filter(c => c.leads.every(l => l.pipeline === null) || c.leads.length === 0).length;
   const untouched    = contacts.filter(c => c.leads.every(l => (l._count?.call_logs ?? 0) + (l._count?.lead_notes ?? 0) === 0)).length;
 
+  const [bulkDeleting, setBulkDeleting]         = useState(false);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+
   function toggleCheck(id: string) {
     setCheckedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   }
   function toggleAll() {
     setCheckedIds(prev => prev.size === paginated.length ? new Set() : new Set(paginated.map(c => c.id)));
+  }
+
+  async function bulkDelete() {
+    setBulkDeleting(true);
+    await Promise.all(Array.from(checkedIds).map(id =>
+      fetch(`/api/v1/crm/contacts/${id}`, { method: 'DELETE' })
+    ));
+    setBulkDeleting(false);
+    setCheckedIds(new Set());
+    setConfirmBulkDelete(false);
+    load();
   }
 
   const allChecked = paginated.length > 0 && checkedIds.size === paginated.length;
@@ -593,6 +607,46 @@ export default function ContactsPage() {
               </tbody>
             </table>
           )}
+        </div>
+      )}
+
+      {/* Bulk action bar */}
+      {checkedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 px-5 py-3 rounded-2xl shadow-2xl"
+          style={{ backgroundColor: '#0F172A', color: 'white', minWidth: 320 }}>
+          <CheckSquare className="w-4 h-4 flex-shrink-0" style={{ color: '#7DD3C0' }} />
+          <span className="text-sm font-semibold" style={{ color: '#7DD3C0' }}>{checkedIds.size} selected</span>
+          <div className="w-px h-4 mx-1" style={{ backgroundColor: 'rgba(255,255,255,0.15)' }} />
+
+          {!confirmBulkDelete ? (
+            <button onClick={() => setConfirmBulkDelete(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors hover:bg-white/10"
+              style={{ color: '#FCA5A5' }}>
+              <Trash2 className="w-3.5 h-3.5" /> Delete Selected
+            </button>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium" style={{ color: '#FCA5A5' }}>Delete {checkedIds.size} contact{checkedIds.size > 1 ? 's' : ''}?</span>
+              <button onClick={bulkDelete} disabled={bulkDeleting}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-white"
+                style={{ backgroundColor: '#DC2626' }}>
+                {bulkDeleting ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                Yes, delete
+              </button>
+              <button onClick={() => setConfirmBulkDelete(false)}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                style={{ border: '1px solid rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.7)' }}>
+                Cancel
+              </button>
+            </div>
+          )}
+
+          <div className="flex-1" />
+          <button onClick={() => { setCheckedIds(new Set()); setConfirmBulkDelete(false); }}
+            className="w-6 h-6 rounded-md flex items-center justify-center transition-colors hover:bg-white/10"
+            style={{ color: 'rgba(255,255,255,0.4)' }}>
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 
