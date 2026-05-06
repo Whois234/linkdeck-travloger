@@ -1,3 +1,9 @@
+import bundleAnalyzer from '@next/bundle-analyzer';
+
+const withBundleAnalyzer = bundleAnalyzer({
+  enabled: process.env.ANALYZE === 'true',
+});
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   compress: true,
@@ -18,6 +24,24 @@ const nextConfig = {
 
   async headers() {
     return [
+      // ── Security headers (all routes) ─────────────────────────────────────
+      {
+        source: '/(.*)',
+        headers: [
+          // Prevent clickjacking — this app is never embedded in an iframe
+          { key: 'X-Frame-Options',        value: 'DENY' },
+          // Block MIME-type sniffing
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          // Restrict referrer to same-origin only — no customer data in Referer headers
+          { key: 'Referrer-Policy',        value: 'strict-origin-when-cross-origin' },
+          // HSTS — force HTTPS for 1 year (only meaningful behind TLS, ignored on localhost)
+          { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' },
+          // Lock down browser feature access
+          { key: 'Permissions-Policy',     value: 'camera=(), microphone=(), geolocation=()' },
+        ],
+      },
+
+      // ── Caching ────────────────────────────────────────────────────────────
       {
         source: '/_next/static/:path*',
         headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
@@ -43,4 +67,4 @@ const nextConfig = {
   },
 };
 
-export default nextConfig;
+export default withBundleAnalyzer(nextConfig);
