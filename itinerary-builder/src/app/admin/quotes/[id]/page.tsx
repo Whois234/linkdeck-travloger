@@ -394,7 +394,7 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
                 {[
                   { label: 'Sessions', value: viewCount, icon: Eye, color: '#8B5CF6', bg: '#F5F3FF', sub: 'unique page visits' },
                   { label: 'WhatsApp Clicks', value: whatsappClicks, icon: MessageCircle, color: '#22C55E', bg: '#F0FDF4', sub: '' },
-                  { label: 'Pkg Selected', value: pkgSelectedEvt.length, icon: Package, color: '#F59E0B', bg: '#FFFBEB', sub: pkgSelectedEvt.length > 0 ? (pkgSelectedEvt[pkgSelectedEvt.length - 1]?.metadata?.option_name as string | undefined ?? '') : 'no selection yet' },
+                  { label: 'Pkg Selected', value: pkgSelectedEvt.length, icon: Package, color: '#F59E0B', bg: '#FFFBEB', sub: pkgSelectedEvt.length > 0 ? ((pkgSelectedEvt[pkgSelectedEvt.length - 1]?.metadata?.option_name as string | undefined) || (pkgSelectedEvt[pkgSelectedEvt.length - 1]?.metadata?.tier_name as string | undefined) || '') : 'no selection yet' },
                   { label: 'Booking Intents', value: bookingIntents.length, icon: ThumbsUp, color: '#EC4899', bg: '#FDF2F8', sub: 'Book Now tapped' },
                   { label: 'Approved', value: approvedEvt.length, icon: ThumbsUp, color: '#10B981', bg: '#ECFDF5', sub: '' },
                   { label: 'Customer Rating', value: latestFace ?? (ratingEvents.length === 0 ? '—' : '⭐'), icon: Star, color: '#F59E0B', bg: '#FFFBEB', sub: ratingEvents.length > 0 ? (latestRating?.metadata?.rating_label as string | undefined ?? '') : 'not yet rated', isText: true },
@@ -438,7 +438,7 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
                   <h3 className="text-sm font-bold mb-4" style={{ color: '#0F172A' }}>Package Preference</h3>
                   {pkgSelectedEvt.length === 0 ? <p className="text-sm" style={{ color: '#94A3B8' }}>No package selected yet.</p> : (() => {
                     const counts: Record<string, number> = {};
-                    pkgSelectedEvt.forEach(e => { const name = (e.metadata?.option_name as string) ?? 'Unknown'; counts[name] = (counts[name] ?? 0) + 1; });
+                    pkgSelectedEvt.forEach(e => { const name = (e.metadata?.option_name as string) || (e.metadata?.tier_name as string) || 'Unknown'; counts[name] = (counts[name] ?? 0) + 1; });
                     const maxC = Math.max(...Object.values(counts));
                     return (
                       <div className="space-y-3">

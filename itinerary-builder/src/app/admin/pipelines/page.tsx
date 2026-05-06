@@ -418,6 +418,206 @@ function CallLogPopup({ leadId, leadName, onClose, onSaved }: { leadId: string; 
   );
 }
 
+// ─── Quote Detail Popup ───────────────────────────────────────────────────────
+
+const SECTION_ORDER = ['hero', 'packages', 'dates', 'itinerary', 'inclusions', 'fare', 'policies', 'faqs'];
+
+function QuotePopup({ quote, onClose }: { quote: QuoteRef; onClose: () => void }) {
+  const [view, setView] = useState<'details' | 'analytics'>('details');
+
+  const sessionEvents = quote.events.filter(e => e.event_type === 'quote_viewed' && (e.metadata as Record<string,unknown>)?.is_final === true);
+  const views         = sessionEvents.length;
+  const waClicks      = quote.events.filter(e => e.event_type === 'whatsapp_clicked').length;
+  const pkgEvents     = quote.events.filter(e => e.event_type === 'package_selected');
+  const approved      = quote.events.some(e => e.event_type === 'approve_clicked');
+
+  const sectionTotals: Record<string, number> = {};
+  sessionEvents.forEach(e => {
+    const st = (e.metadata as Record<string,unknown>)?.section_time_seconds as Record<string,number> | undefined;
+    if (st) Object.entries(st).forEach(([k, v]) => { sectionTotals[k] = (sectionTotals[k] ?? 0) + v; });
+  });
+  const topSections = SECTION_ORDER.filter(s => (sectionTotals[s] ?? 0) > 0).map(s => [s, sectionTotals[s]] as [string, number]);
+  const maxSec = Math.max(...topSections.map(([, v]) => v), 1);
+
+  const pkgCounts: Record<string, number> = {};
+  pkgEvents.forEach(e => {
+    const m = e.metadata as Record<string,unknown>;
+    const name = (m?.option_name as string) || (m?.tier_name as string) || 'Unknown';
+    pkgCounts[name] = (pkgCounts[name] ?? 0) + 1;
+  });
+  const maxPkg = Math.max(...Object.values(pkgCounts), 1);
+
+  const qsc = QUOTE_STATUS_COLORS[quote.status] ?? { bg: '#F8FAFC', text: '#64748B' };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-[540px] max-h-[85vh] flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 flex-shrink-0" style={{ borderBottom: '1px solid #F1F5F9' }}>
+          <div>
+            <div className="flex items-center gap-2">
+              <p className="font-bold text-base" style={{ color: '#0F172A' }}>{quote.quote_number}</p>
+              <span className="text-[10px] font-bold px-2.5 py-1 rounded-full" style={{ backgroundColor: qsc.bg, color: qsc.text }}>{quote.status}</span>
+            </div>
+            <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>Created {formatDate(quote.created_at)}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link href={`/admin/quotes/${quote.id}`} target="_blank"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
+              style={{ border: '1px solid #E2E8F0', color: '#134956' }}>
+              <ExternalLink className="w-3.5 h-3.5" /> Open
+            </Link>
+            <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#F1F5F9]">
+              <X className="w-4 h-4" style={{ color: '#64748B' }} />
+            </button>
+          </div>
+        </div>
+
+        {/* View toggle */}
+        <div className="flex px-6 pt-3 pb-0 gap-1 flex-shrink-0">
+          {(['details', 'analytics'] as const).map(v => (
+            <button key={v} onClick={() => setView(v)}
+              className="px-4 py-2 rounded-t-lg text-xs font-semibold capitalize transition-colors"
+              style={{ backgroundColor: view === v ? '#F8FAFC' : 'transparent', color: view === v ? '#134956' : '#94A3B8', borderBottom: view === v ? '2px solid #134956' : '2px solid transparent' }}>
+              {v === 'analytics' ? '📊 Analytics' : '📋 Details'}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+          {view === 'details' && (
+            <div className="space-y-4">
+              {/* Trip info */}
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { label: 'Adults',    value: `${quote.adults} pax` },
+                  { label: 'Duration',  value: `${quote.duration_days} days` },
+                  { label: 'Travel',    value: quote.start_date ? formatDate(quote.start_date) : '—' },
+                ].map(f => (
+                  <div key={f.label} className="rounded-xl p-3 text-center" style={{ backgroundColor: '#F8FAFC', border: '1px solid #F1F5F9' }}>
+                    <p className="text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: '#94A3B8' }}>{f.label}</p>
+                    <p className="text-sm font-bold" style={{ color: '#0F172A' }}>{f.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Options */}
+              {quote.quote_options.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: '#94A3B8' }}>Package Options</p>
+                  <div className="space-y-2">
+                    {quote.quote_options.map(opt => (
+                      <div key={opt.id} className="flex items-center justify-between rounded-xl px-4 py-3"
+                        style={{ backgroundColor: opt.is_most_popular ? '#F0FDF4' : '#F8FAFC', border: opt.is_most_popular ? '1px solid #BBF7D0' : '1px solid #F1F5F9' }}>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>{opt.option_name}</p>
+                          {opt.is_most_popular && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ backgroundColor: '#DCFCE7', color: '#15803D' }}>POPULAR</span>}
+                        </div>
+                        <p className="text-sm font-bold" style={{ color: '#0F172A' }}>₹{opt.final_price.toLocaleString('en-IN')}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Quick engagement */}
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { icon: '👁', label: 'Views',     value: views,      color: views > 0 ? '#2563EB' : '#94A3B8' },
+                  { icon: '💬', label: 'WhatsApp',  value: waClicks,   color: waClicks > 0 ? '#16A34A' : '#94A3B8' },
+                  { icon: '📦', label: 'Pkg Picks', value: pkgEvents.length, color: pkgEvents.length > 0 ? '#D97706' : '#94A3B8' },
+                ].map(s => (
+                  <div key={s.label} className="rounded-xl p-3 text-center" style={{ backgroundColor: '#F8FAFC', border: '1px solid #F1F5F9' }}>
+                    <p className="text-lg">{s.icon}</p>
+                    <p className="text-lg font-bold" style={{ color: s.color }}>{s.value}</p>
+                    <p className="text-[10px] font-medium" style={{ color: '#94A3B8' }}>{s.label}</p>
+                  </div>
+                ))}
+              </div>
+
+              {approved && (
+                <div className="rounded-xl px-4 py-3 flex items-center gap-2" style={{ backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0' }}>
+                  <span className="text-base">✅</span>
+                  <p className="text-sm font-semibold" style={{ color: '#15803D' }}>Customer approved this quote</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {view === 'analytics' && (
+            <div className="space-y-5">
+              {/* Stats row */}
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { label: 'Sessions',       value: views,            icon: '👁',  color: '#8B5CF6' },
+                  { label: 'WhatsApp Clicks',value: waClicks,         icon: '💬',  color: '#22C55E' },
+                  { label: 'Pkg Selected',   value: pkgEvents.length, icon: '📦',  color: '#F59E0B' },
+                  { label: 'Approved',       value: approved ? 1 : 0, icon: '✅',  color: '#10B981' },
+                ].map(s => (
+                  <div key={s.label} className="rounded-xl p-3 flex items-center gap-3" style={{ backgroundColor: '#F8FAFC', border: '1px solid #F1F5F9' }}>
+                    <span className="text-xl">{s.icon}</span>
+                    <div>
+                      <p className="text-lg font-bold leading-none" style={{ color: s.color }}>{s.value}</p>
+                      <p className="text-[10px] font-medium mt-0.5" style={{ color: '#94A3B8' }}>{s.label}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Section engagement */}
+              {topSections.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider mb-3" style={{ color: '#94A3B8' }}>Section Engagement</p>
+                  <div className="space-y-2.5">
+                    {topSections.map(([section, secs]) => (
+                      <div key={section}>
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-xs font-medium capitalize" style={{ color: '#374151' }}>{section}</span>
+                          <span className="text-xs font-bold" style={{ color: '#0F172A' }}>{secs}s</span>
+                        </div>
+                        <div className="h-2 rounded-full" style={{ backgroundColor: '#F1F5F9' }}>
+                          <div className="h-2 rounded-full transition-all" style={{ width: `${(secs / maxSec) * 100}%`, backgroundColor: '#134956' }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Package preference */}
+              {Object.keys(pkgCounts).length > 0 && (
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider mb-3" style={{ color: '#94A3B8' }}>Package Preference</p>
+                  <div className="space-y-2.5">
+                    {Object.entries(pkgCounts).sort(([,a],[,b]) => b - a).map(([name, cnt]) => (
+                      <div key={name}>
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-xs font-medium" style={{ color: '#374151' }}>{name}</span>
+                          <span className="text-xs font-bold" style={{ color: '#0F172A' }}>{cnt}×</span>
+                        </div>
+                        <div className="h-2 rounded-full" style={{ backgroundColor: '#F1F5F9' }}>
+                          <div className="h-2 rounded-full" style={{ width: `${(cnt / maxPkg) * 100}%`, backgroundColor: '#F59E0B' }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {topSections.length === 0 && Object.keys(pkgCounts).length === 0 && (
+                <div className="text-center py-8">
+                  <p className="text-sm font-medium" style={{ color: '#94A3B8' }}>No analytics data yet — quote hasn&apos;t been opened by customer.</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Lead Drawer ──────────────────────────────────────────────────────────────
 
 function LeadDrawer({
@@ -444,6 +644,7 @@ function LeadDrawer({
   const [editMode, setEditMode] = useState(false);
   const [editForm, setEditForm] = useState({ name: '', phone: '', email: '', destination_interest: '', travel_month: '', budget_range: '' });
   const [savingEdit, setSavingEdit] = useState(false);
+  const [selectedQuote, setSelectedQuote] = useState<QuoteRef | null>(null);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/v1/leads/${leadId}`);
@@ -544,6 +745,7 @@ function LeadDrawer({
           onSaved={() => { load(); onUpdated(); }}
         />
       )}
+      {selectedQuote && <QuotePopup quote={selectedQuote} onClose={() => setSelectedQuote(null)} />}
       <div className="fixed inset-0 z-50 flex">
         <div className="flex-1 bg-black/40" onClick={onClose} />
         <div className="w-[520px] bg-white flex flex-col shadow-2xl overflow-hidden">
@@ -767,9 +969,9 @@ function LeadDrawer({
               </div>
             )}
 
-            {/* QUOTES */}
+            {/* QUOTES — timeline */}
             {tab === 'quotes' && (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 <Link
                   href={`/admin/quotes/create?lead_id=${lead.id}&lead_name=${encodeURIComponent(lead.name)}&lead_phone=${encodeURIComponent(lead.phone)}&lead_email=${encodeURIComponent(lead.email ?? '')}`}
                   className="flex items-center justify-center gap-2 w-full py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90"
@@ -778,112 +980,91 @@ function LeadDrawer({
                 </Link>
 
                 {quotes.length === 0 && (
-                  <div className="flex flex-col items-center justify-center py-10" style={{ color: '#94A3B8' }}>
+                  <div className="flex flex-col items-center justify-center py-10">
                     <FileText className="w-8 h-8 mb-2" style={{ color: '#CBD5E1' }} />
-                    <p className="text-sm font-medium">No quotes yet for this lead</p>
+                    <p className="text-sm font-medium" style={{ color: '#94A3B8' }}>No quotes yet for this lead</p>
                   </div>
                 )}
 
-                {quotes.map((q, qi) => {
-                  const qsc = QUOTE_STATUS_COLORS[q.status] ?? { bg: '#F8FAFC', text: '#64748B' };
-                  const views  = q.events.filter(e => e.event_type === 'quote_viewed').length;
-                  const opened = q._count.events > 0;
-                  const minPrice = q.quote_options.length > 0 ? Math.min(...q.quote_options.map(o => o.final_price)) : null;
-                  const maxPrice = q.quote_options.length > 0 ? Math.max(...q.quote_options.map(o => o.final_price)) : null;
-                  const isConfirmed = q.status === 'ACCEPTED';
-                  const isDraft = q.status === 'DRAFT';
+                {/* Timeline */}
+                <div className="relative">
+                  {quotes.length > 1 && (
+                    <div className="absolute left-[19px] top-10 bottom-4 w-px" style={{ background: 'linear-gradient(to bottom, #E2E8F0, transparent)' }} />
+                  )}
+                  {quotes.map((q, qi) => {
+                    const qsc = QUOTE_STATUS_COLORS[q.status] ?? { bg: '#F8FAFC', text: '#64748B' };
+                    const isConfirmed = q.status === 'ACCEPTED';
+                    const isDraft     = q.status === 'DRAFT';
+                    const views = q.events.filter(e => e.event_type === 'quote_viewed' && (e.metadata as Record<string,unknown>)?.is_final === true).length;
+                    const hasEngagement = q._count.events > 0;
+                    const minPrice = q.quote_options.length > 0 ? Math.min(...q.quote_options.map(o => o.final_price)) : null;
+                    const maxPrice = q.quote_options.length > 0 ? Math.max(...q.quote_options.map(o => o.final_price)) : null;
 
-                  return (
-                    <div key={q.id} className="rounded-2xl overflow-hidden"
-                      style={{ border: isConfirmed ? '1.5px solid #86EFAC' : '1px solid #E2E8F0', boxShadow: isConfirmed ? '0 0 0 3px #DCFCE7' : '0 1px 3px rgba(0,0,0,0.04)' }}>
-                      {/* Quote header strip */}
-                      <div className="px-4 py-3 flex items-center justify-between"
-                        style={{ background: isConfirmed ? 'linear-gradient(135deg,#F0FDF4,#DCFCE7)' : isDraft ? '#F8FAFC' : 'linear-gradient(135deg,#F0F9FF,#EFF6FF)' }}>
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-xl flex items-center justify-center font-bold text-sm text-white flex-shrink-0"
-                            style={{ backgroundColor: isConfirmed ? '#16A34A' : isDraft ? '#94A3B8' : '#134956' }}>
+                    return (
+                      <div key={q.id} className="flex gap-3.5 group" style={{ paddingBottom: 12 }}>
+                        {/* Timeline dot */}
+                        <div className="flex-shrink-0 z-10 mt-1">
+                          <div className="w-[38px] h-[38px] rounded-2xl flex items-center justify-center text-sm font-bold text-white transition-transform group-hover:scale-105"
+                            style={{ backgroundColor: isConfirmed ? '#16A34A' : isDraft ? '#94A3B8' : '#134956', boxShadow: qi === 0 ? '0 0 0 3px rgba(19,73,86,0.15)' : 'none' }}>
                             {qi + 1}
                           </div>
-                          <div>
-                            <div className="flex items-center gap-1.5">
-                              <p className="text-sm font-bold" style={{ color: '#0F172A' }}>{q.quote_number}</p>
-                              {isConfirmed && <span className="text-[10px] font-bold">✅</span>}
-                            </div>
-                            <p className="text-[11px]" style={{ color: '#64748B' }}>{formatDate(q.created_at)}</p>
-                          </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-bold px-2.5 py-1 rounded-full" style={{ backgroundColor: qsc.bg, color: qsc.text }}>{q.status}</span>
-                          <Link href={`/admin/quotes/${q.id}`}
-                            className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/70 transition-colors"
-                            title="Open quote">
-                            <ExternalLink className="w-3.5 h-3.5" style={{ color: '#134956' }} />
-                          </Link>
-                        </div>
-                      </div>
 
-                      {/* Quote body */}
-                      <div className="px-4 py-3 bg-white space-y-3">
-                        {/* Trip info */}
-                        {(q.quote_name || q.adults > 0) && (
-                          <div className="flex items-center gap-3 text-xs" style={{ color: '#64748B' }}>
-                            {q.quote_name && <span className="font-medium" style={{ color: '#374151' }}>{q.quote_name}</span>}
-                            {q.adults > 0 && <span>👥 {q.adults} adult{q.adults > 1 ? 's' : ''}</span>}
-                            {q.duration_days > 0 && <span>🗓 {q.duration_days}D</span>}
-                          </div>
-                        )}
+                        {/* Card — clickable */}
+                        <button onClick={() => setSelectedQuote(q)} className="flex-1 min-w-0 text-left rounded-2xl overflow-hidden transition-all hover:shadow-md"
+                          style={{ border: isConfirmed ? '1.5px solid #86EFAC' : '1px solid #E2E8F0', boxShadow: isConfirmed ? '0 0 0 3px #DCFCE7' : '0 1px 3px rgba(0,0,0,0.04)' }}>
 
-                        {/* Pricing options */}
-                        {q.quote_options.length > 0 && (
-                          <div className="space-y-1.5">
-                            {q.quote_options.map(opt => (
-                              <div key={opt.id} className="flex items-center justify-between rounded-lg px-3 py-2"
-                                style={{ backgroundColor: opt.is_most_popular ? '#F0FDF4' : '#F8FAFC', border: opt.is_most_popular ? '1px solid #BBF7D0' : '1px solid #F1F5F9' }}>
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-xs font-medium" style={{ color: '#374151' }}>{opt.option_name}</span>
-                                  {opt.is_most_popular && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ backgroundColor: '#DCFCE7', color: '#15803D' }}>POPULAR</span>}
-                                </div>
-                                <span className="text-sm font-bold" style={{ color: '#0F172A' }}>
-                                  ₹{opt.final_price.toLocaleString('en-IN')}
-                                </span>
+                          {/* Card header */}
+                          <div className="px-4 py-3 flex items-center justify-between"
+                            style={{ background: isConfirmed ? 'linear-gradient(135deg,#F0FDF4,#DCFCE7)' : isDraft ? '#F8FAFC' : 'linear-gradient(135deg,#F0F9FF,#EFF6FF)' }}>
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <p className="text-sm font-bold" style={{ color: '#0F172A' }}>{q.quote_number}</p>
+                                {isConfirmed && <span className="text-[10px]">✅</span>}
                               </div>
-                            ))}
-                            {minPrice !== null && q.quote_options.length > 1 && (
-                              <p className="text-[11px] text-right" style={{ color: '#94A3B8' }}>
-                                Range: ₹{minPrice.toLocaleString('en-IN')} – ₹{maxPrice!.toLocaleString('en-IN')}
-                              </p>
-                            )}
+                              <p className="text-[11px] mt-0.5" style={{ color: '#64748B' }}>{formatDate(q.created_at)}</p>
+                            </div>
+                            <span className="text-[10px] font-bold px-2.5 py-1 rounded-full" style={{ backgroundColor: qsc.bg, color: qsc.text }}>{q.status}</span>
                           </div>
-                        )}
 
-                        {/* Analytics row */}
-                        <div className="flex items-center gap-4 pt-1" style={{ borderTop: '1px solid #F1F5F9' }}>
-                          <div className="flex items-center gap-1.5">
-                            <div className="w-5 h-5 rounded-md flex items-center justify-center" style={{ backgroundColor: views > 0 ? '#EFF6FF' : '#F1F5F9' }}>
-                              <span className="text-[10px]">👁</span>
+                          {/* Card body */}
+                          <div className="px-4 py-3 bg-white">
+                            {/* Pax + duration */}
+                            <div className="flex items-center gap-3 text-xs mb-2" style={{ color: '#64748B' }}>
+                              {q.adults > 0 && <span>👥 {q.adults} pax</span>}
+                              {q.duration_days > 0 && <span>🗓 {q.duration_days}D</span>}
+                              {minPrice !== null && (
+                                <span className="font-semibold" style={{ color: '#0F172A' }}>
+                                  ₹{minPrice.toLocaleString('en-IN')}{maxPrice !== minPrice ? ` – ₹${maxPrice!.toLocaleString('en-IN')}` : ''}
+                                </span>
+                              )}
                             </div>
-                            <span className="text-xs font-semibold" style={{ color: views > 0 ? '#2563EB' : '#94A3B8' }}>
-                              {views > 0 ? `${views} view${views > 1 ? 's' : ''}` : 'Not opened'}
-                            </span>
+
+                            {/* Engagement badges */}
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {views > 0 ? (
+                                <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: '#EFF6FF', color: '#2563EB' }}>
+                                  👁 {views} view{views > 1 ? 's' : ''}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: '#F1F5F9', color: '#94A3B8' }}>Not opened</span>
+                              )}
+                              {q.events.some(e => e.event_type === 'whatsapp_clicked') && (
+                                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: '#F0FDF4', color: '#16A34A' }}>💬 WA clicked</span>
+                              )}
+                              {q.events.some(e => e.event_type === 'package_selected') && (
+                                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: '#FFFBEB', color: '#D97706' }}>📦 Pkg picked</span>
+                              )}
+                              {hasEngagement && (
+                                <span className="ml-auto text-[10px] font-semibold" style={{ color: '#94A3B8' }}>Tap to view →</span>
+                              )}
+                            </div>
                           </div>
-                          {q.events.some(e => e.event_type === 'whatsapp_clicked') && (
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-[10px]">💬</span>
-                              <span className="text-xs font-semibold" style={{ color: '#16A34A' }}>WhatsApp clicked</span>
-                            </div>
-                          )}
-                          {q.events.some(e => e.event_type === 'approve_clicked') && (
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-[10px]">✅</span>
-                              <span className="text-xs font-semibold" style={{ color: '#15803D' }}>Approved</span>
-                            </div>
-                          )}
-                          {!opened && <span className="text-xs" style={{ color: '#CBD5E1' }}>No engagement yet</span>}
-                        </div>
+                        </button>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             )}
 
