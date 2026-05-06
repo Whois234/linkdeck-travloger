@@ -35,6 +35,8 @@ export default function QuotationTracker({ token }: Props) {
   const flushTimerRef      = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef       = useRef<number>(Date.now());
   const finalFlushedRef    = useRef(false);   // guard: only one is_final=true flush per session
+  // Stable session ID so the admin page can group intermediate + final flushes into one session
+  const sessionIdRef       = useRef<string>(crypto.randomUUID());
 
   function post(event_type: string, metadata?: Record<string, unknown>) {
     const payload = JSON.stringify({ event_type, metadata });
@@ -74,6 +76,7 @@ export default function QuotationTracker({ token }: Props) {
     snapshotActiveTime();
     const timeSpent = Math.round((Date.now() - startTimeRef.current) / 1000);
     post('quote_viewed', {
+      session_id:           sessionIdRef.current,
       section_views:        { ...sectionViewsRef.current },
       section_time_seconds: { ...sectionTimeRef.current },
       time_spent_seconds:   timeSpent,
@@ -82,9 +85,10 @@ export default function QuotationTracker({ token }: Props) {
   }
 
   useEffect(() => {
-    // Reset per-mount state
+    // Reset per-mount state (new session on every page load)
     finalFlushedRef.current  = false;
     startTimeRef.current     = Date.now();
+    sessionIdRef.current     = crypto.randomUUID();
     sectionViewsRef.current  = {};
     sectionTimeRef.current   = {};
     sectionEnterRef.current  = {};

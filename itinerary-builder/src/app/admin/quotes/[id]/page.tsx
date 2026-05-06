@@ -312,9 +312,29 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
   const totalPax = quote.adults + (quote.children_5_12 ?? 0) + (quote.children_below_5 ?? 0) + (quote.infants ?? 0);
   const badge = STATUS_BADGE[quote.status] ?? STATUS_BADGE.DRAFT;
 
-  // analytics helpers
-  const sessionEvents  = events.filter(e => e.event_type === 'quote_viewed' && e.metadata?.is_final === true);
-  const viewCount      = sessionEvents.length;   // unique sessions (final flush = 1 full visit)
+  // analytics helpers — group by session_id (added in tracker v2) to count distinct visits.
+  // Fallback to is_final=true for events recorded before session_id was introduced.
+  const allViewEvents  = events.filter(e => e.event_type === 'quote_viewed');
+  const sessionMap     = new Map<string, QuoteEvent[]>();
+  const legacyFinals: QuoteEvent[] = [];
+  for (const evt of allViewEvents) {
+    const sid = evt.metadata?.session_id as string | undefined;
+    if (sid) {
+      if (!sessionMap.has(sid)) sessionMap.set(sid, []);
+      sessionMap.get(sid)!.push(evt);
+    } else if (evt.metadata?.is_final === true) {
+      legacyFinals.push(evt);
+    }
+  }
+  // For each session pick the final flush (most complete data); fallback to highest time_spent
+  const sessionEvents: QuoteEvent[] = [
+    ...Array.from(sessionMap.values()).map(evts =>
+      evts.find(e => e.metadata?.is_final === true) ??
+      [...evts].sort((a, b) => Number(b.metadata?.time_spent_seconds ?? 0) - Number(a.metadata?.time_spent_seconds ?? 0))[0]
+    ),
+    ...legacyFinals,
+  ];
+  const viewCount      = sessionEvents.length;   // unique sessions
   const whatsappClicks = events.filter(e => e.event_type === 'whatsapp_clicked').length;
   const pkgSelectedEvt = events.filter(e => e.event_type === 'package_selected');
   const approvedEvt    = events.filter(e => e.event_type === 'approve_clicked');

@@ -34,7 +34,6 @@ const getItinerary = cache(async (token: string) => {
   // Don't block here — deactivated is handled in the page component
   if ((quote as unknown as { link_active: boolean }).link_active === false) return null;
 
-  prisma.quoteEvent.create({ data: { quote_id: quote.id, event_type: 'quote_viewed' } }).catch(() => {});
   if (quote.status === QuoteStatus.SENT) {
     prisma.quote.update({ where: { id: quote.id }, data: { status: QuoteStatus.VIEWED } }).catch(() => {});
   }
