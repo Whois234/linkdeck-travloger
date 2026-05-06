@@ -4,17 +4,31 @@ import dynamic from 'next/dynamic';
 import { useQueryClient } from '@tanstack/react-query';
 import { usePipelines, usePipeline, useUsers, useLeadStageMutation, usePrefetchLead, QK } from '@/lib/query-hooks';
 import {
-  Plus, Search, Phone, MessageCircle, ChevronDown, X, User,
-  Filter, ArrowUpDown, Trash2, MoveRight, CheckSquare, Square,
-  Calendar, Users,
+  Plus, Search, Phone, ChevronDown, X, Filter, ArrowUpDown, Trash2,
+  MoveRight, CheckSquare, Square, Calendar, Users, MapPin, Wallet,
+  MessageCircle, SlidersHorizontal, Star, Clock, FileText, PhoneCall,
 } from 'lucide-react';
 import Link from 'next/link';
 import { Stage, Lead, Pipeline, STATUS_COLORS, timeAgo } from './types';
 import { KanbanSkeleton } from '@/components/Skeleton';
 
-const LeadDrawer   = dynamic(() => import('./LeadDrawer'),   { ssr: false });
+const LeadDrawer    = dynamic(() => import('./LeadDrawer'),    { ssr: false });
 const AddLeadDrawer = dynamic(() => import('./AddLeadDrawer'), { ssr: false });
 
+const T = '#134956';
+
+// ─── Avatar ──────────────────────────────────────────────────────────────────
+
+function Avatar({ name, color, size = 32 }: { name: string; color: string; size?: number }) {
+  const initials = name.trim().split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
+  return (
+    <div
+      className="flex-shrink-0 flex items-center justify-center rounded-full text-white font-bold select-none"
+      style={{ width: size, height: size, fontSize: size * 0.34, backgroundColor: color + 'cc', border: `1.5px solid ${color}55` }}>
+      {initials}
+    </div>
+  );
+}
 
 // ─── Lead Card ───────────────────────────────────────────────────────────────
 
@@ -28,60 +42,111 @@ const LeadCard = memo(function LeadCard({
   onToggleSelect: (id: string, e: React.MouseEvent) => void;
   onPrefetch: (leadId: string) => void;
 }) {
-  const isUntouched = (lead._count?.call_logs ?? 0) + (lead._count?.lead_notes ?? 0) === 0;
+  const callCount  = lead._count?.call_logs ?? 0;
+  const noteCount  = lead._count?.lead_notes ?? 0;
+  const isNew      = callCount + noteCount === 0;
+
   return (
     <div
       draggable
       onDragStart={e => onDragStart(e, lead.id)}
       onMouseEnter={() => onPrefetch(lead.id)}
       onClick={() => onClick(lead)}
-      className="bg-white rounded-xl p-4 cursor-pointer transition-shadow hover:shadow-md select-none relative"
+      className="group relative cursor-pointer select-none transition-all duration-150"
       style={{
-        border: selected ? '1.5px solid #134956' : '1px solid #E2E8F0',
+        backgroundColor: selected ? '#EFF8FF' : '#fff',
+        border: selected ? `1.5px solid ${T}` : '1px solid #E8EDF2',
+        borderRadius: 14,
+        boxShadow: selected
+          ? `0 0 0 3px ${T}18, 0 2px 8px rgba(0,0,0,0.06)`
+          : '0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.03)',
         borderLeft: `3px solid ${stageColor}`,
-        backgroundColor: selected ? '#F0F9FF' : 'white',
+        padding: '13px 13px 11px',
       }}
     >
-      {/* Checkbox */}
+      {/* Checkbox overlay — shows on hover or when selected */}
       <button
         onClick={e => onToggleSelect(lead.id, e)}
-        className="absolute top-3 right-3 z-10"
+        className="absolute top-2.5 right-2.5 z-10 opacity-0 group-hover:opacity-100 transition-opacity"
+        style={{ opacity: selected ? 1 : undefined }}
         title={selected ? 'Deselect' : 'Select'}
       >
         {selected
-          ? <CheckSquare className="w-4 h-4" style={{ color: '#134956' }} />
+          ? <CheckSquare className="w-4 h-4" style={{ color: T }} />
           : <Square className="w-4 h-4" style={{ color: '#CBD5E1' }} />}
       </button>
 
-      <div className="flex items-start justify-between gap-2 mb-2 pr-6">
-        <p className="text-sm font-semibold leading-snug" style={{ color: '#0F172A' }}>{lead.name}</p>
-        {isUntouched && (
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0" style={{ backgroundColor: '#DBEAFE', color: '#2563EB' }}>
-            NEW
-          </span>
-        )}
+      {/* Header: avatar + name + NEW badge */}
+      <div className="flex items-start gap-2.5 mb-2.5 pr-6">
+        <Avatar name={lead.name} color={stageColor} size={30} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <p className="text-sm font-semibold leading-tight truncate" style={{ color: '#0F172A' }}>{lead.name}</p>
+            {isNew && (
+              <span className="flex-shrink-0 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full tracking-wide"
+                style={{ backgroundColor: '#DBEAFE', color: '#1D4ED8' }}>NEW</span>
+            )}
+          </div>
+          {lead.phone && (
+            <p className="text-[11px] mt-0.5" style={{ color: '#94A3B8' }}>{lead.phone}</p>
+          )}
+        </div>
       </div>
-      {lead.destination_interest && (
-        <p className="text-xs mb-1 truncate" style={{ color: '#64748B' }}>📍 {lead.destination_interest}</p>
+
+      {/* Meta chips */}
+      {(lead.destination_interest || lead.travel_month || lead.budget_range) && (
+        <div className="flex flex-wrap gap-1.5 mb-2.5">
+          {lead.destination_interest && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full"
+              style={{ backgroundColor: '#F0F9FF', color: '#0369A1' }}>
+              <MapPin className="w-2.5 h-2.5" />{lead.destination_interest}
+            </span>
+          )}
+          {lead.travel_month && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full"
+              style={{ backgroundColor: '#F5F3FF', color: '#6D28D9' }}>
+              <Calendar className="w-2.5 h-2.5" />{lead.travel_month}
+            </span>
+          )}
+          {lead.budget_range && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full"
+              style={{ backgroundColor: '#F0FDF4', color: '#15803D' }}>
+              <Wallet className="w-2.5 h-2.5" />{lead.budget_range}
+            </span>
+          )}
+        </div>
       )}
-      {lead.travel_month && (
-        <p className="text-xs mb-1" style={{ color: '#64748B' }}>🗓 {lead.travel_month}</p>
-      )}
-      {lead.budget_range && (
-        <p className="text-xs mb-2" style={{ color: '#64748B' }}>💰 {lead.budget_range}</p>
-      )}
-      <div className="flex items-center justify-between mt-2">
-        <p className="text-[11px]" style={{ color: '#94A3B8' }}>{timeAgo(lead.created_at)}</p>
-        <div className="flex gap-1">
-          <a href={`tel:${lead.phone}`} onClick={e => e.stopPropagation()}
-            className="w-6 h-6 rounded-md flex items-center justify-center transition-colors hover:bg-[#F0FDF4]" title="Call">
-            <Phone className="w-3.5 h-3.5" style={{ color: '#16A34A' }} />
-          </a>
-          <a href={`https://wa.me/${lead.phone.replace(/\D/g, '')}`} target="_blank" rel="noreferrer"
-            onClick={e => e.stopPropagation()}
-            className="w-6 h-6 rounded-md flex items-center justify-center transition-colors hover:bg-[#F0FDF4]" title="WhatsApp">
-            <MessageCircle className="w-3.5 h-3.5" style={{ color: '#25D366' }} />
-          </a>
+
+      {/* Footer: time + activity counts + actions */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1" style={{ color: '#94A3B8' }}>
+          <Clock className="w-3 h-3" />
+          <span className="text-[11px]">{timeAgo(lead.created_at)}</span>
+        </div>
+        <div className="flex items-center gap-0.5">
+          {callCount > 0 && (
+            <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-md"
+              style={{ backgroundColor: '#F0FDF4', color: '#16A34A' }}>
+              <PhoneCall className="w-2.5 h-2.5" />{callCount}
+            </span>
+          )}
+          {noteCount > 0 && (
+            <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-md"
+              style={{ backgroundColor: '#FFFBEB', color: '#B45309' }}>
+              <FileText className="w-2.5 h-2.5" />{noteCount}
+            </span>
+          )}
+          <div className="flex items-center gap-0.5 ml-1">
+            <a href={`tel:${lead.phone}`} onClick={e => e.stopPropagation()}
+              className="w-6 h-6 rounded-lg flex items-center justify-center transition-colors hover:bg-[#F0FDF4]" title="Call">
+              <Phone className="w-3 h-3" style={{ color: '#16A34A' }} />
+            </a>
+            <a href={`https://wa.me/${lead.phone.replace(/\D/g, '')}`} target="_blank" rel="noreferrer"
+              onClick={e => e.stopPropagation()}
+              className="w-6 h-6 rounded-lg flex items-center justify-center transition-colors hover:bg-[#F0FDF4]" title="WhatsApp">
+              <MessageCircle className="w-3 h-3" style={{ color: '#25D366' }} />
+            </a>
+          </div>
         </div>
       </div>
     </div>
@@ -102,54 +167,79 @@ const KanbanColumn = memo(function KanbanColumn({
   onSelectAllInStage: (stageId: string, leads: Lead[]) => void;
   onPrefetch: (leadId: string) => void;
 }) {
-  const PAGE_SIZE = 20;
+  const PAGE_SIZE   = 20;
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [over, setOver] = useState(false);
-  const allSelected = leads.length > 0 && leads.every(l => selectedIds.has(l.id));
+  const allSelected  = leads.length > 0 && leads.every(l => selectedIds.has(l.id));
   const visibleLeads = leads.slice(0, visibleCount);
-  const hidden = leads.length - visibleCount;
+  const hidden       = leads.length - visibleCount;
 
   return (
-    <div className="flex flex-col rounded-xl flex-shrink-0 w-[280px]"
-      style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}
+    <div
+      className="flex flex-col flex-shrink-0 rounded-2xl overflow-hidden"
+      style={{
+        width: 284,
+        backgroundColor: '#F6F8FA',
+        border: `1px solid ${over ? stage.color + '55' : '#E2E8F0'}`,
+        boxShadow: over ? `0 0 0 2px ${stage.color}22` : '0 1px 4px rgba(0,0,0,0.04)',
+        transition: 'box-shadow 0.15s, border-color 0.15s',
+      }}
       onDragOver={e => { e.preventDefault(); setOver(true); }}
       onDragLeave={() => setOver(false)}
-      onDrop={() => { setOver(false); onDrop(stage.id); }}>
-      <div className="px-4 py-3 rounded-t-xl flex items-center justify-between"
-        style={{ borderBottom: `2px solid ${stage.color}`, backgroundColor: `${stage.color}18` }}>
-        <div className="flex items-center gap-2">
-          <button onClick={() => onSelectAllInStage(stage.id, leads)} title={allSelected ? 'Deselect all' : 'Select all in stage'}>
+      onDrop={() => { setOver(false); onDrop(stage.id); }}
+    >
+      {/* Column Header */}
+      <div className="px-4 pt-3.5 pb-3 flex items-center justify-between"
+        style={{
+          background: `linear-gradient(135deg, ${stage.color}14 0%, ${stage.color}06 100%)`,
+          borderBottom: `1.5px solid ${stage.color}30`,
+        }}>
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => onSelectAllInStage(stage.id, leads)}
+            title={allSelected ? 'Deselect all' : 'Select all in stage'}
+            className="opacity-40 hover:opacity-100 transition-opacity">
             {allSelected
-              ? <CheckSquare className="w-3.5 h-3.5" style={{ color: '#134956' }} />
-              : <Square className="w-3.5 h-3.5" style={{ color: '#CBD5E1' }} />}
+              ? <CheckSquare className="w-3.5 h-3.5" style={{ color: T }} />
+              : <Square className="w-3.5 h-3.5" style={{ color: '#64748B' }} />}
           </button>
-          <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: stage.color }} />
-          <p className="text-sm font-bold" style={{ color: '#0F172A' }}>{stage.name}</p>
+          <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: stage.color, boxShadow: `0 0 6px ${stage.color}88` }} />
+          <span className="text-[13px] font-bold tracking-tight" style={{ color: '#0F172A' }}>{stage.name}</span>
         </div>
-        <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: stage.color + '22', color: stage.color }}>
+        <div className="flex items-center justify-center rounded-full text-[11px] font-extrabold min-w-[22px] h-5 px-1.5"
+          style={{ backgroundColor: stage.color, color: '#fff', boxShadow: `0 1px 4px ${stage.color}66` }}>
           {leads.length}
-        </span>
+        </div>
       </div>
-      <div className="flex-1 overflow-y-auto p-3 space-y-3 transition-colors"
-        style={{ minHeight: 120, backgroundColor: over ? `${stage.color}08` : undefined, maxHeight: 'calc(100vh - 220px)' }}>
+
+      {/* Cards */}
+      <div
+        className="flex-1 overflow-y-auto p-3 space-y-2.5 transition-colors"
+        style={{ minHeight: 100, maxHeight: 'calc(100vh - 230px)', backgroundColor: over ? `${stage.color}05` : undefined }}>
         {visibleLeads.map(lead => (
           <LeadCard key={lead.id} lead={lead} stageColor={stage.color}
             onDragStart={onDragStart} onClick={onLeadClick}
             selected={selectedIds.has(lead.id)} onToggleSelect={onToggleSelect}
             onPrefetch={onPrefetch} />
         ))}
+
         {hidden > 0 && (
           <button
             onClick={() => setVisibleCount(c => c + PAGE_SIZE)}
-            className="w-full py-2 rounded-lg text-xs font-semibold transition-colors hover:bg-slate-100"
-            style={{ color: stage.color, border: `1px dashed ${stage.color}66` }}>
-            Show {Math.min(hidden, PAGE_SIZE)} more of {hidden}
+            className="w-full py-2.5 rounded-xl text-[12px] font-bold transition-colors hover:bg-white"
+            style={{ color: stage.color, border: `1.5px dashed ${stage.color}55`, backgroundColor: `${stage.color}08` }}>
+            Show {Math.min(hidden, PAGE_SIZE)} more
           </button>
         )}
+
         {leads.length === 0 && (
-          <div className="flex items-center justify-center h-16 rounded-lg border-2 border-dashed text-xs"
-            style={{ borderColor: over ? stage.color : '#E2E8F0', color: '#94A3B8' }}>
-            Drop lead here
+          <div className="flex flex-col items-center justify-center gap-1.5 py-8 rounded-xl border-2 border-dashed transition-colors"
+            style={{ borderColor: over ? stage.color + '66' : '#DDE3EB', color: '#94A3B8' }}>
+            <div className="w-8 h-8 rounded-full flex items-center justify-center"
+              style={{ backgroundColor: stage.color + '18' }}>
+              <Plus className="w-4 h-4" style={{ color: stage.color }} />
+            </div>
+            <p className="text-[11px] font-semibold">Drop lead here</p>
           </div>
         )}
       </div>
@@ -159,9 +249,7 @@ const KanbanColumn = memo(function KanbanColumn({
 
 // ─── Bulk Action Bar ──────────────────────────────────────────────────────────
 
-function BulkActionBar({
-  count, stages, onMoveStage, onDelete, onClear,
-}: {
+function BulkActionBar({ count, stages, onMoveStage, onDelete, onClear }: {
   count: number; stages: Stage[];
   onMoveStage: (stageId: string) => void;
   onDelete: () => void;
@@ -169,26 +257,27 @@ function BulkActionBar({
 }) {
   const [showStageMenu, setShowStageMenu] = useState(false);
   return (
-    <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-semibold shadow-lg"
-      style={{ backgroundColor: '#0F172A', color: 'white' }}>
-      <CheckSquare className="w-4 h-4 flex-shrink-0" style={{ color: '#7DD3C0' }} />
-      <span className="text-[#7DD3C0]">{count} selected</span>
-      <div className="w-px h-4 bg-white/20" />
+    <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold shadow-lg"
+      style={{ backgroundColor: '#0C1B29', color: 'white', border: '1px solid #1e3347' }}>
+      <div className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#7DD3C022' }}>
+        <CheckSquare className="w-3.5 h-3.5" style={{ color: '#7DD3C0' }} />
+      </div>
+      <span className="text-[13px] font-bold" style={{ color: '#7DD3C0' }}>{count} selected</span>
+      <div className="w-px h-4 mx-1" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }} />
 
-      {/* Move stage */}
       <div className="relative">
         <button onClick={() => setShowStageMenu(p => !p)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors hover:bg-white/10">
-          <MoveRight className="w-3.5 h-3.5" /> Move Stage <ChevronDown className="w-3 h-3" />
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold transition-colors hover:bg-white/10">
+          <MoveRight className="w-3.5 h-3.5" /> Move to Stage <ChevronDown className="w-3 h-3" />
         </button>
         {showStageMenu && (
-          <div className="absolute top-9 left-0 bg-white rounded-xl shadow-xl overflow-hidden z-10 min-w-[160px]"
+          <div className="absolute top-9 left-0 bg-white rounded-xl shadow-2xl overflow-hidden z-30 min-w-[180px]"
             style={{ border: '1px solid #E2E8F0' }}>
             {stages.map(s => (
               <button key={s.id} onClick={() => { onMoveStage(s.id); setShowStageMenu(false); }}
-                className="w-full flex items-center gap-2 px-3 py-2.5 text-sm font-medium hover:bg-[#F8FAFC] text-left"
+                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-medium hover:bg-[#F8FAFC] text-left transition-colors"
                 style={{ color: '#0F172A' }}>
-                <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: s.color }} />
+                <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: s.color, boxShadow: `0 0 4px ${s.color}66` }} />
                 {s.name}
               </button>
             ))}
@@ -196,17 +285,39 @@ function BulkActionBar({
         )}
       </div>
 
-      {/* Delete */}
       <button onClick={onDelete}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-red-400 transition-colors hover:bg-white/10">
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold transition-colors hover:bg-white/10"
+        style={{ color: '#FCA5A5' }}>
         <Trash2 className="w-3.5 h-3.5" /> Delete
       </button>
 
       <div className="flex-1" />
-      <button onClick={onClear} className="text-white/50 hover:text-white transition-colors">
-        <X className="w-4 h-4" />
+      <button onClick={onClear} className="w-6 h-6 rounded-lg flex items-center justify-center transition-colors hover:bg-white/10"
+        style={{ color: 'rgba(255,255,255,0.4)' }}>
+        <X className="w-3.5 h-3.5" />
       </button>
     </div>
+  );
+}
+
+// ─── Filter Pill ─────────────────────────────────────────────────────────────
+
+function FilterPill({ icon: Icon, label, active, onClick }: {
+  icon: React.ElementType; label: string; active?: boolean; onClick: () => void;
+}) {
+  return (
+    <button onClick={onClick}
+      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-semibold transition-all"
+      style={{
+        border: `1px solid ${active ? T + '55' : '#E2E8F0'}`,
+        backgroundColor: active ? T + '0c' : 'white',
+        color: active ? T : '#64748B',
+        boxShadow: active ? `0 0 0 1px ${T}22` : undefined,
+      }}>
+      <Icon className="w-3.5 h-3.5" />
+      {label}
+      <ChevronDown className="w-3 h-3 opacity-50" />
+    </button>
   );
 }
 
@@ -216,25 +327,24 @@ interface CrmUser { id: string; name: string; role: string }
 
 export default function PipelinesPage() {
   const [activePipelineId, setActivePipelineId] = useState<string>('');
-  const [search, setSearch] = useState('');
-  const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'name'>('newest');
-  const [filterStatus, setFilterStatus] = useState<string>('');
-  const [showFilters, setShowFilters] = useState(false);
-  const [showAddLead, setShowAddLead] = useState(false);
-  const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [filterOwner, setFilterOwner] = useState<string>('');
-  const [filterDateFrom, setFilterDateFrom] = useState('');
-  const [filterDateTo, setFilterDateTo] = useState('');
-  const [showDateFilter, setShowDateFilter] = useState(false);
+  const [search, setSearch]                     = useState('');
+  const [sortBy, setSortBy]                     = useState<'newest' | 'oldest' | 'name'>('newest');
+  const [filterStatus, setFilterStatus]         = useState<string>('');
+  const [showFilters, setShowFilters]           = useState(false);
+  const [showAddLead, setShowAddLead]           = useState(false);
+  const [selectedLead, setSelectedLead]         = useState<Lead | null>(null);
+  const [selectedIds, setSelectedIds]           = useState<Set<string>>(new Set());
+  const [filterOwner, setFilterOwner]           = useState<string>('');
+  const [filterDateFrom, setFilterDateFrom]     = useState('');
+  const [filterDateTo, setFilterDateTo]         = useState('');
+  const [showDateFilter, setShowDateFilter]     = useState(false);
+  const [showSortMenu, setShowSortMenu]         = useState(false);
   const draggingLeadId = useRef<string | null>(null);
   const qc = useQueryClient();
 
-  // ─── React Query data ───────────────────────────────────────────────────────
   const { data: pipelinesData, isLoading: loadingPipelines } = usePipelines();
   const rawPipelines = (pipelinesData as Pipeline[] | undefined) ?? [];
 
-  // Auto-select default pipeline on first load
   const resolvedPipelineId = activePipelineId ||
     (rawPipelines.find(p => p.is_default)?.id ?? rawPipelines[0]?.id ?? '');
 
@@ -247,27 +357,19 @@ export default function PipelinesPage() {
   }, [filterOwner, filterDateFrom, filterDateTo]);
 
   const { data: pipelineDetail } = usePipeline(resolvedPipelineId, filterParams);
-
-  const { data: usersData } = useUsers();
-  const users: CrmUser[] = useMemo(
-    () => (usersData as CrmUser[] | undefined) ?? [],
-    [usersData],
-  );
+  const { data: usersData }      = useUsers();
+  const users: CrmUser[]         = useMemo(() => (usersData as CrmUser[] | undefined) ?? [], [usersData]);
 
   const stageMutation = useLeadStageMutation(resolvedPipelineId, filterParams);
   const prefetchLead  = usePrefetchLead();
 
-  // Merge pipeline list with live detail data
   const pipelines = useMemo<Pipeline[]>(() => rawPipelines.map(p =>
     p.id === resolvedPipelineId && pipelineDetail
       ? { ...p, stages: (pipelineDetail as Pipeline).stages, leads: (pipelineDetail as Pipeline).leads }
       : p
   ), [rawPipelines, resolvedPipelineId, pipelineDetail]);
 
-  const activePipeline = useMemo(
-    () => pipelines.find(p => p.id === resolvedPipelineId),
-    [pipelines, resolvedPipelineId],
-  );
+  const activePipeline = useMemo(() => pipelines.find(p => p.id === resolvedPipelineId), [pipelines, resolvedPipelineId]);
 
   const handleDragStart = useCallback((e: React.DragEvent, leadId: string) => {
     draggingLeadId.current = leadId;
@@ -292,11 +394,7 @@ export default function PipelinesPage() {
 
   function toggleSelectAll() {
     const allIds = (activePipeline?.leads ?? []).map(l => l.id);
-    if (selectedIds.size === allIds.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(allIds));
-    }
+    setSelectedIds(selectedIds.size === allIds.length ? new Set() : new Set(allIds));
   }
 
   async function bulkMoveStage(stageId: string) {
@@ -328,7 +426,6 @@ export default function PipelinesPage() {
     qc.invalidateQueries({ queryKey: [...QK.pipeline(resolvedPipelineId), filterParams.toString()] });
   }
 
-  // Filter + sort — memoised so it only re-runs when leads or filter state change
   const allLeads = useMemo(() => {
     let result = activePipeline?.leads ?? [];
     if (search)       result = result.filter(l => l.name.toLowerCase().includes(search.toLowerCase()) || l.phone.includes(search));
@@ -343,100 +440,136 @@ export default function PipelinesPage() {
     allLeads.filter(l => l.stage_id === stageId),
   [allLeads]);
 
-  if (loadingPipelines) {
-    return <KanbanSkeleton />;
-  }
+  const SORT_LABELS: Record<string, string> = { newest: 'Newest first', oldest: 'Oldest first', name: 'Name A–Z' };
+
+  if (loadingPipelines) return <KanbanSkeleton />;
 
   if (pipelines.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-4">
         <p className="text-lg font-semibold" style={{ color: '#0F172A' }}>No pipelines yet</p>
-        <Link href="/admin/pipelines/config" className="px-5 py-2.5 rounded-lg text-sm font-bold text-white" style={{ backgroundColor: '#134956' }}>
+        <Link href="/admin/pipelines/config" className="px-5 py-2.5 rounded-xl text-sm font-bold text-white" style={{ backgroundColor: T }}>
           Configure Pipelines
         </Link>
       </div>
     );
   }
 
+  const hasDateFilter   = !!(filterDateFrom || filterDateTo);
+  const hasOwnerFilter  = !!filterOwner;
+
   return (
     <div className="flex flex-col h-full -m-5 lg:-m-8">
-      {/* Topbar */}
-      <div className="flex-shrink-0 bg-white px-5 lg:px-8 py-4 space-y-3" style={{ borderBottom: '1px solid #E2E8F0' }}>
-        {/* Row 1: Pipeline tabs + actions */}
+
+      {/* ── Top Bar ─────────────────────────────────────────────────────── */}
+      <div className="flex-shrink-0 bg-white px-5 lg:px-8 pt-4 pb-3 space-y-3"
+        style={{ borderBottom: '1px solid #EDF0F4' }}>
+
+        {/* Row 1: Pipeline tabs + CTA */}
         <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-1 overflow-x-auto">
+          {/* Pipeline tabs */}
+          <div className="flex items-center gap-1 overflow-x-auto p-1 rounded-xl" style={{ backgroundColor: '#F1F5F9' }}>
             {pipelines.map(p => (
               <button key={p.id} onClick={() => { setActivePipelineId(p.id); setSelectedIds(new Set()); }}
-                className="px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-colors flex-shrink-0"
-                style={{
-                  backgroundColor: resolvedPipelineId === p.id ? '#134956' : '#F8FAFC',
-                  color: resolvedPipelineId === p.id ? '#fff' : '#64748B',
-                  border: '1px solid', borderColor: resolvedPipelineId === p.id ? '#134956' : '#E2E8F0',
-                }}>
-                {p.name}{p.is_default && <span className="ml-1.5 text-[10px] opacity-70">★</span>}
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[13px] font-semibold whitespace-nowrap transition-all flex-shrink-0"
+                style={resolvedPipelineId === p.id
+                  ? { backgroundColor: '#fff', color: T, boxShadow: '0 1px 4px rgba(0,0,0,0.1)' }
+                  : { color: '#64748B' }}>
+                {p.name}
+                {p.is_default && <Star className="w-2.5 h-2.5 opacity-50" />}
               </button>
             ))}
           </div>
+
           <div className="flex-1" />
+
+          {/* Lead count badge */}
+          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-semibold"
+            style={{ backgroundColor: '#F8FAFC', color: '#64748B', border: '1px solid #E2E8F0' }}>
+            <Users className="w-3.5 h-3.5" />
+            {allLeads.length} leads
+          </div>
+
           {/* Select all */}
           <button onClick={toggleSelectAll}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors hover:bg-[#F8FAFC]"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-colors hover:bg-[#F8FAFC]"
             style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>
-            {selectedIds.size === (activePipeline?.leads ?? []).length && selectedIds.size > 0
-              ? <CheckSquare className="w-3.5 h-3.5" style={{ color: '#134956' }} />
+            {selectedIds.size > 0 && selectedIds.size === (activePipeline?.leads ?? []).length
+              ? <CheckSquare className="w-3.5 h-3.5" style={{ color: T }} />
               : <Square className="w-3.5 h-3.5" />}
             {selectedIds.size > 0 ? `${selectedIds.size} selected` : 'Select All'}
           </button>
+
+          {/* New Lead */}
           {resolvedPipelineId && (
             <button onClick={() => setShowAddLead(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold text-white transition-opacity hover:opacity-90"
-              style={{ backgroundColor: '#134956' }}>
+              className="inline-flex items-center gap-2 px-4 py-1.5 rounded-xl text-[13px] font-bold text-white transition-opacity hover:opacity-90"
+              style={{ backgroundColor: T, boxShadow: `0 2px 8px ${T}44` }}>
               <Plus className="w-4 h-4" /> New Lead
             </button>
           )}
+
+          {/* Configure */}
           <Link href="/admin/pipelines/config"
-            className="px-3 py-2 rounded-lg text-sm font-medium transition-colors hover:bg-[#F8FAFC]"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-colors hover:bg-[#F8FAFC]"
             style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>
-            Configure
+            <SlidersHorizontal className="w-3.5 h-3.5" /> Configure
           </Link>
         </div>
 
-        {/* Row 2: Search + filter + sort */}
+        {/* Row 2: Search + filters */}
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Search */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: '#94A3B8' }} />
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search leads..."
-              className="pl-9 pr-4 py-2 text-sm rounded-lg outline-none" style={{ border: '1px solid #E2E8F0', width: 200 }} />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none" style={{ color: '#94A3B8' }} />
+            <input
+              value={search} onChange={e => setSearch(e.target.value)}
+              placeholder="Search leads…"
+              className="pl-9 pr-4 py-2 text-[13px] rounded-xl outline-none transition-shadow focus:ring-2"
+              style={{ border: '1px solid #E2E8F0', width: 210, color: '#0F172A' }}
+            />
+            {search && (
+              <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                <X className="w-3.5 h-3.5" style={{ color: '#94A3B8' }} />
+              </button>
+            )}
           </div>
 
-          {/* Status Filter */}
+          {/* Status filter */}
           <div className="relative">
-            <button onClick={() => setShowFilters(p => !p)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors"
-              style={{ border: `1px solid ${filterStatus ? '#134956' : '#E2E8F0'}`, color: filterStatus ? '#134956' : '#64748B', backgroundColor: filterStatus ? '#F0F9FF' : 'white' }}>
-              <Filter className="w-3.5 h-3.5" /> {filterStatus ? filterStatus : 'Status'}
-            </button>
+            <FilterPill icon={Filter} label={filterStatus || 'Status'} active={!!filterStatus} onClick={() => setShowFilters(p => !p)} />
             {showFilters && (
-              <div className="absolute top-10 left-0 bg-white rounded-xl shadow-xl z-20 overflow-hidden min-w-[160px]"
+              <div className="absolute top-11 left-0 bg-white rounded-2xl shadow-2xl z-20 overflow-hidden min-w-[170px] py-1.5"
                 style={{ border: '1px solid #E2E8F0' }}>
                 <button onClick={() => { setFilterStatus(''); setShowFilters(false); }}
-                  className="w-full text-left px-4 py-2.5 text-sm font-medium hover:bg-[#F8FAFC]"
-                  style={{ color: !filterStatus ? '#134956' : '#64748B' }}>All Statuses</button>
+                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] font-medium hover:bg-[#F8FAFC] transition-colors"
+                  style={{ color: !filterStatus ? T : '#64748B' }}>
+                  All Statuses
+                </button>
                 {Object.keys(STATUS_COLORS).map(s => (
                   <button key={s} onClick={() => { setFilterStatus(s); setShowFilters(false); }}
-                    className="w-full text-left px-4 py-2.5 text-sm font-medium hover:bg-[#F8FAFC]"
-                    style={{ color: filterStatus === s ? '#134956' : '#64748B' }}>{s}</button>
+                    className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] font-medium hover:bg-[#F8FAFC] transition-colors text-left"
+                    style={{ color: filterStatus === s ? T : '#64748B' }}>
+                    <span className="w-2 h-2 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: STATUS_COLORS[s]?.text ?? '#94A3B8' }} />
+                    {s}
+                  </button>
                 ))}
               </div>
             )}
           </div>
 
-          {/* Salesperson/owner filter */}
-          <div className="relative flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold"
-            style={{ border: `1px solid ${filterOwner ? '#134956' : '#E2E8F0'}`, backgroundColor: filterOwner ? '#F0F9FF' : 'white', color: filterOwner ? '#134956' : '#64748B' }}>
-            <Users className="w-3.5 h-3.5" />
+          {/* Owner filter */}
+          <div className="relative inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-semibold transition-all"
+            style={{
+              border: `1px solid ${hasOwnerFilter ? T + '55' : '#E2E8F0'}`,
+              backgroundColor: hasOwnerFilter ? T + '0c' : 'white',
+              color: hasOwnerFilter ? T : '#64748B',
+            }}>
+            <Users className="w-3.5 h-3.5 flex-shrink-0" />
             <select value={filterOwner} onChange={e => setFilterOwner(e.target.value)}
-              className="outline-none bg-transparent text-xs font-semibold" style={{ color: filterOwner ? '#134956' : '#64748B' }}>
+              className="outline-none bg-transparent text-[12px] font-semibold cursor-pointer"
+              style={{ color: hasOwnerFilter ? T : '#64748B' }}>
               <option value="">All Users</option>
               {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
             </select>
@@ -444,52 +577,58 @@ export default function PipelinesPage() {
 
           {/* Date filter */}
           <div className="relative">
-            <button onClick={() => setShowDateFilter(p => !p)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors"
-              style={{ border: `1px solid ${filterDateFrom || filterDateTo ? '#134956' : '#E2E8F0'}`, color: filterDateFrom || filterDateTo ? '#134956' : '#64748B', backgroundColor: filterDateFrom || filterDateTo ? '#F0F9FF' : 'white' }}>
-              <Calendar className="w-3.5 h-3.5" /> Date
-            </button>
+            <FilterPill icon={Calendar} label="Date" active={hasDateFilter} onClick={() => setShowDateFilter(p => !p)} />
             {showDateFilter && (
-              <div className="absolute top-10 left-0 bg-white rounded-xl shadow-xl z-20 p-4 space-y-3 min-w-[220px]"
+              <div className="absolute top-11 left-0 bg-white rounded-2xl shadow-2xl z-20 p-4 space-y-3 min-w-[230px]"
                 style={{ border: '1px solid #E2E8F0' }}>
-                <div>
-                  <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#94A3B8' }}>From</label>
-                  <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)}
-                    className="w-full text-xs rounded-lg px-2 py-2 mt-1 outline-none" style={{ border: '1px solid #E2E8F0' }} />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#94A3B8' }}>To</label>
-                  <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)}
-                    className="w-full text-xs rounded-lg px-2 py-2 mt-1 outline-none" style={{ border: '1px solid #E2E8F0' }} />
-                </div>
-                <div className="flex gap-2">
+                <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: '#94A3B8' }}>Date Range</p>
+                {[['From', filterDateFrom, setFilterDateFrom], ['To', filterDateTo, setFilterDateTo]].map(([lbl, val, setter]) => (
+                  <div key={lbl as string}>
+                    <label className="text-[11px] font-semibold" style={{ color: '#64748B' }}>{lbl as string}</label>
+                    <input type="date" value={val as string} onChange={e => (setter as (v: string) => void)(e.target.value)}
+                      className="w-full text-[13px] rounded-xl px-3 py-2 mt-1 outline-none"
+                      style={{ border: '1px solid #E2E8F0', color: '#0F172A' }} />
+                  </div>
+                ))}
+                <div className="flex gap-2 pt-1">
                   <button onClick={() => { setFilterDateFrom(''); setFilterDateTo(''); setShowDateFilter(false); }}
-                    className="flex-1 py-1.5 rounded-lg text-xs font-semibold" style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>Clear</button>
+                    className="flex-1 py-2 rounded-xl text-[12px] font-semibold transition-colors hover:bg-[#F8FAFC]"
+                    style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>Clear</button>
                   <button onClick={() => setShowDateFilter(false)}
-                    className="flex-1 py-1.5 rounded-lg text-xs font-bold text-white" style={{ backgroundColor: '#134956' }}>Apply</button>
+                    className="flex-1 py-2 rounded-xl text-[12px] font-bold text-white"
+                    style={{ backgroundColor: T }}>Apply</button>
                 </div>
               </div>
             )}
           </div>
 
           {/* Sort */}
-          <div className="flex items-center gap-1">
-            <ArrowUpDown className="w-3.5 h-3.5" style={{ color: '#94A3B8' }} />
-            <select value={sortBy} onChange={e => setSortBy(e.target.value as typeof sortBy)}
-              className="text-xs font-semibold outline-none py-2 px-2 rounded-lg"
-              style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>
-              <option value="newest">Newest first</option>
-              <option value="oldest">Oldest first</option>
-              <option value="name">Name A–Z</option>
-            </select>
+          <div className="relative">
+            <FilterPill icon={ArrowUpDown} label={SORT_LABELS[sortBy]} active={sortBy !== 'newest'} onClick={() => setShowSortMenu(p => !p)} />
+            {showSortMenu && (
+              <div className="absolute top-11 right-0 bg-white rounded-2xl shadow-2xl z-20 overflow-hidden min-w-[160px] py-1.5"
+                style={{ border: '1px solid #E2E8F0' }}>
+                {(['newest', 'oldest', 'name'] as const).map(opt => (
+                  <button key={opt} onClick={() => { setSortBy(opt); setShowSortMenu(false); }}
+                    className="w-full flex items-center justify-between px-4 py-2.5 text-[13px] font-medium hover:bg-[#F8FAFC] transition-colors text-left"
+                    style={{ color: sortBy === opt ? T : '#64748B' }}>
+                    {SORT_LABELS[opt]}
+                    {sortBy === opt && <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: T }} />}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
-          <div className="flex-1" />
-          <div className="flex items-center gap-1 text-xs font-medium px-3 py-2 rounded-lg"
-            style={{ backgroundColor: '#F8FAFC', color: '#64748B', border: '1px solid #E2E8F0' }}>
-            <User className="w-3.5 h-3.5" />
-            {allLeads.length} leads
-          </div>
+          {/* Clear all filters */}
+          {(filterStatus || hasOwnerFilter || hasDateFilter) && (
+            <button
+              onClick={() => { setFilterStatus(''); setFilterOwner(''); setFilterDateFrom(''); setFilterDateTo(''); }}
+              className="inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-1 rounded-lg transition-colors hover:bg-[#FEF2F2]"
+              style={{ color: '#EF4444' }}>
+              <X className="w-3 h-3" /> Clear filters
+            </button>
+          )}
         </div>
 
         {/* Bulk action bar */}
@@ -504,9 +643,10 @@ export default function PipelinesPage() {
         )}
       </div>
 
-      {/* Kanban Board */}
-      <div className="flex-1 overflow-x-auto overflow-y-hidden">
-        <div className="flex gap-4 h-full p-5 lg:p-8 min-w-max">
+      {/* ── Kanban Board ────────────────────────────────────────────────── */}
+      <div className="flex-1 overflow-x-auto overflow-y-hidden"
+        style={{ background: 'linear-gradient(160deg, #F0F4F8 0%, #EDF1F5 100%)' }}>
+        <div className="flex gap-4 h-full p-5 lg:p-8 min-w-max items-start">
           {(activePipeline?.stages ?? []).map(stage => {
             const stageLeads = leadsForStage(stage.id);
             return (
@@ -525,19 +665,27 @@ export default function PipelinesPage() {
           })}
           {(activePipeline?.stages ?? []).length === 0 && (
             <div className="flex items-center justify-center w-full">
-              <p className="text-sm" style={{ color: '#94A3B8' }}>No stages configured. Go to Pipeline Config to add stages.</p>
+              <p className="text-sm" style={{ color: '#94A3B8' }}>No stages configured.{' '}
+                <Link href="/admin/pipelines/config" style={{ color: T }}>Configure pipeline →</Link>
+              </p>
             </div>
           )}
         </div>
       </div>
 
       {showAddLead && resolvedPipelineId && (
-        <AddLeadDrawer pipelineId={resolvedPipelineId} onClose={() => setShowAddLead(false)} onCreated={() => qc.invalidateQueries({ queryKey: [...QK.pipeline(resolvedPipelineId), filterParams.toString()] })} />
+        <AddLeadDrawer
+          pipelineId={resolvedPipelineId}
+          onClose={() => setShowAddLead(false)}
+          onCreated={() => qc.invalidateQueries({ queryKey: [...QK.pipeline(resolvedPipelineId), filterParams.toString()] })}
+        />
       )}
       {selectedLead && (
         <LeadDrawer
-          leadId={selectedLead.id} stages={activePipeline?.stages ?? []}
-          onClose={() => setSelectedLead(null)} onUpdated={() => qc.invalidateQueries({ queryKey: [...QK.pipeline(resolvedPipelineId), filterParams.toString()] })}
+          leadId={selectedLead.id}
+          stages={activePipeline?.stages ?? []}
+          onClose={() => setSelectedLead(null)}
+          onUpdated={() => qc.invalidateQueries({ queryKey: [...QK.pipeline(resolvedPipelineId), filterParams.toString()] })}
         />
       )}
     </div>

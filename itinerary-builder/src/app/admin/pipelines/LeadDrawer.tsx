@@ -4,7 +4,17 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   X, ChevronDown, Phone, MessageCircle, Plus, FileText,
   Loader2, Clock, CheckCircle2, AlertCircle, MoveRight,
+  PhoneCall, RefreshCw, Users, Pin, Sparkles, ArrowLeftRight, Bell,
+  type LucideProps,
 } from 'lucide-react';
+
+const ICON_MAP: Record<string, React.ComponentType<LucideProps>> = {
+  PhoneCall, RefreshCw, FileText, Users, Pin, Sparkles, ArrowLeftRight, Clock, Bell,
+};
+function DynamicIcon({ name, className, style }: { name: string; className?: string; style?: React.CSSProperties }) {
+  const Icon = ICON_MAP[name] ?? Bell;
+  return <Icon className={className} style={style} />;
+}
 import Link from 'next/link';
 import { useLead, useAddNote, useLogCall, useAddTask, useMarkTaskDone, QK } from '@/lib/query-hooks';
 import { DrawerSkeleton } from '@/components/Skeleton';
@@ -692,7 +702,7 @@ export default function LeadDrawer({
                       </button>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm">{TASK_ICONS[t.type] ?? '📌'}</span>
+                          <DynamicIcon name={TASK_ICONS[t.type] ?? 'Pin'} className="w-4 h-4 flex-shrink-0" style={{ color: '#64748B' }} />
                           <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>{t.type.replace('_', ' ')}</p>
                           <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{
                             backgroundColor: isDone ? '#DCFCE7' : isOverdue ? '#FEE2E2' : '#F1F5F9',
@@ -808,14 +818,14 @@ export default function LeadDrawer({
                   )}
                   {activities.map((a, idx) => {
                     const meta = (a.metadata ?? {}) as Record<string, string>;
-                    const cfg = ACTIVITY_CONFIG[a.type] ?? { icon: '🔔', color: '#94A3B8', label: () => a.type.replace(/_/g, ' ') };
+                    const cfg = ACTIVITY_CONFIG[a.type] ?? { icon: 'Bell', color: '#94A3B8', label: () => a.type.replace(/_/g, ' ') };
                     const isFirst = idx === 0;
                     return (
                       <div key={a.id} className="flex gap-3.5 group" style={{ paddingBottom: 8 }}>
                         <div className="flex-shrink-0 relative z-10 mt-1">
                           <div className="w-[38px] h-[38px] rounded-2xl flex items-center justify-center text-base transition-transform group-hover:scale-105"
                             style={{ background: `linear-gradient(135deg, ${cfg.color}22, ${cfg.color}10)`, border: `1.5px solid ${cfg.color}30`, boxShadow: isFirst ? `0 0 0 3px ${cfg.color}15` : 'none' }}>
-                            {cfg.icon}
+                            <DynamicIcon name={cfg.icon} className="w-4 h-4" style={{ color: cfg.color }} />
                           </div>
                         </div>
                         <div className="flex-1 min-w-0 pb-2">

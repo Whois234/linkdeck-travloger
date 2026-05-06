@@ -46,15 +46,15 @@ export const QUOTE_STATUS_COLORS: Record<string, { bg: string; text: string }> =
 };
 
 export const TASK_ICONS: Record<string, string> = {
-  call: '📞', follow_up: '🔁', send_quote: '📄', meeting: '🤝', other: '📌',
+  call: 'PhoneCall', follow_up: 'RefreshCw', send_quote: 'FileText', meeting: 'Users', other: 'Pin',
 };
 
 export const ACTIVITY_CONFIG: Record<string, { icon: string; color: string; label: (m: Record<string, string>) => string }> = {
-  created:      { icon: '✨', color: '#6366F1', label: () => 'Lead created' },
-  stage_changed:{ icon: '🔀', color: '#0EA5E9', label: m => `Stage: ${m.from ?? '?'} → ${m.to ?? '?'}` },
-  note_added:   { icon: '📝', color: '#F59E0B', label: () => 'Note added' },
-  call_logged:  { icon: '📞', color: '#10B981', label: m => `Call logged — ${m.outcome ?? ''}` },
-  task_added:   { icon: '⏰', color: '#8B5CF6', label: m => `Task: ${(m.task_type as string ?? '').replace('_', ' ')}` },
+  created:      { icon: 'Sparkles',        color: '#6366F1', label: () => 'Lead created' },
+  stage_changed:{ icon: 'ArrowLeftRight',  color: '#0EA5E9', label: m => `Stage: ${m.from ?? '?'} → ${m.to ?? '?'}` },
+  note_added:   { icon: 'FileText',        color: '#F59E0B', label: () => 'Note added' },
+  call_logged:  { icon: 'PhoneCall',       color: '#10B981', label: m => `Call logged — ${m.outcome ?? ''}` },
+  task_added:   { icon: 'Clock',           color: '#8B5CF6', label: m => `Task: ${(m.task_type as string ?? '').replace('_', ' ')}` },
 };
 
 export const SECTION_ORDER = ['hero', 'packages', 'dates', 'itinerary', 'inclusions', 'fare', 'policies', 'faqs'];
