@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Search, Phone, Mail, Plus, X, Calendar, ChevronDown, AlertTriangle,
   Loader2, Edit2, ChevronRight, CheckSquare, Square, ChevronLeft, ExternalLink,
-  Save, User,
+  Save, User, Trash2,
 } from 'lucide-react';
 
 interface Stage    { id: string; name: string; color: string }
@@ -106,8 +106,10 @@ function ContactPanel({
   const [detail, setDetail] = useState<Contact | null>(null);
   const [editing, setEditing] = useState(false);
   const [form, setForm]       = useState({ name: contact.name, phone: contact.phone, email: contact.email ?? '', source: contact.source ?? '', notes: contact.notes ?? '', owner_id: contact.owner_id });
-  const [saving, setSaving]   = useState(false);
-  const [error, setError]     = useState('');
+  const [saving, setSaving]       = useState(false);
+  const [error, setError]         = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting]   = useState(false);
 
   useEffect(() => {
     fetch(`/api/v1/crm/contacts/${contact.id}`).then(r => r.json()).then(d => { if (d.success) setDetail(d.data); });
@@ -122,6 +124,13 @@ function ContactPanel({
     setSaving(false);
     if (data.success) { setEditing(false); onUpdated(); setDetail(prev => prev ? { ...prev, ...data.data } : prev); }
     else setError(data.error ?? 'Failed to save');
+  }
+
+  async function deleteContact() {
+    setDeleting(true);
+    await fetch(`/api/v1/crm/contacts/${contact.id}`, { method: 'DELETE' });
+    setDeleting(false);
+    onClose(); onUpdated();
   }
 
   const withPipeline = c.leads.filter(l => l.pipeline !== null).length;
@@ -143,10 +152,29 @@ function ContactPanel({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {!editing && (
-              <button onClick={() => setEditing(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors hover:bg-[#F8FAFC]" style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>
-                <Edit2 className="w-3.5 h-3.5" /> Edit
-              </button>
+            {!editing && !confirmDelete && (
+              <>
+                <button onClick={() => setEditing(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors hover:bg-[#F8FAFC]" style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>
+                  <Edit2 className="w-3.5 h-3.5" /> Edit
+                </button>
+                <button onClick={() => setConfirmDelete(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors hover:bg-[#FEF2F2]" style={{ border: '1px solid #FECACA', color: '#DC2626' }}>
+                  <Trash2 className="w-3.5 h-3.5" /> Delete
+                </button>
+              </>
+            )}
+            {confirmDelete && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium" style={{ color: '#DC2626' }}>Sure?</span>
+                <button onClick={deleteContact} disabled={deleting}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold text-white flex items-center gap-1"
+                  style={{ backgroundColor: '#DC2626' }}>
+                  {deleting ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                  Yes, delete
+                </button>
+                <button onClick={() => setConfirmDelete(false)} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>
+                  Cancel
+                </button>
+              </div>
             )}
             <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#F1F5F9]"><X className="w-4 h-4" style={{ color: '#64748B' }} /></button>
           </div>
