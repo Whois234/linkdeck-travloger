@@ -175,8 +175,13 @@ function KanbanColumn({
   onSelectAllInStage: (stageId: string, leads: Lead[]) => void;
   onPrefetch: (leadId: string) => void;
 }) {
+  const PAGE_SIZE = 20;
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [over, setOver] = useState(false);
   const allSelected = leads.length > 0 && leads.every(l => selectedIds.has(l.id));
+  const visibleLeads = leads.slice(0, visibleCount);
+  const hidden = leads.length - visibleCount;
+
   return (
     <div className="flex flex-col rounded-xl flex-shrink-0 w-[280px]"
       style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}
@@ -200,12 +205,20 @@ function KanbanColumn({
       </div>
       <div className="flex-1 overflow-y-auto p-3 space-y-3 transition-colors"
         style={{ minHeight: 120, backgroundColor: over ? `${stage.color}08` : undefined, maxHeight: 'calc(100vh - 220px)' }}>
-        {leads.map(lead => (
+        {visibleLeads.map(lead => (
           <LeadCard key={lead.id} lead={lead} stageColor={stage.color}
             onDragStart={onDragStart} onClick={onLeadClick}
             selected={selectedIds.has(lead.id)} onToggleSelect={onToggleSelect}
             onPrefetch={onPrefetch} />
         ))}
+        {hidden > 0 && (
+          <button
+            onClick={() => setVisibleCount(c => c + PAGE_SIZE)}
+            className="w-full py-2 rounded-lg text-xs font-semibold transition-colors hover:bg-slate-100"
+            style={{ color: stage.color, border: `1px dashed ${stage.color}66` }}>
+            Show {Math.min(hidden, PAGE_SIZE)} more of {hidden}
+          </button>
+        )}
         {leads.length === 0 && (
           <div className="flex items-center justify-center h-16 rounded-lg border-2 border-dashed text-xs"
             style={{ borderColor: over ? stage.color : '#E2E8F0', color: '#94A3B8' }}>

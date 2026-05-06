@@ -86,8 +86,11 @@ export function useContacts(params: URLSearchParams) {
   const key = params.toString();
   return useQuery({
     queryKey: QK.contacts(key),
-    queryFn:  () => apiFetch(`/api/v1/crm/contacts?${key}`),
+    queryFn:  () => apiFetch<{ items: unknown[]; total: number; page: number; limit: number; pages: number }>(
+      `/api/v1/crm/contacts?${key}`
+    ),
     staleTime: LIVE_STALE,
+    placeholderData: (prev) => prev,  // keep previous page visible while fetching next
   });
 }
 

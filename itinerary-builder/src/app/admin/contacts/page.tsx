@@ -1,5 +1,7 @@
 'use client';
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useContacts, useUsers, QK } from '@/lib/query-hooks';
 import {
   Search, Phone, Mail, Plus, X, Calendar, ChevronDown, AlertTriangle,
   Loader2, Edit2, ChevronRight, CheckSquare, Square, ChevronLeft, ExternalLink,
@@ -291,43 +293,49 @@ function ContactPanel({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function ContactsPage() {
   const [tab, setTab]             = useState<'contacts' | 'duplicates'>('contacts');
-  const [contacts, setContacts]   = useState<Contact[]>([]);
   const [dupes, setDupes]         = useState<DuplicateAttempt[]>([]);
-  const [users, setUsers]         = useState<CrmUser[]>([]);
   const [search, setSearch]       = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [sortBy, setSortBy]       = useState('newest');
   const [dateRange, setDateRange] = useState('');
   const [dateFrom, setDateFrom]   = useState('');
   const [dateTo, setDateTo]       = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [loading, setLoading]     = useState(true);
   const [selected, setSelected]   = useState<Contact | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [page, setPage]           = useState(1);
-  const PER_PAGE = 100;
+  const PER_PAGE = 50;
   const datePickerRef = useRef<HTMLDivElement>(null);
+  const qc = useQueryClient();
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const params = new URLSearchParams();
-    if (search)    params.set('search', search);
-    if (sortBy)    params.set('sort', sortBy);
-    if (dateRange) params.set('date_range', dateRange);
-    if (dateRange === 'custom' && dateFrom) params.set('date_from', dateFrom);
-    if (dateRange === 'custom' && dateTo)   params.set('date_to', dateTo);
-    const [cRes, uRes] = await Promise.all([
-      fetch(`/api/v1/crm/contacts?${params}`),
-      fetch('/api/v1/users'),
-    ]);
-    const [cData, uData] = await Promise.all([cRes.json(), uRes.json()]);
-    if (cData.success) setContacts(cData.data);
-    if (uData.success) setUsers(Array.isArray(uData.data) ? uData.data : (uData.data?.items ?? []));
-    setLoading(false);
-    setPage(1);
-  }, [search, sortBy, dateRange, dateFrom, dateTo]);
+  // Debounce search so we don't fire a query on every keystroke
+  useEffect(() => {
+    const t = setTimeout(() => { setDebouncedSearch(search); setPage(1); }, 300);
+    return () => clearTimeout(t);
+  }, [search]);
 
-  useEffect(() => { const t = setTimeout(load, 300); return () => clearTimeout(t); }, [load]);
+  // Reset to page 1 when filters change
+  useEffect(() => { setPage(1); }, [sortBy, dateRange, dateFrom, dateTo]);
+
+  // Build query params (passed to useContacts so React Query key changes automatically)
+  const contactParams = new URLSearchParams();
+  if (debouncedSearch) contactParams.set('search', debouncedSearch);
+  if (sortBy)          contactParams.set('sort', sortBy);
+  if (dateRange)       contactParams.set('date_range', dateRange);
+  if (dateRange === 'custom' && dateFrom) contactParams.set('date_from', dateFrom);
+  if (dateRange === 'custom' && dateTo)   contactParams.set('date_to', dateTo);
+  contactParams.set('page', String(page));
+  contactParams.set('limit', String(PER_PAGE));
+
+  const { data: contactsResp, isFetching: loading } = useContacts(contactParams);
+  const { data: usersData } = useUsers();
+
+  const contactsPage = (contactsResp as { items: Contact[]; total: number; page: number; limit: number; pages: number } | undefined);
+  const contacts   = contactsPage?.items   ?? [];
+  const totalCount = contactsPage?.total   ?? 0;
+  const totalPages = contactsPage?.pages   ?? 1;
+  const users: CrmUser[] = (usersData as CrmUser[] | undefined) ?? [];
 
   async function loadDupes() {
     const res = await fetch('/api/v1/crm/duplicate-attempts');
@@ -346,11 +354,11 @@ export default function ContactsPage() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const paginated    = contacts.slice((page - 1) * PER_PAGE, page * PER_PAGE);
-  const totalPages   = Math.ceil(contacts.length / PER_PAGE);
-  const withPipeline = contacts.filter(c => c.leads.some(l => l.pipeline !== null)).length;
+  // Page-level stats (computed from current page; totals come from API)
+  const paginated       = contacts;   // already server-paginated
+  const withPipeline    = contacts.filter(c => c.leads.some(l => l.pipeline !== null)).length;
   const withoutPipeline = contacts.filter(c => c.leads.every(l => l.pipeline === null) || c.leads.length === 0).length;
-  const untouched    = contacts.filter(c => c.leads.every(l => (l._count?.call_logs ?? 0) + (l._count?.lead_notes ?? 0) === 0)).length;
+  const untouched       = contacts.filter(c => c.leads.every(l => (l._count?.call_logs ?? 0) + (l._count?.lead_notes ?? 0) === 0)).length;
 
   const [bulkDeleting, setBulkDeleting]         = useState(false);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
@@ -370,7 +378,7 @@ export default function ContactsPage() {
     setBulkDeleting(false);
     setCheckedIds(new Set());
     setConfirmBulkDelete(false);
-    load();
+    qc.invalidateQueries({ queryKey: QK.contacts(contactParams.toString()) });
   }
 
   const allChecked = paginated.length > 0 && checkedIds.size === paginated.length;
@@ -548,7 +556,7 @@ export default function ContactsPage() {
           {/* Stats + Pagination bar (Bigin-style) */}
           <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 bg-white text-xs" style={{ borderTop: '1px solid #E2E8F0', color: '#64748B' }}>
             <div className="flex items-center gap-4 flex-wrap">
-              <span>Total Contacts <span className="font-bold" style={{ color: '#0F172A' }}>{contacts.length.toLocaleString()}</span></span>
+              <span>Total Contacts <span className="font-bold" style={{ color: '#0F172A' }}>{totalCount.toLocaleString()}</span></span>
               <span className="text-[#CBD5E1]">·</span>
               <span>With Open Pipelines <span className="font-bold" style={{ color: '#0F172A' }}>{withPipeline.toLocaleString()}</span></span>
               <span className="text-[#CBD5E1]">·</span>
@@ -558,12 +566,15 @@ export default function ContactsPage() {
             </div>
             {totalPages > 1 && (
               <div className="flex items-center gap-2">
-                <span>{(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, contacts.length)} of {contacts.length}</span>
-                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+                <span>
+                  {(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, totalCount)} of {totalCount.toLocaleString()}
+                  {loading && <span className="ml-2 opacity-50">…</span>}
+                </span>
+                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1 || loading}
                   className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-[#F1F5F9] disabled:opacity-30">
                   <ChevronLeft className="w-4 h-4" />
                 </button>
-                <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+                <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages || loading}
                   className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-[#F1F5F9] disabled:opacity-30">
                   <ChevronRight className="w-4 h-4" />
                 </button>
@@ -651,8 +662,8 @@ export default function ContactsPage() {
       )}
 
       {/* Modals & panels */}
-      {showCreate && <CreateContactModal onClose={() => setShowCreate(false)} onCreated={load} />}
-      {selected && <ContactPanel contact={selected} users={users} onClose={() => setSelected(null)} onUpdated={load} />}
+      {showCreate && <CreateContactModal onClose={() => setShowCreate(false)} onCreated={() => qc.invalidateQueries({ queryKey: QK.contacts(contactParams.toString()) })} />}
+      {selected && <ContactPanel contact={selected} users={users} onClose={() => setSelected(null)} onUpdated={() => qc.invalidateQueries({ queryKey: QK.contacts(contactParams.toString()) })} />}
     </div>
   );
 }

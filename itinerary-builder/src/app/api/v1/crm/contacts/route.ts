@@ -39,6 +39,8 @@ function buildDateFilter(dateRange: string | null, from: string | null, to: stri
   return undefined;
 }
 
+const PAGE_LIMIT = 50;
+
 export async function GET(req: NextRequest) {
   const user = await getAuthUser(req);
   if (!user) return unauthorized();
@@ -50,35 +52,46 @@ export async function GET(req: NextRequest) {
   const dateFrom  = searchParams.get('date_from');
   const dateTo    = searchParams.get('date_to');
   const sortBy    = searchParams.get('sort') ?? 'newest';
+  const page      = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10));
+  const limit     = Math.min(200, Math.max(1, parseInt(searchParams.get('limit') ?? String(PAGE_LIMIT), 10)));
 
   const dateFilter = buildDateFilter(dateRange, dateFrom, dateTo);
 
-  const contacts = await prisma.crmContact.findMany({
-    where: {
-      ...(search ? {
-        OR: [
-          { name:  { contains: search, mode: 'insensitive' } },
-          { phone: { contains: search, mode: 'insensitive' } },
-          { email: { contains: search, mode: 'insensitive' } },
-        ],
-      } : {}),
-      ...(converted === 'true'  ? { is_converted: true  } : {}),
-      ...(converted === 'false' ? { is_converted: false } : {}),
-      ...(dateFilter ? { created_at: dateFilter } : {}),
-    },
-    include: {
-      leads: {
-        include: {
-          stage: { select: { id: true, name: true, color: true } },
-          pipeline: { select: { id: true, name: true } },
+  const where = {
+    ...(search ? {
+      OR: [
+        { name:  { contains: search, mode: 'insensitive' as const } },
+        { phone: { contains: search, mode: 'insensitive' as const } },
+        { email: { contains: search, mode: 'insensitive' as const } },
+      ],
+    } : {}),
+    ...(converted === 'true'  ? { is_converted: true  } : {}),
+    ...(converted === 'false' ? { is_converted: false } : {}),
+    ...(dateFilter ? { created_at: dateFilter } : {}),
+  };
+
+  const orderBy = sortBy === 'oldest' ? { created_at: 'asc' as const }
+                : sortBy === 'name'   ? { name: 'asc' as const }
+                :                       { created_at: 'desc' as const };
+
+  const [total, contacts] = await Promise.all([
+    prisma.crmContact.count({ where }),
+    prisma.crmContact.findMany({
+      where,
+      include: {
+        leads: {
+          include: {
+            stage: { select: { id: true, name: true, color: true } },
+            pipeline: { select: { id: true, name: true } },
+          },
+          orderBy: { created_at: 'desc' },
         },
-        orderBy: { created_at: 'desc' },
       },
-    },
-    orderBy: sortBy === 'oldest' ? { created_at: 'asc' }
-           : sortBy === 'name'   ? { name: 'asc' }
-           :                       { created_at: 'desc' },
-  });
+      orderBy,
+      skip: (page - 1) * limit,
+      take: limit,
+    }),
+  ]);
 
   const ownerIds = Array.from(new Set(contacts.map(c => c.owner_id)));
   const owners   = await prisma.user.findMany({
@@ -87,12 +100,9 @@ export async function GET(req: NextRequest) {
   });
   const ownerMap = Object.fromEntries(owners.map(o => [o.id, o]));
 
-  const result = contacts.map(c => ({
-    ...c,
-    owner: ownerMap[c.owner_id] ?? null,
-  }));
+  const items = contacts.map(c => ({ ...c, owner: ownerMap[c.owner_id] ?? null }));
 
-  return ok(result);
+  return ok({ items, total, page, limit, pages: Math.ceil(total / limit) });
 }
 
 export async function POST(req: NextRequest) {
