@@ -351,98 +351,170 @@ function useCountdown(expiresAt: string | null | undefined) {
   return remaining;
 }
 
-function DiscountBanner({ opt, adults }: { opt: QuoteOption; adults: number }) {
+/* Discount banner — two variants:
+   "card"  → rendered inside the dark teal .tl-pkg-head (white text on dark)
+   "fare"  → rendered on white background in Fare Summary (full standalone card) */
+function DiscountBanner({
+  opt, adults, variant = 'card',
+}: {
+  opt: QuoteOption; adults: number; variant?: 'card' | 'fare';
+}) {
   const remaining = useCountdown(opt.discount_expires_at);
-  const discount = opt.discount_amount ?? 0;
+  const discount  = opt.discount_amount ?? 0;
 
   if (discount <= 0) return null;
-
-  // If expiry set and already expired, don't show
   if (opt.discount_expires_at && remaining === 0) return null;
 
-  // Original price before discount — reverse-engineer from stored fields
-  // selling_before_gst already has discount deducted, so original = selling_before_gst + discount
-  const origSellBGST = opt.selling_before_gst + discount;
-  const origGST = (origSellBGST * opt.gst_percent) / 100;
-  const origFinal = origSellBGST + origGST;
-  const origPerAdult = adults > 0 ? Math.round(origFinal / adults) : origFinal;
+  const origSellBGST  = opt.selling_before_gst + discount;
+  const origGST       = (origSellBGST * opt.gst_percent) / 100;
+  const origFinal     = origSellBGST + origGST;
+  const origPerAdult  = adults > 0 ? Math.round(origFinal / adults) : origFinal;
+  const fmtC = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
 
-  const fmtMs = (ms: number) => {
-    const totalSecs = Math.floor(ms / 1000);
-    const h = Math.floor(totalSecs / 3600);
-    const m = Math.floor((totalSecs % 3600) / 60);
-    const s = totalSecs % 60;
-    if (h > 0) return `${h}h ${m}m ${s}s`;
-    if (m > 0) return `${m}m ${s}s`;
-    return `${s}s`;
-  };
+  const hasExpiry   = !!opt.discount_expires_at && remaining !== null && remaining > 0;
+  const totalSecs   = hasExpiry ? Math.floor(remaining! / 1000) : 0;
+  const hh          = Math.floor(totalSecs / 3600);
+  const mm          = Math.floor((totalSecs % 3600) / 60);
+  const ss          = totalSecs % 60;
+  const pad         = (n: number) => String(n).padStart(2, '0');
 
-  const fmtCurr = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
+  /* ── CARD VARIANT (inside teal header) ─────────────────────────── */
+  if (variant === 'card') {
+    return (
+      <>
+        {/* Price row */}
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ color: 'white', fontFamily: 'var(--f-num)', fontSize: 34, fontWeight: 700, lineHeight: 1, letterSpacing: '-0.5px' }}>
+            {fmtC(opt.price_per_adult_display)}
+          </span>
+          <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: 15, textDecoration: 'line-through', letterSpacing: '-0.3px' }}>
+            {fmtC(origPerAdult)}
+          </span>
+        </div>
+        <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, marginTop: 4, fontFamily: 'var(--f-body)' }}>
+          per adult · incl. GST
+        </div>
 
+        {/* Save badge */}
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: 10 }}>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 5,
+            background: 'rgba(255,255,255,0.12)', backdropFilter: 'blur(8px)',
+            border: '1px solid rgba(255,255,255,0.18)',
+            color: '#FFD580', fontSize: 11, fontWeight: 700,
+            padding: '4px 12px', borderRadius: 20, fontFamily: 'var(--f-body)',
+            letterSpacing: '0.02em',
+          }}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#FFD580" strokeWidth="2.5"><polyline points="20 6 9 17 4 12" /></svg>
+            You save {fmtC(discount)}
+          </span>
+        </div>
+
+        {/* Countdown strip */}
+        {hasExpiry && (
+          <div style={{
+            marginTop: 12,
+            padding: '10px 12px',
+            borderRadius: 12,
+            background: 'rgba(0,0,0,0.25)',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          }}>
+            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', fontFamily: 'var(--f-body)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>
+              Offer ends in
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              {[{ v: pad(hh), l: 'HR' }, { v: pad(mm), l: 'MIN' }, { v: pad(ss), l: 'SEC' }].map((t, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  {i > 0 && <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 14, fontWeight: 300, lineHeight: 1 }}>:</span>}
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{
+                      background: 'rgba(255,255,255,0.15)',
+                      borderRadius: 6, padding: '3px 8px',
+                      color: 'white', fontSize: 15, fontWeight: 700, fontFamily: 'var(--f-num)', lineHeight: 1.2,
+                      minWidth: 32,
+                    }}>{t.v}</div>
+                    <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: 8, fontFamily: 'var(--f-body)', marginTop: 2, letterSpacing: '0.1em' }}>{t.l}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  /* ── FARE VARIANT (on white background) ────────────────────────── */
   return (
     <div style={{
-      background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
-      borderRadius: 12,
-      padding: '14px 16px',
-      margin: '0 0 12px',
-      border: '1px solid rgba(255,80,80,0.3)',
-      boxShadow: '0 0 20px rgba(255,80,80,0.12)',
-      position: 'relative',
+      borderRadius: 16,
       overflow: 'hidden',
+      marginBottom: 16,
+      border: '1px solid #F1E8D8',
     }}>
-      {/* glow pulse */}
+      {/* Top accent bar */}
       <div style={{
-        position: 'absolute', top: -20, right: -20, width: 80, height: 80,
-        borderRadius: '50%', background: 'rgba(255,80,80,0.15)',
-        animation: 'tl-pulse 2s infinite',
-      }} />
-      {/* Limited time tag */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-        <span style={{
-          background: '#FF3D3D', color: '#fff', fontSize: 10, fontWeight: 700,
-          padding: '2px 8px', borderRadius: 20, letterSpacing: '0.05em', textTransform: 'uppercase',
-        }}>
+        background: 'linear-gradient(90deg, #C8860A 0%, #E6A020 100%)',
+        padding: '6px 16px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      }}>
+        <span style={{ color: 'white', fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', fontFamily: 'var(--f-body)' }}>
           Limited Time Offer
         </span>
-        {opt.discount_expires_at && remaining !== null && remaining > 0 && (
-          <span style={{ fontSize: 11, color: '#FF8A80', fontWeight: 600 }}>
-            Expires in {fmtMs(remaining)}
+        {hasExpiry && (
+          <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: 10, fontFamily: 'var(--f-body)', fontWeight: 600 }}>
+            Ends {new Date(opt.discount_expires_at!).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}
           </span>
         )}
       </div>
 
-      {/* Price display */}
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 24, fontWeight: 800, color: '#fff', letterSpacing: '-0.5px' }}>
-          {fmtCurr(opt.price_per_adult_display)}
-        </span>
-        <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', textDecoration: 'line-through' }}>
-          {fmtCurr(origPerAdult)}
-        </span>
-        <span style={{
-          fontSize: 12, fontWeight: 700, color: '#4ADE80',
-          background: 'rgba(74,222,128,0.15)', padding: '2px 8px', borderRadius: 20,
-        }}>
-          Save {fmtCurr(discount)}
-        </span>
-      </div>
-      <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 4, margin: '4px 0 0' }}>
-        per adult · incl. GST
-      </p>
-
-      {/* Urgency message */}
-      {opt.discount_expires_at && remaining !== null && remaining > 0 && (
-        <div style={{
-          marginTop: 10, paddingTop: 10,
-          borderTop: '1px solid rgba(255,255,255,0.08)',
-          display: 'flex', alignItems: 'center', gap: 6,
-        }}>
-          <span style={{ fontSize: 14 }}>⚡</span>
-          <span style={{ fontSize: 12, color: '#FF8A80', fontWeight: 600 }}>
-            Hurry! This price expires in {fmtMs(remaining)}
+      {/* Body */}
+      <div style={{ background: '#FFFBF2', padding: '14px 16px' }}>
+        {/* Price row */}
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 4 }}>
+          <span style={{ fontSize: 28, fontWeight: 700, color: '#1A1A1A', fontFamily: 'var(--f-num)', letterSpacing: '-0.5px', lineHeight: 1 }}>
+            {fmtC(opt.price_per_adult_display)}
+          </span>
+          <span style={{ fontSize: 15, color: '#B0A090', textDecoration: 'line-through', fontFamily: 'var(--f-num)' }}>
+            {fmtC(origPerAdult)}
+          </span>
+          <span style={{
+            fontSize: 11, fontWeight: 700, color: '#C8860A',
+            background: '#FFF3D6', border: '1px solid #F5D796',
+            padding: '2px 10px', borderRadius: 20, fontFamily: 'var(--f-body)',
+          }}>
+            Save {fmtC(discount)}
           </span>
         </div>
-      )}
+        <p style={{ fontSize: 11, color: '#A09080', fontFamily: 'var(--f-body)', margin: 0 }}>
+          per adult · incl. GST
+        </p>
+
+        {/* Countdown */}
+        {hasExpiry && (
+          <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 11, color: '#7A6A5A', fontFamily: 'var(--f-body)', fontWeight: 500, flexShrink: 0 }}>
+              Hurry, ends in
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              {[{ v: pad(hh), l: 'hr' }, { v: pad(mm), l: 'min' }, { v: pad(ss), l: 'sec' }].map((t, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  {i > 0 && <span style={{ color: '#C8860A', fontSize: 14, fontWeight: 300 }}>:</span>}
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{
+                      background: 'white', border: '1px solid #EDD89A',
+                      borderRadius: 8, padding: '4px 8px',
+                      color: '#C8860A', fontSize: 16, fontWeight: 800, fontFamily: 'var(--f-num)', lineHeight: 1.2,
+                      minWidth: 36, boxShadow: '0 1px 3px rgba(200,134,10,0.12)',
+                    }}>{t.v}</div>
+                    <div style={{ color: '#B09A70', fontSize: 8, fontFamily: 'var(--f-body)', marginTop: 2, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{t.l}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -867,7 +939,7 @@ function FareSummary({ option, adults }: { option: QuoteOption | undefined; adul
         <div className="tl-sec-eyebrow">Cost Breakdown</div>
         <div className="tl-sec-h">Fare Summary</div>
         <div className="tl-sec-sub">{adults} Adult{adults > 1 ? 's' : ''} · {option.option_name} Package</div>
-        {discount > 0 && <DiscountBanner opt={option} adults={adults} />}
+        {discount > 0 && <DiscountBanner opt={option} adults={adults} variant="fare" />}
         <div className="tl-fare-card">
           <div className="tl-fare-row">
             <span>Per Adult (before GST)</span>
@@ -891,14 +963,7 @@ function FareSummary({ option, adults }: { option: QuoteOption | undefined; adul
             <div>
               <span className="tl-fare-total-label">Total Amount</span>
               <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2, fontFamily: 'var(--f-body)' }}>
-                {discount > 0 ? (
-                  <>
-                    <span style={{ textDecoration: 'line-through', marginRight: 6 }}>{fmtCurrency(origTotal)}</span>
-                    <span style={{ color: '#4ADE80', fontWeight: 700 }}>{fmtCurrency(option.price_per_adult_display)} /adult</span>
-                  </>
-                ) : (
-                  `${fmtCurrency(option.price_per_adult_display)} per person · incl. GST`
-                )}
+                {fmtCurrency(option.price_per_adult_display)} per person · incl. GST
               </div>
             </div>
             <span className="tl-fare-total-val">{fmtCurrency(total)}</span>
