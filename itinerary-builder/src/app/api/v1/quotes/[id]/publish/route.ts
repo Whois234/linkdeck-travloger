@@ -21,19 +21,21 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return err('Quote must have at least one pricing option before publishing', 400);
   }
 
-  // Mark SENT + fetch public_token in parallel — ~150ms total, no snapshot blocking
-  const [updatedQuote] = await Promise.all([
-    prisma.quote.update({
-      where: { id: params.id },
-      data: { status: QuoteStatus.SENT },
-      select: { public_token: true },
-    }),
-  ]);
-
-  // Fire snapshot generation in background — client gets the token immediately
-  generateQuoteSnapshot(params.id, user.sub).catch((e) => {
-    console.error(`[publish] snapshot failed for ${params.id}:`, e);
+  // Mark SENT first
+  const updatedQuote = await prisma.quote.update({
+    where: { id: params.id },
+    data: { status: QuoteStatus.SENT },
+    select: { public_token: true },
   });
+
+  // Generate snapshot synchronously — fire-and-forget fails on Vercel serverless
+  // because the execution context is killed once the response is sent
+  try {
+    await generateQuoteSnapshot(params.id, user.sub);
+  } catch (e) {
+    console.error(`[publish] snapshot failed for ${params.id}:`, e);
+    return err('Quote published but snapshot generation failed. Please try republishing.', 500);
+  }
 
   return ok({ public_token: updatedQuote.public_token });
 }
