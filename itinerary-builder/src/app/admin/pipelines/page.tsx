@@ -282,38 +282,87 @@ function AddLeadDrawer({ pipelineId, onClose, onCreated }: { pipelineId: string;
 
 // ─── Call Log Popup ───────────────────────────────────────────────────────────
 
-function CallLogPopup({ leadId, leadName, onClose, onSaved }: { leadId: string; leadName: string; onClose: () => void; onSaved: () => void }) {
-  const [duration, setDuration] = useState('');
-  const [outcome, setOutcome] = useState('ANSWERED');
+function fmtSecs(s: number) {
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${m}:${sec.toString().padStart(2, '0')}`;
+}
+
+// ─── Floating Call Banner ─────────────────────────────────────────────────────
+
+function CallBanner({
+  leadName, phone,
+  onEndCall, onNotAnswered,
+}: {
+  leadName: string; phone: string;
+  onEndCall: (elapsed: number) => void;
+  onNotAnswered: () => void;
+}) {
+  const [elapsed, setElapsed] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    timerRef.current = setInterval(() => setElapsed(p => p + 1), 1000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, []);
+
+  return (
+    <div className="fixed bottom-0 left-0 right-0 z-[80] flex justify-center pb-4 px-4 pointer-events-none">
+      <div className="pointer-events-auto flex items-center gap-4 px-5 py-3.5 rounded-2xl shadow-2xl w-full max-w-[540px]"
+        style={{ background: 'linear-gradient(135deg, #0D3340, #134956)', border: '1px solid rgba(255,255,255,0.1)' }}>
+        {/* Pulse dot */}
+        <div className="relative flex-shrink-0">
+          <div className="w-3 h-3 rounded-full bg-green-400" />
+          <div className="absolute inset-0 w-3 h-3 rounded-full bg-green-400 animate-ping opacity-60" />
+        </div>
+
+        {/* Info */}
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-semibold text-white/60 leading-none mb-0.5">Call in progress</p>
+          <p className="text-sm font-bold text-white truncate">{leadName} · {phone}</p>
+        </div>
+
+        {/* Timer */}
+        <p className="text-lg font-bold font-mono flex-shrink-0" style={{ color: '#7DD3C0' }}>{fmtSecs(elapsed)}</p>
+
+        <div className="w-px h-6 bg-white/15 flex-shrink-0" />
+
+        {/* Actions */}
+        <button onClick={() => onEndCall(elapsed)}
+          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-white transition-all hover:scale-105"
+          style={{ backgroundColor: '#16A34A' }}>
+          ✅ End Call
+        </button>
+        <button onClick={onNotAnswered}
+          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all hover:scale-105"
+          style={{ backgroundColor: 'rgba(255,255,255,0.12)', color: '#FCA5A5' }}>
+          ❌ Not Answered
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Call Log Popup ───────────────────────────────────────────────────────────
+
+function CallLogPopup({
+  leadId, leadName, onClose, onSaved,
+  initialElapsed = 0, initialOutcome = 'ANSWERED',
+}: {
+  leadId: string; leadName: string; onClose: () => void; onSaved: () => void;
+  initialElapsed?: number; initialOutcome?: string;
+}) {
+  const [duration, setDuration] = useState(initialElapsed > 0 ? String(Math.ceil(initialElapsed / 60)) : '');
+  const [outcome, setOutcome] = useState(initialOutcome);
   const [notes, setNotes] = useState('');
   const [scheduleNext, setScheduleNext] = useState(false);
   const [nextType, setNextType] = useState('call');
   const [nextTime, setNextTime] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // Timer
-  const [timerActive, setTimerActive] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => {
-    if (timerActive) {
-      timerRef.current = setInterval(() => setElapsed(p => p + 1), 1000);
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current);
-    }
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [timerActive]);
-
-  function formatElapsed(s: number) {
-    const m = Math.floor(s / 60);
-    const sec = s % 60;
-    return `${m}:${sec.toString().padStart(2, '0')}`;
-  }
-
   async function save() {
     setSaving(true);
-    const mins = elapsed > 0 ? Math.ceil(elapsed / 60) : (duration ? parseInt(duration) : null);
+    const mins = duration ? parseInt(duration) : null;
     await fetch(`/api/v1/leads/${leadId}/calls`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -339,35 +388,12 @@ function CallLogPopup({ leadId, leadName, onClose, onSaved }: { leadId: string; 
           <button onClick={onClose}><X className="w-4 h-4" style={{ color: '#94A3B8' }} /></button>
         </div>
         <div className="px-6 py-5 space-y-4">
-          {/* Timer */}
-          <div className="rounded-xl p-4 flex items-center justify-between" style={{ backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0' }}>
-            <div>
-              <p className="text-xs font-semibold mb-1" style={{ color: '#15803D' }}>Call Timer</p>
-              <p className="text-2xl font-bold font-mono" style={{ color: '#0F172A' }}>{formatElapsed(elapsed)}</p>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => setTimerActive(p => !p)}
-                className="px-4 py-2 rounded-lg text-sm font-bold text-white"
-                style={{ backgroundColor: timerActive ? '#EF4444' : '#16A34A' }}>
-                {timerActive ? 'Stop' : elapsed > 0 ? 'Resume' : 'Start'}
-              </button>
-              {elapsed > 0 && !timerActive && (
-                <button onClick={() => { setElapsed(0); setTimerActive(false); }}
-                  className="px-3 py-2 rounded-lg text-sm font-semibold" style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>
-                  Reset
-                </button>
-              )}
-            </div>
+          {/* Duration (pre-filled from banner timer if available) */}
+          <div>
+            <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Duration (minutes)</label>
+            <input type="number" value={duration} onChange={e => setDuration(e.target.value)} placeholder="e.g. 5"
+              className="w-full text-sm rounded-lg px-3 py-2.5 outline-none" style={{ border: '1px solid #D1D5DB' }} />
           </div>
-
-          {/* Manual duration fallback */}
-          {elapsed === 0 && (
-            <div>
-              <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Duration (minutes) — or use timer above</label>
-              <input type="number" value={duration} onChange={e => setDuration(e.target.value)} placeholder="e.g. 5"
-                className="w-full text-sm rounded-lg px-3 py-2.5 outline-none" style={{ border: '1px solid #D1D5DB' }} />
-            </div>
-          )}
 
           <div>
             <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Outcome</label>
@@ -645,6 +671,8 @@ function LeadDrawer({
   const [editForm, setEditForm] = useState({ name: '', phone: '', email: '', destination_interest: '', travel_month: '', budget_range: '' });
   const [savingEdit, setSavingEdit] = useState(false);
   const [selectedQuote, setSelectedQuote] = useState<QuoteRef | null>(null);
+  const [callBannerActive, setCallBannerActive] = useState(false);
+  const [callPopupState, setCallPopupState] = useState<{ elapsed: number; outcome: string } | null>(null);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/v1/leads/${leadId}`);
@@ -738,11 +766,20 @@ function LeadDrawer({
 
   return (
     <>
-      {showCallPopup && (
+      {callBannerActive && (
+        <CallBanner
+          leadName={lead.name} phone={lead.phone}
+          onEndCall={(elapsed) => { setCallBannerActive(false); setCallPopupState({ elapsed, outcome: 'ANSWERED' }); }}
+          onNotAnswered={() => { setCallBannerActive(false); setCallPopupState({ elapsed: 0, outcome: 'NO_ANSWER' }); }}
+        />
+      )}
+      {(showCallPopup || callPopupState) && (
         <CallLogPopup
           leadId={leadId} leadName={lead.name}
-          onClose={() => setShowCallPopup(false)}
-          onSaved={() => { load(); onUpdated(); }}
+          initialElapsed={callPopupState?.elapsed ?? 0}
+          initialOutcome={callPopupState?.outcome ?? 'ANSWERED'}
+          onClose={() => { setShowCallPopup(false); setCallPopupState(null); }}
+          onSaved={() => { load(); onUpdated(); setShowCallPopup(false); setCallPopupState(null); }}
         />
       )}
       {selectedQuote && <QuotePopup quote={selectedQuote} onClose={() => setSelectedQuote(null)} />}
@@ -777,11 +814,12 @@ function LeadDrawer({
                 <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none" style={{ color: currentStage?.color ?? '#64748B' }} />
               </div>
               <div className="flex-1" />
-              <a href={`tel:${lead.phone}`}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
+              <button
+                onClick={() => { window.location.href = `tel:${lead.phone}`; setCallBannerActive(true); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90"
                 style={{ backgroundColor: '#16A34A' }}>
                 <Phone className="w-3.5 h-3.5" /> Call
-              </a>
+              </button>
               <a href={`https://wa.me/${lead.phone.replace(/\D/g, '')}`} target="_blank" rel="noreferrer"
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
                 style={{ backgroundColor: '#25D366' }}>
