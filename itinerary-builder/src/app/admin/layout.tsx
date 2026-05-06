@@ -4,7 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useState, useEffect, useRef } from 'react';
 import {
   LayoutDashboard, MapPin, Map, Building2, Car, Activity, BookOpen,
-  ListPlus, ScrollText, Image, Users, DollarSign,
+  ListPlus, ScrollText, Users, DollarSign,
   Layout, CalendarDays, Layers, FileText, Menu, LogOut,
   Bell, ChevronDown, Tag, Briefcase, Settings, User, X, Kanban, SlidersHorizontal,
 } from 'lucide-react';
@@ -30,9 +30,7 @@ const ALL_NAV: NavGroup[] = [
       { label: 'Day Plans',          href: '/admin/day-plans',             icon: BookOpen  },
       { label: 'Inclusions / Excl.', href: '/admin/inclusions-exclusions', icon: ListPlus  },
       { label: 'Policies',           href: '/admin/policies',              icon: ScrollText},
-      { label: 'Media Library',      href: '/admin/media-library',         icon: Image     },
       { label: 'Agents',             href: '/admin/agents',                icon: Briefcase, roles: ['ADMIN', 'MANAGER'] },
-      { label: 'Pricing Rules',      href: '/admin/pricing-rules',         icon: DollarSign, roles: ['ADMIN', 'MANAGER'] },
     ],
   },
   {
