@@ -7,6 +7,7 @@ import { z } from 'zod';
 
 const patchSchema = z.object({
   name:     z.string().min(1).optional(),
+  phone:    z.string().min(1).optional(),
   email:    z.string().email().nullable().optional(),
   source:   z.string().nullable().optional(),
   notes:    z.string().nullable().optional(),
@@ -55,9 +56,19 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   // Only admin/manager can change owner
   if (parsed.data.owner_id && !isAdmin) return forbidden();
 
+  const updateData: Record<string, unknown> = { ...parsed.data };
+
+  // Normalize and check phone uniqueness if changing
+  if (parsed.data.phone) {
+    const normalized = parsed.data.phone.replace(/[\s\-\(\)]/g, '');
+    const existing = await prisma.crmContact.findUnique({ where: { phone: normalized } });
+    if (existing && existing.id !== params.id) return err('This phone number belongs to another contact.', 409);
+    updateData.phone = normalized;
+  }
+
   const updated = await prisma.crmContact.update({
     where: { id: params.id },
-    data:  parsed.data,
+    data:  updateData,
   });
   return ok(updated);
 }

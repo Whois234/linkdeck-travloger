@@ -4,7 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useState, useEffect, useRef } from 'react';
 import {
   LayoutDashboard, MapPin, Map, Building2, Car, Activity, BookOpen,
-  ListPlus, ScrollText, Users, DollarSign,
+  ListPlus, ScrollText, Users,
   Layout, CalendarDays, Layers, FileText, Menu, LogOut,
   Bell, ChevronDown, Tag, Briefcase, Settings, User, X, Kanban, SlidersHorizontal, UserCheck, Cog,
 } from 'lucide-react';
@@ -56,8 +56,6 @@ const ALL_NAV: NavGroup[] = [
       { label: 'Contacts',            href: '/admin/contacts',            icon: Users            },
       { label: 'Converted Customers', href: '/admin/converted-customers', icon: UserCheck        },
       { label: 'CRM Settings',        href: '/admin/crm-settings',        icon: Cog,               roles: ['ADMIN', 'MANAGER'] },
-      { label: 'Leads',               href: '/admin/leads',               icon: DollarSign       },
-      { label: 'Customers',           href: '/admin/customers',           icon: Users            },
     ],
   },
   {

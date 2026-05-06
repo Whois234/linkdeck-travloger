@@ -28,7 +28,15 @@ interface Note { id: string; content: string; created_at: string; created_by: st
 interface CallLog { id: string; duration: number | null; outcome: string; notes: string | null; created_at: string; created_by: string }
 interface Task { id: string; type: string; due_time: string; status: string; notes: string | null }
 interface Activity { id: string; type: string; metadata: Record<string, unknown> | null; created_at: string; created_by: string }
-interface QuoteRef { id: string; quote_number: string; status: string; created_at: string }
+interface QuoteOption { id: string; option_name: string; final_price: number; is_most_popular: boolean }
+interface QuoteEvent  { id: string; event_type: string; metadata: Record<string, unknown> | null; created_at: string }
+interface QuoteRef {
+  id: string; quote_number: string; status: string; created_at: string; updated_at: string;
+  quote_name: string | null; start_date: string; end_date: string; adults: number; duration_days: number;
+  quote_options: QuoteOption[];
+  events: QuoteEvent[];
+  _count: { events: number };
+}
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -761,29 +769,117 @@ function LeadDrawer({
 
             {/* QUOTES */}
             {tab === 'quotes' && (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 <Link
                   href={`/admin/quotes/create?lead_id=${lead.id}&lead_name=${encodeURIComponent(lead.name)}&lead_phone=${encodeURIComponent(lead.phone)}&lead_email=${encodeURIComponent(lead.email ?? '')}`}
-                  className="flex items-center justify-center gap-2 w-full py-2.5 rounded-lg text-sm font-semibold"
-                  style={{ border: '1px dashed #134956', color: '#134956' }}>
+                  className="flex items-center justify-center gap-2 w-full py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90"
+                  style={{ border: '1.5px dashed #134956', color: '#134956', backgroundColor: '#F0F9FF' }}>
                   <Plus className="w-4 h-4" /> Create New Quote
                 </Link>
-                {quotes.length === 0 && <p className="text-sm text-center py-6" style={{ color: '#94A3B8' }}>No quotes yet for this lead</p>}
-                {quotes.map(q => {
+
+                {quotes.length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-10" style={{ color: '#94A3B8' }}>
+                    <FileText className="w-8 h-8 mb-2" style={{ color: '#CBD5E1' }} />
+                    <p className="text-sm font-medium">No quotes yet for this lead</p>
+                  </div>
+                )}
+
+                {quotes.map((q, qi) => {
                   const qsc = QUOTE_STATUS_COLORS[q.status] ?? { bg: '#F8FAFC', text: '#64748B' };
+                  const views  = q.events.filter(e => e.event_type === 'quote_viewed').length;
+                  const opened = q._count.events > 0;
+                  const minPrice = q.quote_options.length > 0 ? Math.min(...q.quote_options.map(o => o.final_price)) : null;
+                  const maxPrice = q.quote_options.length > 0 ? Math.max(...q.quote_options.map(o => o.final_price)) : null;
+                  const isConfirmed = q.status === 'ACCEPTED';
+                  const isDraft = q.status === 'DRAFT';
+
                   return (
-                    <div key={q.id} className="rounded-xl p-4 flex items-center justify-between" style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
-                      <div>
-                        <p className="text-sm font-bold" style={{ color: '#0F172A' }}>{q.quote_number}</p>
-                        <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>{formatDate(q.created_at)}</p>
+                    <div key={q.id} className="rounded-2xl overflow-hidden"
+                      style={{ border: isConfirmed ? '1.5px solid #86EFAC' : '1px solid #E2E8F0', boxShadow: isConfirmed ? '0 0 0 3px #DCFCE7' : '0 1px 3px rgba(0,0,0,0.04)' }}>
+                      {/* Quote header strip */}
+                      <div className="px-4 py-3 flex items-center justify-between"
+                        style={{ background: isConfirmed ? 'linear-gradient(135deg,#F0FDF4,#DCFCE7)' : isDraft ? '#F8FAFC' : 'linear-gradient(135deg,#F0F9FF,#EFF6FF)' }}>
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-xl flex items-center justify-center font-bold text-sm text-white flex-shrink-0"
+                            style={{ backgroundColor: isConfirmed ? '#16A34A' : isDraft ? '#94A3B8' : '#134956' }}>
+                            {qi + 1}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-1.5">
+                              <p className="text-sm font-bold" style={{ color: '#0F172A' }}>{q.quote_number}</p>
+                              {isConfirmed && <span className="text-[10px] font-bold">✅</span>}
+                            </div>
+                            <p className="text-[11px]" style={{ color: '#64748B' }}>{formatDate(q.created_at)}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold px-2.5 py-1 rounded-full" style={{ backgroundColor: qsc.bg, color: qsc.text }}>{q.status}</span>
+                          <Link href={`/admin/quotes/${q.id}`}
+                            className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/70 transition-colors"
+                            title="Open quote">
+                            <ExternalLink className="w-3.5 h-3.5" style={{ color: '#134956' }} />
+                          </Link>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: qsc.bg, color: qsc.text }}>{q.status}</span>
-                        <Link href={`/admin/quotes/${q.id}`}
-                          className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-white transition-colors"
-                          title="Open quote">
-                          <ExternalLink className="w-3.5 h-3.5" style={{ color: '#134956' }} />
-                        </Link>
+
+                      {/* Quote body */}
+                      <div className="px-4 py-3 bg-white space-y-3">
+                        {/* Trip info */}
+                        {(q.quote_name || q.adults > 0) && (
+                          <div className="flex items-center gap-3 text-xs" style={{ color: '#64748B' }}>
+                            {q.quote_name && <span className="font-medium" style={{ color: '#374151' }}>{q.quote_name}</span>}
+                            {q.adults > 0 && <span>👥 {q.adults} adult{q.adults > 1 ? 's' : ''}</span>}
+                            {q.duration_days > 0 && <span>🗓 {q.duration_days}D</span>}
+                          </div>
+                        )}
+
+                        {/* Pricing options */}
+                        {q.quote_options.length > 0 && (
+                          <div className="space-y-1.5">
+                            {q.quote_options.map(opt => (
+                              <div key={opt.id} className="flex items-center justify-between rounded-lg px-3 py-2"
+                                style={{ backgroundColor: opt.is_most_popular ? '#F0FDF4' : '#F8FAFC', border: opt.is_most_popular ? '1px solid #BBF7D0' : '1px solid #F1F5F9' }}>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-xs font-medium" style={{ color: '#374151' }}>{opt.option_name}</span>
+                                  {opt.is_most_popular && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ backgroundColor: '#DCFCE7', color: '#15803D' }}>POPULAR</span>}
+                                </div>
+                                <span className="text-sm font-bold" style={{ color: '#0F172A' }}>
+                                  ₹{opt.final_price.toLocaleString('en-IN')}
+                                </span>
+                              </div>
+                            ))}
+                            {minPrice !== null && q.quote_options.length > 1 && (
+                              <p className="text-[11px] text-right" style={{ color: '#94A3B8' }}>
+                                Range: ₹{minPrice.toLocaleString('en-IN')} – ₹{maxPrice!.toLocaleString('en-IN')}
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Analytics row */}
+                        <div className="flex items-center gap-4 pt-1" style={{ borderTop: '1px solid #F1F5F9' }}>
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-5 h-5 rounded-md flex items-center justify-center" style={{ backgroundColor: views > 0 ? '#EFF6FF' : '#F1F5F9' }}>
+                              <span className="text-[10px]">👁</span>
+                            </div>
+                            <span className="text-xs font-semibold" style={{ color: views > 0 ? '#2563EB' : '#94A3B8' }}>
+                              {views > 0 ? `${views} view${views > 1 ? 's' : ''}` : 'Not opened'}
+                            </span>
+                          </div>
+                          {q.events.some(e => e.event_type === 'whatsapp_clicked') && (
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px]">💬</span>
+                              <span className="text-xs font-semibold" style={{ color: '#16A34A' }}>WhatsApp clicked</span>
+                            </div>
+                          )}
+                          {q.events.some(e => e.event_type === 'approve_clicked') && (
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px]">✅</span>
+                              <span className="text-xs font-semibold" style={{ color: '#15803D' }}>Approved</span>
+                            </div>
+                          )}
+                          {!opened && <span className="text-xs" style={{ color: '#CBD5E1' }}>No engagement yet</span>}
+                        </div>
                       </div>
                     </div>
                   );
@@ -791,45 +887,66 @@ function LeadDrawer({
               </div>
             )}
 
-            {/* ACTIVITY — timeline with connectors */}
+            {/* ACTIVITY — premium timeline */}
             {tab === 'activity' && (
-              <div>
-                {activities.length === 0 && <p className="text-sm text-center py-6" style={{ color: '#94A3B8' }}>No activity yet</p>}
+              <div className="space-y-1">
+                {activities.length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-10">
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center mb-3" style={{ backgroundColor: '#F1F5F9' }}>
+                      <Clock className="w-5 h-5" style={{ color: '#CBD5E1' }} />
+                    </div>
+                    <p className="text-sm font-medium" style={{ color: '#94A3B8' }}>No activity recorded yet</p>
+                  </div>
+                )}
                 <div className="relative">
-                  {/* Vertical line */}
                   {activities.length > 1 && (
-                    <div className="absolute left-[15px] top-6 bottom-6 w-0.5" style={{ backgroundColor: '#E2E8F0' }} />
+                    <div className="absolute left-[19px] top-10 bottom-4 w-px" style={{ background: 'linear-gradient(to bottom, #E2E8F0, transparent)' }} />
                   )}
-                  <div className="space-y-0">
-                    {activities.map((a, idx) => {
-                      const meta = (a.metadata ?? {}) as Record<string, string>;
-                      const cfg = ACTIVITY_CONFIG[a.type] ?? { icon: '🔔', color: '#94A3B8', label: () => a.type.replace(/_/g, ' ') };
-                      const isLast = idx === activities.length - 1;
-                      return (
-                        <div key={a.id} className="flex gap-4 relative" style={{ paddingBottom: isLast ? 0 : 20 }}>
-                          {/* Icon bubble */}
-                          <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm z-10 relative"
-                            style={{ backgroundColor: cfg.color + '18', border: `2px solid ${cfg.color}40` }}>
+                  {activities.map((a, idx) => {
+                    const meta = (a.metadata ?? {}) as Record<string, string>;
+                    const cfg = ACTIVITY_CONFIG[a.type] ?? { icon: '🔔', color: '#94A3B8', label: () => a.type.replace(/_/g, ' ') };
+                    const isFirst = idx === 0;
+                    return (
+                      <div key={a.id} className="flex gap-3.5 group" style={{ paddingBottom: 8 }}>
+                        {/* Icon */}
+                        <div className="flex-shrink-0 relative z-10 mt-1">
+                          <div className="w-[38px] h-[38px] rounded-2xl flex items-center justify-center text-base transition-transform group-hover:scale-105"
+                            style={{
+                              background: `linear-gradient(135deg, ${cfg.color}22, ${cfg.color}10)`,
+                              border: `1.5px solid ${cfg.color}30`,
+                              boxShadow: isFirst ? `0 0 0 3px ${cfg.color}15` : 'none',
+                            }}>
                             {cfg.icon}
                           </div>
-                          {/* Content */}
-                          <div className="flex-1 pt-1 pb-1 min-w-0">
-                            <div className="rounded-xl px-4 py-3" style={{ backgroundColor: '#F8FAFC', border: '1px solid #F1F5F9' }}>
-                              <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>{cfg.label(meta)}</p>
+                        </div>
+                        {/* Card */}
+                        <div className="flex-1 min-w-0 pb-2">
+                          <div className="rounded-2xl overflow-hidden transition-shadow group-hover:shadow-sm"
+                            style={{ background: isFirst ? `linear-gradient(135deg, ${cfg.color}08, white)` : 'white', border: `1px solid ${isFirst ? cfg.color + '20' : '#F1F5F9'}` }}>
+                            <div className="px-4 py-3">
+                              <div className="flex items-start justify-between gap-2">
+                                <p className="text-sm font-semibold leading-snug" style={{ color: '#0F172A' }}>{cfg.label(meta)}</p>
+                                <span className="text-[10px] font-medium flex-shrink-0 mt-0.5 whitespace-nowrap" style={{ color: '#94A3B8' }}>{timeAgo(a.created_at)}</span>
+                              </div>
                               {a.type === 'stage_changed' && meta.from && (
-                                <div className="flex items-center gap-1.5 mt-1.5">
-                                  <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#F1F5F9', color: '#64748B' }}>{meta.from}</span>
-                                  <MoveRight className="w-3 h-3" style={{ color: '#94A3B8' }} />
-                                  <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: '#134956' + '18', color: '#134956' }}>{meta.to}</span>
+                                <div className="flex items-center gap-1.5 mt-2">
+                                  <span className="text-[11px] px-2.5 py-1 rounded-full font-medium" style={{ backgroundColor: '#F1F5F9', color: '#64748B' }}>{meta.from}</span>
+                                  <MoveRight className="w-3 h-3 flex-shrink-0" style={{ color: '#CBD5E1' }} />
+                                  <span className="text-[11px] px-2.5 py-1 rounded-full font-semibold" style={{ backgroundColor: cfg.color + '18', color: cfg.color }}>{meta.to}</span>
                                 </div>
                               )}
-                              <p className="text-[11px] mt-1.5" style={{ color: '#94A3B8' }}>{formatDateTime(a.created_at)}</p>
+                              {a.type === 'call_logged' && meta.outcome && (
+                                <div className="mt-1.5">
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: '#E0F2FE', color: '#0369A1' }}>{meta.outcome}</span>
+                                </div>
+                              )}
+                              <p className="text-[11px] mt-2 font-medium" style={{ color: '#CBD5E1' }}>{formatDateTime(a.created_at)}</p>
                             </div>
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}

@@ -10,6 +10,7 @@ interface Stage    { id: string; name: string; color: string }
 interface Pipeline { id: string; name: string }
 interface Lead     {
   id: string; name: string; status: string; created_at: string;
+  destination_interest: string | null;
   stage: Stage | null; pipeline: Pipeline | null;
   _count?: { call_logs: number; lead_notes: number };
 }
@@ -104,7 +105,7 @@ function ContactPanel({
 }) {
   const [detail, setDetail] = useState<Contact | null>(null);
   const [editing, setEditing] = useState(false);
-  const [form, setForm]       = useState({ name: contact.name, email: contact.email ?? '', source: contact.source ?? '', notes: contact.notes ?? '', owner_id: contact.owner_id });
+  const [form, setForm]       = useState({ name: contact.name, phone: contact.phone, email: contact.email ?? '', source: contact.source ?? '', notes: contact.notes ?? '', owner_id: contact.owner_id });
   const [saving, setSaving]   = useState(false);
   const [error, setError]     = useState('');
 
@@ -165,6 +166,7 @@ function ContactPanel({
               <>
                 {[
                   { label: 'Name',   key: 'name',   type: 'text' },
+                  { label: 'Phone',  key: 'phone',  type: 'tel' },
                   { label: 'Email',  key: 'email',  type: 'email' },
                   { label: 'Source', key: 'source', type: 'text' },
                 ].map(f => (
@@ -473,7 +475,7 @@ export default function ContactsPage() {
                         ) : <span className="text-xs" style={{ color: '#94A3B8' }}>—</span>}
                       </td>
                       <td className="px-3 py-3 text-xs" style={{ color: '#64748B' }}>
-                        {c.leads.find(l => l.name.includes('for'))?.name?.split('for')[1]?.trim() ?? '—'}
+                        {c.leads.find(l => l.destination_interest)?.destination_interest ?? '—'}
                       </td>
                       <td className="px-3 py-3">
                         <span className="flex items-center gap-1 text-xs" style={{ color: '#64748B' }}>

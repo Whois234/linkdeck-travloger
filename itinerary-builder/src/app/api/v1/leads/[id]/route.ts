@@ -17,7 +17,16 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       call_logs: { orderBy: { created_at: 'desc' } },
       lead_tasks: { orderBy: { due_time: 'asc' } },
       lead_activities: { orderBy: { created_at: 'desc' }, take: 50 },
-      quotes: { select: { id: true, quote_number: true, status: true, created_at: true } },
+      quotes: {
+        select: {
+          id: true, quote_number: true, status: true, created_at: true, updated_at: true,
+          quote_name: true, start_date: true, end_date: true, adults: true, duration_days: true,
+          quote_options: { select: { id: true, option_name: true, final_price: true, is_most_popular: true }, orderBy: { display_order: 'asc' } },
+          events: { select: { id: true, event_type: true, metadata: true, created_at: true }, orderBy: { created_at: 'desc' }, take: 50 },
+          _count: { select: { events: true } },
+        },
+        orderBy: { created_at: 'desc' },
+      },
     },
   });
   if (!lead) return notFound('Lead');
