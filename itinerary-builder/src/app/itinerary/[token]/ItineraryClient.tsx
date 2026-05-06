@@ -177,7 +177,6 @@ function Nav({ quoteNum, pkgName }: { quoteNum: string; pkgName?: string }) {
         </a>
       </div>
       <div className="tl-nav-right">
-        <span className="tl-nav-pill">#{quoteNum}</span>
         {pkgName && <span className="tl-nav-pill pkg">{pkgName}</span>}
       </div>
     </nav>
@@ -322,14 +321,11 @@ function Hero({ data }: { data: ItineraryData }) {
 /* ─────────────────────────── Strip ─────────────────────────── */
 function Strip({ quote }: { quote: ItineraryData['quote'] }) {
   const expiry = quote.expiry_date ? fmtDate(quote.expiry_date) : null;
+  if (!expiry) return null;
   return (
     <div className="tl-strip">
       <span className="tl-strip-dot" />
-      {expiry ? (
-        <>Quote valid until <strong>{expiry}</strong><span className="tl-strip-sep">·</span>#{quote.quote_number}</>
-      ) : (
-        <>Quote Reference<span className="tl-strip-sep">·</span><strong>#{quote.quote_number}</strong></>
-      )}
+      Quote valid until <strong>{expiry}</strong>
       <span className="tl-strip-dot" />
     </div>
   );
@@ -2837,8 +2833,8 @@ export function ItineraryClient({ data, token }: Props) {
     <div className="tl-page">
       <Nav quoteNum={quote.quote_number} pkgName={selectedOption?.option_name} />
 
-      <div style={{ marginTop: 58 }}>
-        <Strip quote={quote} />
+      <Strip quote={quote} />
+      <div style={{ marginTop: quote.expiry_date ? 91 : 58 }}>
         <Hero data={data} />
         <Gallery state={state} day_snapshots={day_snapshots} />
 

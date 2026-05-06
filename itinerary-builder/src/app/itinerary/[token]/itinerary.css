@@ -68,7 +68,7 @@
 .tl-hero-chip svg { opacity: 0.7; flex-shrink: 0; }
 
 /* ── STRIP (now above hero, below nav) ── */
-.tl-strip { background: #071318; border-bottom: 1px solid rgba(201,169,122,0.12); padding: 8px 18px; text-align: center; font-size: 10.5px; color: rgba(255,255,255,0.42); font-family: var(--f-body); letter-spacing: 0.08em; display: flex; align-items: center; justify-content: center; gap: 10px; }
+.tl-strip { position: fixed; top: 58px; left: 0; right: 0; z-index: 99; background: #071318; border-bottom: 1px solid rgba(201,169,122,0.12); padding: 7px 18px; text-align: center; font-size: 10.5px; color: rgba(255,255,255,0.42); font-family: var(--f-body); letter-spacing: 0.08em; display: flex; align-items: center; justify-content: center; gap: 10px; }
 .tl-strip strong { color: #C9A97A; font-weight: 600; letter-spacing: 0.02em; }
 .tl-strip-dot { width: 3px; height: 3px; border-radius: 50%; background: rgba(201,169,122,0.35); flex-shrink: 0; }
 .tl-strip-sep { color: rgba(255,255,255,0.20); margin: 0 4px; }
@@ -329,6 +329,7 @@
 @media(min-width: 520px) { .tl-pol-grid { grid-template-columns: 1fr 1fr; } }
 @media(min-width: 640px) {
   .tl-nav { height: 62px; padding: 0 28px; }
+  .tl-strip { top: 62px; }
   .tl-sec { padding: 52px 24px; }
   .tl-gal-scroll { padding: 0 24px 4px; }
   .tl-gal-item { width: 52vw; max-width: 300px; }
