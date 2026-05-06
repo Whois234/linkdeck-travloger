@@ -24,9 +24,13 @@ const MODULE_GROUPS: { group: string; items: { key: string; label: string }[] }[
   {
     group: 'QUOTES & CRM',
     items: [
-      { key: 'quotes',     label: 'Quotes' },
-      { key: 'customers',  label: 'Customers' },
-      { key: 'leads',      label: 'Leads' },
+      { key: 'quotes',               label: 'Quotes' },
+      { key: 'customers',            label: 'Customers' },
+      { key: 'leads',                label: 'Leads' },
+      { key: 'pipelines',            label: 'Pipelines' },
+      { key: 'contacts',             label: 'Contacts' },
+      { key: 'converted-customers',  label: 'Converted Customers' },
+      { key: 'crm-settings',         label: 'CRM Settings' },
     ],
   },
   {

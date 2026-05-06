@@ -17,8 +17,10 @@ interface Lead {
   source: string | null; destination_interest: string | null;
   travel_month: string | null; budget_range: string | null;
   status: string; stage_id: string | null; pipeline_id: string | null;
+  owner_id: string | null;
   created_at: string;
   stage?: { id: string; name: string; color: string; order: number } | null;
+  _count?: { call_logs: number; lead_notes: number };
 }
 
 interface Pipeline { id: string; name: string; is_default: boolean; stages: Stage[]; leads: Lead[] }
@@ -74,7 +76,7 @@ function formatDate(d: string) {
 }
 
 function formatDateTime(d: string) {
-  return new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 // ─── Lead Card ───────────────────────────────────────────────────────────────
@@ -88,7 +90,7 @@ function LeadCard({
   selected: boolean;
   onToggleSelect: (id: string, e: React.MouseEvent) => void;
 }) {
-  const sc = STATUS_COLORS[lead.status] ?? { bg: '#F8FAFC', text: '#64748B' };
+  const isUntouched = (lead._count?.call_logs ?? 0) + (lead._count?.lead_notes ?? 0) === 0;
   return (
     <div
       draggable
@@ -114,9 +116,11 @@ function LeadCard({
 
       <div className="flex items-start justify-between gap-2 mb-2 pr-6">
         <p className="text-sm font-semibold leading-snug" style={{ color: '#0F172A' }}>{lead.name}</p>
-        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0" style={{ backgroundColor: sc.bg, color: sc.text }}>
-          {lead.status}
-        </span>
+        {isUntouched && (
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0" style={{ backgroundColor: '#DBEAFE', color: '#2563EB' }}>
+            NEW
+          </span>
+        )}
       </div>
       {lead.destination_interest && (
         <p className="text-xs mb-1 truncate" style={{ color: '#64748B' }}>📍 {lead.destination_interest}</p>
@@ -891,7 +895,7 @@ function BulkActionBar({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-interface AgentUser { id: string; name: string; user_id: string | null }
+interface CrmUser { id: string; name: string; role: string }
 
 export default function PipelinesPage() {
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
@@ -904,8 +908,8 @@ export default function PipelinesPage() {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [agents, setAgents] = useState<AgentUser[]>([]);
-  const [filterAgent, setFilterAgent] = useState<string>('');
+  const [users, setUsers] = useState<CrmUser[]>([]);
+  const [filterOwner, setFilterOwner] = useState<string>('');
   const [filterDateFrom, setFilterDateFrom] = useState('');
   const [filterDateTo, setFilterDateTo] = useState('');
   const [showDateFilter, setShowDateFilter] = useState(false);
@@ -927,17 +931,20 @@ export default function PipelinesPage() {
   const loadActivePipeline = useCallback(async () => {
     if (!activePipelineId) return;
     const params = new URLSearchParams();
-    if (filterAgent)    params.set('agent_id',   filterAgent);
-    if (filterDateFrom) params.set('date_from',   filterDateFrom);
-    if (filterDateTo)   params.set('date_to',     filterDateTo);
+    if (filterOwner)    params.set('owner_id',  filterOwner);
+    if (filterDateFrom) params.set('date_from', filterDateFrom);
+    if (filterDateTo)   params.set('date_to',   filterDateTo);
     const res = await fetch(`/api/v1/pipelines/${activePipelineId}?${params}`);
     const d = await res.json();
     if (d.success) {
       setPipelines(prev => prev.map(p => p.id === activePipelineId ? { ...p, stages: d.data.stages, leads: d.data.leads } : p));
     }
-  }, [activePipelineId, filterAgent, filterDateFrom, filterDateTo]);
+  }, [activePipelineId, filterOwner, filterDateFrom, filterDateTo]);
 
-  useEffect(() => { loadPipelines(); fetch('/api/v1/agents').then(r => r.json()).then(d => { if (d.success) setAgents(d.data); }); }, []);
+  useEffect(() => {
+    loadPipelines();
+    fetch('/api/v1/users').then(r => r.json()).then(d => { if (d.success) setUsers(d.data); });
+  }, []);
   useEffect(() => { if (activePipelineId) loadActivePipeline(); }, [activePipelineId, loadActivePipeline]);
 
   const activePipeline = pipelines.find(p => p.id === activePipelineId);
@@ -1117,18 +1124,16 @@ export default function PipelinesPage() {
             )}
           </div>
 
-          {/* Agent filter */}
-          {agents.length > 0 && (
-            <div className="relative flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold"
-              style={{ border: `1px solid ${filterAgent ? '#134956' : '#E2E8F0'}`, backgroundColor: filterAgent ? '#F0F9FF' : 'white', color: filterAgent ? '#134956' : '#64748B' }}>
-              <Users className="w-3.5 h-3.5" />
-              <select value={filterAgent} onChange={e => { setFilterAgent(e.target.value); }}
-                className="outline-none bg-transparent text-xs font-semibold" style={{ color: filterAgent ? '#134956' : '#64748B' }}>
-                <option value="">All Agents</option>
-                {agents.map(a => <option key={a.id} value={a.user_id ?? a.id}>{a.name}</option>)}
-              </select>
-            </div>
-          )}
+          {/* Salesperson/owner filter */}
+          <div className="relative flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold"
+            style={{ border: `1px solid ${filterOwner ? '#134956' : '#E2E8F0'}`, backgroundColor: filterOwner ? '#F0F9FF' : 'white', color: filterOwner ? '#134956' : '#64748B' }}>
+            <Users className="w-3.5 h-3.5" />
+            <select value={filterOwner} onChange={e => setFilterOwner(e.target.value)}
+              className="outline-none bg-transparent text-xs font-semibold" style={{ color: filterOwner ? '#134956' : '#64748B' }}>
+              <option value="">All Users</option>
+              {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
+          </div>
 
           {/* Date filter */}
           <div className="relative">

@@ -11,14 +11,12 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   if (!user) return unauthorized();
 
   const { searchParams } = new URL(req.url);
-  const agent_id  = searchParams.get('agent_id');
   const owner_id  = searchParams.get('owner_id');
   const date_from = searchParams.get('date_from');
   const date_to   = searchParams.get('date_to');
 
   const leadsWhere: Record<string, unknown> = { pipeline_id: params.id };
-  if (agent_id)  leadsWhere.assigned_agent_id = agent_id;
-  if (owner_id)  leadsWhere.owner_id          = owner_id;
+  if (owner_id)  leadsWhere.owner_id = owner_id;
   if (date_from || date_to) {
     leadsWhere.created_at = {
       ...(date_from ? { gte: new Date(date_from) } : {}),
@@ -32,7 +30,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       stages: { where: { status: true }, orderBy: { order: 'asc' } },
       leads: {
         where: leadsWhere,
-        include: { stage: true },
+        include: {
+          stage: true,
+          _count: { select: { call_logs: true, lead_notes: true } },
+        },
         orderBy: { created_at: 'desc' },
       },
     },

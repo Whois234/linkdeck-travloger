@@ -537,9 +537,16 @@ export default function CreateQuotePage() {
         <div className="flex flex-col gap-4">
           {/* Lead pre-fill banner */}
           {searchParams.get('lead_id') && (
-            <div className="flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium" style={{ backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0', color: '#15803D' }}>
-              <FileText className="w-4 h-4 flex-shrink-0" />
-              Customer details pre-filled from lead. Select quote type, fill trip details and proceed.
+            <div className="flex items-center justify-between gap-2 px-4 py-3 rounded-xl text-sm font-medium" style={{ backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0', color: '#15803D' }}>
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 flex-shrink-0" />
+                Customer details pre-filled from lead. Select quote type, fill trip details and proceed.
+              </div>
+              <a href="/admin/pipelines"
+                className="flex-shrink-0 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors hover:bg-green-100"
+                style={{ color: '#15803D', border: '1px solid #BBF7D0', whiteSpace: 'nowrap' }}>
+                ← Back to Pipeline
+              </a>
             </div>
           )}
           {/* Quote type */}
