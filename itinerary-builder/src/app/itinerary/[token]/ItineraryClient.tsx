@@ -24,6 +24,8 @@ interface QuoteOption {
   selling_before_gst: number;
   gst_percent: number;
   gst_amount: number;
+  discount_amount?: number;
+  discount_expires_at?: string | null;
   option_hotels: OptionHotel[];
   customer_visible_notes?: string | null;
 }
@@ -331,11 +333,125 @@ function Gallery({ state, day_snapshots }: { state: ItineraryData['state']; day_
   );
 }
 
+/* ─────────────────────── Discount Countdown ────────────────────── */
+function useCountdown(expiresAt: string | null | undefined) {
+  const [remaining, setRemaining] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!expiresAt) { setRemaining(null); return; }
+    const tick = () => {
+      const diff = new Date(expiresAt).getTime() - Date.now();
+      setRemaining(diff > 0 ? diff : 0);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [expiresAt]);
+
+  return remaining;
+}
+
+function DiscountBanner({ opt, adults }: { opt: QuoteOption; adults: number }) {
+  const remaining = useCountdown(opt.discount_expires_at);
+  const discount = opt.discount_amount ?? 0;
+
+  if (discount <= 0) return null;
+
+  // If expiry set and already expired, don't show
+  if (opt.discount_expires_at && remaining === 0) return null;
+
+  // Original price before discount — reverse-engineer from stored fields
+  // selling_before_gst already has discount deducted, so original = selling_before_gst + discount
+  const origSellBGST = opt.selling_before_gst + discount;
+  const origGST = (origSellBGST * opt.gst_percent) / 100;
+  const origFinal = origSellBGST + origGST;
+  const origPerAdult = adults > 0 ? Math.round(origFinal / adults) : origFinal;
+
+  const fmtMs = (ms: number) => {
+    const totalSecs = Math.floor(ms / 1000);
+    const h = Math.floor(totalSecs / 3600);
+    const m = Math.floor((totalSecs % 3600) / 60);
+    const s = totalSecs % 60;
+    if (h > 0) return `${h}h ${m}m ${s}s`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  };
+
+  const fmtCurr = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
+
+  return (
+    <div style={{
+      background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
+      borderRadius: 12,
+      padding: '14px 16px',
+      margin: '0 0 12px',
+      border: '1px solid rgba(255,80,80,0.3)',
+      boxShadow: '0 0 20px rgba(255,80,80,0.12)',
+      position: 'relative',
+      overflow: 'hidden',
+    }}>
+      {/* glow pulse */}
+      <div style={{
+        position: 'absolute', top: -20, right: -20, width: 80, height: 80,
+        borderRadius: '50%', background: 'rgba(255,80,80,0.15)',
+        animation: 'tl-pulse 2s infinite',
+      }} />
+      {/* Limited time tag */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+        <span style={{
+          background: '#FF3D3D', color: '#fff', fontSize: 10, fontWeight: 700,
+          padding: '2px 8px', borderRadius: 20, letterSpacing: '0.05em', textTransform: 'uppercase',
+        }}>
+          Limited Time Offer
+        </span>
+        {opt.discount_expires_at && remaining !== null && remaining > 0 && (
+          <span style={{ fontSize: 11, color: '#FF8A80', fontWeight: 600 }}>
+            Expires in {fmtMs(remaining)}
+          </span>
+        )}
+      </div>
+
+      {/* Price display */}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 24, fontWeight: 800, color: '#fff', letterSpacing: '-0.5px' }}>
+          {fmtCurr(opt.price_per_adult_display)}
+        </span>
+        <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', textDecoration: 'line-through' }}>
+          {fmtCurr(origPerAdult)}
+        </span>
+        <span style={{
+          fontSize: 12, fontWeight: 700, color: '#4ADE80',
+          background: 'rgba(74,222,128,0.15)', padding: '2px 8px', borderRadius: 20,
+        }}>
+          Save {fmtCurr(discount)}
+        </span>
+      </div>
+      <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 4, margin: '4px 0 0' }}>
+        per adult · incl. GST
+      </p>
+
+      {/* Urgency message */}
+      {opt.discount_expires_at && remaining !== null && remaining > 0 && (
+        <div style={{
+          marginTop: 10, paddingTop: 10,
+          borderTop: '1px solid rgba(255,255,255,0.08)',
+          display: 'flex', alignItems: 'center', gap: 6,
+        }}>
+          <span style={{ fontSize: 14 }}>⚡</span>
+          <span style={{ fontSize: 12, color: '#FF8A80', fontWeight: 600 }}>
+            Hurry! This price expires in {fmtMs(remaining)}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─────────────────────────── Packages ─────────────────────────── */
 function Packages({
-  options, selectedId, onSelect
+  options, selectedId, onSelect, adults
 }: {
-  options: QuoteOption[]; selectedId: string | null; onSelect: (id: string) => void;
+  options: QuoteOption[]; selectedId: string | null; onSelect: (id: string) => void; adults: number;
 }) {
   if (options.length === 0) return null;
 
@@ -364,8 +480,14 @@ function Packages({
               {opt.is_most_popular && <div className="tl-pkg-badge">Most Popular</div>}
               <div className={`tl-pkg-head${opt.is_most_popular ? ' pop' : ''}`}>
                 <div className="tl-pkg-tier">{opt.option_name}</div>
-                <div className="tl-pkg-price">{fmtCurrency(opt.price_per_adult_display)}</div>
-                <div className="tl-pkg-per">per adult · all-inclusive</div>
+                {(opt.discount_amount ?? 0) > 0 ? (
+                  <DiscountBanner opt={opt} adults={adults} />
+                ) : (
+                  <>
+                    <div className="tl-pkg-price">{fmtCurrency(opt.price_per_adult_display)}</div>
+                    <div className="tl-pkg-per">per adult · all-inclusive</div>
+                  </>
+                )}
               </div>
               <div className="tl-pkg-body">
                 {Object.entries(byDest).map(([destName, hotels]) => (
@@ -729,9 +851,15 @@ function Stats() {
 /* ─────────────────────────── Fare Summary ─────────────────────────── */
 function FareSummary({ option, adults }: { option: QuoteOption | undefined; adults: number }) {
   if (!option) return null;
+  const discount = option.discount_amount ?? 0;
   // Per-adult pre-GST so the math adds up: (perAdultPreGst × adults) = selling_before_gst
   const perAdultPreGst = adults > 0 ? option.selling_before_gst / adults : 0;
   const total = option.final_price;
+
+  // Original (pre-discount) totals for display
+  const origSellBGST = option.selling_before_gst + discount;
+  const origGST = (origSellBGST * option.gst_percent) / 100;
+  const origTotal = origSellBGST + origGST;
 
   return (
     <div style={{ background: 'white', borderTop: '1px solid var(--tl-border)' }} data-section="hotels">
@@ -739,6 +867,7 @@ function FareSummary({ option, adults }: { option: QuoteOption | undefined; adul
         <div className="tl-sec-eyebrow">Cost Breakdown</div>
         <div className="tl-sec-h">Fare Summary</div>
         <div className="tl-sec-sub">{adults} Adult{adults > 1 ? 's' : ''} · {option.option_name} Package</div>
+        {discount > 0 && <DiscountBanner opt={option} adults={adults} />}
         <div className="tl-fare-card">
           <div className="tl-fare-row">
             <span>Per Adult (before GST)</span>
@@ -748,6 +877,12 @@ function FareSummary({ option, adults }: { option: QuoteOption | undefined; adul
             <span>× {adults} Adult{adults > 1 ? 's' : ''}</span>
             <span style={{ fontWeight: 700 }}>{fmtCurrency(option.selling_before_gst)}</span>
           </div>
+          {discount > 0 && (
+            <div className="tl-fare-row" style={{ color: '#DC2626' }}>
+              <span>Discount Applied</span>
+              <span style={{ fontWeight: 700 }}>−{fmtCurrency(discount)}</span>
+            </div>
+          )}
           <div className="tl-fare-row">
             <span>{option.gst_percent}% GST</span>
             <span>{fmtCurrency(option.gst_amount)}</span>
@@ -756,7 +891,14 @@ function FareSummary({ option, adults }: { option: QuoteOption | undefined; adul
             <div>
               <span className="tl-fare-total-label">Total Amount</span>
               <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2, fontFamily: 'var(--f-body)' }}>
-                {fmtCurrency(option.price_per_adult_display)} per person · incl. GST
+                {discount > 0 ? (
+                  <>
+                    <span style={{ textDecoration: 'line-through', marginRight: 6 }}>{fmtCurrency(origTotal)}</span>
+                    <span style={{ color: '#4ADE80', fontWeight: 700 }}>{fmtCurrency(option.price_per_adult_display)} /adult</span>
+                  </>
+                ) : (
+                  `${fmtCurrency(option.price_per_adult_display)} per person · incl. GST`
+                )}
               </div>
             </div>
             <span className="tl-fare-total-val">{fmtCurrency(total)}</span>
@@ -2543,7 +2685,7 @@ export function ItineraryClient({ data, token }: Props) {
         <Gallery state={state} day_snapshots={day_snapshots} />
 
         {/* Package options — PRIVATE only (GROUP has its own tier selector below) */}
-        {!isGroup && <Packages options={quote_options} selectedId={selectedId} onSelect={handleSelectOption} />}
+        {!isGroup && <Packages options={quote_options} selectedId={selectedId} onSelect={handleSelectOption} adults={quote.adults} />}
 
         {/* ── GROUP: package_based → fixed package tiers + selectable trip dates ── */}
         {isGroup && pricingMode === 'package_based' && (

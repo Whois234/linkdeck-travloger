@@ -23,9 +23,14 @@ const lblStyle = { color: '#94A3B8' };
 
 function fmtINR(n: number) { return `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`; }
 
+interface RoomingJson {
+  rooms: { type: string; count: number; adults: number; children_with_bed: number; children_without_bed: number }[];
+}
+
 interface OptionHotelEnriched {
   id: string; destination_id: string; check_in_date: string; check_out_date: string; nights: number;
   calculated_cost: number; manual_cost_override?: number | null;
+  rooming_json?: RoomingJson | null;
   destination?: { name: string } | null;
   hotel?: { hotel_name: string; star_rating: number | null; category_label?: string | null } | null;
   room_category?: { room_category_name: string } | null;
@@ -36,7 +41,7 @@ interface QuoteOptionFull {
   id: string; option_name: string; is_most_popular: boolean; display_order: number;
   vehicle_cost: number; hotel_cost: number; activity_cost: number; transfer_cost: number; misc_cost: number;
   base_cost: number; profit_type: string; profit_value: number; profit_amount: number;
-  discount_amount: number; selling_before_gst: number; gst_percent: number; gst_amount: number;
+  discount_amount: number; discount_expires_at?: string | null; selling_before_gst: number; gst_percent: number; gst_amount: number;
   final_price: number; price_per_adult_display: number; rounding_adjustment: number;
   vehicle_type?: { type_name: string } | null;
   option_hotels: OptionHotelEnriched[];
@@ -81,8 +86,57 @@ function fmtSecs(s: number) { return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m 
 function fmtDate(d: string) { return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }); }
 
 /* ── Pricing Breakdown per option ───────────────────────────────────── */
-function OptionPricingCard({ opt, adults }: { opt: QuoteOptionFull; adults: number }) {
-  const [open, setOpen] = useState(false);
+function OptionPricingCard({
+  opt, adults, quoteId, onUpdated,
+}: {
+  opt: QuoteOptionFull; adults: number; quoteId: string;
+  onUpdated: () => void;
+}) {
+  const [open, setOpen]               = useState(false);
+  const [editingDiscount, setEditing] = useState(false);
+  const [discountInput, setDiscountInput] = useState(String(opt.discount_amount));
+  // datetime-local value e.g. "2025-05-07T16:00"
+  const [expiryInput, setExpiryInput] = useState(() => {
+    if (!opt.discount_expires_at) return '';
+    const d = new Date(opt.discount_expires_at);
+    return d.toISOString().slice(0, 16);
+  });
+  const [saving, setSaving]           = useState(false);
+  const [saveMsg, setSaveMsg]         = useState<{ ok: boolean; text: string } | null>(null);
+
+  // Live preview of what the new final price will look like
+  const previewDiscount   = Math.max(0, Number(discountInput) || 0);
+  const previewSellBGST   = opt.base_cost + opt.profit_amount - previewDiscount;
+  const previewGST        = (previewSellBGST * opt.gst_percent) / 100;
+  const previewFinal      = previewSellBGST + previewGST;
+  const previewPerAdult   = adults > 0 ? previewFinal / adults : 0;
+
+  async function applyDiscount() {
+    setSaving(true); setSaveMsg(null);
+    try {
+      const res = await fetch(`/api/v1/quotes/${quoteId}/options/${opt.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          discount_amount:     previewDiscount,
+          discount_expires_at: expiryInput ? new Date(expiryInput).toISOString() : null,
+        }),
+      });
+      if (res.ok) {
+        setSaveMsg({ ok: true, text: 'Discount applied & itinerary republished.' });
+        setEditing(false);
+        onUpdated();
+      } else {
+        const d = await res.json();
+        setSaveMsg({ ok: false, text: d.error ?? 'Failed to apply discount.' });
+      }
+    } catch {
+      setSaveMsg({ ok: false, text: 'Network error.' });
+    } finally {
+      setSaving(false);
+      setTimeout(() => setSaveMsg(null), 5000);
+    }
+  }
 
   const rows = [
     { label: 'Hotel B2B', value: opt.hotel_cost, icon: <Hotel className="w-3.5 h-3.5" />, color: '#0EA5E9' },
@@ -101,6 +155,11 @@ function OptionPricingCard({ opt, adults }: { opt: QuoteOptionFull; adults: numb
         <div className="flex items-center gap-2">
           <span className="font-bold text-sm" style={{ color: '#0F172A' }}>{opt.option_name}</span>
           {opt.is_most_popular && <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: '#DCFCE7', color: '#15803D' }}>★ Most Popular</span>}
+          {opt.discount_amount > 0 && (
+            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: '#FEF2F2', color: '#DC2626' }}>
+              −{fmtINR(opt.discount_amount)} off
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <div className="text-right">
@@ -121,30 +180,46 @@ function OptionPricingCard({ opt, adults }: { opt: QuoteOptionFull; adults: numb
                 <table className="w-full text-xs">
                   <thead>
                     <tr style={{ backgroundColor: '#F8FAFC' }}>
-                      {['Destination', 'Hotel', 'Room', 'Meal', 'Nights', 'Check-in', 'Check-out', 'B2B Cost'].map(h => (
+                      {['Destination', 'Hotel', 'Room', 'Meal', 'Nts', 'Check-in', 'Check-out', 'B2B Cost'].map(h => (
                         <th key={h} className="px-3 py-2 text-left font-semibold" style={{ color: '#64748B' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {opt.option_hotels.map((oh, i) => (
-                      <tr key={oh.id} style={{ borderTop: i > 0 ? '1px solid #F1F5F9' : undefined }}>
-                        <td className="px-3 py-2 font-medium" style={{ color: '#0F172A' }}>{oh.destination?.name ?? '—'}</td>
-                        <td className="px-3 py-2" style={{ color: '#0F172A' }}>
-                          <span>{oh.hotel?.hotel_name ?? '—'}</span>
-                          {oh.hotel?.star_rating && <span className="ml-1 text-[10px]" style={{ color: '#94A3B8' }}>{oh.hotel.star_rating}★</span>}
-                        </td>
-                        <td className="px-3 py-2" style={{ color: '#475569' }}>{oh.room_category?.room_category_name ?? '—'}</td>
-                        <td className="px-3 py-2" style={{ color: '#475569' }}>{oh.meal_plan?.code ?? '—'}</td>
-                        <td className="px-3 py-2 text-center font-medium" style={{ color: '#0F172A' }}>{oh.nights}</td>
-                        <td className="px-3 py-2" style={{ color: '#475569' }}>{fmtDate(oh.check_in_date)}</td>
-                        <td className="px-3 py-2" style={{ color: '#475569' }}>{fmtDate(oh.check_out_date)}</td>
-                        <td className="px-3 py-2 font-semibold text-right" style={{ color: T }}>
-                          {fmtINR(oh.manual_cost_override ?? oh.calculated_cost)}
-                          {oh.manual_cost_override != null && <span className="ml-1 text-[10px] font-normal" style={{ color: '#F59E0B' }}>manual</span>}
-                        </td>
-                      </tr>
-                    ))}
+                    {opt.option_hotels.map((oh, i) => {
+                      const totalRooms = oh.rooming_json?.rooms?.reduce((s, r) => s + r.count, 0) ?? 1;
+                      const effectiveCost = oh.manual_cost_override ?? oh.calculated_cost;
+                      const costPerRoom   = totalRooms > 1 ? Math.round(effectiveCost / totalRooms) : null;
+                      return (
+                        <tr key={oh.id} style={{ borderTop: i > 0 ? '1px solid #F1F5F9' : undefined }}>
+                          <td className="px-3 py-2 font-medium" style={{ color: '#0F172A' }}>{oh.destination?.name ?? '—'}</td>
+                          <td className="px-3 py-2" style={{ color: '#0F172A' }}>
+                            <span>{oh.hotel?.hotel_name ?? '—'}</span>
+                            {oh.hotel?.star_rating && <span className="ml-1 text-[10px]" style={{ color: '#94A3B8' }}>{oh.hotel.star_rating}★</span>}
+                          </td>
+                          <td className="px-3 py-2" style={{ color: '#475569' }}>{oh.room_category?.room_category_name ?? '—'}</td>
+                          <td className="px-3 py-2" style={{ color: '#475569' }}>{oh.meal_plan?.code ?? '—'}</td>
+                          <td className="px-3 py-2 text-center font-medium" style={{ color: '#0F172A' }}>{oh.nights}</td>
+                          <td className="px-3 py-2" style={{ color: '#475569' }}>{fmtDate(oh.check_in_date)}</td>
+                          <td className="px-3 py-2" style={{ color: '#475569' }}>{fmtDate(oh.check_out_date)}</td>
+                          <td className="px-3 py-2 text-right">
+                            {costPerRoom != null ? (
+                              <div>
+                                <p className="text-[11px]" style={{ color: '#64748B' }}>
+                                  {totalRooms} rm × {fmtINR(costPerRoom)}
+                                </p>
+                                <p className="font-bold" style={{ color: T }}>{fmtINR(effectiveCost)}</p>
+                              </div>
+                            ) : (
+                              <p className="font-semibold" style={{ color: T }}>{fmtINR(effectiveCost)}</p>
+                            )}
+                            {oh.manual_cost_override != null && (
+                              <span className="text-[10px] font-normal" style={{ color: '#F59E0B' }}>manual</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -170,10 +245,9 @@ function OptionPricingCard({ opt, adults }: { opt: QuoteOptionFull; adults: numb
               </div>
             </div>
 
-            {/* B2C pricing */}
+            {/* B2C pricing + discount editor */}
             <div className="rounded-lg p-3 space-y-2" style={{ backgroundColor: '#F0FDF4', border: '1px solid #86EFAC' }}>
               <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: '#94A3B8' }}>B2C Pricing</p>
-              {/* B2B Total (base) */}
               <div className="flex items-center justify-between pb-2 mb-1" style={{ borderBottom: '1px dashed #86EFAC' }}>
                 <span className="text-xs font-semibold" style={{ color: '#475569' }}>B2B Total</span>
                 <span className="text-xs font-semibold" style={{ color: '#0F172A' }}>{fmtINR(opt.base_cost)}</span>
@@ -185,12 +259,104 @@ function OptionPricingCard({ opt, adults }: { opt: QuoteOptionFull; adults: numb
                 </span>
                 <span className="text-xs font-semibold" style={{ color: '#15803D' }}>+{fmtINR(opt.profit_amount)}</span>
               </div>
-              {opt.discount_amount > 0 && (
-                <div className="flex items-center justify-between">
-                  <span className="text-xs" style={{ color: '#475569' }}>Discount</span>
-                  <span className="text-xs font-semibold" style={{ color: '#DC2626' }}>−{fmtINR(opt.discount_amount)}</span>
+
+              {/* ── Discount row with inline editor ───────────────── */}
+              <div className="rounded-lg p-2.5" style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA' }}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs font-semibold" style={{ color: '#DC2626' }}>Discount</span>
+                  {!editingDiscount ? (
+                    <button
+                      onClick={() => {
+                        setDiscountInput(String(opt.discount_amount));
+                        setExpiryInput(opt.discount_expires_at ? new Date(opt.discount_expires_at).toISOString().slice(0, 16) : '');
+                        setEditing(true);
+                      }}
+                      className="text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors hover:bg-red-100"
+                      style={{ color: '#DC2626', border: '1px solid #FECACA' }}>
+                      {opt.discount_amount > 0 ? 'Edit' : '+ Add'}
+                    </button>
+                  ) : (
+                    <button onClick={() => setEditing(false)} className="text-[10px]" style={{ color: '#94A3B8' }}>Cancel</button>
+                  )}
                 </div>
+
+                {editingDiscount ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold" style={{ color: '#64748B' }}>₹</span>
+                      <input
+                        type="number" min="0" step="100"
+                        value={discountInput}
+                        onChange={e => setDiscountInput(e.target.value)}
+                        className="flex-1 text-sm font-bold rounded-lg px-2 py-1.5 outline-none"
+                        style={{ border: '1px solid #FECACA', color: '#DC2626', backgroundColor: 'white' }}
+                        placeholder="0"
+                      />
+                    </div>
+                    {/* Expiry datetime */}
+                    <div>
+                      <label className="text-[10px] font-semibold uppercase tracking-wide mb-1 block" style={{ color: '#64748B' }}>
+                        Valid until (optional)
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={expiryInput}
+                        onChange={e => setExpiryInput(e.target.value)}
+                        className="w-full text-xs rounded-lg px-2 py-1.5 outline-none"
+                        style={{ border: '1px solid #FECACA', color: '#DC2626', backgroundColor: 'white' }}
+                      />
+                      {expiryInput && (
+                        <button
+                          onClick={() => setExpiryInput('')}
+                          className="text-[10px] mt-0.5" style={{ color: '#94A3B8' }}>
+                          Clear expiry
+                        </button>
+                      )}
+                    </div>
+                    {/* Live preview */}
+                    {previewDiscount > 0 && (
+                      <div className="text-[10px] space-y-0.5 px-1" style={{ color: '#64748B' }}>
+                        <div className="flex justify-between">
+                          <span>New final price</span>
+                          <span className="font-bold" style={{ color: T }}>{fmtINR(Math.max(0, previewFinal))}</span>
+                        </div>
+                        {adults > 0 && (
+                          <div className="flex justify-between">
+                            <span>Per adult</span>
+                            <span className="font-semibold">{fmtINR(Math.max(0, previewPerAdult))}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <button
+                      onClick={applyDiscount} disabled={saving}
+                      className="w-full py-1.5 rounded-lg text-xs font-bold text-white disabled:opacity-60 transition-opacity hover:opacity-90"
+                      style={{ backgroundColor: '#DC2626' }}>
+                      {saving ? 'Applying…' : 'Apply Discount & Republish'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-0.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs" style={{ color: '#DC2626' }}>
+                        {opt.discount_amount > 0 ? `−${fmtINR(opt.discount_amount)}` : 'No discount'}
+                      </span>
+                    </div>
+                    {opt.discount_amount > 0 && opt.discount_expires_at && (
+                      <p className="text-[10px]" style={{ color: '#94A3B8' }}>
+                        Valid till {new Date(opt.discount_expires_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {saveMsg && (
+                <p className="text-[11px] font-medium px-1" style={{ color: saveMsg.ok ? '#15803D' : '#DC2626' }}>
+                  {saveMsg.ok ? '✓ ' : '✗ '}{saveMsg.text}
+                </p>
               )}
+
               <div className="flex items-center justify-between">
                 <span className="text-xs" style={{ color: '#475569' }}>Before GST</span>
                 <span className="text-xs font-semibold" style={{ color: '#0F172A' }}>{fmtINR(opt.selling_before_gst)}</span>
@@ -679,7 +845,7 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
               ) : (
                 <div className="space-y-3">
                   {quote.quote_options.map(opt => (
-                    <OptionPricingCard key={opt.id} opt={opt} adults={quote.adults} />
+                    <OptionPricingCard key={opt.id} opt={opt} adults={quote.adults} quoteId={id} onUpdated={load} />
                   ))}
                 </div>
               )}

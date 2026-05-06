@@ -863,6 +863,7 @@ model QuoteOption {
   profit_value            Float
   profit_amount           Float
   discount_amount         Float      @default(0)
+  discount_expires_at     DateTime?
   selling_before_gst      Float
   gst_percent             Float
   gst_amount              Float

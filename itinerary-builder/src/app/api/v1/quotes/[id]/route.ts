@@ -36,6 +36,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
               meal_plan:     { select: { code: true, name: true } },
               destination:   { select: { name: true } },
             },
+            // rooming_json needed for room-count breakdown display
           },
         },
         orderBy: { display_order: 'asc' },
