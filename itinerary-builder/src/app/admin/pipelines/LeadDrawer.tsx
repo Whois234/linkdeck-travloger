@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useLead, useAddNote, useLogCall, useAddTask, useMarkTaskDone, QK } from '@/lib/query-hooks';
+import { DrawerSkeleton } from '@/components/Skeleton';
 import {
   Stage, Lead, Note, CallLog, Task, Activity, QuoteRef,
   STATUS_COLORS, QUOTE_STATUS_COLORS, TASK_ICONS, ACTIVITY_CONFIG, SECTION_ORDER,
@@ -452,14 +453,7 @@ export default function LeadDrawer({
   ] as const;
 
   if (!lead) {
-    return (
-      <div className="fixed inset-0 z-50 flex">
-        <div className="flex-1 bg-black/40" onClick={onClose} />
-        <div className="w-[520px] bg-white flex items-center justify-center shadow-2xl">
-          <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#134956' }} />
-        </div>
-      </div>
-    );
+    return <DrawerSkeleton onClose={onClose} />;
   }
 
   const currentStage = stages.find(s => s.id === lead.stage_id);

@@ -2,6 +2,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useContacts, useUsers, QK } from '@/lib/query-hooks';
+import { TableSkeleton } from '@/components/Skeleton';
 import {
   Search, Phone, Mail, Plus, X, Calendar, ChevronDown, AlertTriangle,
   Loader2, Edit2, ChevronRight, CheckSquare, Square, ChevronLeft, ExternalLink,
@@ -470,8 +471,8 @@ export default function ContactsPage() {
         <>
           {/* Table */}
           <div className="flex-1 overflow-auto bg-white">
-            {loading ? (
-              <div className="flex items-center justify-center h-64"><Loader2 className="w-6 h-6 animate-spin" style={{ color: '#134956' }} /></div>
+            {loading && contacts.length === 0 ? (
+              <TableSkeleton rows={12} />
             ) : (
               <table className="w-full text-sm border-collapse min-w-[900px]">
                 <thead>

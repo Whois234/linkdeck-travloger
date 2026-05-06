@@ -5,11 +5,12 @@ import { useQueryClient } from '@tanstack/react-query';
 import { usePipelines, usePipeline, useUsers, useLeadStageMutation, usePrefetchLead, QK } from '@/lib/query-hooks';
 import {
   Plus, Search, Phone, MessageCircle, ChevronDown, X, User,
-  Loader2, Filter, ArrowUpDown, Trash2, MoveRight, CheckSquare, Square,
+  Filter, ArrowUpDown, Trash2, MoveRight, CheckSquare, Square,
   Calendar, Users,
 } from 'lucide-react';
 import Link from 'next/link';
 import { Stage, Lead, Pipeline, STATUS_COLORS, timeAgo } from './types';
+import { KanbanSkeleton } from '@/components/Skeleton';
 
 const LeadDrawer   = dynamic(() => import('./LeadDrawer'),   { ssr: false });
 const AddLeadDrawer = dynamic(() => import('./AddLeadDrawer'), { ssr: false });
@@ -343,11 +344,7 @@ export default function PipelinesPage() {
   [allLeads]);
 
   if (loadingPipelines) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#134956' }} />
-      </div>
-    );
+    return <KanbanSkeleton />;
   }
 
   if (pipelines.length === 0) {
