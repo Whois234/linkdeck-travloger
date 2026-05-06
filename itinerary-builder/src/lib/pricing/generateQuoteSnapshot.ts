@@ -260,6 +260,7 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
       adults: quote.adults, children_below_5: quote.children_below_5,
       children_5_12: quote.children_5_12, infants: quote.infants,
       pickup_point: quote.pickup_point, drop_point: quote.drop_point, expiry_date: quote.expiry_date,
+      discount_amount: quote.discount_amount, discount_expires_at: quote.discount_expires_at,
     },
     customer: quote.customer,
     agent: resolvedAgent,

@@ -820,6 +820,8 @@ model Quote {
   public_token            String      @unique @default(cuid())
   link_active             Boolean     @default(true)
   selected_quote_option_id String?
+  discount_amount         Float      @default(0)
+  discount_expires_at     DateTime?
   private_template_id     String?
   group_template_id       String?
   group_batch_id          String?

@@ -13,6 +13,8 @@ const UpdateSchema = z.object({
   expiry_date: z.string().datetime().optional().nullable(),
   selected_quote_option_id: z.string().optional().nullable(),
   link_active: z.boolean().optional(),
+  discount_amount: z.number().min(0).optional(),
+  discount_expires_at: z.string().datetime().nullable().optional(),
 }).passthrough();
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {

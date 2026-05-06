@@ -95,6 +95,8 @@ interface ItineraryData {
     pickup_point?: string | null;
     drop_point?: string | null;
     expiry_date?: string | null;
+    discount_amount?: number | null;
+    discount_expires_at?: string | null;
   };
   customer: { name: string };
   agent?: {
@@ -355,23 +357,27 @@ function useCountdown(expiresAt: string | null | undefined) {
    "card"  → rendered inside the dark teal .tl-pkg-head (white text on dark)
    "fare"  → rendered on white background in Fare Summary (full standalone card) */
 function DiscountBanner({
-  opt, adults, variant = 'card',
+  discountAmount,
+  discountExpiresAt,
+  origPerAdult,
+  newPerAdult,
+  variant = 'card',
 }: {
-  opt: QuoteOption; adults: number; variant?: 'card' | 'fare';
+  discountAmount: number;
+  discountExpiresAt?: string | null;
+  origPerAdult: number;
+  newPerAdult: number;
+  variant?: 'card' | 'fare';
 }) {
-  const remaining = useCountdown(opt.discount_expires_at);
-  const discount  = opt.discount_amount ?? 0;
+  const remaining = useCountdown(discountExpiresAt);
+  const discount  = discountAmount;
 
   if (discount <= 0) return null;
-  if (opt.discount_expires_at && remaining === 0) return null;
+  if (discountExpiresAt && remaining === 0) return null;
 
-  const origSellBGST  = opt.selling_before_gst + discount;
-  const origGST       = (origSellBGST * opt.gst_percent) / 100;
-  const origFinal     = origSellBGST + origGST;
-  const origPerAdult  = adults > 0 ? Math.round(origFinal / adults) : origFinal;
   const fmtC = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
 
-  const hasExpiry   = !!opt.discount_expires_at && remaining !== null && remaining > 0;
+  const hasExpiry   = !!discountExpiresAt && remaining !== null && remaining > 0;
   const totalSecs   = hasExpiry ? Math.floor(remaining! / 1000) : 0;
   const hh          = Math.floor(totalSecs / 3600);
   const mm          = Math.floor((totalSecs % 3600) / 60);
@@ -385,7 +391,7 @@ function DiscountBanner({
         {/* Price row */}
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span style={{ color: 'white', fontFamily: 'var(--f-num)', fontSize: 34, fontWeight: 700, lineHeight: 1, letterSpacing: '-0.5px' }}>
-            {fmtC(opt.price_per_adult_display)}
+            {fmtC(newPerAdult)}
           </span>
           <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: 15, textDecoration: 'line-through', letterSpacing: '-0.3px' }}>
             {fmtC(origPerAdult)}
@@ -463,7 +469,7 @@ function DiscountBanner({
         </span>
         {hasExpiry && (
           <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: 10, fontFamily: 'var(--f-body)', fontWeight: 600 }}>
-            Ends {new Date(opt.discount_expires_at!).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}
+            Ends {new Date(discountExpiresAt!).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}
           </span>
         )}
       </div>
@@ -473,7 +479,7 @@ function DiscountBanner({
         {/* Price row */}
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 4 }}>
           <span style={{ fontSize: 28, fontWeight: 700, color: '#1A1A1A', fontFamily: 'var(--f-num)', letterSpacing: '-0.5px', lineHeight: 1 }}>
-            {fmtC(opt.price_per_adult_display)}
+            {fmtC(newPerAdult)}
           </span>
           <span style={{ fontSize: 15, color: '#B0A090', textDecoration: 'line-through', fontFamily: 'var(--f-num)' }}>
             {fmtC(origPerAdult)}
@@ -553,7 +559,12 @@ function Packages({
               <div className={`tl-pkg-head${opt.is_most_popular ? ' pop' : ''}`}>
                 <div className="tl-pkg-tier">{opt.option_name}</div>
                 {(opt.discount_amount ?? 0) > 0 ? (
-                  <DiscountBanner opt={opt} adults={adults} />
+                  <DiscountBanner
+                    discountAmount={opt.discount_amount ?? 0}
+                    discountExpiresAt={opt.discount_expires_at}
+                    origPerAdult={adults > 0 ? Math.round(((opt.selling_before_gst + (opt.discount_amount ?? 0)) * (1 + opt.gst_percent / 100)) / adults) : 0}
+                    newPerAdult={opt.price_per_adult_display}
+                  />
                 ) : (
                   <>
                     <div className="tl-pkg-price">{fmtCurrency(opt.price_per_adult_display)}</div>
@@ -939,7 +950,15 @@ function FareSummary({ option, adults }: { option: QuoteOption | undefined; adul
         <div className="tl-sec-eyebrow">Cost Breakdown</div>
         <div className="tl-sec-h">Fare Summary</div>
         <div className="tl-sec-sub">{adults} Adult{adults > 1 ? 's' : ''} · {option.option_name} Package</div>
-        {discount > 0 && <DiscountBanner opt={option} adults={adults} variant="fare" />}
+        {discount > 0 && (
+          <DiscountBanner
+            discountAmount={discount}
+            discountExpiresAt={option.discount_expires_at}
+            origPerAdult={adults > 0 ? Math.round(origTotal / adults) : origTotal}
+            newPerAdult={option.price_per_adult_display}
+            variant="fare"
+          />
+        )}
         <div className="tl-fare-card">
           <div className="tl-fare-row">
             <span>Per Adult (before GST)</span>
@@ -2058,9 +2077,11 @@ function GroupPackageOptions({
 
 /* ─────────────────────────── GROUP: Fare Summary ─────────────────────────── */
 function GroupFareSummary({
-  batch, adults, onAdultsChange, onBookNow, booking,
+  batch, adults, onAdultsChange, onBookNow, booking, quoteDiscount, quoteDiscountExpiry,
 }: {
   batch: GroupBatch | null;
+  quoteDiscount?: number | null;
+  quoteDiscountExpiry?: string | null;
   adults: number;
   onAdultsChange: (n: number) => void;
   token: string;
@@ -2102,7 +2123,18 @@ function GroupFareSummary({
       <div className="tl-sec">
         <div className="tl-sec-eyebrow">Your Booking</div>
         <div className="tl-sec-h">Fare Summary</div>
-        <div className="tl-sec-sub" style={{ marginBottom: 24 }}>Adjust traveller count to see live pricing.</div>
+        <div className="tl-sec-sub" style={{ marginBottom: (quoteDiscount ?? 0) > 0 ? 16 : 24 }}>Adjust traveller count to see live pricing.</div>
+
+        {/* Quote-level discount banner */}
+        {(quoteDiscount ?? 0) > 0 && (
+          <DiscountBanner
+            discountAmount={quoteDiscount!}
+            discountExpiresAt={quoteDiscountExpiry}
+            origPerAdult={pricePerAdultInclGst}
+            newPerAdult={Math.max(0, pricePerAdultInclGst - Math.round(quoteDiscount! / adults))}
+            variant="fare"
+          />
+        )}
 
         {/* Selected date banner */}
         <div style={{
@@ -2276,7 +2308,7 @@ function GroupFareSummary({
 
 /* ─────────────────────────── GROUP: Package-based Fare Summary ──────────── */
 function PackageFareSummary({
-  packageOption, tripDate, adults, onAdultsChange, onBookNow, booking,
+  packageOption, tripDate, adults, onAdultsChange, onBookNow, booking, quoteDiscount, quoteDiscountExpiry,
 }: {
   packageOption: GroupPackageOption | null;
   tripDate: { start_date: string; end_date: string; label: string } | null;
@@ -2284,6 +2316,8 @@ function PackageFareSummary({
   onAdultsChange: (n: number) => void;
   onBookNow: () => void;
   booking: boolean;
+  quoteDiscount?: number | null;
+  quoteDiscountExpiry?: string | null;
 }) {
   const fmt = (s: string) => s ? new Date(s).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
 
@@ -2326,7 +2360,18 @@ function PackageFareSummary({
       <div className="tl-sec">
         <div className="tl-sec-eyebrow">Your Booking</div>
         <div className="tl-sec-h">Fare Summary</div>
-        <div className="tl-sec-sub" style={{ marginBottom: 24 }}>Adjust traveller count to see live pricing.</div>
+        <div className="tl-sec-sub" style={{ marginBottom: (quoteDiscount ?? 0) > 0 ? 16 : 24 }}>Adjust traveller count to see live pricing.</div>
+
+        {/* Quote-level discount banner */}
+        {(quoteDiscount ?? 0) > 0 && (
+          <DiscountBanner
+            discountAmount={quoteDiscount!}
+            discountExpiresAt={quoteDiscountExpiry}
+            origPerAdult={priceInclGst}
+            newPerAdult={Math.max(0, priceInclGst - Math.round(quoteDiscount! / adults))}
+            variant="fare"
+          />
+        )}
 
         {/* Selected package + date banner */}
         <div style={{
@@ -2807,6 +2852,8 @@ export function ItineraryClient({ data, token }: Props) {
             quoteNumber={quote.quote_number}
             onBookNow={handleBookNow}
             booking={booking}
+            quoteDiscount={quote.discount_amount}
+            quoteDiscountExpiry={quote.discount_expires_at}
           />
         )}
         {isGroup && pricingMode === 'package_based' && (
@@ -2817,6 +2864,8 @@ export function ItineraryClient({ data, token }: Props) {
             onAdultsChange={setGroupAdults}
             onBookNow={handleBookNow}
             booking={booking}
+            quoteDiscount={quote.discount_amount}
+            quoteDiscountExpiry={quote.discount_expires_at}
           />
         )}
 

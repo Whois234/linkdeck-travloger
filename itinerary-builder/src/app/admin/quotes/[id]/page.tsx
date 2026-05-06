@@ -52,6 +52,7 @@ interface Quote {
   start_date: string; end_date: string; duration_days: number; duration_nights: number;
   adults: number; children_5_12: number; children_below_5: number; infants: number;
   pickup_point: string | null; drop_point: string | null; expiry_date: string | null;
+  discount_amount: number; discount_expires_at?: string | null;
   created_at: string; public_token: string; link_active: boolean;
   customer: { id: string; name: string; phone: string; email?: string | null };
   state: { name: string; code: string };
@@ -382,6 +383,111 @@ function OptionPricingCard({
               )}
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Quote-level discount (used for group quotes) ───────────────────── */
+function QuoteDiscountCard({ quote, onUpdated }: { quote: Quote; onUpdated: () => void }) {
+  const [editing, setEditing]         = useState(false);
+  const [amountInput, setAmountInput] = useState(String(quote.discount_amount ?? 0));
+  const [expiryInput, setExpiryInput] = useState(() =>
+    quote.discount_expires_at ? new Date(quote.discount_expires_at).toISOString().slice(0, 16) : ''
+  );
+  const [saving, setSaving]           = useState(false);
+  const [msg, setMsg]                 = useState<{ ok: boolean; text: string } | null>(null);
+
+  async function applyDiscount() {
+    setSaving(true); setMsg(null);
+    try {
+      const amount = Math.max(0, Number(amountInput) || 0);
+      const res = await fetch(`/api/v1/quotes/${quote.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          discount_amount:     amount,
+          discount_expires_at: expiryInput ? new Date(expiryInput).toISOString() : null,
+        }),
+      });
+      if (res.ok) {
+        // Republish so customer page reflects it
+        await fetch(`/api/v1/quotes/${quote.id}/publish`, { method: 'POST' }).catch(() => {});
+        setMsg({ ok: true, text: 'Discount applied & itinerary republished.' });
+        setEditing(false);
+        onUpdated();
+      } else {
+        const d = await res.json();
+        setMsg({ ok: false, text: d.error ?? 'Failed.' });
+      }
+    } catch { setMsg({ ok: false, text: 'Network error.' }); }
+    finally { setSaving(false); setTimeout(() => setMsg(null), 5000); }
+  }
+
+  const hasDiscount = (quote.discount_amount ?? 0) > 0;
+
+  return (
+    <div className="bg-white rounded-xl border p-5" style={{ borderColor: '#E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-sm font-bold" style={{ color: '#0F172A' }}>Quote Discount</h2>
+        {!editing ? (
+          <button
+            onClick={() => {
+              setAmountInput(String(quote.discount_amount ?? 0));
+              setExpiryInput(quote.discount_expires_at ? new Date(quote.discount_expires_at).toISOString().slice(0, 16) : '');
+              setEditing(true);
+            }}
+            className="text-[11px] font-bold px-3 py-1 rounded-full hover:bg-red-50 transition-colors"
+            style={{ color: '#DC2626', border: '1px solid #FECACA' }}>
+            {hasDiscount ? 'Edit' : '+ Add Discount'}
+          </button>
+        ) : (
+          <button onClick={() => setEditing(false)} className="text-[11px]" style={{ color: '#94A3B8' }}>Cancel</button>
+        )}
+      </div>
+
+      {editing ? (
+        <div className="space-y-3">
+          <div>
+            <label className={lbl} style={lblStyle}>Discount Amount (₹)</label>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold" style={{ color: '#64748B' }}>₹</span>
+              <input type="number" min="0" step="100" value={amountInput} onChange={e => setAmountInput(e.target.value)}
+                className="flex-1 text-sm font-bold rounded-lg px-3 py-2 outline-none"
+                style={{ border: '1px solid #FECACA', color: '#DC2626', backgroundColor: 'white' }} placeholder="0" />
+            </div>
+          </div>
+          <div>
+            <label className={lbl} style={lblStyle}>Valid Until (optional)</label>
+            <input type="datetime-local" value={expiryInput} onChange={e => setExpiryInput(e.target.value)}
+              className="w-full text-sm rounded-lg px-3 py-2 outline-none"
+              style={{ border: '1px solid #E2E8F0', color: '#0F172A', backgroundColor: 'white' }} />
+            {expiryInput && <button onClick={() => setExpiryInput('')} className="text-[10px] mt-1" style={{ color: '#94A3B8' }}>Clear expiry</button>}
+          </div>
+          <button onClick={applyDiscount} disabled={saving}
+            className="w-full py-2 rounded-lg text-sm font-bold text-white disabled:opacity-60 hover:opacity-90 transition-opacity"
+            style={{ backgroundColor: '#DC2626' }}>
+            {saving ? 'Applying…' : 'Apply & Republish'}
+          </button>
+          {msg && <p className="text-[11px] font-medium" style={{ color: msg.ok ? '#15803D' : '#DC2626' }}>{msg.ok ? '✓ ' : '✗ '}{msg.text}</p>}
+        </div>
+      ) : (
+        <div className="space-y-1">
+          {hasDiscount ? (
+            <>
+              <p className="text-2xl font-bold" style={{ color: '#DC2626' }}>−{fmtINR(quote.discount_amount)}</p>
+              {quote.discount_expires_at && (
+                <p className="text-xs" style={{ color: '#94A3B8' }}>
+                  Valid till {new Date(quote.discount_expires_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}
+                </p>
+              )}
+              <p className="text-xs" style={{ color: '#64748B' }}>Shown to customer with countdown timer on itinerary page.</p>
+            </>
+          ) : (
+            <p className="text-sm" style={{ color: '#94A3B8' }}>No discount set. Add one to show a limited-time offer on the customer page.</p>
+          )}
+          {msg && <p className="text-[11px] font-medium mt-2" style={{ color: msg.ok ? '#15803D' : '#DC2626' }}>{msg.ok ? '✓ ' : '✗ '}{msg.text}</p>}
         </div>
       )}
     </div>
@@ -837,19 +943,23 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
               </div>
             </div>
 
-            {/* Quote Options with full pricing breakdown */}
-            <div className="bg-white rounded-xl border p-5" style={{ borderColor: '#E2E8F0', ...cardShadow }}>
-              <h2 className="text-sm font-bold mb-4" style={{ color: '#0F172A' }}>Quote Options &amp; Pricing Breakdown</h2>
-              {quote.quote_options.length === 0 ? (
-                <p className="text-sm" style={{ color: '#94A3B8' }}>No options added yet.</p>
-              ) : (
-                <div className="space-y-3">
-                  {quote.quote_options.map(opt => (
-                    <OptionPricingCard key={opt.id} opt={opt} adults={quote.adults} quoteId={id} onUpdated={load} />
-                  ))}
-                </div>
-              )}
-            </div>
+            {/* Quote-level discount (group quotes) / per-option pricing (private) */}
+            {quote.quote_type === 'GROUP' ? (
+              <QuoteDiscountCard quote={quote} onUpdated={load} />
+            ) : (
+              <div className="bg-white rounded-xl border p-5" style={{ borderColor: '#E2E8F0', ...cardShadow }}>
+                <h2 className="text-sm font-bold mb-4" style={{ color: '#0F172A' }}>Quote Options &amp; Pricing Breakdown</h2>
+                {quote.quote_options.length === 0 ? (
+                  <p className="text-sm" style={{ color: '#94A3B8' }}>No options added yet.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {quote.quote_options.map(opt => (
+                      <OptionPricingCard key={opt.id} opt={opt} adults={quote.adults} quoteId={id} onUpdated={load} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Day Snapshots */}
             {quote.day_snapshots.length > 0 && (
