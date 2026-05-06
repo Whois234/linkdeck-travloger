@@ -934,7 +934,7 @@ function FareSummary({ option, adults }: { option: QuoteOption | undefined; adul
   const origTotal = origSellBGST + origGST;
 
   return (
-    <div style={{ background: 'white', borderTop: '1px solid var(--tl-border)' }} data-section="hotels">
+    <div style={{ background: 'white', borderTop: '1px solid var(--tl-border)' }} data-section="fare">
       <div className="tl-sec">
         <div className="tl-sec-eyebrow">Cost Breakdown</div>
         <div className="tl-sec-h">Fare Summary</div>
@@ -2601,6 +2601,16 @@ export function ItineraryClient({ data, token }: Props) {
 
   async function handleSelectOption(id: string) {
     setSelectedId(id);
+    // Fire package_selected analytics (non-blocking)
+    const selectedOpt = quote_options.find(o => o.id === id);
+    fetch(`/api/v1/public/itinerary/${token}/analytics`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event_type: 'package_selected',
+        metadata: { option_id: id, option_name: selectedOpt?.option_name ?? null },
+      }),
+    }).catch(() => {});
     try {
       await fetch(`/api/v1/public/itinerary/${token}/select-option`, {
         method: 'POST',
