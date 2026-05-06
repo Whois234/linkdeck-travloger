@@ -79,12 +79,17 @@ export async function GET(req: NextRequest) {
     prisma.crmContact.findMany({
       where,
       include: {
+        owner: { select: { id: true, name: true, email: true } },
         leads: {
-          include: {
-            stage: { select: { id: true, name: true, color: true } },
+          select: {
+            id: true,
+            status: true,
+            created_at: true,
+            stage:    { select: { id: true, name: true, color: true } },
             pipeline: { select: { id: true, name: true } },
           },
           orderBy: { created_at: 'desc' },
+          take: 5,
         },
       },
       orderBy,
@@ -93,16 +98,7 @@ export async function GET(req: NextRequest) {
     }),
   ]);
 
-  const ownerIds = Array.from(new Set(contacts.map(c => c.owner_id)));
-  const owners   = await prisma.user.findMany({
-    where: { id: { in: ownerIds } },
-    select: { id: true, name: true, email: true },
-  });
-  const ownerMap = Object.fromEntries(owners.map(o => [o.id, o]));
-
-  const items = contacts.map(c => ({ ...c, owner: ownerMap[c.owner_id] ?? null }));
-
-  return ok({ items, total, page, limit, pages: Math.ceil(total / limit) });
+  return ok({ items: contacts, total, page, limit, pages: Math.ceil(total / limit) });
 }
 
 export async function POST(req: NextRequest) {

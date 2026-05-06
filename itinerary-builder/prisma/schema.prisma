@@ -987,6 +987,7 @@ model User {
   updated_at    DateTime  @updatedAt
 
   notifications Notification[]
+  contacts      CrmContact[]
 
   @@index([role])
   @@index([status])
@@ -1022,11 +1023,13 @@ model CrmContact {
   created_at   DateTime  @default(now())
   updated_at   DateTime  @updatedAt
 
+  owner        User      @relation(fields: [owner_id], references: [id])
   leads        Lead[]
 
   @@index([phone])
   @@index([owner_id])
   @@index([is_converted])
+  @@index([created_at])
 }
 
 // ─── CRM Pipeline Models ──────────────────────────────────────────────────────
