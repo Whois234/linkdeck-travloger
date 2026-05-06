@@ -347,6 +347,7 @@ export default function CreateQuotePage() {
         quote_name: quoteName || selectedGT?.group_template_name || selectedPT?.template_name || null,
         quote_type: quoteType,
         customer_id: customerId,
+        lead_id: searchParams.get('lead_id') || null,
         state_id: stateId,
         start_date: new Date(startDate).toISOString(),
         end_date: new Date(endDate).toISOString(),
