@@ -24,6 +24,19 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     data: { stage_id: parsed.data.stage_id, pipeline_id: parsed.data.pipeline_id ?? stage.pipeline_id },
   });
 
+  // Auto-convert when moved to "Won" stage
+  const isWon = stage.name.toLowerCase().includes('won');
+  if (isWon && lead.crm_contact_id) {
+    await prisma.crmContact.update({
+      where: { id: lead.crm_contact_id },
+      data: { is_converted: true, converted_at: new Date() },
+    }).catch(() => {});
+    await prisma.lead.update({
+      where: { id: params.id },
+      data: { is_converted: true, converted_at: new Date() },
+    }).catch(() => {});
+  }
+
   // Log activity
   await prisma.leadActivity.create({
     data: {

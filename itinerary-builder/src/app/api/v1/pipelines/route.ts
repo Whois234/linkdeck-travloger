@@ -30,8 +30,8 @@ export async function POST(req: NextRequest) {
   const pipeline = await prisma.pipeline.create({
     data: { name: parsed.data.name, is_default: parsed.data.is_default ?? false },
   });
-  const defaultStages = ['New Lead', 'Contacted', 'Hot Lead', 'Quote Sent', 'Won', 'Lost'];
-  const stageColors   = ['#64748B', '#3B82F6', '#F97316', '#8B5CF6', '#22C55E', '#EF4444'];
+  const defaultStages = ['New Lead', 'Not Reachable', 'Contacted', 'Engaged', 'Follow-up Required', 'Quote Sent', 'Won ✓', 'Lost ✗'];
+  const stageColors   = ['#64748B', '#94A3B8', '#3B82F6', '#F59E0B', '#F97316', '#8B5CF6', '#22C55E', '#EF4444'];
   await prisma.pipelineStage.createMany({
     data: defaultStages.map((name, i) => ({
       pipeline_id: pipeline.id, name, order: i + 1, color: stageColors[i],
