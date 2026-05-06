@@ -1050,8 +1050,9 @@ model PipelineStage {
   status      Boolean  @default(true)
   created_at  DateTime @default(now())
 
-  pipeline    Pipeline @relation(fields: [pipeline_id], references: [id], onDelete: Cascade)
+  pipeline    Pipeline         @relation(fields: [pipeline_id], references: [id], onDelete: Cascade)
   leads       Lead[]
+  automations StageAutomation[]
 
   @@index([pipeline_id, order])
 }
@@ -1112,4 +1113,44 @@ model LeadActivity {
   lead       Lead     @relation(fields: [lead_id], references: [id], onDelete: Cascade)
 
   @@index([lead_id, created_at])
+}
+
+model DuplicateContactAttempt {
+  id                String   @id @default(cuid())
+  phone             String
+  attempted_by      String
+  existing_owner_id String
+  created_at        DateTime @default(now())
+
+  @@index([phone])
+  @@index([attempted_by])
+}
+
+model StageAutomation {
+  id          String   @id @default(cuid())
+  pipeline_id String
+  stage_id    String
+  trigger     String   @default("on_enter")
+  action_type String
+  action_data Json
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  stage       PipelineStage @relation(fields: [stage_id], references: [id], onDelete: Cascade)
+
+  @@index([stage_id])
+  @@index([pipeline_id])
+}
+
+model CrmWorkflow {
+  id         String   @id @default(cuid())
+  name       String
+  module     String
+  trigger    String
+  conditions Json?
+  actions    Json
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
 }

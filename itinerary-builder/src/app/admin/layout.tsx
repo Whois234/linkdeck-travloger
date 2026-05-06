@@ -6,7 +6,7 @@ import {
   LayoutDashboard, MapPin, Map, Building2, Car, Activity, BookOpen,
   ListPlus, ScrollText, Users, DollarSign,
   Layout, CalendarDays, Layers, FileText, Menu, LogOut,
-  Bell, ChevronDown, Tag, Briefcase, Settings, User, X, Kanban, SlidersHorizontal, UserCheck,
+  Bell, ChevronDown, Tag, Briefcase, Settings, User, X, Kanban, SlidersHorizontal, UserCheck, Cog,
 } from 'lucide-react';
 
 // Roles that can see each nav group/item. Empty = all roles.
@@ -55,6 +55,7 @@ const ALL_NAV: NavGroup[] = [
       { label: 'Pipeline Config',     href: '/admin/pipelines/config',    icon: SlidersHorizontal, roles: ['ADMIN', 'MANAGER'] },
       { label: 'Contacts',            href: '/admin/contacts',            icon: Users            },
       { label: 'Converted Customers', href: '/admin/converted-customers', icon: UserCheck        },
+      { label: 'CRM Settings',        href: '/admin/crm-settings',        icon: Cog,               roles: ['ADMIN', 'MANAGER'] },
       { label: 'Leads',               href: '/admin/leads',               icon: DollarSign       },
       { label: 'Customers',           href: '/admin/customers',           icon: Users            },
     ],

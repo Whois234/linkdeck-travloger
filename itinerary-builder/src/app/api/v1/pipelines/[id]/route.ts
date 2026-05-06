@@ -9,12 +9,29 @@ const schema = z.object({ name: z.string().min(1).optional(), is_default: z.bool
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const user = await getAuthUser(req);
   if (!user) return unauthorized();
+
+  const { searchParams } = new URL(req.url);
+  const agent_id  = searchParams.get('agent_id');
+  const owner_id  = searchParams.get('owner_id');
+  const date_from = searchParams.get('date_from');
+  const date_to   = searchParams.get('date_to');
+
+  const leadsWhere: Record<string, unknown> = { pipeline_id: params.id };
+  if (agent_id)  leadsWhere.assigned_agent_id = agent_id;
+  if (owner_id)  leadsWhere.owner_id          = owner_id;
+  if (date_from || date_to) {
+    leadsWhere.created_at = {
+      ...(date_from ? { gte: new Date(date_from) } : {}),
+      ...(date_to   ? { lte: new Date(date_to + 'T23:59:59') } : {}),
+    };
+  }
+
   const pipeline = await prisma.pipeline.findUnique({
     where: { id: params.id },
     include: {
       stages: { where: { status: true }, orderBy: { order: 'asc' } },
       leads: {
-        where: { pipeline_id: params.id },
+        where: leadsWhere,
         include: { stage: true },
         orderBy: { created_at: 'desc' },
       },

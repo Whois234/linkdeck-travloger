@@ -37,6 +37,34 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }).catch(() => {});
   }
 
+  // Fire stage automations
+  const automations = await prisma.stageAutomation.findMany({
+    where: { stage_id: parsed.data.stage_id, is_active: true, trigger: 'on_enter' },
+  }).catch(() => []);
+
+  for (const auto of automations) {
+    const ad = auto.action_data as Record<string, unknown>;
+    if (auto.action_type === 'assign_agent' && ad.agent_id) {
+      await prisma.lead.update({ where: { id: params.id }, data: { assigned_agent_id: ad.agent_id as string } }).catch(() => {});
+    }
+    if (auto.action_type === 'create_task' && ad.task_type) {
+      const due = new Date(); due.setHours(due.getHours() + ((ad.hours_from_now as number) ?? 24));
+      await prisma.leadTask.create({
+        data: { lead_id: params.id, type: ad.task_type as string, due_time: due, notes: ad.notes as string ?? null, created_by: 'automation' },
+      }).catch(() => {});
+    }
+    if (auto.action_type === 'send_notification') {
+      await prisma.notification.create({
+        data: {
+          user_id:    lead.assigned_agent_id ?? lead.owner_id ?? user.sub,
+          message:    (ad.message as string) ?? `Lead "${lead.name}" moved to stage: ${stage.name}`,
+          event_type: 'stage_changed',
+          quote_id:   null,
+        },
+      }).catch(() => {});
+    }
+  }
+
   // Log activity
   await prisma.leadActivity.create({
     data: {

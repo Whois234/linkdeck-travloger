@@ -79,6 +79,10 @@ export async function POST(req: NextRequest) {
         select: { name: true },
       });
       const ownerName = ownerUser?.name ?? 'another team member';
+      // Log the duplicate attempt for admin review
+      await prisma.duplicateContactAttempt.create({
+        data: { phone: normalizedPhone, attempted_by: user.sub, existing_owner_id: existingContact.owner_id },
+      }).catch(() => {});
       return err(
         `This contact is already owned by ${ownerName}. Contact them to create a deal for this lead.`,
         409

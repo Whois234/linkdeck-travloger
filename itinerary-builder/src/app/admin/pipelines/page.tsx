@@ -4,7 +4,7 @@ import {
   Plus, Search, Phone, MessageCircle, ChevronDown, X, User,
   Clock, CheckCircle2, AlertCircle, FileText, Loader2,
   Filter, ArrowUpDown, Trash2, MoveRight, CheckSquare, Square,
-  ExternalLink,
+  ExternalLink, Calendar, Users,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -148,7 +148,7 @@ function LeadCard({
 // ─── Kanban Column ───────────────────────────────────────────────────────────
 
 function KanbanColumn({
-  stage, leads, onDragStart, onDrop, onLeadClick, selectedIds, onToggleSelect,
+  stage, leads, onDragStart, onDrop, onLeadClick, selectedIds, onToggleSelect, onSelectAllInStage,
 }: {
   stage: Stage; leads: Lead[];
   onDragStart: (e: React.DragEvent, leadId: string) => void;
@@ -156,8 +156,10 @@ function KanbanColumn({
   onLeadClick: (lead: Lead) => void;
   selectedIds: Set<string>;
   onToggleSelect: (id: string, e: React.MouseEvent) => void;
+  onSelectAllInStage: (stageId: string, leads: Lead[]) => void;
 }) {
   const [over, setOver] = useState(false);
+  const allSelected = leads.length > 0 && leads.every(l => selectedIds.has(l.id));
   return (
     <div className="flex flex-col rounded-xl flex-shrink-0 w-[280px]"
       style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}
@@ -167,6 +169,11 @@ function KanbanColumn({
       <div className="px-4 py-3 rounded-t-xl flex items-center justify-between"
         style={{ borderBottom: `2px solid ${stage.color}`, backgroundColor: `${stage.color}18` }}>
         <div className="flex items-center gap-2">
+          <button onClick={() => onSelectAllInStage(stage.id, leads)} title={allSelected ? 'Deselect all' : 'Select all in stage'}>
+            {allSelected
+              ? <CheckSquare className="w-3.5 h-3.5" style={{ color: '#134956' }} />
+              : <Square className="w-3.5 h-3.5" style={{ color: '#CBD5E1' }} />}
+          </button>
           <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: stage.color }} />
           <p className="text-sm font-bold" style={{ color: '#0F172A' }}>{stage.name}</p>
         </div>
@@ -884,6 +891,8 @@ function BulkActionBar({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
+interface AgentUser { id: string; name: string; user_id: string | null }
+
 export default function PipelinesPage() {
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [activePipelineId, setActivePipelineId] = useState<string>('');
@@ -895,6 +904,11 @@ export default function PipelinesPage() {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [agents, setAgents] = useState<AgentUser[]>([]);
+  const [filterAgent, setFilterAgent] = useState<string>('');
+  const [filterDateFrom, setFilterDateFrom] = useState('');
+  const [filterDateTo, setFilterDateTo] = useState('');
+  const [showDateFilter, setShowDateFilter] = useState(false);
   const draggingLeadId = useRef<string | null>(null);
 
   const loadPipelines = useCallback(async () => {
@@ -912,15 +926,19 @@ export default function PipelinesPage() {
 
   const loadActivePipeline = useCallback(async () => {
     if (!activePipelineId) return;
-    const res = await fetch(`/api/v1/pipelines/${activePipelineId}`);
+    const params = new URLSearchParams();
+    if (filterAgent)    params.set('agent_id',   filterAgent);
+    if (filterDateFrom) params.set('date_from',   filterDateFrom);
+    if (filterDateTo)   params.set('date_to',     filterDateTo);
+    const res = await fetch(`/api/v1/pipelines/${activePipelineId}?${params}`);
     const d = await res.json();
     if (d.success) {
       setPipelines(prev => prev.map(p => p.id === activePipelineId ? { ...p, stages: d.data.stages, leads: d.data.leads } : p));
     }
-  }, [activePipelineId]);
+  }, [activePipelineId, filterAgent, filterDateFrom, filterDateTo]);
 
-  useEffect(() => { loadPipelines(); }, []);
-  useEffect(() => { if (activePipelineId) loadActivePipeline(); }, [activePipelineId]);
+  useEffect(() => { loadPipelines(); fetch('/api/v1/agents').then(r => r.json()).then(d => { if (d.success) setAgents(d.data); }); }, []);
+  useEffect(() => { if (activePipelineId) loadActivePipeline(); }, [activePipelineId, loadActivePipeline]);
 
   const activePipeline = pipelines.find(p => p.id === activePipelineId);
 
@@ -970,6 +988,15 @@ export default function PipelinesPage() {
     ));
     setSelectedIds(new Set());
     loadActivePipeline();
+  }
+
+  function toggleSelectAllInStage(stageId: string, stageLeads: Lead[]) {
+    const allSelected = stageLeads.every(l => selectedIds.has(l.id));
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      stageLeads.forEach(l => allSelected ? next.delete(l.id) : next.add(l.id));
+      return next;
+    });
   }
 
   async function bulkDelete() {
@@ -1068,12 +1095,12 @@ export default function PipelinesPage() {
               className="pl-9 pr-4 py-2 text-sm rounded-lg outline-none" style={{ border: '1px solid #E2E8F0', width: 200 }} />
           </div>
 
-          {/* Filter */}
+          {/* Status Filter */}
           <div className="relative">
             <button onClick={() => setShowFilters(p => !p)}
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors"
               style={{ border: `1px solid ${filterStatus ? '#134956' : '#E2E8F0'}`, color: filterStatus ? '#134956' : '#64748B', backgroundColor: filterStatus ? '#F0F9FF' : 'white' }}>
-              <Filter className="w-3.5 h-3.5" /> Filter {filterStatus && `· ${filterStatus}`}
+              <Filter className="w-3.5 h-3.5" /> {filterStatus ? filterStatus : 'Status'}
             </button>
             {showFilters && (
               <div className="absolute top-10 left-0 bg-white rounded-xl shadow-xl z-20 overflow-hidden min-w-[160px]"
@@ -1086,6 +1113,49 @@ export default function PipelinesPage() {
                     className="w-full text-left px-4 py-2.5 text-sm font-medium hover:bg-[#F8FAFC]"
                     style={{ color: filterStatus === s ? '#134956' : '#64748B' }}>{s}</button>
                 ))}
+              </div>
+            )}
+          </div>
+
+          {/* Agent filter */}
+          {agents.length > 0 && (
+            <div className="relative flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold"
+              style={{ border: `1px solid ${filterAgent ? '#134956' : '#E2E8F0'}`, backgroundColor: filterAgent ? '#F0F9FF' : 'white', color: filterAgent ? '#134956' : '#64748B' }}>
+              <Users className="w-3.5 h-3.5" />
+              <select value={filterAgent} onChange={e => { setFilterAgent(e.target.value); }}
+                className="outline-none bg-transparent text-xs font-semibold" style={{ color: filterAgent ? '#134956' : '#64748B' }}>
+                <option value="">All Agents</option>
+                {agents.map(a => <option key={a.id} value={a.user_id ?? a.id}>{a.name}</option>)}
+              </select>
+            </div>
+          )}
+
+          {/* Date filter */}
+          <div className="relative">
+            <button onClick={() => setShowDateFilter(p => !p)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors"
+              style={{ border: `1px solid ${filterDateFrom || filterDateTo ? '#134956' : '#E2E8F0'}`, color: filterDateFrom || filterDateTo ? '#134956' : '#64748B', backgroundColor: filterDateFrom || filterDateTo ? '#F0F9FF' : 'white' }}>
+              <Calendar className="w-3.5 h-3.5" /> Date
+            </button>
+            {showDateFilter && (
+              <div className="absolute top-10 left-0 bg-white rounded-xl shadow-xl z-20 p-4 space-y-3 min-w-[220px]"
+                style={{ border: '1px solid #E2E8F0' }}>
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#94A3B8' }}>From</label>
+                  <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)}
+                    className="w-full text-xs rounded-lg px-2 py-2 mt-1 outline-none" style={{ border: '1px solid #E2E8F0' }} />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#94A3B8' }}>To</label>
+                  <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)}
+                    className="w-full text-xs rounded-lg px-2 py-2 mt-1 outline-none" style={{ border: '1px solid #E2E8F0' }} />
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => { setFilterDateFrom(''); setFilterDateTo(''); setShowDateFilter(false); }}
+                    className="flex-1 py-1.5 rounded-lg text-xs font-semibold" style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>Clear</button>
+                  <button onClick={() => setShowDateFilter(false)}
+                    className="flex-1 py-1.5 rounded-lg text-xs font-bold text-white" style={{ backgroundColor: '#134956' }}>Apply</button>
+                </div>
               </div>
             )}
           </div>
@@ -1125,17 +1195,21 @@ export default function PipelinesPage() {
       {/* Kanban Board */}
       <div className="flex-1 overflow-x-auto overflow-y-hidden">
         <div className="flex gap-4 h-full p-5 lg:p-8 min-w-max">
-          {(activePipeline?.stages ?? []).map(stage => (
-            <KanbanColumn
-              key={stage.id} stage={stage}
-              leads={leadsForStage(stage.id)}
-              onDragStart={handleDragStart}
-              onDrop={handleDrop}
-              onLeadClick={setSelectedLead}
-              selectedIds={selectedIds}
-              onToggleSelect={toggleSelect}
-            />
-          ))}
+          {(activePipeline?.stages ?? []).map(stage => {
+            const stageLeads = leadsForStage(stage.id);
+            return (
+              <KanbanColumn
+                key={stage.id} stage={stage}
+                leads={stageLeads}
+                onDragStart={handleDragStart}
+                onDrop={handleDrop}
+                onLeadClick={setSelectedLead}
+                selectedIds={selectedIds}
+                onToggleSelect={toggleSelect}
+                onSelectAllInStage={() => toggleSelectAllInStage(stage.id, stageLeads)}
+              />
+            );
+          })}
           {(activePipeline?.stages ?? []).length === 0 && (
             <div className="flex items-center justify-center w-full">
               <p className="text-sm" style={{ color: '#94A3B8' }}>No stages configured. Go to Pipeline Config to add stages.</p>
