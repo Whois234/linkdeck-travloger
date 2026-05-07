@@ -105,6 +105,14 @@ function OptionPricingCard({
   const [saving, setSaving]           = useState(false);
   const [saveMsg, setSaveMsg]         = useState<{ ok: boolean; text: string } | null>(null);
 
+  // Check if existing discount is expired
+  const discountExpired = opt.discount_amount > 0 && !!opt.discount_expires_at && new Date(opt.discount_expires_at).getTime() <= Date.now();
+  // Original (pre-discount) figures for display when expired
+  const origSellBGST  = opt.selling_before_gst + opt.discount_amount;
+  const origGST       = (origSellBGST * opt.gst_percent) / 100;
+  const origFinal     = origSellBGST + origGST;
+  const origPerAdult  = adults > 0 ? origFinal / adults : 0;
+
   // Live preview of what the new final price will look like
   const previewDiscount   = Math.max(0, Number(discountInput) || 0);
   const previewSellBGST   = opt.base_cost + opt.profit_amount - previewDiscount;
@@ -156,7 +164,7 @@ function OptionPricingCard({
         <div className="flex items-center gap-2">
           <span className="font-bold text-sm" style={{ color: '#0F172A' }}>{opt.option_name}</span>
           {opt.is_most_popular && <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: '#DCFCE7', color: '#15803D' }}>★ Most Popular</span>}
-          {opt.discount_amount > 0 && (
+          {opt.discount_amount > 0 && !discountExpired && (
             <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: '#FEF2F2', color: '#DC2626' }}>
               −{fmtINR(opt.discount_amount)} off
             </span>
@@ -164,8 +172,8 @@ function OptionPricingCard({
         </div>
         <div className="flex items-center gap-3">
           <div className="text-right">
-            <p className="text-base font-bold" style={{ color: T }}>{fmtINR(opt.final_price)}</p>
-            <p className="text-[11px]" style={{ color: '#94A3B8' }}>{fmtINR(opt.price_per_adult_display)} / adult</p>
+            <p className="text-base font-bold" style={{ color: T }}>{fmtINR(discountExpired ? origFinal : opt.final_price)}</p>
+            <p className="text-[11px]" style={{ color: '#94A3B8' }}>{fmtINR(discountExpired ? origPerAdult : opt.price_per_adult_display)} / adult</p>
           </div>
           {open ? <ChevronUp className="w-4 h-4" style={{ color: '#94A3B8' }} /> : <ChevronDown className="w-4 h-4" style={{ color: '#94A3B8' }} />}
         </div>
@@ -363,13 +371,13 @@ function OptionPricingCard({
 
               <div className="flex items-center justify-between">
                 <span className="text-xs" style={{ color: '#475569' }}>Before GST</span>
-                <span className="text-xs font-semibold" style={{ color: '#0F172A' }}>{fmtINR(opt.selling_before_gst)}</span>
+                <span className="text-xs font-semibold" style={{ color: '#0F172A' }}>{fmtINR(discountExpired ? origSellBGST : opt.selling_before_gst)}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-xs" style={{ color: '#475569' }}>GST ({opt.gst_percent}%)</span>
-                <span className="text-xs font-semibold" style={{ color: '#0F172A' }}>+{fmtINR(opt.gst_amount)}</span>
+                <span className="text-xs font-semibold" style={{ color: '#0F172A' }}>+{fmtINR(discountExpired ? origGST : opt.gst_amount)}</span>
               </div>
-              {opt.rounding_adjustment !== 0 && (
+              {!discountExpired && opt.rounding_adjustment !== 0 && (
                 <div className="flex items-center justify-between">
                   <span className="text-xs" style={{ color: '#94A3B8' }}>Rounding</span>
                   <span className="text-xs" style={{ color: '#94A3B8' }}>{opt.rounding_adjustment > 0 ? '+' : ''}{fmtINR(opt.rounding_adjustment)}</span>
@@ -379,10 +387,10 @@ function OptionPricingCard({
                 <span className="text-xs font-bold" style={{ color: '#0F172A' }}>
                   Customer Total ({adults > 0 ? `${adults} pax` : ''})
                 </span>
-                <span className="text-base font-bold" style={{ color: T }}>{fmtINR(opt.final_price)}</span>
+                <span className="text-base font-bold" style={{ color: T }}>{fmtINR(discountExpired ? origFinal : opt.final_price)}</span>
               </div>
               {adults > 0 && (
-                <p className="text-[11px] text-right" style={{ color: '#94A3B8' }}>{fmtINR(opt.price_per_adult_display)} per adult</p>
+                <p className="text-[11px] text-right" style={{ color: '#94A3B8' }}>{fmtINR(discountExpired ? origPerAdult : opt.price_per_adult_display)} per adult</p>
               )}
             </div>
           </div>
