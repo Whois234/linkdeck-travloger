@@ -2178,6 +2178,11 @@ function GroupFareSummary({
   const total = subtotal + gstAmount;
   const pricePerAdultInclGst = Math.round(total / adults);
 
+  // Per-person discount (active only when not expired)
+  const discPerPerson = (quoteDiscount ?? 0) > 0 && !isDiscountExpired(quoteDiscountExpiry) ? quoteDiscount! : 0;
+  const discountedTotal = Math.max(0, total - discPerPerson * adults);
+  const discountedPerAdult = discPerPerson > 0 ? Math.max(0, pricePerAdultInclGst - discPerPerson) : pricePerAdultInclGst;
+
   const startD = new Date(batch.start_date);
   const endD   = new Date(batch.end_date);
   const nights = Math.round((endD.getTime() - startD.getTime()) / 86400000);
@@ -2192,14 +2197,20 @@ function GroupFareSummary({
         <div className="tl-sec-sub" style={{ marginBottom: (quoteDiscount ?? 0) > 0 ? 16 : 24 }}>Adjust traveller count to see live pricing.</div>
 
         {/* Quote-level discount banner */}
-        {(quoteDiscount ?? 0) > 0 && (
+        {(quoteDiscount ?? 0) > 0 && !isDiscountExpired(quoteDiscountExpiry) && (
           <DiscountBanner
             discountAmount={quoteDiscount!}
             discountExpiresAt={quoteDiscountExpiry}
             origPerAdult={pricePerAdultInclGst}
-            newPerAdult={Math.max(0, pricePerAdultInclGst - Math.round(quoteDiscount! / adults))}
+            newPerAdult={Math.max(0, pricePerAdultInclGst - quoteDiscount!)}
             variant="fare"
           />
+        )}
+        {(quoteDiscount ?? 0) > 0 && isDiscountExpired(quoteDiscountExpiry) && (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#FEE2E2', border: '1px solid #FECACA', borderRadius: 20, padding: '4px 12px', marginBottom: 14, fontSize: 11, fontWeight: 700, color: '#DC2626', fontFamily: 'var(--f-body)' }}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            Offer Expired
+          </div>
         )}
 
         {/* Selected date banner */}
@@ -2270,17 +2281,20 @@ function GroupFareSummary({
 
           {/* Price rows */}
           <div style={{ borderTop: '1px solid #F1F5F9', padding: '14px 20px 0' }}>
-            {[
-              { label: `₹${Math.round(pricePerAdult).toLocaleString('en-IN')} × ${adults} adult${adults > 1 ? 's' : ''}`, value: subtotal, dimVal: false },
-              { label: `GST ${batch.gst_percent}%`, value: gstAmount, dimVal: true },
-            ].map((row, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12 }}>
-                <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#64748B' }}>{row.label}</span>
-                <span style={{ fontFamily: 'var(--f-num)', fontSize: 14, fontWeight: 600, color: row.dimVal ? '#94A3B8' : '#0F172A' }}>
-                  {fmtCurrency(row.value)}
-                </span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12 }}>
+              <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#64748B' }}>₹{Math.round(pricePerAdult).toLocaleString('en-IN')} × {adults} adult{adults > 1 ? 's' : ''}</span>
+              <span style={{ fontFamily: 'var(--f-num)', fontSize: 14, fontWeight: 600, color: '#0F172A' }}>{fmtCurrency(subtotal)}</span>
+            </div>
+            {discPerPerson > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12 }}>
+                <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#DC2626' }}>Discount ({fmtCurrency(discPerPerson)}/person)</span>
+                <span style={{ fontFamily: 'var(--f-num)', fontSize: 14, fontWeight: 600, color: '#DC2626' }}>−{fmtCurrency(discPerPerson * adults)}</span>
               </div>
-            ))}
+            )}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12 }}>
+              <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#94A3B8' }}>GST {batch.gst_percent}%</span>
+              <span style={{ fontFamily: 'var(--f-num)', fontSize: 14, fontWeight: 600, color: '#94A3B8' }}>{fmtCurrency(gstAmount)}</span>
+            </div>
           </div>
 
           {/* Total row */}
@@ -2292,11 +2306,11 @@ function GroupFareSummary({
             <div>
               <div style={{ fontFamily: 'var(--f-body)', fontSize: 13, fontWeight: 700, color: '#0F172A' }}>Total Amount</div>
               <div style={{ fontFamily: 'var(--f-body)', fontSize: 11, color: '#94A3B8', marginTop: 2 }}>
-                {fmtCurrency(pricePerAdultInclGst)} per person · incl. GST
+                {fmtCurrency(discountedPerAdult)} per person · incl. GST
               </div>
             </div>
             <div style={{ fontFamily: 'var(--f-num)', fontSize: 26, fontWeight: 900, color: T }}>
-              {fmtCurrency(total)}
+              {fmtCurrency(discountedTotal)}
             </div>
           </div>
 
@@ -2322,7 +2336,7 @@ function GroupFareSummary({
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round">
                     <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" />
                   </svg>
-                  Book Now — {fmtCurrency(total)}
+                  Book Now — {fmtCurrency(discountedTotal)}
                 </>
               )}
             </button>
@@ -2415,6 +2429,10 @@ function PackageFareSummary({
   const subtotalExcl = priceExclGst * adults;
   const gstTotal     = gstPerAdult * adults;
   const total        = priceInclGst * adults;
+  // Per-person discount (active only when not expired)
+  const pkgDiscPerPerson = (quoteDiscount ?? 0) > 0 && !isDiscountExpired(quoteDiscountExpiry) ? quoteDiscount! : 0;
+  const pkgDiscountedTotal = Math.max(0, total - pkgDiscPerPerson * adults);
+  const pkgDiscountedPerAdult = pkgDiscPerPerson > 0 ? Math.max(0, priceInclGst - pkgDiscPerPerson) : priceInclGst;
   const startFmt = fmt(tripDate.start_date);
   const endFmt   = tripDate.end_date ? new Date(tripDate.end_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '';
   const nights   = tripDate.start_date && tripDate.end_date
@@ -2429,14 +2447,20 @@ function PackageFareSummary({
         <div className="tl-sec-sub" style={{ marginBottom: (quoteDiscount ?? 0) > 0 ? 16 : 24 }}>Adjust traveller count to see live pricing.</div>
 
         {/* Quote-level discount banner */}
-        {(quoteDiscount ?? 0) > 0 && (
+        {(quoteDiscount ?? 0) > 0 && !isDiscountExpired(quoteDiscountExpiry) && (
           <DiscountBanner
             discountAmount={quoteDiscount!}
             discountExpiresAt={quoteDiscountExpiry}
             origPerAdult={priceInclGst}
-            newPerAdult={Math.max(0, priceInclGst - Math.round(quoteDiscount! / adults))}
+            newPerAdult={Math.max(0, priceInclGst - quoteDiscount!)}
             variant="fare"
           />
+        )}
+        {(quoteDiscount ?? 0) > 0 && isDiscountExpired(quoteDiscountExpiry) && (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#FEE2E2', border: '1px solid #FECACA', borderRadius: 20, padding: '4px 12px', marginBottom: 14, fontSize: 11, fontWeight: 700, color: '#DC2626', fontFamily: 'var(--f-body)' }}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            Offer Expired
+          </div>
         )}
 
         {/* Selected package + date banner */}
@@ -2485,16 +2509,24 @@ function PackageFareSummary({
 
           {/* Price rows */}
           <div style={{ borderTop: '1px solid #F1F5F9', padding: '14px 20px 0' }}>
-            {[
-              { label: `${fmtCurrency(priceExclGst)} × ${adults} adult${adults > 1 ? 's' : ''}`, value: fmtCurrency(subtotalExcl), dim: false },
-              { label: packageOption.tier_name + ' package', value: 'incl.', dim: true },
-              { label: `GST ${gstPct}%`, value: fmtCurrency(gstTotal), dim: true },
-            ].map((row, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12 }}>
-                <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: row.dim ? '#94A3B8' : '#64748B' }}>{row.label}</span>
-                <span style={{ fontFamily: 'var(--f-num)', fontSize: row.dim ? 12 : 14, fontWeight: 600, color: row.dim ? '#94A3B8' : '#0F172A' }}>{row.value}</span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12 }}>
+              <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#64748B' }}>{fmtCurrency(priceExclGst)} × {adults} adult{adults > 1 ? 's' : ''}</span>
+              <span style={{ fontFamily: 'var(--f-num)', fontSize: 14, fontWeight: 600, color: '#0F172A' }}>{fmtCurrency(subtotalExcl)}</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12 }}>
+              <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#94A3B8' }}>{packageOption.tier_name} package</span>
+              <span style={{ fontFamily: 'var(--f-num)', fontSize: 12, fontWeight: 600, color: '#94A3B8' }}>incl.</span>
+            </div>
+            {pkgDiscPerPerson > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12 }}>
+                <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#DC2626' }}>Discount ({fmtCurrency(pkgDiscPerPerson)}/person)</span>
+                <span style={{ fontFamily: 'var(--f-num)', fontSize: 14, fontWeight: 600, color: '#DC2626' }}>−{fmtCurrency(pkgDiscPerPerson * adults)}</span>
               </div>
-            ))}
+            )}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12 }}>
+              <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#94A3B8' }}>GST {gstPct}%</span>
+              <span style={{ fontFamily: 'var(--f-num)', fontSize: 14, fontWeight: 600, color: '#94A3B8' }}>{fmtCurrency(gstTotal)}</span>
+            </div>
           </div>
 
           {/* Total */}
@@ -2502,10 +2534,10 @@ function PackageFareSummary({
             <div>
               <div style={{ fontFamily: 'var(--f-body)', fontSize: 13, fontWeight: 700, color: '#0F172A' }}>Total Amount</div>
               <div style={{ fontFamily: 'var(--f-body)', fontSize: 11, color: '#94A3B8', marginTop: 2 }}>
-                {fmtCurrency(priceInclGst)} per person · incl. {gstPct}% GST
+                {fmtCurrency(pkgDiscountedPerAdult)} per person · incl. {gstPct}% GST
               </div>
             </div>
-            <div style={{ fontFamily: 'var(--f-num)', fontSize: 26, fontWeight: 900, color: T }}>{fmtCurrency(total)}</div>
+            <div style={{ fontFamily: 'var(--f-num)', fontSize: 26, fontWeight: 900, color: T }}>{fmtCurrency(pkgDiscountedTotal)}</div>
           </div>
 
           {/* Book Now */}
@@ -2527,7 +2559,7 @@ function PackageFareSummary({
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round">
                     <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
                   </svg>
-                  Book Now — {fmtCurrency(total)}
+                  Book Now — {fmtCurrency(pkgDiscountedTotal)}
                 </>
               )}
             </button>

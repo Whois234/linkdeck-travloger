@@ -461,7 +461,7 @@ function QuoteDiscountCard({ quote, onUpdated }: { quote: Quote; onUpdated: () =
       {editing ? (
         <div className="space-y-3">
           <div>
-            <label className={lbl} style={lblStyle}>Discount Amount (₹)</label>
+            <label className={lbl} style={lblStyle}>Discount per Person (₹)</label>
             <div className="flex items-center gap-2">
               <span className="text-sm font-bold" style={{ color: '#64748B' }}>₹</span>
               <input type="number" min="0" step="100" value={amountInput} onChange={e => setAmountInput(e.target.value)}
@@ -485,17 +485,23 @@ function QuoteDiscountCard({ quote, onUpdated }: { quote: Quote; onUpdated: () =
         </div>
       ) : (
         <div className="space-y-1">
-          {hasDiscount ? (
-            <>
-              <p className="text-2xl font-bold" style={{ color: '#DC2626' }}>−{fmtINR(quote.discount_amount)}</p>
-              {quote.discount_expires_at && (
-                <p className="text-xs" style={{ color: '#94A3B8' }}>
-                  Valid till {new Date(quote.discount_expires_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}
-                </p>
-              )}
-              <p className="text-xs" style={{ color: '#64748B' }}>Shown to customer with countdown timer on itinerary page.</p>
-            </>
-          ) : (
+          {hasDiscount ? (() => {
+            const expired = !!quote.discount_expires_at && new Date(quote.discount_expires_at).getTime() <= Date.now();
+            return (
+              <>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-2xl font-bold" style={{ color: '#DC2626' }}>−{fmtINR(quote.discount_amount)} <span className="text-sm font-medium">per person</span></p>
+                  {expired && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: '#DC2626', color: 'white', letterSpacing: '0.06em' }}>EXPIRED</span>}
+                </div>
+                {quote.discount_expires_at && (
+                  <p className="text-xs" style={{ color: '#94A3B8' }}>
+                    Valid till {new Date(quote.discount_expires_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}
+                  </p>
+                )}
+                {!expired && <p className="text-xs" style={{ color: '#64748B' }}>Shown to customer with countdown timer on itinerary page.</p>}
+              </>
+            );
+          })() : (
             <p className="text-sm" style={{ color: '#94A3B8' }}>No discount set. Add one to show a limited-time offer on the customer page.</p>
           )}
           {msg && <p className="text-[11px] font-medium mt-2" style={{ color: msg.ok ? '#15803D' : '#DC2626' }}>{msg.ok ? '✓ ' : '✗ '}{msg.text}</p>}
