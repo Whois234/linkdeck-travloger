@@ -1,4 +1,4 @@
-import { McpServer } from '@/lib/mcp/mcp-server-shim';
+import type { McpServer } from '@/lib/mcp/mcp-server-shim';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { SupplierType, HotelType, HotelCategory, ActivityRateType } from '@prisma/client';

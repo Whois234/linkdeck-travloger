@@ -1,14 +1,14 @@
-import { McpServer } from '@/lib/mcp/mcp-server-shim';
+import { createMcpServerInstance } from './mcp-server-shim';
 import { registerMasterTools } from './tools/masters';
 import { registerLeadsQuotesTools } from './tools/leads-quotes';
 import { registerItineraryTools } from './tools/itinerary';
 
 /**
  * Create and configure a new McpServer instance with all registered tools.
- * Called once per SSE session.
+ * Called once per SSE session (inside the request handler, never at import time).
  */
-export function createMcpServer(): McpServer {
-  const server = new McpServer({
+export function createMcpServer() {
+  const server = createMcpServerInstance({
     name: 'travloger-crm',
     version: '1.0.0',
   });

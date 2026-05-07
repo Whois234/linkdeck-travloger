@@ -1,38 +1,58 @@
 /**
- * Re-exports McpServer from the MCP SDK using an absolute path.
+ * Lazy McpServer factory.
  *
- * Problems we work around:
- * 1. The SDK's exports map doesn't include `./server/mcp`, so
- *    require('@modelcontextprotocol/sdk/dist/cjs/server/mcp.js') throws at runtime.
- * 2. Webpack intercepts `require.resolve()` and replaces it with a numeric
- *    module ID — passing a number to `path.dirname` throws ERR_INVALID_ARG_TYPE.
+ * All require() calls are inside createMcpServerInstance() — NOTHING runs at
+ * module load time. This is critical because Next.js imports this file during
+ * build to read the route's exports (including `dynamic`), and any top-level
+ * side-effect that calls require() or require.resolve() will fail at that point.
  *
- * Solution: use eval('require') to get a real Node.js require that webpack
- * never touches, resolve the CJS server barrel (which IS in the exports map)
- * to an absolute path, then navigate to mcp.js in the same directory.
+ * Subpath `./server/mcp` is not in the SDK's exports map, so we resolve the
+ * CJS server barrel (which IS exported) to an absolute path, then navigate to
+ * mcp.js in the same directory — absolute paths bypass the exports map.
+ *
+ * eval('require') prevents webpack from replacing require.resolve() with a
+ * numeric module ID during bundling.
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any, no-eval */
-import path from 'path';
 
-// eval() prevents webpack from analysing or replacing this require reference.
-const nativeRequire = eval('require') as NodeRequire;
+// ── Types only (no runtime cost at import time) ───────────────────────────────
 
-// './server' IS in the exports map → resolves to dist/cjs/server/index.js
-const serverIndexAbsPath: string = nativeRequire.resolve('@modelcontextprotocol/sdk/server');
-
-// mcp.js lives in the same directory as index.js
-const mcpAbsPath = path.join(path.dirname(serverIndexAbsPath), 'mcp.js');
-
-const mod = nativeRequire(mcpAbsPath) as {
-  McpServer: new (options: { name: string; version: string }) => McpServer;
-};
-
-// Minimal interface covering what our tools actually call on McpServer.
 export interface McpServer {
-  tool(name: string, description: string, schema: Record<string, any>, handler: (args: any) => Promise<any>): void;
+  tool(
+    name: string,
+    description: string,
+    schema: Record<string, any>,
+    handler: (args: any) => Promise<any>
+  ): void;
   connect(transport: any): Promise<void>;
   close(): Promise<void>;
 }
 
-export const McpServer = mod.McpServer;
+// ── Lazy factory ──────────────────────────────────────────────────────────────
+
+/**
+ * Creates and returns a configured McpServer instance.
+ * The SDK is loaded on first call, never at import time.
+ */
+export function createMcpServerInstance(options: { name: string; version: string }): McpServer {
+  // eval() prevents webpack from analysing this require reference.
+  const nativeRequire = eval('require') as NodeRequire;
+
+  // Use nativeRequire for path too, so no top-level import is needed.
+  const nodePath = nativeRequire('path') as typeof import('path');
+
+  // '@modelcontextprotocol/sdk/server' IS in the exports map → resolves to
+  // the absolute path of dist/cjs/server/index.js.
+  const serverIndexAbsPath: string = nativeRequire.resolve('@modelcontextprotocol/sdk/server');
+
+  // mcp.js lives in the same directory as index.js.
+  const mcpAbsPath = nodePath.join(nodePath.dirname(serverIndexAbsPath), 'mcp.js');
+
+  // Absolute path require bypasses the exports map restriction.
+  const { McpServer } = nativeRequire(mcpAbsPath) as {
+    McpServer: new (options: { name: string; version: string }) => McpServer;
+  };
+
+  return new McpServer(options);
+}
