@@ -35,7 +35,7 @@ function Avatar({ name, color, size = 32 }: { name: string; color: string; size?
 
 const LeadCard = memo(function LeadCard({
   lead, stageColor, onDragStart, onClick, selected, onToggleSelect, onPrefetch,
-  onTouchDragStart, onTouchDragMove, onTouchDragEnd,
+  onGripTouchInit,
 }: {
   lead: Lead; stageColor: string;
   onDragStart: (e: React.DragEvent, leadId: string) => void;
@@ -43,9 +43,7 @@ const LeadCard = memo(function LeadCard({
   selected: boolean;
   onToggleSelect: (id: string, e: React.MouseEvent) => void;
   onPrefetch: (leadId: string) => void;
-  onTouchDragStart: (leadId: string, name: string, x: number, y: number) => void;
-  onTouchDragMove: (x: number, y: number) => void;
-  onTouchDragEnd: (x: number, y: number) => void;
+  onGripTouchInit: (leadId: string, name: string, startX: number, startY: number) => void;
 }) {
   const callCount  = lead._count?.call_logs ?? 0;
   const noteCount  = lead._count?.lead_notes ?? 0;
@@ -53,57 +51,6 @@ const LeadCard = memo(function LeadCard({
   const topQuote   = lead.quotes?.[0];
   const quoteViewed   = topQuote && (topQuote.status === 'PUBLISHED' || topQuote.status === 'VIEWED') && topQuote.events.some(e => e.event_type === 'quote_viewed');
   const quoteApproved = topQuote?.status === 'APPROVED' || topQuote?.status === 'ACCEPTED';
-
-  // Touch drag via grip handle.
-  // We defer committing to drag until the finger moves enough so that a
-  // horizontal swipe (to scroll the kanban board) is still possible.
-  const gripStart  = useRef<{ x: number; y: number } | null>(null);
-  const isDragging = useRef(false);
-  const decided    = useRef(false);
-
-  function handleGripTouchStart(e: React.TouchEvent) {
-    e.stopPropagation();
-    const t = e.touches[0];
-    gripStart.current = { x: t.clientX, y: t.clientY };
-    isDragging.current = false;
-    decided.current    = false;
-  }
-
-  function handleGripTouchMove(e: React.TouchEvent) {
-    const t = e.touches[0];
-
-    if (!decided.current && gripStart.current) {
-      const dx = Math.abs(t.clientX - gripStart.current.x);
-      const dy = Math.abs(t.clientY - gripStart.current.y);
-      if (dx < 6 && dy < 6) return; // not enough movement yet
-
-      decided.current = true;
-
-      if (dx > dy) {
-        // Horizontal swipe → hand back to the scroll container
-        isDragging.current = false;
-        return;
-      }
-
-      // Vertical/diagonal → commit to card drag
-      isDragging.current = true;
-      if (navigator.vibrate) navigator.vibrate(30);
-      onTouchDragStart(lead.id, lead.name, gripStart.current.x, gripStart.current.y);
-    }
-
-    if (!isDragging.current) return;
-    e.preventDefault();
-    e.stopPropagation();
-    onTouchDragMove(t.clientX, t.clientY);
-  }
-
-  function handleGripTouchEnd(e: React.TouchEvent) {
-    decided.current = false;
-    if (!isDragging.current) return;
-    isDragging.current = false;
-    const t = e.changedTouches[0];
-    onTouchDragEnd(t.clientX, t.clientY);
-  }
 
   return (
     <div
@@ -123,14 +70,16 @@ const LeadCard = memo(function LeadCard({
         padding: '13px 13px 11px',
       }}
     >
-      {/* Grip handle — touch-only, always visible on mobile for drag */}
+      {/* Grip handle — mobile only. Touchstart here kicks off native drag tracking in the page. */}
       <div
-        onTouchStart={handleGripTouchStart}
-        onTouchMove={handleGripTouchMove}
-        onTouchEnd={handleGripTouchEnd}
+        onTouchStart={e => {
+          e.stopPropagation();
+          const t = e.touches[0];
+          onGripTouchInit(lead.id, lead.name, t.clientX, t.clientY);
+        }}
         onClick={e => e.stopPropagation()}
-        className="absolute top-0 bottom-0 left-0 flex items-center justify-center touch-none md:hidden"
-        style={{ width: 28, borderRadius: '14px 0 0 14px', cursor: 'grab', zIndex: 10 }}
+        className="absolute top-0 bottom-0 left-0 flex items-center justify-center md:hidden"
+        style={{ width: 28, borderRadius: '14px 0 0 14px', cursor: 'grab', zIndex: 10, touchAction: 'none' }}
         title="Drag to move"
       >
         <GripVertical className="w-3.5 h-3.5" style={{ color: stageColor, opacity: 0.7 }} />
@@ -241,7 +190,7 @@ const LeadCard = memo(function LeadCard({
 
 const KanbanColumn = memo(function KanbanColumn({
   stage, leads, onDragStart, onDrop, onLeadClick, selectedIds, onToggleSelect, onSelectAllInStage, onPrefetch,
-  onTouchDragStart, onTouchDragMove, onTouchDragEnd, touchOver,
+  onGripTouchInit, touchOver,
 }: {
   stage: Stage; leads: Lead[];
   onDragStart: (e: React.DragEvent, leadId: string) => void;
@@ -251,9 +200,7 @@ const KanbanColumn = memo(function KanbanColumn({
   onToggleSelect: (id: string, e: React.MouseEvent) => void;
   onSelectAllInStage: (stageId: string, leads: Lead[]) => void;
   onPrefetch: (leadId: string) => void;
-  onTouchDragStart: (leadId: string, name: string, x: number, y: number) => void;
-  onTouchDragMove: (x: number, y: number) => void;
-  onTouchDragEnd: (x: number, y: number) => void;
+  onGripTouchInit: (leadId: string, name: string, startX: number, startY: number) => void;
   touchOver: boolean;
 }) {
   const PAGE_SIZE   = 20;
@@ -312,9 +259,7 @@ const KanbanColumn = memo(function KanbanColumn({
             onDragStart={onDragStart} onClick={onLeadClick}
             selected={selectedIds.has(lead.id)} onToggleSelect={onToggleSelect}
             onPrefetch={onPrefetch}
-            onTouchDragStart={onTouchDragStart}
-            onTouchDragMove={onTouchDragMove}
-            onTouchDragEnd={onTouchDragEnd} />
+            onGripTouchInit={onGripTouchInit} />
         ))}
 
         {hidden > 0 && (
@@ -435,7 +380,6 @@ export default function PipelinesPage() {
   const [showSortMenu, setShowSortMenu]         = useState(false);
   const draggingLeadId = useRef<string | null>(null);
   const [touchDrag, setTouchDrag] = useState<{ leadId: string; name: string; x: number; y: number; overStageId: string | null } | null>(null);
-  const touchDragRef = useRef<string | null>(null);
   const qc = useQueryClient();
 
   const { data: pipelinesData, isLoading: loadingPipelines } = usePipelines();
@@ -479,27 +423,62 @@ export default function PipelinesPage() {
     stageMutation.mutate({ leadId, stageId });
   }, [stageMutation]);
 
-  const handleTouchDragStart = useCallback((leadId: string, name: string, x: number, y: number) => {
-    touchDragRef.current = leadId;
-    setTouchDrag({ leadId, name, x, y, overStageId: null });
-  }, []);
+  // Native touch drag — registered on document so { passive: false } works,
+  // allowing e.preventDefault() to actually block scroll while dragging.
+  const handleGripTouchInit = useCallback((leadId: string, name: string, startX: number, startY: number) => {
+    let decided  = false;
+    let dragging = false;
 
-  const handleTouchDragMove = useCallback((x: number, y: number) => {
-    const el = document.elementFromPoint(x, y);
-    const col = el?.closest('[data-stage-id]');
-    const overStageId = col?.getAttribute('data-stage-id') ?? null;
-    setTouchDrag(prev => prev ? { ...prev, x, y, overStageId } : null);
-  }, []);
+    function getStageAt(x: number, y: number) {
+      const el = document.elementFromPoint(x, y);
+      return el?.closest('[data-stage-id]')?.getAttribute('data-stage-id') ?? null;
+    }
 
-  const handleTouchDragEnd = useCallback((x: number, y: number) => {
-    const leadId = touchDragRef.current;
-    touchDragRef.current = null;
-    setTouchDrag(null);
-    if (!leadId) return;
-    const el = document.elementFromPoint(x, y);
-    const col = el?.closest('[data-stage-id]');
-    const stageId = col?.getAttribute('data-stage-id');
-    if (stageId) stageMutation.mutate({ leadId, stageId });
+    function onMove(e: TouchEvent) {
+      const t = e.touches[0];
+
+      if (!decided) {
+        const dx = Math.abs(t.clientX - startX);
+        const dy = Math.abs(t.clientY - startY);
+        if (dx < 8 && dy < 8) return; // not enough movement yet
+        decided = true;
+
+        if (dx > dy * 1.2) {
+          // Horizontal swipe — let board scroll, abort drag
+          cleanup();
+          return;
+        }
+
+        dragging = true;
+        if (navigator.vibrate) navigator.vibrate(30);
+        setTouchDrag({ leadId, name, x: t.clientX, y: t.clientY, overStageId: null });
+      }
+
+      if (!dragging) return;
+      e.preventDefault(); // works because listener is { passive: false }
+
+      const overStageId = getStageAt(t.clientX, t.clientY);
+      setTouchDrag({ leadId, name, x: t.clientX, y: t.clientY, overStageId });
+    }
+
+    function onEnd(e: TouchEvent) {
+      if (dragging) {
+        const t = e.changedTouches[0];
+        const stageId = getStageAt(t.clientX, t.clientY);
+        if (stageId) stageMutation.mutate({ leadId, stageId });
+      }
+      cleanup();
+    }
+
+    function cleanup() {
+      dragging = false;
+      setTouchDrag(null);
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend',  onEnd);
+    }
+
+    document.addEventListener('touchmove', onMove, { passive: false });
+    document.addEventListener('touchend',  onEnd,  { passive: false });
   }, [stageMutation]);
 
   const toggleSelect = useCallback((id: string, e: React.MouseEvent) => {
@@ -779,9 +758,7 @@ export default function PipelinesPage() {
                 onToggleSelect={toggleSelect}
                 onSelectAllInStage={() => toggleSelectAllInStage(stage.id, stageLeads)}
                 onPrefetch={prefetchLead}
-                onTouchDragStart={handleTouchDragStart}
-                onTouchDragMove={handleTouchDragMove}
-                onTouchDragEnd={handleTouchDragEnd}
+                onGripTouchInit={handleGripTouchInit}
                 touchOver={touchDrag?.overStageId === stage.id}
               />
             );
