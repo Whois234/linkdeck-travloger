@@ -6,7 +6,7 @@ import {
   LayoutDashboard, MapPin, Map, Building2, Car, Activity, BookOpen,
   ListPlus, ScrollText, Users,
   Layout, CalendarDays, Layers, FileText, Menu, LogOut,
-  Bell, ChevronDown, Tag, Briefcase, Settings, User, X, Kanban, SlidersHorizontal, UserCheck, Cog,
+  Bell, ChevronDown, Tag, Settings, User, X, Kanban, SlidersHorizontal, UserCheck, Cog,
 } from 'lucide-react';
 
 // Roles that can see each nav group/item. Empty = all roles.
@@ -30,7 +30,6 @@ const ALL_NAV: NavGroup[] = [
       { label: 'Day Plans',          href: '/admin/day-plans',             icon: BookOpen  },
       { label: 'Inclusions / Excl.', href: '/admin/inclusions-exclusions', icon: ListPlus  },
       { label: 'Policies',           href: '/admin/policies',              icon: ScrollText},
-      { label: 'Agents',             href: '/admin/agents',                icon: Briefcase, roles: ['ADMIN', 'MANAGER'] },
     ],
   },
   {

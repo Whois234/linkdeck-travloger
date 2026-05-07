@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from '@/components/admin/PageHeader';
-import { Plus, Search, Pencil, KeyRound, UserX, UserCheck, X, Eye, EyeOff, RefreshCw, ShieldCheck } from 'lucide-react';
+import { Plus, Search, Pencil, KeyRound, UserX, UserCheck, X, Eye, EyeOff, RefreshCw, ShieldCheck, ChevronDown } from 'lucide-react';
 
 type UserRole = 'ADMIN' | 'MANAGER' | 'OPS' | 'SALES' | 'FINANCE';
 
@@ -20,13 +20,11 @@ interface User {
 }
 
 // All modules that can be toggled, keyed by the path segment after /admin/
-const MODULE_GROUPS: { group: string; items: { key: string; label: string }[] }[] = [
+const MODULE_GROUPS: { group: string; collapsedByDefault?: boolean; items: { key: string; label: string }[] }[] = [
   {
     group: 'QUOTES & CRM',
     items: [
       { key: 'quotes',               label: 'Quotes' },
-      { key: 'customers',            label: 'Customers' },
-      { key: 'leads',                label: 'Leads' },
       { key: 'pipelines',            label: 'Pipelines' },
       { key: 'contacts',             label: 'Contacts' },
       { key: 'converted-customers',  label: 'Converted Customers' },
@@ -43,19 +41,19 @@ const MODULE_GROUPS: { group: string; items: { key: string; label: string }[] }[
   },
   {
     group: 'MASTERS',
+    collapsedByDefault: true,
     items: [
-      { key: 'hotels',                 label: 'Hotels' },
-      { key: 'destinations',           label: 'Destinations' },
       { key: 'states',                 label: 'States' },
+      { key: 'destinations',           label: 'Destinations' },
       { key: 'suppliers',              label: 'Suppliers' },
+      { key: 'hotels',                 label: 'Hotels' },
+      { key: 'vehicle-types',          label: 'Vehicle Types' },
+      { key: 'vehicle-package-rates',  label: 'Vehicle Rates' },
       { key: 'activities',             label: 'Activities' },
       { key: 'day-plans',              label: 'Day Plans' },
       { key: 'inclusions-exclusions',  label: 'Inclusions / Excl.' },
       { key: 'policies',               label: 'Policies' },
-      { key: 'vehicle-types',          label: 'Vehicle Types' },
-      { key: 'vehicle-package-rates',  label: 'Vehicle Rates' },
       { key: 'media-library',          label: 'Media Library' },
-      { key: 'agents',                 label: 'Agents' },
       { key: 'pricing-rules',          label: 'Pricing Rules' },
     ],
   },
@@ -406,6 +404,17 @@ function ModuleAccessModal({ user, onClose, onSaved }: { user: User; onClose: ()
   });
   const [saving, setSaving] = useState(false);
   const [apiError, setApiError] = useState('');
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() =>
+    new Set(MODULE_GROUPS.filter(g => g.collapsedByDefault).map(g => g.group))
+  );
+
+  function toggleGroupCollapse(group: string) {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      next.has(group) ? next.delete(group) : next.add(group);
+      return next;
+    });
+  }
 
   function setModulePerm(key: string, perm: PermState) {
     setPerms(p => ({ ...p, [key]: perm }));
@@ -467,21 +476,33 @@ function ModuleAccessModal({ user, onClose, onSaved }: { user: User; onClose: ()
               </div>
             </div>
 
-            <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1 -mr-1">
-              {MODULE_GROUPS.map(({ group, items }) => {
+            <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1 -mr-1">
+              {MODULE_GROUPS.map(({ group, items, collapsedByDefault }) => {
                 const groupKeys = items.map(i => i.key);
                 const groupPerms = groupKeys.map(k => perms[k]);
                 const allEdit = groupPerms.every(p => p === 'edit');
                 const allView = groupPerms.every(p => p === 'view');
                 const allNone = groupPerms.every(p => p === 'none');
+                const isCollapsible = !!collapsedByDefault;
+                const isCollapsed = collapsedGroups.has(group);
 
                 return (
                   <div key={group}>
                     {/* Group header row */}
-                    <div className="flex items-center gap-3 px-3 py-2 rounded-lg mb-1"
-                      style={{ backgroundColor: '#F1F5F9' }}>
-                      <span className="flex-1 text-[11px] font-bold uppercase tracking-widest" style={{ color: '#64748B' }}>{group}</span>
-                      <div className="flex items-center gap-1 w-[195px]">
+                    <div className="flex items-center gap-3 px-3 py-2 rounded-lg mb-1 cursor-pointer select-none"
+                      style={{ backgroundColor: '#F1F5F9' }}
+                      onClick={isCollapsible ? () => toggleGroupCollapse(group) : undefined}>
+                      <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                        {isCollapsible && (
+                          <ChevronDown className="w-3.5 h-3.5 flex-shrink-0 transition-transform"
+                            style={{ color: '#64748B', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }} />
+                        )}
+                        <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: '#64748B' }}>{group}</span>
+                        {isCollapsible && isCollapsed && (
+                          <span className="text-[10px] font-medium ml-1" style={{ color: '#94A3B8' }}>({items.length} modules)</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 w-[195px]" onClick={e => e.stopPropagation()}>
                         {(['none', 'view', 'edit'] as PermState[]).map(p => (
                           <button key={p} type="button" onClick={() => setGroupPerm(groupKeys, p)}
                             className="w-[60px] h-6 rounded text-[11px] font-semibold transition-all"
@@ -497,35 +518,37 @@ function ModuleAccessModal({ user, onClose, onSaved }: { user: User; onClose: ()
                       </div>
                     </div>
 
-                    {/* Module rows */}
-                    <div className="space-y-1 pl-2">
-                      {items.map(({ key, label }) => {
-                        const cur = perms[key] ?? 'none';
-                        return (
-                          <div key={key} className="flex items-center gap-3 px-3 py-2 rounded-lg"
-                            style={{ backgroundColor: cur === 'none' ? '#fff' : cur === 'view' ? '#EFF6FF' : '#F0FDF4', border: `1px solid ${cur === 'none' ? '#E2E8F0' : cur === 'view' ? '#BFDBFE' : '#BBF7D0'}` }}>
-                            <span className="flex-1 text-sm font-medium" style={{ color: cur === 'none' ? '#94A3B8' : '#0F172A' }}>{label}</span>
-                            <div className="flex items-center gap-1 w-[195px]">
-                              {(['none', 'view', 'edit'] as PermState[]).map(p => (
-                                <button key={p} type="button" onClick={() => setModulePerm(key, p)}
-                                  className="w-[60px] h-7 rounded-lg text-[11px] font-semibold transition-all"
-                                  style={
-                                    cur === p
-                                      ? p === 'none'
-                                        ? { backgroundColor: '#F1F5F9', color: '#64748B', border: '1.5px solid #CBD5E1' }
-                                        : p === 'view'
-                                          ? { backgroundColor: '#DBEAFE', color: '#1D4ED8', border: '1.5px solid #93C5FD' }
-                                          : { backgroundColor: '#DCFCE7', color: '#15803D', border: '1.5px solid #86EFAC' }
-                                      : { backgroundColor: '#F8FAFC', color: '#CBD5E1', border: '1px solid #E2E8F0' }
-                                  }>
-                                  {p === 'none' ? '✕' : p === 'view' ? 'View' : 'Edit'}
-                                </button>
-                              ))}
+                    {/* Module rows — hidden when collapsed */}
+                    {!isCollapsed && (
+                      <div className="space-y-1 pl-2">
+                        {items.map(({ key, label }) => {
+                          const cur = perms[key] ?? 'none';
+                          return (
+                            <div key={key} className="flex items-center gap-3 px-3 py-2 rounded-lg"
+                              style={{ backgroundColor: cur === 'none' ? '#fff' : cur === 'view' ? '#EFF6FF' : '#F0FDF4', border: `1px solid ${cur === 'none' ? '#E2E8F0' : cur === 'view' ? '#BFDBFE' : '#BBF7D0'}` }}>
+                              <span className="flex-1 text-sm font-medium" style={{ color: cur === 'none' ? '#94A3B8' : '#0F172A' }}>{label}</span>
+                              <div className="flex items-center gap-1 w-[195px]">
+                                {(['none', 'view', 'edit'] as PermState[]).map(p => (
+                                  <button key={p} type="button" onClick={() => setModulePerm(key, p)}
+                                    className="w-[60px] h-7 rounded-lg text-[11px] font-semibold transition-all"
+                                    style={
+                                      cur === p
+                                        ? p === 'none'
+                                          ? { backgroundColor: '#F1F5F9', color: '#64748B', border: '1.5px solid #CBD5E1' }
+                                          : p === 'view'
+                                            ? { backgroundColor: '#DBEAFE', color: '#1D4ED8', border: '1.5px solid #93C5FD' }
+                                            : { backgroundColor: '#DCFCE7', color: '#15803D', border: '1.5px solid #86EFAC' }
+                                        : { backgroundColor: '#F8FAFC', color: '#CBD5E1', border: '1px solid #E2E8F0' }
+                                    }>
+                                    {p === 'none' ? 'X' : p === 'view' ? 'View' : 'Edit'}
+                                  </button>
+                                ))}
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 );
               })}
