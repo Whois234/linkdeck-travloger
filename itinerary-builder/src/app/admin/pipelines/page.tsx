@@ -11,10 +11,12 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { Stage, Lead, Pipeline, STATUS_COLORS, formatDateTime } from './types';
+import type { CallState } from './LeadDrawer';
 import { KanbanSkeleton } from '@/components/Skeleton';
 
 const LeadDrawer    = dynamic(() => import('./LeadDrawer'),    { ssr: false });
 const AddLeadDrawer = dynamic(() => import('./AddLeadDrawer'), { ssr: false });
+const CallBanner    = dynamic(() => import('./LeadDrawer').then(m => ({ default: m.CallBanner })), { ssr: false });
 
 const T = '#134956';
 
@@ -380,6 +382,8 @@ export default function PipelinesPage() {
   const [showSortMenu, setShowSortMenu]         = useState(false);
   const draggingLeadId = useRef<string | null>(null);
   const [touchDrag, setTouchDrag] = useState<{ leadId: string; name: string; x: number; y: number; overStageId: string | null } | null>(null);
+  const [callState, setCallState] = useState<CallState>(null);
+  const [callPopupState, setCallPopupState] = useState<{ leadId: string; elapsed: number; outcome: string } | null>(null);
   const qc = useQueryClient();
 
   const { data: pipelinesData, isLoading: loadingPipelines } = usePipelines();
@@ -811,12 +815,25 @@ export default function PipelinesPage() {
           onCreated={() => qc.invalidateQueries({ queryKey: [...QK.pipeline(resolvedPipelineId), filterParams.toString()] })}
         />
       )}
+      {/* Global call banner — persists even when drawer is closed */}
+      {callState?.active && (
+        <CallBanner
+          leadName={callState.leadName}
+          phone={callState.phone}
+          initialElapsed={callState.elapsed}
+          onEndCall={(elapsed) => { setCallState(null); setCallPopupState({ leadId: callState.leadId, elapsed, outcome: 'ANSWERED' }); }}
+          onNotAnswered={() => { setCallState(null); setCallPopupState({ leadId: callState.leadId, elapsed: 0, outcome: 'NO_ANSWER' }); }}
+        />
+      )}
+
       {selectedLead && (
         <LeadDrawer
           leadId={selectedLead.id}
           stages={activePipeline?.stages ?? []}
           onClose={() => setSelectedLead(null)}
           onUpdated={() => qc.invalidateQueries({ queryKey: [...QK.pipeline(resolvedPipelineId), filterParams.toString()] })}
+          callState={callState}
+          setCallState={setCallState}
         />
       )}
     </div>

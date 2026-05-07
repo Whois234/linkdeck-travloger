@@ -29,14 +29,14 @@ import {
 // ─── Floating Call Banner ─────────────────────────────────────────────────────
 
 function CallBanner({
-  leadName, phone,
+  leadName, phone, initialElapsed = 0,
   onEndCall, onNotAnswered,
 }: {
-  leadName: string; phone: string;
+  leadName: string; phone: string; initialElapsed?: number;
   onEndCall: (elapsed: number) => void;
   onNotAnswered: () => void;
 }) {
-  const [elapsed, setElapsed] = useState(0);
+  const [elapsed, setElapsed] = useState(initialElapsed);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -96,9 +96,10 @@ function CallLogPopup({
   const [nextTime, setNextTime] = useState('');
   const logCallMutation = useLogCall(leadId);
 
+  // Duration stored in seconds; manual entry is in minutes, converted to seconds
   const durationForApi = initialElapsed > 0
-    ? Math.max(1, Math.round(initialElapsed / 60))
-    : (manualDuration ? parseInt(manualDuration) : null);
+    ? initialElapsed
+    : (manualDuration ? parseInt(manualDuration) * 60 : null);
 
   function save() {
     logCallMutation.mutate({
@@ -374,10 +375,16 @@ function QuotePopup({ quote, onClose }: { quote: QuoteRef; onClose: () => void }
 
 // ─── Lead Drawer ──────────────────────────────────────────────────────────────
 
+export { CallBanner };
+
+export type CallState = { active: boolean; leadId: string; leadName: string; phone: string; elapsed: number } | null;
+
 export default function LeadDrawer({
-  leadId, stages, onClose, onUpdated,
+  leadId, stages, onClose, onUpdated, callState, setCallState,
 }: {
   leadId: string; stages: Stage[]; onClose: () => void; onUpdated: () => void;
+  callState: CallState;
+  setCallState: (s: CallState) => void;
 }) {
   const { data: leadData } = useLead(leadId);
   const ld = leadData as (Lead & { lead_notes: Note[]; call_logs: CallLog[]; lead_tasks: Task[]; lead_activities: Activity[]; quotes: QuoteRef[] }) | undefined;
@@ -401,7 +408,6 @@ export default function LeadDrawer({
   const [editForm, setEditForm] = useState({ name: '', phone: '', email: '', destination_interest: '', travel_month: '', budget_range: '' });
   const [savingEdit, setSavingEdit] = useState(false);
   const [selectedQuote, setSelectedQuote] = useState<QuoteRef | null>(null);
-  const [callBannerActive, setCallBannerActive] = useState(false);
   const [callPopupState, setCallPopupState] = useState<{ elapsed: number; outcome: string } | null>(null);
 
   useEffect(() => {
@@ -473,13 +479,7 @@ export default function LeadDrawer({
 
   return (
     <>
-      {callBannerActive && (
-        <CallBanner
-          leadName={lead.name} phone={lead.phone}
-          onEndCall={(elapsed) => { setCallBannerActive(false); setCallPopupState({ elapsed, outcome: 'ANSWERED' }); }}
-          onNotAnswered={() => { setCallBannerActive(false); setCallPopupState({ elapsed: 0, outcome: 'NO_ANSWER' }); }}
-        />
-      )}
+      {/* CallBanner is rendered at page level for persistence across drawer open/close */}
       {(showCallPopup || callPopupState) && (
         <CallLogPopup
           leadId={leadId} leadName={lead.name}
@@ -522,7 +522,7 @@ export default function LeadDrawer({
               </div>
               <div className="flex-1" />
               <button
-                onClick={() => { window.location.href = `tel:${lead.phone}`; setCallBannerActive(true); }}
+                onClick={() => { window.location.href = `tel:${lead.phone}`; setCallState({ active: true, leadId, leadName: lead.name, phone: lead.phone, elapsed: 0 }); }}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90"
                 style={{ backgroundColor: '#16A34A' }}>
                 <Phone className="w-3.5 h-3.5" /> Call
@@ -648,7 +648,7 @@ export default function LeadDrawer({
                   <div key={c.id} className="rounded-xl p-4" style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: '#E0F2FE', color: '#0369A1' }}>{c.outcome}</span>
-                      {c.duration && <span className="text-xs" style={{ color: '#64748B' }}>{c.duration} min</span>}
+                      {c.duration != null && c.duration > 0 && <span className="text-xs" style={{ color: '#64748B' }}>{fmtSecs(c.duration)}</span>}
                     </div>
                     {c.notes && <p className="text-sm mt-1" style={{ color: '#374151' }}>{c.notes}</p>}
                     <p className="text-[11px] mt-2" style={{ color: '#94A3B8' }}>{timeAgo(c.created_at)}</p>
