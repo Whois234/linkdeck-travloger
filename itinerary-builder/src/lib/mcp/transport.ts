@@ -9,7 +9,10 @@
  *  POST /api/mcp/sse?sid=<id>    — delivers JSON-RPC message to server
  */
 
-import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
+// JSONRPCMessage from @modelcontextprotocol/sdk/types.js — inlined because
+// that subpath is not declared in the SDK's package.json exports map and
+// TypeScript (moduleResolution: bundler) cannot resolve it at build time.
+type JSONRPCMessage = Record<string, unknown>;
 
 export class NextSSETransport {
   private controller: ReadableStreamDefaultController<Uint8Array>;
