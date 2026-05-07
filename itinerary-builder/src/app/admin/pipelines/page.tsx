@@ -6,8 +6,8 @@ import { usePipelines, usePipeline, useUsers, useLeadStageMutation, usePrefetchL
 import {
   Plus, Search, Phone, ChevronDown, X, Filter, ArrowUpDown, Trash2,
   MoveRight, CheckSquare, Square, Calendar, Users, MapPin, Wallet,
-  MessageCircle, SlidersHorizontal, Star, Clock, FileText, PhoneCall, GripVertical,
-  CheckCircle2, Eye,
+  MessageCircle, SlidersHorizontal, Star, Clock, FileText, PhoneCall,
+  CheckCircle2, Eye, ArrowRightLeft,
 } from 'lucide-react';
 import Link from 'next/link';
 import { Stage, Lead, Pipeline, STATUS_COLORS, formatDateTime } from './types';
@@ -33,11 +33,87 @@ function Avatar({ name, color, size = 32 }: { name: string; color: string; size?
   );
 }
 
+// ─── Move-To Bottom Sheet (mobile) ───────────────────────────────────────────
+
+function MoveToSheet({ lead, stages, stageCounts, onMove, onClose }: {
+  lead: Lead; stages: Stage[];
+  stageCounts: Record<string, number>;
+  onMove: (stageId: string) => void;
+  onClose: () => void;
+}) {
+  const maxCount = Math.max(1, ...Object.values(stageCounts));
+  return (
+    <div className="fixed inset-0 z-[60] flex flex-col justify-end" onClick={onClose}>
+      <div className="fixed inset-0 bg-black/50" />
+      <div
+        className="relative rounded-t-3xl overflow-hidden"
+        style={{ backgroundColor: '#1C1C1E', maxHeight: '80vh' }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Handle bar */}
+        <div className="flex justify-center pt-3 pb-1">
+          <div className="w-10 h-1 rounded-full" style={{ backgroundColor: 'rgba(255,255,255,0.2)' }} />
+        </div>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3">
+          <div>
+            <p className="text-white font-bold text-base">Move To</p>
+            <p className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.4)' }}>{lead.name}</p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center"
+            style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
+            <X className="w-4 h-4 text-white" />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto px-4 pb-8 space-y-1" style={{ maxHeight: 'calc(80vh - 100px)' }}>
+          {stages.map(stage => {
+            const count  = stageCounts[stage.id] ?? 0;
+            const isCurrent = stage.id === lead.stage_id;
+            const pct = Math.round((count / maxCount) * 100);
+            return (
+              <button
+                key={stage.id}
+                onClick={() => { if (!isCurrent) onMove(stage.id); }}
+                disabled={isCurrent}
+                className="w-full text-left rounded-2xl px-4 py-3.5 transition-opacity active:opacity-70"
+                style={{
+                  backgroundColor: isCurrent ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.03)',
+                  border: `1px solid ${isCurrent ? stage.color + '55' : 'rgba(255,255,255,0.06)'}`,
+                  opacity: isCurrent ? 0.6 : 1,
+                }}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: stage.color }} />
+                    <span className="text-sm font-semibold text-white">{stage.name}</span>
+                    {isCurrent && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                        style={{ backgroundColor: stage.color + '33', color: stage.color }}>current</span>
+                    )}
+                  </div>
+                  <span className="text-xs font-bold" style={{ color: 'rgba(255,255,255,0.4)' }}>
+                    {count} {count === 1 ? 'Deal' : 'Deals'}
+                  </span>
+                </div>
+                <div className="h-0.5 rounded-full" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
+                  <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: stage.color }} />
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Lead Card ───────────────────────────────────────────────────────────────
 
 const LeadCard = memo(function LeadCard({
   lead, stageColor, onDragStart, onClick, selected, onToggleSelect, onPrefetch,
-  onGripTouchInit,
+  onLongPress,
 }: {
   lead: Lead; stageColor: string;
   onDragStart: (e: React.DragEvent, leadId: string) => void;
@@ -45,7 +121,7 @@ const LeadCard = memo(function LeadCard({
   selected: boolean;
   onToggleSelect: (id: string, e: React.MouseEvent) => void;
   onPrefetch: (leadId: string) => void;
-  onGripTouchInit: (leadId: string, name: string, startX: number, startY: number) => void;
+  onLongPress: (lead: Lead) => void;
 }) {
   const callCount  = lead._count?.call_logs ?? 0;
   const noteCount  = lead._count?.lead_notes ?? 0;
@@ -54,12 +130,36 @@ const LeadCard = memo(function LeadCard({
   const quoteViewed   = topQuote && (topQuote.status === 'PUBLISHED' || topQuote.status === 'VIEWED') && topQuote.events.some(e => e.event_type === 'quote_viewed');
   const quoteApproved = topQuote?.status === 'APPROVED' || topQuote?.status === 'ACCEPTED';
 
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const didLongPress   = useRef(false);
+
+  function startLongPress() {
+    didLongPress.current = false;
+    longPressTimer.current = setTimeout(() => {
+      didLongPress.current = true;
+      if (navigator.vibrate) navigator.vibrate(40);
+      onLongPress(lead);
+    }, 450);
+  }
+
+  function cancelLongPress() {
+    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+  }
+
+  function handleClick() {
+    if (didLongPress.current) return; // long-press already handled
+    onClick(lead);
+  }
+
   return (
     <div
       draggable
       onDragStart={e => onDragStart(e, lead.id)}
       onMouseEnter={() => onPrefetch(lead.id)}
-      onClick={() => onClick(lead)}
+      onClick={handleClick}
+      onTouchStart={startLongPress}
+      onTouchMove={cancelLongPress}
+      onTouchEnd={cancelLongPress}
       className="group relative cursor-pointer select-none transition-all duration-150"
       style={{
         backgroundColor: selected ? '#EFF8FF' : '#fff',
@@ -72,20 +172,6 @@ const LeadCard = memo(function LeadCard({
         padding: '13px 13px 11px',
       }}
     >
-      {/* Grip handle — mobile only. Touchstart here kicks off native drag tracking in the page. */}
-      <div
-        onTouchStart={e => {
-          e.stopPropagation();
-          const t = e.touches[0];
-          onGripTouchInit(lead.id, lead.name, t.clientX, t.clientY);
-        }}
-        onClick={e => e.stopPropagation()}
-        className="absolute top-0 bottom-0 left-0 flex items-center justify-center md:hidden"
-        style={{ width: 28, borderRadius: '14px 0 0 14px', cursor: 'grab', zIndex: 10, touchAction: 'none' }}
-        title="Drag to move"
-      >
-        <GripVertical className="w-3.5 h-3.5" style={{ color: stageColor, opacity: 0.7 }} />
-      </div>
 
       {/* Checkbox overlay — shows on hover or when selected */}
       <button
@@ -172,6 +258,13 @@ const LeadCard = memo(function LeadCard({
             </span>
           )}
           <div className="flex items-center gap-0.5 ml-1">
+            {/* Move button — mobile only, tapping shows Move-To sheet instantly */}
+            <button
+              onClick={e => { e.stopPropagation(); onLongPress(lead); }}
+              className="w-6 h-6 rounded-lg flex items-center justify-center transition-colors hover:bg-[#EFF6FF] md:hidden"
+              title="Move to stage">
+              <ArrowRightLeft className="w-3 h-3" style={{ color: T }} />
+            </button>
             <a href={`tel:${lead.phone}`} onClick={e => e.stopPropagation()}
               className="w-6 h-6 rounded-lg flex items-center justify-center transition-colors hover:bg-[#F0FDF4]" title="Call">
               <Phone className="w-3 h-3" style={{ color: '#16A34A' }} />
@@ -192,7 +285,7 @@ const LeadCard = memo(function LeadCard({
 
 const KanbanColumn = memo(function KanbanColumn({
   stage, leads, onDragStart, onDrop, onLeadClick, selectedIds, onToggleSelect, onSelectAllInStage, onPrefetch,
-  onGripTouchInit, touchOver,
+  onLongPress,
 }: {
   stage: Stage; leads: Lead[];
   onDragStart: (e: React.DragEvent, leadId: string) => void;
@@ -202,13 +295,12 @@ const KanbanColumn = memo(function KanbanColumn({
   onToggleSelect: (id: string, e: React.MouseEvent) => void;
   onSelectAllInStage: (stageId: string, leads: Lead[]) => void;
   onPrefetch: (leadId: string) => void;
-  onGripTouchInit: (leadId: string, name: string, startX: number, startY: number) => void;
-  touchOver: boolean;
+  onLongPress: (lead: Lead) => void;
 }) {
   const PAGE_SIZE   = 20;
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [over, setOver] = useState(false);
-  const isOver = over || touchOver;
+  const isOver = over;
   const allSelected  = leads.length > 0 && leads.every(l => selectedIds.has(l.id));
   const visibleLeads = leads.slice(0, visibleCount);
   const hidden       = leads.length - visibleCount;
@@ -261,7 +353,7 @@ const KanbanColumn = memo(function KanbanColumn({
             onDragStart={onDragStart} onClick={onLeadClick}
             selected={selectedIds.has(lead.id)} onToggleSelect={onToggleSelect}
             onPrefetch={onPrefetch}
-            onGripTouchInit={onGripTouchInit} />
+            onLongPress={onLongPress} />
         ))}
 
         {hidden > 0 && (
@@ -381,7 +473,7 @@ export default function PipelinesPage() {
   const [showDateFilter, setShowDateFilter]     = useState(false);
   const [showSortMenu, setShowSortMenu]         = useState(false);
   const draggingLeadId = useRef<string | null>(null);
-  const [touchDrag, setTouchDrag] = useState<{ leadId: string; name: string; x: number; y: number; overStageId: string | null } | null>(null);
+  const [moveLead, setMoveLead] = useState<Lead | null>(null);
   const [callState, setCallState] = useState<CallState>(null);
   const [callPopupState, setCallPopupState] = useState<{ leadId: string; elapsed: number; outcome: string } | null>(null);
   const qc = useQueryClient();
@@ -427,63 +519,9 @@ export default function PipelinesPage() {
     stageMutation.mutate({ leadId, stageId });
   }, [stageMutation]);
 
-  // Native touch drag — registered on document so { passive: false } works,
-  // allowing e.preventDefault() to actually block scroll while dragging.
-  const handleGripTouchInit = useCallback((leadId: string, name: string, startX: number, startY: number) => {
-    let decided  = false;
-    let dragging = false;
-
-    function getStageAt(x: number, y: number) {
-      const el = document.elementFromPoint(x, y);
-      return el?.closest('[data-stage-id]')?.getAttribute('data-stage-id') ?? null;
-    }
-
-    function onMove(e: TouchEvent) {
-      const t = e.touches[0];
-
-      if (!decided) {
-        const dx = Math.abs(t.clientX - startX);
-        const dy = Math.abs(t.clientY - startY);
-        if (dx < 8 && dy < 8) return; // not enough movement yet
-        decided = true;
-
-        if (dx > dy * 1.2) {
-          // Horizontal swipe — let board scroll, abort drag
-          cleanup();
-          return;
-        }
-
-        dragging = true;
-        if (navigator.vibrate) navigator.vibrate(30);
-        setTouchDrag({ leadId, name, x: t.clientX, y: t.clientY, overStageId: null });
-      }
-
-      if (!dragging) return;
-      e.preventDefault(); // works because listener is { passive: false }
-
-      const overStageId = getStageAt(t.clientX, t.clientY);
-      setTouchDrag({ leadId, name, x: t.clientX, y: t.clientY, overStageId });
-    }
-
-    function onEnd(e: TouchEvent) {
-      if (dragging) {
-        const t = e.changedTouches[0];
-        const stageId = getStageAt(t.clientX, t.clientY);
-        if (stageId) stageMutation.mutate({ leadId, stageId });
-      }
-      cleanup();
-    }
-
-    function cleanup() {
-      dragging = false;
-      setTouchDrag(null);
-      document.removeEventListener('touchmove', onMove);
-      document.removeEventListener('touchend',  onEnd);
-    }
-
-    document.addEventListener('touchmove', onMove, { passive: false });
-    document.addEventListener('touchend',  onEnd,  { passive: false });
-  }, [stageMutation]);
+  const handleLongPress = useCallback((lead: Lead) => {
+    setMoveLead(lead);
+  }, []);
 
   const toggleSelect = useCallback((id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -762,8 +800,7 @@ export default function PipelinesPage() {
                 onToggleSelect={toggleSelect}
                 onSelectAllInStage={() => toggleSelectAllInStage(stage.id, stageLeads)}
                 onPrefetch={prefetchLead}
-                onGripTouchInit={handleGripTouchInit}
-                touchOver={touchDrag?.overStageId === stage.id}
+                onLongPress={handleLongPress}
               />
             );
           })}
@@ -777,36 +814,19 @@ export default function PipelinesPage() {
         </div>
       </div>
 
-      {/* Touch drag ghost */}
-      {touchDrag && (() => {
-        const overStage = touchDrag.overStageId
-          ? activePipeline?.stages.find(s => s.id === touchDrag.overStageId)
-          : null;
-        return (
-          <div
-            className="fixed z-50 pointer-events-none select-none"
-            style={{
-              left: touchDrag.x - 140,
-              top: touchDrag.y - 36,
-              transform: 'rotate(1.5deg) scale(1.05)',
-              transition: 'transform 0.1s',
-            }}
-          >
-            <div className="rounded-2xl shadow-2xl overflow-hidden"
-              style={{ width: 240, border: `2px solid ${overStage?.color ?? T}`, opacity: 0.96 }}>
-              <div className="px-3 py-2.5"
-                style={{ backgroundColor: overStage?.color ?? T, borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
-                <p className="text-[11px] font-bold text-white opacity-80 uppercase tracking-wider">
-                  {overStage ? `→ ${overStage.name}` : 'Moving…'}
-                </p>
-              </div>
-              <div className="px-3 py-2.5 bg-white">
-                <p className="text-sm font-bold" style={{ color: '#0F172A' }}>{touchDrag.name}</p>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
+      {/* Move-To bottom sheet (mobile long-press) */}
+      {moveLead && (
+        <MoveToSheet
+          lead={moveLead}
+          stages={activePipeline?.stages ?? []}
+          stageCounts={Object.fromEntries((activePipeline?.stages ?? []).map(s => [s.id, leadsForStage(s.id).length]))}
+          onMove={(stageId) => {
+            stageMutation.mutate({ leadId: moveLead.id, stageId });
+            setMoveLead(null);
+          }}
+          onClose={() => setMoveLead(null)}
+        />
+      )}
 
       {showAddLead && resolvedPipelineId && (
         <AddLeadDrawer
