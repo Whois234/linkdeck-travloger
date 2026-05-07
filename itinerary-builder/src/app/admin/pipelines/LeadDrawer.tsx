@@ -5,7 +5,8 @@ import {
   X, ChevronDown, Phone, MessageCircle, Plus, FileText,
   Loader2, Clock, CheckCircle2, AlertCircle, MoveRight,
   PhoneCall, RefreshCw, Users, Pin, Sparkles, ArrowLeftRight, Bell,
-  Send, Eye, CheckCircle,
+  Send, Eye, CheckCircle, Package, BarChart2, ClipboardList,
+  Calendar, VoicemailIcon, PhoneMissed, PhoneOff, PhoneIncoming,
   type LucideProps,
 } from 'lucide-react';
 
@@ -144,11 +145,11 @@ function CallLogPopup({
             <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Outcome</label>
             <select value={outcome} onChange={e => setOutcome(e.target.value)}
               className="w-full text-sm rounded-lg px-3 py-2.5 outline-none" style={{ border: '1px solid #D1D5DB' }}>
-              <option value="ANSWERED">✅ Answered</option>
-              <option value="NO_ANSWER">📵 No Answer</option>
-              <option value="BUSY">📳 Busy</option>
-              <option value="CALLBACK_REQUESTED">🔁 Callback Requested</option>
-              <option value="VOICEMAIL">📬 Voicemail</option>
+              <option value="ANSWERED">Answered</option>
+              <option value="NO_ANSWER">No Answer</option>
+              <option value="BUSY">Busy</option>
+              <option value="CALLBACK_REQUESTED">Callback Requested</option>
+              <option value="VOICEMAIL">Voicemail</option>
             </select>
           </div>
           <div>
@@ -245,9 +246,9 @@ function QuotePopup({ quote, onClose }: { quote: QuoteRef; onClose: () => void }
         <div className="flex px-6 pt-3 pb-0 gap-1 flex-shrink-0">
           {(['details', 'analytics'] as const).map(v => (
             <button key={v} onClick={() => setView(v)}
-              className="px-4 py-2 rounded-t-lg text-xs font-semibold capitalize transition-colors"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-t-lg text-xs font-semibold capitalize transition-colors"
               style={{ backgroundColor: view === v ? '#F8FAFC' : 'transparent', color: view === v ? '#134956' : '#94A3B8', borderBottom: view === v ? '2px solid #134956' : '2px solid transparent' }}>
-              {v === 'analytics' ? '📊 Analytics' : '📋 Details'}
+              {v === 'analytics' ? <><BarChart2 className="w-3.5 h-3.5" /> Analytics</> : <><ClipboardList className="w-3.5 h-3.5" /> Details</>}
             </button>
           ))}
         </div>
@@ -286,12 +287,12 @@ function QuotePopup({ quote, onClose }: { quote: QuoteRef; onClose: () => void }
               )}
               <div className="grid grid-cols-3 gap-2">
                 {[
-                  { icon: '👁', label: 'Views',     value: views,      color: views > 0 ? '#2563EB' : '#94A3B8' },
-                  { icon: '💬', label: 'WhatsApp',  value: waClicks,   color: waClicks > 0 ? '#16A34A' : '#94A3B8' },
-                  { icon: '📦', label: 'Pkg Picks', value: pkgEvents.length, color: pkgEvents.length > 0 ? '#D97706' : '#94A3B8' },
+                  { Icon: Eye,             label: 'Views',     value: views,             color: views > 0 ? '#2563EB' : '#94A3B8' },
+                  { Icon: MessageCircle,   label: 'WhatsApp',  value: waClicks,          color: waClicks > 0 ? '#16A34A' : '#94A3B8' },
+                  { Icon: Package,         label: 'Pkg Picks', value: pkgEvents.length,  color: pkgEvents.length > 0 ? '#D97706' : '#94A3B8' },
                 ].map(s => (
                   <div key={s.label} className="rounded-xl p-3 text-center" style={{ backgroundColor: '#F8FAFC', border: '1px solid #F1F5F9' }}>
-                    <p className="text-lg">{s.icon}</p>
+                    <div className="flex justify-center mb-1"><s.Icon className="w-4 h-4" style={{ color: s.color }} /></div>
                     <p className="text-lg font-bold" style={{ color: s.color }}>{s.value}</p>
                     <p className="text-[10px] font-medium" style={{ color: '#94A3B8' }}>{s.label}</p>
                   </div>
@@ -299,7 +300,7 @@ function QuotePopup({ quote, onClose }: { quote: QuoteRef; onClose: () => void }
               </div>
               {approved && (
                 <div className="rounded-xl px-4 py-3 flex items-center gap-2" style={{ backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0' }}>
-                  <span className="text-base">✅</span>
+                  <CheckCircle2 className="w-4 h-4 flex-shrink-0" style={{ color: '#16A34A' }} />
                   <p className="text-sm font-semibold" style={{ color: '#15803D' }}>Customer approved this quote</p>
                 </div>
               )}
@@ -310,13 +311,15 @@ function QuotePopup({ quote, onClose }: { quote: QuoteRef; onClose: () => void }
             <div className="space-y-5">
               <div className="grid grid-cols-2 gap-3">
                 {[
-                  { label: 'Sessions',        value: views,            icon: '👁',  color: '#8B5CF6' },
-                  { label: 'WhatsApp Clicks', value: waClicks,         icon: '💬',  color: '#22C55E' },
-                  { label: 'Pkg Selected',    value: pkgEvents.length, icon: '📦',  color: '#F59E0B' },
-                  { label: 'Approved',        value: approved ? 1 : 0, icon: '✅',  color: '#10B981' },
+                  { Icon: Eye,           label: 'Sessions',        value: views,             color: '#8B5CF6' },
+                  { Icon: MessageCircle, label: 'WhatsApp Clicks', value: waClicks,          color: '#22C55E' },
+                  { Icon: Package,       label: 'Pkg Selected',    value: pkgEvents.length,  color: '#F59E0B' },
+                  { Icon: CheckCircle2,  label: 'Approved',        value: approved ? 1 : 0,  color: '#10B981' },
                 ].map(s => (
                   <div key={s.label} className="rounded-xl p-3 flex items-center gap-3" style={{ backgroundColor: '#F8FAFC', border: '1px solid #F1F5F9' }}>
-                    <span className="text-xl">{s.icon}</span>
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: s.color + '15' }}>
+                      <s.Icon className="w-4 h-4" style={{ color: s.color }} />
+                    </div>
                     <div>
                       <p className="text-lg font-bold leading-none" style={{ color: s.color }}>{s.value}</p>
                       <p className="text-[10px] font-medium mt-0.5" style={{ color: '#94A3B8' }}>{s.label}</p>
@@ -375,7 +378,7 @@ function QuotePopup({ quote, onClose }: { quote: QuoteRef; onClose: () => void }
 
 // ─── Lead Drawer ──────────────────────────────────────────────────────────────
 
-export { CallBanner };
+export { CallBanner, CallLogPopup };
 
 export type CallState = { active: boolean; leadId: string; leadName: string; phone: string; elapsed: number } | null;
 
@@ -762,7 +765,7 @@ export default function LeadDrawer({
                             <div>
                               <div className="flex items-center gap-1.5">
                                 <p className="text-sm font-bold" style={{ color: '#0F172A' }}>{q.quote_number}</p>
-                                {isConfirmed && <span className="text-[10px]">✅</span>}
+                                {isConfirmed && <CheckCircle2 className="w-3.5 h-3.5" style={{ color: '#16A34A' }} />}
                               </div>
                               <p className="text-[11px] mt-0.5" style={{ color: '#64748B' }}>{formatDate(q.created_at)}</p>
                             </div>
@@ -770,8 +773,8 @@ export default function LeadDrawer({
                           </div>
                           <div className="px-4 py-3 bg-white">
                             <div className="flex items-center gap-3 text-xs mb-2" style={{ color: '#64748B' }}>
-                              {q.adults > 0 && <span>👥 {q.adults} pax</span>}
-                              {q.duration_days > 0 && <span>🗓 {q.duration_days}D</span>}
+                              {q.adults > 0 && <span className="flex items-center gap-1"><Users className="w-3 h-3" />{q.adults} pax</span>}
+                              {q.duration_days > 0 && <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{q.duration_days}D</span>}
                               {minPrice !== null && (
                                 <span className="font-semibold" style={{ color: '#0F172A' }}>
                                   ₹{minPrice.toLocaleString('en-IN')}{maxPrice !== minPrice ? ` – ₹${maxPrice!.toLocaleString('en-IN')}` : ''}
@@ -781,16 +784,16 @@ export default function LeadDrawer({
                             <div className="flex items-center gap-2 flex-wrap">
                               {views > 0 ? (
                                 <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: '#EFF6FF', color: '#2563EB' }}>
-                                  👁 {views} view{views > 1 ? 's' : ''}
+                                  <Eye className="w-2.5 h-2.5" />{views} view{views > 1 ? 's' : ''}
                                 </span>
                               ) : (
                                 <span className="text-[10px] font-medium px-2 py-0.5 rounded-full" style={{ backgroundColor: '#F1F5F9', color: '#94A3B8' }}>Not opened</span>
                               )}
                               {q.events.some(e => e.event_type === 'whatsapp_clicked') && (
-                                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: '#F0FDF4', color: '#16A34A' }}>💬 WA clicked</span>
+                                <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: '#F0FDF4', color: '#16A34A' }}><MessageCircle className="w-2.5 h-2.5" />WA clicked</span>
                               )}
                               {q.events.some(e => e.event_type === 'package_selected') && (
-                                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: '#FFFBEB', color: '#D97706' }}>📦 Pkg picked</span>
+                                <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: '#FFFBEB', color: '#D97706' }}><Package className="w-2.5 h-2.5" />Pkg picked</span>
                               )}
                               {hasEngagement && <span className="ml-auto text-[10px] font-semibold" style={{ color: '#94A3B8' }}>Tap to view →</span>}
                             </div>
