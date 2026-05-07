@@ -1970,17 +1970,21 @@ function TripDates({
 
 /* ─────────────────────────── GROUP: Package-based sticky CTA ─────────────── */
 function PackageStickyCTA({
-  selectedOption, selectedDate, adults, onBookNow, booking,
+  selectedOption, selectedDate, adults, onBookNow, booking, quoteDiscount, quoteDiscountExpiry,
 }: {
   selectedOption: GroupPackageOption | null;
   selectedDate: { start_date: string; end_date: string; label: string } | null;
   adults: number;
   onBookNow: () => void;
   booking: boolean;
+  quoteDiscount?: number | null;
+  quoteDiscountExpiry?: string | null;
 }) {
   const gstPct = selectedOption?.gst_percent ?? 5;
   const pricePerAdultInclGst = selectedOption ? Math.round(selectedOption.adult_price * (1 + gstPct / 100)) : 0;
-  const price = pricePerAdultInclGst * adults;
+  const discPerPerson = (quoteDiscount ?? 0) > 0 && !isDiscountExpired(quoteDiscountExpiry) ? quoteDiscount! : 0;
+  const discountedPerAdult = Math.max(0, pricePerAdultInclGst - discPerPerson);
+  const price = discountedPerAdult * adults;
   const fmt = (s: string) => s ? new Date(s).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
   const dateLabel = selectedDate
     ? (selectedDate.label || `${fmt(selectedDate.start_date)} → ${fmt(selectedDate.end_date)}`)
@@ -2593,12 +2597,14 @@ function PackageFareSummary({
 
 /* ─────────────────────────── GROUP: Sticky Bottom Bar ─────────────────────────── */
 function GroupStickyCTA({
-  batch, adults, onBookNow, booking,
+  batch, adults, onBookNow, booking, quoteDiscount, quoteDiscountExpiry,
 }: {
   batch: GroupBatch | null; adults: number; onBookNow: () => void; booking: boolean;
+  quoteDiscount?: number | null; quoteDiscountExpiry?: string | null;
 }) {
+  const discPerPerson = (quoteDiscount ?? 0) > 0 && !isDiscountExpired(quoteDiscountExpiry) ? quoteDiscount! : 0;
   const total = batch
-    ? (() => { const sub = batch.adult_price * adults; return sub + Math.round(sub * batch.gst_percent / 100); })()
+    ? (() => { const sub = batch.adult_price * adults; const raw = sub + Math.round(sub * batch.gst_percent / 100); return Math.max(0, raw - discPerPerson * adults); })()
     : 0;
 
   const startFmt = batch
@@ -2988,6 +2994,8 @@ export function ItineraryClient({ data, token }: Props) {
           adults={groupAdults}
           onBookNow={handleBookNow}
           booking={booking}
+          quoteDiscount={quote.discount_amount}
+          quoteDiscountExpiry={quote.discount_expires_at}
         />
       ) : isGroup ? (
         /* GROUP date_based: fixed bottom bar with selected batch + Book Now */
@@ -2996,6 +3004,8 @@ export function ItineraryClient({ data, token }: Props) {
           adults={groupAdults}
           onBookNow={handleBookNow}
           booking={booking}
+          quoteDiscount={quote.discount_amount}
+          quoteDiscountExpiry={quote.discount_expires_at}
         />
       ) : (
         <StickyCTA
