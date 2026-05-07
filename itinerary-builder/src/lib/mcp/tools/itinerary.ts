@@ -1,4 +1,4 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpServer } from '@/lib/mcp/mcp-server-shim';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 
@@ -47,7 +47,7 @@ export function registerItineraryTools(server: McpServer) {
     },
     async (args) => {
       try {
-        const dayPlanIds = args.days.map(d => d.day_plan_id);
+        const dayPlanIds = (args.days as Array<{ day_number: number; day_plan_id: string; notes?: string }>).map(d => d.day_plan_id);
         const uniqueIds = Array.from(new Set(dayPlanIds));
         const existingPlans = await prisma.dayPlan.findMany({
           where: { id: { in: uniqueIds } },
@@ -69,7 +69,7 @@ export function registerItineraryTools(server: McpServer) {
           name: args.name,
           description: args.description,
           destination_id: args.destination_id,
-          days: args.days.map(d => ({
+          days: (args.days as Array<{ day_number: number; day_plan_id: string; notes?: string }>).map(d => ({
             day_number: d.day_number,
             notes: d.notes,
             day_plan: planMap[d.day_plan_id],
@@ -104,7 +104,9 @@ export function registerItineraryTools(server: McpServer) {
         });
         if (!quote) return { content: [{ type: 'text' as const, text: 'Quote not found' }], isError: true };
 
-        const uniqueIds = Array.from(new Set(days.map(d => d.day_plan_id)));
+        type DayInput = { day_number: number; date: string; day_plan_id: string };
+        const typedDays = days as DayInput[];
+        const uniqueIds = Array.from(new Set(typedDays.map(d => d.day_plan_id)));
         const dayPlans = await prisma.dayPlan.findMany({
           where: { id: { in: uniqueIds } },
           include: { destination: { select: { id: true, name: true } } },
@@ -116,7 +118,7 @@ export function registerItineraryTools(server: McpServer) {
 
         // Create snapshots matching QuoteDaySnapshot schema
         const created = await prisma.$transaction(
-          days.map(d => {
+          typedDays.map(d => {
             const plan = planMap[d.day_plan_id];
             return prisma.quoteDaySnapshot.create({
               data: {
@@ -126,7 +128,7 @@ export function registerItineraryTools(server: McpServer) {
                 destination_id: plan?.destination_id ?? '',
                 title: plan?.title ?? `Day ${d.day_number}`,
                 description: plan?.description ?? null,
-                activities: plan?.linked_activities ?? [],
+                activities: (plan?.linked_activities ?? []) as object[],
               },
             });
           })

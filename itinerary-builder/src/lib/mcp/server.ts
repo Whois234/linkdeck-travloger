@@ -1,4 +1,4 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpServer } from '@/lib/mcp/mcp-server-shim';
 import { registerMasterTools } from './tools/masters';
 import { registerLeadsQuotesTools } from './tools/leads-quotes';
 import { registerItineraryTools } from './tools/itinerary';

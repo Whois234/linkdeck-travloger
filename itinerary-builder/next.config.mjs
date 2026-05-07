@@ -9,8 +9,8 @@ const nextConfig = {
   compress: true,
 
   experimental: {
-    // Prevent Prisma from being bundled — must stay as native Node module (Next 14.1.x key)
-    serverComponentsExternalPackages: ['@prisma/client', 'prisma'],
+    // Prevent Prisma and MCP SDK from being bundled — must stay as native Node modules
+    serverComponentsExternalPackages: ['@prisma/client', 'prisma', '@modelcontextprotocol/sdk'],
     // Tree-shake large icon/component libraries at build time
     optimizePackageImports: ['lucide-react', '@radix-ui/react-accordion', '@radix-ui/react-dialog'],
   },

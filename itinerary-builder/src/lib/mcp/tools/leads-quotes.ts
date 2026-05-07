@@ -1,4 +1,4 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpServer } from '@/lib/mcp/mcp-server-shim';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { generateQuoteNumber } from '@/lib/generate-quote-number';
@@ -182,7 +182,15 @@ export function registerLeadsQuotesTools(server: McpServer) {
             expiry_date: args.expiry_date ? new Date(args.expiry_date) : null,
             created_by: args.created_by,
             quote_options: {
-              create: args.options.map((opt, idx) => {
+              create: (args.options as Array<{
+                option_name: string; vehicle_type_id?: string;
+                vehicle_cost?: number; hotel_cost?: number; activity_cost?: number;
+                transfer_cost?: number; misc_cost?: number;
+                profit_type: string; profit_value: number;
+                gst_percent?: number; discount_amount?: number;
+                is_most_popular?: boolean;
+                internal_notes?: string; customer_visible_notes?: string;
+              }>).map((opt, idx) => {
                 const base_cost =
                   (opt.vehicle_cost ?? 0) +
                   (opt.hotel_cost ?? 0) +

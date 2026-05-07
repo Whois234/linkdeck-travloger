@@ -1,4 +1,4 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpServer } from '@/lib/mcp/mcp-server-shim';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { SupplierType, HotelType, HotelCategory, ActivityRateType } from '@prisma/client';
@@ -240,8 +240,15 @@ export function registerMasterTools(server: McpServer) {
       });
 
       // Create hotel rates for each meal plan
-      const createdRates = await Promise.all(rates.map(async (r) => {
-        const mealPlan = await prisma.mealPlan.findUnique({ where: { code: r.meal_plan_code } });
+      const createdRates = await Promise.all((rates as Array<{
+        meal_plan_code: string; season_name: string;
+        valid_from: string; valid_to: string;
+        double_occupancy_cost: number; single_occupancy_cost?: number;
+        extra_adult_cost?: number; child_with_bed_cost?: number;
+        child_without_bed_cost?: number; tax_included: boolean;
+        supplier_gst_percent: number;
+      }>).map(async (r) => {
+        const mealPlan = await prisma.mealPlan.findUnique({ where: { code: r.meal_plan_code as import('@prisma/client').MealPlanCode } });
         if (!mealPlan) throw new Error(`Meal plan ${r.meal_plan_code} not found`);
         return prisma.hotelRate.create({
           data: {
