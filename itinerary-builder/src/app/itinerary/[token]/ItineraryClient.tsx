@@ -2657,13 +2657,15 @@ function GroupStickyCTA({
 
 /* ─────────────────────────── GROUP: Booking Intent Modal ─────────────────────────── */
 function BookingIntentModal({
-  batch, adults, total, customerName, agentName, waUrl, onClose,
+  batch, adults, total, origTotal, customerName, agentName, waUrl, onClose,
 }: {
-  batch: GroupBatch; adults: number; total: number;
+  batch: GroupBatch; adults: number; total: number; origTotal?: number;
   customerName: string; agentName: string; waUrl: string; onClose: () => void;
 }) {
   const startFmt = new Date(batch.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
   const firstName = agentName.split(' ')[0];
+  const hasDiscount = origTotal != null && origTotal > total;
+  const saved = hasDiscount ? origTotal! - total : 0;
 
   return (
     <div className="tl-overlay" onClick={onClose}>
@@ -2678,6 +2680,12 @@ function BookingIntentModal({
           You&apos;ve selected <strong>{batch.batch_name}</strong> — <strong>{startFmt}</strong>
         </div>
         <div className="tl-modal-price-box">
+          {hasDiscount && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 4 }}>
+              <span style={{ fontSize: 14, color: '#94A3B8', textDecoration: 'line-through', fontFamily: 'var(--f-num)' }}>{fmtCurrency(origTotal!)}</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#15803D', background: '#DCFCE7', padding: '2px 8px', borderRadius: 20, fontFamily: 'var(--f-body)' }}>Save {fmtCurrency(saved)}</span>
+            </div>
+          )}
           <div className="tl-modal-price-main">{fmtCurrency(total)} for {adults} adult{adults > 1 ? 's' : ''}</div>
           <div className="tl-modal-price-sub">(inclusive of {batch.gst_percent}% GST)</div>
         </div>
@@ -2891,13 +2899,12 @@ export function ItineraryClient({ data, token }: Props) {
     }
   }
 
-  // Derived group fare
-  const groupTotal = selectedBatch
-    ? (() => {
-        const sub = selectedBatch.adult_price * groupAdults;
-        return sub + Math.round(sub * selectedBatch.gst_percent / 100);
-      })()
+  // Derived group fare (with and without discount)
+  const groupOrigTotal = selectedBatch
+    ? (() => { const sub = selectedBatch.adult_price * groupAdults; return sub + Math.round(sub * selectedBatch.gst_percent / 100); })()
     : 0;
+  const groupDiscPerPerson = (quote.discount_amount ?? 0) > 0 && !isDiscountExpired(quote.discount_expires_at) ? (quote.discount_amount ?? 0) : 0;
+  const groupTotal = selectedBatch ? Math.max(0, groupOrigTotal - groupDiscPerPerson * groupAdults) : 0;
 
   return (
     <div className="tl-page">
@@ -3041,6 +3048,7 @@ export function ItineraryClient({ data, token }: Props) {
           batch={selectedBatch}
           adults={groupAdults}
           total={groupTotal}
+          origTotal={groupDiscPerPerson > 0 ? groupOrigTotal : undefined}
           customerName={customer.name}
           agentName={agent?.name ?? 'Your Agent'}
           waUrl={waUrl}
@@ -3053,7 +3061,10 @@ export function ItineraryClient({ data, token }: Props) {
         if (!pkgOpt || !tripDt) return null;
         const fmt = (s: string) => new Date(s).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
         const modalGstPct = pkgOpt.gst_percent ?? 5;
-        const total = Math.round(pkgOpt.adult_price * (1 + modalGstPct / 100)) * groupAdults;
+        const modalOrigTotal = Math.round(pkgOpt.adult_price * (1 + modalGstPct / 100)) * groupAdults;
+        const modalDiscPerPerson = (quote.discount_amount ?? 0) > 0 && !isDiscountExpired(quote.discount_expires_at) ? (quote.discount_amount ?? 0) : 0;
+        const total = Math.max(0, modalOrigTotal - modalDiscPerPerson * groupAdults);
+        const saved = modalDiscPerPerson > 0 ? modalOrigTotal - total : 0;
         return (
           <div className="tl-overlay" onClick={() => setShowBookingIntent(false)}>
             <div className="tl-modal" onClick={(e) => e.stopPropagation()}>
@@ -3067,6 +3078,12 @@ export function ItineraryClient({ data, token }: Props) {
                 You&apos;ve selected <strong>{pkgOpt.tier_name}</strong> — <strong>{fmt(tripDt.start_date)}</strong> to <strong>{fmt(tripDt.end_date)}</strong>
               </div>
               <div className="tl-modal-price-box">
+                {modalDiscPerPerson > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 4 }}>
+                    <span style={{ fontSize: 14, color: '#94A3B8', textDecoration: 'line-through', fontFamily: 'var(--f-num)' }}>{fmtCurrency(modalOrigTotal)}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: '#15803D', background: '#DCFCE7', padding: '2px 8px', borderRadius: 20, fontFamily: 'var(--f-body)' }}>Save {fmtCurrency(saved)}</span>
+                  </div>
+                )}
                 <div className="tl-modal-price-main">{fmtCurrency(total)} for {groupAdults} adult{groupAdults > 1 ? 's' : ''}</div>
                 <div className="tl-modal-price-sub">No payment required now</div>
               </div>
