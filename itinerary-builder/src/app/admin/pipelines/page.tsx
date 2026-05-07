@@ -501,7 +501,7 @@ export default function PipelinesPage() {
   const [mobileDrag, setMobileDrag] = useState<DragState | null>(null);
   const mobileDragRef = useRef<DragState | null>(null);
   const boardScrollRef = useRef<HTMLDivElement>(null);
-  const dragCleanupRef = useRef<((e?: TouchEvent) => void) | null>(null);
+  const dragCleanupRef = useRef<(() => void) | null>(null);
 
   const qc = useQueryClient();
 
@@ -588,44 +588,42 @@ export default function PipelinesPage() {
         else if (t.clientX > br.right - edgeZone) board.scrollLeft += 8;
       }
 
-      // Detect which stage is under the ghost centre
-      const midX = t.clientX;
-      const midY = t.clientY;
-      // Temporarily hide ghost for hit test
+      // If finger enters Move To zone (bottom 120px) → open sheet immediately while still dragging
+      const inMoveZone = t.clientY > window.innerHeight - 120;
+      if (inMoveZone && mobileDragRef.current) {
+        const lead = mobileDragRef.current.lead;
+        cleanup();
+        setMoveLead(lead);
+        return;
+      }
+
+      // Detect which stage column is under the finger
       const ghostEl = document.getElementById('drag-ghost');
       if (ghostEl) ghostEl.style.display = 'none';
-      const el = document.elementFromPoint(midX, midY);
+      const el = document.elementFromPoint(t.clientX, t.clientY);
       if (ghostEl) ghostEl.style.display = '';
       const col = el?.closest('[data-stage-id]');
       const targetStageId = col?.getAttribute('data-stage-id') ?? mobileDragRef.current?.targetStageId ?? null;
 
-      // Keep targetStageId for column-drop fallback, but don't override if near move zone
       const next = { ...mobileDragRef.current!, ghostX, ghostY, targetStageId };
       mobileDragRef.current = next;
       setMobileDrag(next);
     }
 
-    function onEnd(e?: TouchEvent) {
-      const state = mobileDragRef.current;
+    function cleanup() {
       document.removeEventListener('touchmove', onMove);
       document.removeEventListener('touchend', onEnd);
       document.removeEventListener('touchcancel', onEnd);
       dragCleanupRef.current = null;
       mobileDragRef.current = null;
       setMobileDrag(null);
+    }
 
-      if (!state) return;
-
-      // If finger lifted in the Move To zone (bottom 130px) → open MoveToSheet
-      const touch = e?.changedTouches[0];
-      const nearMoveZone = touch && (touch.clientY + (state.cardH / 2) > window.innerHeight - 130);
-      if (nearMoveZone) {
-        setMoveLead(state.lead);
-        return;
-      }
-
-      // Otherwise commit if hovering a different stage column
-      if (state.targetStageId && state.targetStageId !== state.lead.stage_id) {
+    function onEnd() {
+      const state = mobileDragRef.current;
+      cleanup();
+      // Commit drop to whichever stage column the finger was over
+      if (state?.targetStageId && state.targetStageId !== state.lead.stage_id) {
         stageMutation.mutate({ leadId: state.lead.id, stageId: state.targetStageId });
       }
     }
@@ -995,8 +993,7 @@ export default function PipelinesPage() {
       {/* Mobile drag ghost + Move To button */}
       {mobileDrag && (() => {
         const cardStageColor = mobileDrag.lead.stage?.color ?? T;
-        // Detect if ghost is hovering over the Move To zone (bottom 130px of screen)
-        const nearMoveZone = mobileDrag.ghostY + mobileDrag.cardH > window.innerHeight - 130;
+        const nearMoveZone = mobileDrag.ghostY + mobileDrag.cardH > window.innerHeight - 120;
         return (
           <>
             {/* Dim overlay */}
@@ -1076,7 +1073,7 @@ export default function PipelinesPage() {
               }}>
                 <ArrowRightLeft className="w-4 h-4 flex-shrink-0" style={{ color: '#fff' }} />
                 <span style={{ color: '#fff', fontSize: 15, fontWeight: 700, letterSpacing: '-0.01em' }}>
-                  {nearMoveZone ? 'Release to choose stage' : 'Move To'}
+                  Move To
                 </span>
               </div>
             </div>
