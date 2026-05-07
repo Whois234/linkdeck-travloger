@@ -501,7 +501,7 @@ export default function PipelinesPage() {
   const [mobileDrag, setMobileDrag] = useState<DragState | null>(null);
   const mobileDragRef = useRef<DragState | null>(null);
   const boardScrollRef = useRef<HTMLDivElement>(null);
-  const dragCleanupRef = useRef<(() => void) | null>(null);
+  const dragCleanupRef = useRef<((e?: TouchEvent) => void) | null>(null);
 
   const qc = useQueryClient();
 
@@ -599,22 +599,35 @@ export default function PipelinesPage() {
       const col = el?.closest('[data-stage-id]');
       const targetStageId = col?.getAttribute('data-stage-id') ?? mobileDragRef.current?.targetStageId ?? null;
 
+      // Keep targetStageId for column-drop fallback, but don't override if near move zone
       const next = { ...mobileDragRef.current!, ghostX, ghostY, targetStageId };
       mobileDragRef.current = next;
       setMobileDrag(next);
     }
 
-    function onEnd() {
+    function onEnd(e?: TouchEvent) {
       const state = mobileDragRef.current;
-      if (state?.targetStageId && state.targetStageId !== state.lead.stage_id) {
-        stageMutation.mutate({ leadId: state.lead.id, stageId: state.targetStageId });
-      }
-      mobileDragRef.current = null;
-      setMobileDrag(null);
       document.removeEventListener('touchmove', onMove);
       document.removeEventListener('touchend', onEnd);
       document.removeEventListener('touchcancel', onEnd);
       dragCleanupRef.current = null;
+      mobileDragRef.current = null;
+      setMobileDrag(null);
+
+      if (!state) return;
+
+      // If finger lifted in the Move To zone (bottom 130px) → open MoveToSheet
+      const touch = e?.changedTouches[0];
+      const nearMoveZone = touch && (touch.clientY + (state.cardH / 2) > window.innerHeight - 130);
+      if (nearMoveZone) {
+        setMoveLead(state.lead);
+        return;
+      }
+
+      // Otherwise commit if hovering a different stage column
+      if (state.targetStageId && state.targetStageId !== state.lead.stage_id) {
+        stageMutation.mutate({ leadId: state.lead.id, stageId: state.targetStageId });
+      }
     }
 
     document.addEventListener('touchmove', onMove, { passive: false });
@@ -979,12 +992,16 @@ export default function PipelinesPage() {
         />
       )}
 
-      {/* Mobile drag ghost */}
+      {/* Mobile drag ghost + Move To button */}
       {mobileDrag && (() => {
-        const targetStage = activePipeline?.stages.find(s => s.id === mobileDrag.targetStageId);
-        const stageColor = targetStage?.color ?? mobileDrag.lead.stage?.color ?? T;
+        const cardStageColor = mobileDrag.lead.stage?.color ?? T;
+        // Detect if ghost is hovering over the Move To zone (bottom 130px of screen)
+        const nearMoveZone = mobileDrag.ghostY + mobileDrag.cardH > window.innerHeight - 130;
         return (
           <>
+            {/* Dim overlay */}
+            <div style={{ position: 'fixed', inset: 0, zIndex: 9990, backgroundColor: 'rgba(0,0,0,0.35)', pointerEvents: 'none' }} />
+
             {/* Ghost card */}
             <div
               id="drag-ghost"
@@ -995,27 +1012,27 @@ export default function PipelinesPage() {
                 width: mobileDrag.cardW,
                 pointerEvents: 'none',
                 zIndex: 9999,
-                transform: 'rotate(2deg) scale(1.03)',
-                opacity: 0.92,
-                filter: 'drop-shadow(0 12px 32px rgba(0,0,0,0.28))',
+                transform: `rotate(2deg) scale(${nearMoveZone ? 0.92 : 1.03})`,
+                opacity: nearMoveZone ? 0.7 : 0.95,
+                filter: 'drop-shadow(0 16px 40px rgba(0,0,0,0.4))',
                 borderRadius: 14,
-                overflow: 'hidden',
+                transition: 'transform 0.15s, opacity 0.15s',
               }}
             >
               <div style={{
                 backgroundColor: '#fff',
-                border: `3px solid ${stageColor}`,
+                border: `3px solid ${cardStageColor}`,
                 borderRadius: 14,
-                borderLeft: `5px solid ${stageColor}`,
+                borderLeft: `5px solid ${cardStageColor}`,
                 padding: '13px 13px 11px',
               }}>
                 <div className="flex items-center gap-2.5 mb-1">
-                  <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold"
-                    style={{ backgroundColor: stageColor }}>
+                  <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+                    style={{ backgroundColor: cardStageColor }}>
                     {mobileDrag.lead.name.trim()[0]?.toUpperCase()}
                   </div>
-                  <div>
-                    <p className="text-sm font-bold" style={{ color: '#0F172A' }}>{mobileDrag.lead.name}</p>
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold truncate" style={{ color: '#0F172A' }}>{mobileDrag.lead.name}</p>
                     <p className="text-[11px]" style={{ color: '#94A3B8' }}>{mobileDrag.lead.phone}</p>
                   </div>
                 </div>
@@ -1028,62 +1045,46 @@ export default function PipelinesPage() {
               </div>
             </div>
 
-            {/* Stage picker strip at bottom — tap any stage to move there */}
+            {/* Move To target zone at bottom */}
             <div style={{
               position: 'fixed',
               bottom: 0, left: 0, right: 0,
-              zIndex: 9998,
-              background: 'linear-gradient(to top, rgba(10,18,28,0.97) 60%, transparent 100%)',
-              paddingTop: 32,
+              zIndex: 9995,
+              pointerEvents: 'none',
               paddingBottom: 28,
-              paddingLeft: 16,
-              paddingRight: 16,
+              paddingLeft: 20,
+              paddingRight: 20,
+              paddingTop: 60,
+              background: 'linear-gradient(to top, rgba(0,0,0,0.75) 0%, transparent 100%)',
             }}>
-              <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', textAlign: 'center', marginBottom: 10 }}>
-                Move to stage
-              </p>
-              <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
-                {(activePipeline?.stages ?? []).map(s => {
-                  const isCurrent = s.id === mobileDrag.lead.stage_id;
-                  const isTarget  = s.id === mobileDrag.targetStageId;
-                  return (
-                    <button
-                      key={s.id}
-                      onTouchEnd={e => {
-                        e.stopPropagation();
-                        if (!isCurrent) {
-                          stageMutation.mutate({ leadId: mobileDrag.lead.id, stageId: s.id });
-                        }
-                        mobileDragRef.current = null;
-                        setMobileDrag(null);
-                        dragCleanupRef.current?.();
-                      }}
-                      style={{
-                        flexShrink: 0,
-                        display: 'flex', alignItems: 'center', gap: 7,
-                        paddingLeft: 14, paddingRight: 16,
-                        paddingTop: 10, paddingBottom: 10,
-                        borderRadius: 100,
-                        border: isTarget ? `2px solid ${s.color}` : isCurrent ? `2px solid ${s.color}55` : '2px solid rgba(255,255,255,0.08)',
-                        backgroundColor: isTarget ? s.color + '28' : isCurrent ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.06)',
-                        boxShadow: isTarget ? `0 0 0 3px ${s.color}33, 0 4px 16px ${s.color}44` : 'none',
-                        transform: isTarget ? 'scale(1.06)' : 'scale(1)',
-                        transition: 'all 0.15s',
-                        cursor: 'pointer',
-                      }}>
-                      <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: s.color, boxShadow: isTarget ? `0 0 8px ${s.color}` : 'none', flexShrink: 0 }} />
-                      <span style={{ color: isTarget ? '#fff' : isCurrent ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.75)', fontSize: 12, fontWeight: isTarget ? 700 : 600, whiteSpace: 'nowrap' }}>
-                        {s.name}
-                      </span>
-                      {isCurrent && <span style={{ fontSize: 9, fontWeight: 700, color: s.color, backgroundColor: s.color + '22', borderRadius: 100, paddingLeft: 6, paddingRight: 6, paddingTop: 2, paddingBottom: 2 }}>now</span>}
-                    </button>
-                  );
-                })}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 10,
+                backgroundColor: nearMoveZone ? T : 'rgba(255,255,255,0.12)',
+                backdropFilter: 'blur(12px)',
+                borderRadius: 18,
+                paddingTop: 16,
+                paddingBottom: 16,
+                paddingLeft: 24,
+                paddingRight: 24,
+                border: nearMoveZone ? `2px solid ${T}` : '2px solid rgba(255,255,255,0.18)',
+                boxShadow: nearMoveZone ? `0 0 0 4px ${T}44, 0 8px 32px rgba(0,0,0,0.4)` : '0 4px 20px rgba(0,0,0,0.3)',
+                transform: nearMoveZone ? 'scale(1.04)' : 'scale(1)',
+                transition: 'all 0.2s cubic-bezier(0.34,1.56,0.64,1)',
+              }}>
+                <ArrowRightLeft className="w-4 h-4 flex-shrink-0" style={{ color: '#fff' }} />
+                <span style={{ color: '#fff', fontSize: 15, fontWeight: 700, letterSpacing: '-0.01em' }}>
+                  {nearMoveZone ? 'Release to choose stage' : 'Move To'}
+                </span>
               </div>
             </div>
           </>
         );
       })()}
+
+      {/* MoveToSheet triggered when ghost is released over Move To zone */}
     </div>
   );
 }
