@@ -258,11 +258,9 @@ function Hero({ data }: { data: ItineraryData }) {
       </svg>
 
       <div className="tl-hero-body">
-        {/* Eyebrow */}
+        {/* Eyebrow pill */}
         <div className="tl-hero-eyebrow">
-          <span className="tl-hero-eyebrow-line" />
           Travloger Exclusive Itinerary
-          <span className="tl-hero-eyebrow-line" />
         </div>
 
         {/* Main title */}
@@ -324,9 +322,14 @@ function Strip({ quote }: { quote: ItineraryData['quote'] }) {
   if (!expiry) return null;
   return (
     <div className="tl-strip">
-      <span className="tl-strip-dot" />
-      Quote valid until <strong>{expiry}</strong><span className="tl-strip-sep">·</span>#{quote.quote_number}
-      <span className="tl-strip-dot" />
+      <div className="tl-strip-left">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+          <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+        </svg>
+        Quote valid till <strong>{expiry}</strong>
+      </div>
+      <span className="tl-strip-sep">·</span>
+      <span className="tl-strip-pill">#{quote.quote_number}</span>
     </div>
   );
 }
@@ -2862,8 +2865,8 @@ export function ItineraryClient({ data, token }: Props) {
     <div className="tl-page">
       <Nav quoteNum={quote.quote_number} pkgName={selectedOption?.option_name} />
 
-      <Strip quote={quote} />
-      <div style={{ marginTop: quote.expiry_date ? 91 : 58 }}>
+      <div style={{ marginTop: 58 }}>
+        <Strip quote={quote} />
         <Hero data={data} />
         <Gallery state={state} day_snapshots={day_snapshots} />
 
