@@ -369,7 +369,12 @@ function Gallery({ state, day_snapshots }: { state: ItineraryData['state']; day_
   );
 }
 
-/* ─────────────────────── Discount Countdown ────────────────────── */
+/* ─────────────────────── Discount helpers ──────────────────────── */
+function isDiscountExpired(expiresAt?: string | null): boolean {
+  if (!expiresAt) return false;
+  return new Date(expiresAt).getTime() <= Date.now();
+}
+
 function useCountdown(expiresAt: string | null | undefined) {
   const [remaining, setRemaining] = useState<number | null>(null);
 
@@ -587,22 +592,33 @@ function Packages({
             byDest[name].push(oh);
           });
 
+          const discountAmt = opt.discount_amount ?? 0;
+          const discExpired = discountAmt > 0 && isDiscountExpired(opt.discount_expires_at);
+          const origPerAdult = adults > 0
+            ? Math.round(((opt.selling_before_gst + discountAmt) * (1 + opt.gst_percent / 100)) / adults)
+            : 0;
+
           return (
             <div key={opt.id} className={`tl-pkg-card${isSel ? ' sel' : ''}`} onClick={() => onSelect(opt.id)}>
               {opt.is_most_popular && <div className="tl-pkg-badge">Most Popular</div>}
               <div className={`tl-pkg-head${opt.is_most_popular ? ' pop' : ''}`}>
                 <div className="tl-pkg-tier">{opt.option_name}</div>
-                {(opt.discount_amount ?? 0) > 0 ? (
+                {discountAmt > 0 && !discExpired ? (
                   <DiscountBanner
-                    discountAmount={opt.discount_amount ?? 0}
+                    discountAmount={discountAmt}
                     discountExpiresAt={opt.discount_expires_at}
-                    origPerAdult={adults > 0 ? Math.round(((opt.selling_before_gst + (opt.discount_amount ?? 0)) * (1 + opt.gst_percent / 100)) / adults) : 0}
+                    origPerAdult={origPerAdult}
                     newPerAdult={opt.price_per_adult_display}
                   />
                 ) : (
                   <>
-                    <div className="tl-pkg-price">{fmtCurrency(opt.price_per_adult_display)}</div>
+                    <div className="tl-pkg-price">{fmtCurrency(discExpired ? origPerAdult : opt.price_per_adult_display)}</div>
                     <div className="tl-pkg-per">per adult · all-inclusive</div>
+                    {discExpired && (
+                      <div style={{ marginTop: 6, display: 'inline-block', background: '#FEE2E2', color: '#DC2626', fontSize: 10, fontWeight: 700, padding: '2px 10px', borderRadius: 20, fontFamily: 'var(--f-body)', letterSpacing: '0.05em' }}>
+                        Offer Expired
+                      </div>
+                    )}
                   </>
                 )}
               </div>
@@ -969,14 +985,21 @@ function Stats() {
 function FareSummary({ option, adults }: { option: QuoteOption | undefined; adults: number }) {
   if (!option) return null;
   const discount = option.discount_amount ?? 0;
-  // Per-adult pre-GST so the math adds up: (perAdultPreGst × adults) = selling_before_gst
-  const perAdultPreGst = adults > 0 ? option.selling_before_gst / adults : 0;
-  const total = option.final_price;
+  const discExpired = discount > 0 && isDiscountExpired(option.discount_expires_at);
+  const activeDiscount = discount > 0 && !discExpired;
 
-  // Original (pre-discount) totals for display
+  // Original (pre-discount) totals
   const origSellBGST = option.selling_before_gst + discount;
   const origGST = (origSellBGST * option.gst_percent) / 100;
   const origTotal = origSellBGST + origGST;
+  const origPerAdult = adults > 0 ? Math.round(origTotal / adults) : origTotal;
+
+  // Show original figures if discount is expired, discounted if active
+  const displaySellBGST = discExpired ? origSellBGST : option.selling_before_gst;
+  const displayGST = discExpired ? origGST : option.gst_amount;
+  const displayTotal = discExpired ? origTotal : option.final_price;
+  const displayPerAdult = discExpired ? origPerAdult : option.price_per_adult_display;
+  const perAdultPreGst = adults > 0 ? displaySellBGST / adults : 0;
 
   return (
     <div style={{ background: 'white', borderTop: '1px solid var(--tl-border)' }} data-section="fare">
@@ -984,14 +1007,20 @@ function FareSummary({ option, adults }: { option: QuoteOption | undefined; adul
         <div className="tl-sec-eyebrow">Cost Breakdown</div>
         <div className="tl-sec-h">Fare Summary</div>
         <div className="tl-sec-sub">{adults} Adult{adults > 1 ? 's' : ''} · {option.option_name} Package</div>
-        {discount > 0 && (
+        {activeDiscount && (
           <DiscountBanner
             discountAmount={discount}
             discountExpiresAt={option.discount_expires_at}
-            origPerAdult={adults > 0 ? Math.round(origTotal / adults) : origTotal}
+            origPerAdult={origPerAdult}
             newPerAdult={option.price_per_adult_display}
             variant="fare"
           />
+        )}
+        {discExpired && (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#FEE2E2', border: '1px solid #FECACA', borderRadius: 20, padding: '4px 12px', marginBottom: 14, fontSize: 11, fontWeight: 700, color: '#DC2626', fontFamily: 'var(--f-body)' }}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            Offer Expired
+          </div>
         )}
         <div className="tl-fare-card">
           <div className="tl-fare-row">
@@ -1000,9 +1029,9 @@ function FareSummary({ option, adults }: { option: QuoteOption | undefined; adul
           </div>
           <div className="tl-fare-row">
             <span>× {adults} Adult{adults > 1 ? 's' : ''}</span>
-            <span style={{ fontWeight: 700 }}>{fmtCurrency(option.selling_before_gst)}</span>
+            <span style={{ fontWeight: 700 }}>{fmtCurrency(displaySellBGST)}</span>
           </div>
-          {discount > 0 && (
+          {activeDiscount && (
             <div className="tl-fare-row" style={{ color: '#DC2626' }}>
               <span>Discount Applied</span>
               <span style={{ fontWeight: 700 }}>−{fmtCurrency(discount)}</span>
@@ -1010,16 +1039,16 @@ function FareSummary({ option, adults }: { option: QuoteOption | undefined; adul
           )}
           <div className="tl-fare-row">
             <span>{option.gst_percent}% GST</span>
-            <span>{fmtCurrency(option.gst_amount)}</span>
+            <span>{fmtCurrency(displayGST)}</span>
           </div>
           <div className="tl-fare-total">
             <div>
               <span className="tl-fare-total-label">Total Amount</span>
               <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2, fontFamily: 'var(--f-body)' }}>
-                {fmtCurrency(option.price_per_adult_display)} per person · incl. GST
+                {fmtCurrency(displayPerAdult)} per person · incl. GST
               </div>
             </div>
-            <span className="tl-fare-total-val">{fmtCurrency(total)}</span>
+            <span className="tl-fare-total-val">{fmtCurrency(displayTotal)}</span>
           </div>
         </div>
 

@@ -207,7 +207,7 @@ function OptionPricingCard({
                             {costPerRoom != null ? (
                               <div>
                                 <p className="text-[11px]" style={{ color: '#64748B' }}>
-                                  {totalRooms} rm × {fmtINR(costPerRoom)}
+                                  {totalRooms} room{totalRooms > 1 ? 's' : ''} × {fmtINR(costPerRoom)}
                                 </p>
                                 <p className="font-bold" style={{ color: T }}>{fmtINR(effectiveCost)}</p>
                               </div>
@@ -338,10 +338,13 @@ function OptionPricingCard({
                   </div>
                 ) : (
                   <div className="space-y-0.5">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
                       <span className="text-xs" style={{ color: '#DC2626' }}>
                         {opt.discount_amount > 0 ? `−${fmtINR(opt.discount_amount)}` : 'No discount'}
                       </span>
+                      {opt.discount_amount > 0 && opt.discount_expires_at && new Date(opt.discount_expires_at).getTime() <= Date.now() && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: '#DC2626', color: 'white', letterSpacing: '0.06em' }}>EXPIRED</span>
+                      )}
                     </div>
                     {opt.discount_amount > 0 && opt.discount_expires_at && (
                       <p className="text-[10px]" style={{ color: '#94A3B8' }}>
