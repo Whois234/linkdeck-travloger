@@ -9,6 +9,11 @@
  * Both endpoints require the x-api-key header to match MCP_API_KEY in .env.
  */
 
+// Force dynamic so Next.js never attempts static page-data collection for
+// this route (which would execute the module and require the MCP SDK at
+// build time, before node_modules are fully available in the worker).
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { createMcpServer } from '@/lib/mcp/server';
 import { NextSSETransport, sessions } from '@/lib/mcp/transport';
