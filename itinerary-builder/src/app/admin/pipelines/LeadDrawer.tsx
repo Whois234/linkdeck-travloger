@@ -5,11 +5,13 @@ import {
   X, ChevronDown, Phone, MessageCircle, Plus, FileText,
   Loader2, Clock, CheckCircle2, AlertCircle, MoveRight,
   PhoneCall, RefreshCw, Users, Pin, Sparkles, ArrowLeftRight, Bell,
+  Send, Eye, CheckCircle,
   type LucideProps,
 } from 'lucide-react';
 
 const ICON_MAP: Record<string, React.ComponentType<LucideProps>> = {
   PhoneCall, RefreshCw, FileText, Users, Pin, Sparkles, ArrowLeftRight, Clock, Bell,
+  Send, Eye, CheckCircle,
 };
 function DynamicIcon({ name, className, style }: { name: string; className?: string; style?: React.CSSProperties }) {
   const Icon = ICON_MAP[name] ?? Bell;

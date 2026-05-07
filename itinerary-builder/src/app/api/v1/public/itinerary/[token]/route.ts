@@ -22,6 +22,9 @@ export async function GET(req: NextRequest, { params }: { params: { token: strin
     quote.status === QuoteStatus.SENT
       ? prisma.quote.update({ where: { id: quote.id }, data: { status: QuoteStatus.VIEWED } })
       : Promise.resolve(null),
+    quote.lead_id
+      ? prisma.leadActivity.create({ data: { lead_id: quote.lead_id, type: 'quote_viewed', metadata: { quote_id: quote.id }, created_by: 'customer' } })
+      : Promise.resolve(null),
   ]).catch((e) => console.error('[itinerary] analytics write failed:', e));
 
   return response;

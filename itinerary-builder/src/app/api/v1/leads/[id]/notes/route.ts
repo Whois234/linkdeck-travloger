@@ -29,5 +29,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   await prisma.leadActivity.create({
     data: { lead_id: params.id, type: 'note_added', metadata: { preview: parsed.data.content.slice(0, 80) }, created_by: user.sub },
   });
+  await prisma.lead.updateMany({
+    where: { id: params.id, status: 'NEW' },
+    data: { status: 'CONTACTED' },
+  });
   return ok(note, 201);
 }

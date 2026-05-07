@@ -9,7 +9,7 @@ import {
   MessageCircle, SlidersHorizontal, Star, Clock, FileText, PhoneCall,
 } from 'lucide-react';
 import Link from 'next/link';
-import { Stage, Lead, Pipeline, STATUS_COLORS, timeAgo } from './types';
+import { Stage, Lead, Pipeline, STATUS_COLORS, formatDateTime } from './types';
 import { KanbanSkeleton } from '@/components/Skeleton';
 
 const LeadDrawer    = dynamic(() => import('./LeadDrawer'),    { ssr: false });
@@ -34,6 +34,7 @@ function Avatar({ name, color, size = 32 }: { name: string; color: string; size?
 
 const LeadCard = memo(function LeadCard({
   lead, stageColor, onDragStart, onClick, selected, onToggleSelect, onPrefetch,
+  onTouchDragStart, onTouchDragMove, onTouchDragEnd,
 }: {
   lead: Lead; stageColor: string;
   onDragStart: (e: React.DragEvent, leadId: string) => void;
@@ -41,10 +42,52 @@ const LeadCard = memo(function LeadCard({
   selected: boolean;
   onToggleSelect: (id: string, e: React.MouseEvent) => void;
   onPrefetch: (leadId: string) => void;
+  onTouchDragStart: (leadId: string, name: string, x: number, y: number) => void;
+  onTouchDragMove: (x: number, y: number) => void;
+  onTouchDragEnd: (x: number, y: number) => void;
 }) {
   const callCount  = lead._count?.call_logs ?? 0;
   const noteCount  = lead._count?.lead_notes ?? 0;
   const isNew      = callCount + noteCount === 0;
+  const topQuote   = lead.quotes?.[0];
+  const quoteViewed   = topQuote && (topQuote.status === 'PUBLISHED' || topQuote.status === 'VIEWED') && topQuote.events.some(e => e.event_type === 'quote_viewed');
+  const quoteApproved = topQuote?.status === 'APPROVED' || topQuote?.status === 'ACCEPTED';
+
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchDragging  = useRef(false);
+  const touchMoved     = useRef(false);
+
+  function handleTouchStart(e: React.TouchEvent) {
+    touchDragging.current = false;
+    touchMoved.current    = false;
+    const t = e.touches[0];
+    longPressTimer.current = setTimeout(() => {
+      touchDragging.current = true;
+      if (navigator.vibrate) navigator.vibrate(40);
+      onTouchDragStart(lead.id, lead.name, t.clientX, t.clientY);
+    }, 300);
+  }
+
+  function handleTouchMove(e: React.TouchEvent) {
+    touchMoved.current = true;
+    if (!touchDragging.current) {
+      // Finger moved before long-press fired — cancel it so scroll works
+      if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+      return;
+    }
+    e.preventDefault();
+    const t = e.touches[0];
+    onTouchDragMove(t.clientX, t.clientY);
+  }
+
+  function handleTouchEnd(e: React.TouchEvent) {
+    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+    if (touchDragging.current) {
+      const t = e.changedTouches[0];
+      onTouchDragEnd(t.clientX, t.clientY);
+      touchDragging.current = false;
+    }
+  }
 
   return (
     <div
@@ -52,6 +95,9 @@ const LeadCard = memo(function LeadCard({
       onDragStart={e => onDragStart(e, lead.id)}
       onMouseEnter={() => onPrefetch(lead.id)}
       onClick={() => onClick(lead)}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
       className="group relative cursor-pointer select-none transition-all duration-150"
       style={{
         backgroundColor: selected ? '#EFF8FF' : '#fff',
@@ -121,7 +167,7 @@ const LeadCard = memo(function LeadCard({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1" style={{ color: '#94A3B8' }}>
           <Clock className="w-3 h-3" />
-          <span className="text-[11px]">{timeAgo(lead.created_at)}</span>
+          <span className="text-[11px]">{formatDateTime(lead.created_at)}</span>
         </div>
         <div className="flex items-center gap-0.5">
           {callCount > 0 && (
@@ -134,6 +180,18 @@ const LeadCard = memo(function LeadCard({
             <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-md"
               style={{ backgroundColor: '#FFFBEB', color: '#B45309' }}>
               <FileText className="w-2.5 h-2.5" />{noteCount}
+            </span>
+          )}
+          {quoteApproved && (
+            <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-md"
+              style={{ backgroundColor: '#DCFCE7', color: '#15803D' }}>
+              ✓ Approved
+            </span>
+          )}
+          {!quoteApproved && quoteViewed && (
+            <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-md"
+              style={{ backgroundColor: '#F3E8FF', color: '#7C3AED' }}>
+              👁 Viewed
             </span>
           )}
           <div className="flex items-center gap-0.5 ml-1">
@@ -157,6 +215,7 @@ const LeadCard = memo(function LeadCard({
 
 const KanbanColumn = memo(function KanbanColumn({
   stage, leads, onDragStart, onDrop, onLeadClick, selectedIds, onToggleSelect, onSelectAllInStage, onPrefetch,
+  onTouchDragStart, onTouchDragMove, onTouchDragEnd,
 }: {
   stage: Stage; leads: Lead[];
   onDragStart: (e: React.DragEvent, leadId: string) => void;
@@ -166,6 +225,9 @@ const KanbanColumn = memo(function KanbanColumn({
   onToggleSelect: (id: string, e: React.MouseEvent) => void;
   onSelectAllInStage: (stageId: string, leads: Lead[]) => void;
   onPrefetch: (leadId: string) => void;
+  onTouchDragStart: (leadId: string, name: string, x: number, y: number) => void;
+  onTouchDragMove: (x: number, y: number) => void;
+  onTouchDragEnd: (x: number, y: number) => void;
 }) {
   const PAGE_SIZE   = 20;
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
@@ -176,6 +238,7 @@ const KanbanColumn = memo(function KanbanColumn({
 
   return (
     <div
+      data-stage-id={stage.id}
       className="flex flex-col flex-shrink-0 rounded-2xl overflow-hidden"
       style={{
         width: 284,
@@ -220,7 +283,10 @@ const KanbanColumn = memo(function KanbanColumn({
           <LeadCard key={lead.id} lead={lead} stageColor={stage.color}
             onDragStart={onDragStart} onClick={onLeadClick}
             selected={selectedIds.has(lead.id)} onToggleSelect={onToggleSelect}
-            onPrefetch={onPrefetch} />
+            onPrefetch={onPrefetch}
+            onTouchDragStart={onTouchDragStart}
+            onTouchDragMove={onTouchDragMove}
+            onTouchDragEnd={onTouchDragEnd} />
         ))}
 
         {hidden > 0 && (
@@ -340,6 +406,8 @@ export default function PipelinesPage() {
   const [showDateFilter, setShowDateFilter]     = useState(false);
   const [showSortMenu, setShowSortMenu]         = useState(false);
   const draggingLeadId = useRef<string | null>(null);
+  const [touchDrag, setTouchDrag] = useState<{ leadId: string; name: string; x: number; y: number } | null>(null);
+  const touchDragRef = useRef<string | null>(null);
   const qc = useQueryClient();
 
   const { data: pipelinesData, isLoading: loadingPipelines } = usePipelines();
@@ -381,6 +449,27 @@ export default function PipelinesPage() {
     if (!leadId) return;
     draggingLeadId.current = null;
     stageMutation.mutate({ leadId, stageId });
+  }, [stageMutation]);
+
+  const handleTouchDragStart = useCallback((leadId: string, name: string, x: number, y: number) => {
+    touchDragRef.current = leadId;
+    setTouchDrag({ leadId, name, x, y });
+  }, []);
+
+  const handleTouchDragMove = useCallback((x: number, y: number) => {
+    setTouchDrag(prev => prev ? { ...prev, x, y } : null);
+  }, []);
+
+  const handleTouchDragEnd = useCallback((x: number, y: number) => {
+    const leadId = touchDragRef.current;
+    touchDragRef.current = null;
+    setTouchDrag(null);
+    if (!leadId) return;
+    // Find the column under the finger
+    const el = document.elementFromPoint(x, y);
+    const col = el?.closest('[data-stage-id]');
+    const stageId = col?.getAttribute('data-stage-id');
+    if (stageId) stageMutation.mutate({ leadId, stageId });
   }, [stageMutation]);
 
   const toggleSelect = useCallback((id: string, e: React.MouseEvent) => {
@@ -660,6 +749,9 @@ export default function PipelinesPage() {
                 onToggleSelect={toggleSelect}
                 onSelectAllInStage={() => toggleSelectAllInStage(stage.id, stageLeads)}
                 onPrefetch={prefetchLead}
+                onTouchDragStart={handleTouchDragStart}
+                onTouchDragMove={handleTouchDragMove}
+                onTouchDragEnd={handleTouchDragEnd}
               />
             );
           })}
@@ -672,6 +764,23 @@ export default function PipelinesPage() {
           )}
         </div>
       </div>
+
+      {/* Touch drag ghost */}
+      {touchDrag && (
+        <div
+          className="fixed z-50 pointer-events-none select-none"
+          style={{
+            left: touchDrag.x - 120,
+            top: touchDrag.y - 28,
+            transform: 'rotate(2deg) scale(1.04)',
+          }}
+        >
+          <div className="px-4 py-3 rounded-2xl text-sm font-bold shadow-2xl"
+            style={{ backgroundColor: T, color: '#fff', minWidth: 160, maxWidth: 240, opacity: 0.92, border: '2px solid rgba(255,255,255,0.3)' }}>
+            {touchDrag.name}
+          </div>
+        </div>
+      )}
 
       {showAddLead && resolvedPipelineId && (
         <AddLeadDrawer

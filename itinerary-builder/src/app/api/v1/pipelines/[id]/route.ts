@@ -33,6 +33,12 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         include: {
           stage: true,
           _count: { select: { call_logs: true, lead_notes: true } },
+          quotes: {
+            where: { status: { not: 'DRAFT' } },
+            select: { id: true, status: true, events: { select: { event_type: true }, where: { event_type: { in: ['quote_viewed', 'approve_clicked'] } } } },
+            orderBy: { created_at: 'desc' },
+            take: 1,
+          },
         },
         orderBy: { created_at: 'desc' },
       },

@@ -120,5 +120,11 @@ export async function POST(req: NextRequest) {
     data: { quote_id: quote.id, event_type: 'quote_created', metadata: { created_by: user.sub } },
   });
 
+  if (quote.lead_id) {
+    await prisma.leadActivity.create({
+      data: { lead_id: quote.lead_id, type: 'quote_created', metadata: { quote_id: quote.id, quote_number: quote.quote_number }, created_by: user.sub },
+    });
+  }
+
   return created(quote);
 }

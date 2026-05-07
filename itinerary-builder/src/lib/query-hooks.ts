@@ -188,7 +188,10 @@ export function useAddNote(leadId: string) {
       return { previous };
     },
     onError: (_e, _v, ctx) => { if (ctx?.previous) qc.setQueryData(QK.lead(leadId), ctx.previous); },
-    onSettled: () => qc.invalidateQueries({ queryKey: QK.lead(leadId) }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: QK.lead(leadId) });
+      qc.invalidateQueries({ queryKey: QK.pipelines });
+    },
   });
 }
 
@@ -218,7 +221,10 @@ export function useLogCall(leadId: string) {
       return { previous };
     },
     onError: (_e, _v, ctx) => { if (ctx?.previous) qc.setQueryData(QK.lead(leadId), ctx.previous); },
-    onSettled: () => qc.invalidateQueries({ queryKey: QK.lead(leadId) }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: QK.lead(leadId) });
+      qc.invalidateQueries({ queryKey: QK.pipelines });
+    },
   });
 }
 

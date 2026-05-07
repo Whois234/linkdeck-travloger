@@ -11,6 +11,7 @@ export interface Lead {
   created_at: string;
   stage?: { id: string; name: string; color: string; order: number } | null;
   _count?: { call_logs: number; lead_notes: number };
+  quotes?: { id: string; status: string; events: { event_type: string }[] }[];
 }
 
 export interface Pipeline { id: string; name: string; is_default: boolean; stages: Stage[]; leads: Lead[] }
@@ -55,6 +56,10 @@ export const ACTIVITY_CONFIG: Record<string, { icon: string; color: string; labe
   note_added:   { icon: 'FileText',        color: '#F59E0B', label: () => 'Note added' },
   call_logged:  { icon: 'PhoneCall',       color: '#10B981', label: m => `Call logged — ${m.outcome ?? ''}` },
   task_added:   { icon: 'Clock',           color: '#8B5CF6', label: m => `Task: ${(m.task_type as string ?? '').replace('_', ' ')}` },
+  quote_created:  { icon: 'FileText',      color: '#2563EB', label: () => 'Quote created' },
+  quote_sent:     { icon: 'Send',          color: '#0891B2', label: () => 'Quote sent to customer' },
+  quote_viewed:   { icon: 'Eye',           color: '#7C3AED', label: () => 'Customer viewed the quote' },
+  quote_approved: { icon: 'CheckCircle',   color: '#15803D', label: () => 'Customer approved the quote' },
 };
 
 export const SECTION_ORDER = ['hero', 'packages', 'dates', 'itinerary', 'inclusions', 'fare', 'policies', 'faqs'];

@@ -6,7 +6,7 @@ import { z } from 'zod';
 
 const schema = z.object({
   duration: z.number().optional(),
-  outcome: z.enum(['connected', 'not_picked', 'busy']),
+  outcome: z.enum(['ANSWERED', 'NO_ANSWER', 'BUSY', 'CALLBACK_REQUESTED', 'VOICEMAIL']),
   notes: z.string().optional(),
   next_task_type: z.string().optional(),
   next_task_time: z.string().datetime().optional(),
