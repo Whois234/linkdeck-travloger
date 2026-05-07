@@ -15,7 +15,8 @@ export async function middleware(req: NextRequest) {
     pathname.startsWith('/itinerary') ||
     pathname.startsWith('/api/v1/auth') ||
     pathname.startsWith('/api/v1/public') ||
-    pathname.startsWith('/api/v1/cron')
+    pathname.startsWith('/api/v1/cron') ||
+    pathname.startsWith('/api/mcp')
   ) {
     return NextResponse.next();
   }
