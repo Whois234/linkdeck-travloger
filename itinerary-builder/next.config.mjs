@@ -9,10 +9,29 @@ const nextConfig = {
   compress: true,
 
   experimental: {
-    // Prevent Prisma and MCP SDK from being bundled — must stay as native Node modules
-    serverComponentsExternalPackages: ['@prisma/client', 'prisma', '@modelcontextprotocol/sdk'],
+    // Prevent Prisma from being bundled — must stay as native Node module (Next 14.1.x key)
+    serverComponentsExternalPackages: ['@prisma/client', 'prisma'],
     // Tree-shake large icon/component libraries at build time
     optimizePackageImports: ['lucide-react', '@radix-ui/react-accordion', '@radix-ui/react-dialog'],
+  },
+
+  webpack(config, { isServer }) {
+    if (isServer) {
+      // Externalize ALL @modelcontextprotocol imports (including deep dist/ paths)
+      // so webpack never tries to bundle the ESM-only MCP SDK package.
+      const original = config.externals;
+      config.externals = [
+        ...(Array.isArray(original) ? original : [original]),
+        ({ request }, callback) => {
+          if (request && request.startsWith('@modelcontextprotocol/')) {
+            // Tell webpack: resolve this at runtime via CommonJS require()
+            return callback(null, `commonjs ${request}`);
+          }
+          return callback();
+        },
+      ];
+    }
+    return config;
   },
 
   images: {
