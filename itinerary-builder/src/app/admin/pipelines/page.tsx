@@ -7,6 +7,7 @@ import {
   Plus, Search, Phone, ChevronDown, X, Filter, ArrowUpDown, Trash2,
   MoveRight, CheckSquare, Square, Calendar, Users, MapPin, Wallet,
   MessageCircle, SlidersHorizontal, Star, Clock, FileText, PhoneCall, GripVertical,
+  CheckCircle2, Eye,
 } from 'lucide-react';
 import Link from 'next/link';
 import { Stage, Lead, Pipeline, STATUS_COLORS, formatDateTime } from './types';
@@ -53,28 +54,53 @@ const LeadCard = memo(function LeadCard({
   const quoteViewed   = topQuote && (topQuote.status === 'PUBLISHED' || topQuote.status === 'VIEWED') && topQuote.events.some(e => e.event_type === 'quote_viewed');
   const quoteApproved = topQuote?.status === 'APPROVED' || topQuote?.status === 'ACCEPTED';
 
-  // Touch drag via the grip handle — immediate start, no long-press ambiguity
-  const isDraggingRef = useRef(false);
+  // Touch drag via grip handle.
+  // We defer committing to drag until the finger moves enough so that a
+  // horizontal swipe (to scroll the kanban board) is still possible.
+  const gripStart  = useRef<{ x: number; y: number } | null>(null);
+  const isDragging = useRef(false);
+  const decided    = useRef(false);
 
   function handleGripTouchStart(e: React.TouchEvent) {
     e.stopPropagation();
-    isDraggingRef.current = true;
-    if (navigator.vibrate) navigator.vibrate(30);
     const t = e.touches[0];
-    onTouchDragStart(lead.id, lead.name, t.clientX, t.clientY);
+    gripStart.current = { x: t.clientX, y: t.clientY };
+    isDragging.current = false;
+    decided.current    = false;
   }
 
   function handleGripTouchMove(e: React.TouchEvent) {
-    if (!isDraggingRef.current) return;
+    const t = e.touches[0];
+
+    if (!decided.current && gripStart.current) {
+      const dx = Math.abs(t.clientX - gripStart.current.x);
+      const dy = Math.abs(t.clientY - gripStart.current.y);
+      if (dx < 6 && dy < 6) return; // not enough movement yet
+
+      decided.current = true;
+
+      if (dx > dy) {
+        // Horizontal swipe → hand back to the scroll container
+        isDragging.current = false;
+        return;
+      }
+
+      // Vertical/diagonal → commit to card drag
+      isDragging.current = true;
+      if (navigator.vibrate) navigator.vibrate(30);
+      onTouchDragStart(lead.id, lead.name, gripStart.current.x, gripStart.current.y);
+    }
+
+    if (!isDragging.current) return;
     e.preventDefault();
     e.stopPropagation();
-    const t = e.touches[0];
     onTouchDragMove(t.clientX, t.clientY);
   }
 
   function handleGripTouchEnd(e: React.TouchEvent) {
-    if (!isDraggingRef.current) return;
-    isDraggingRef.current = false;
+    decided.current = false;
+    if (!isDragging.current) return;
+    isDragging.current = false;
     const t = e.changedTouches[0];
     onTouchDragEnd(t.clientX, t.clientY);
   }
@@ -185,13 +211,13 @@ const LeadCard = memo(function LeadCard({
           {quoteApproved && (
             <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-md"
               style={{ backgroundColor: '#DCFCE7', color: '#15803D' }}>
-              ✓ Approved
+              <CheckCircle2 className="w-2.5 h-2.5" />Approved
             </span>
           )}
           {!quoteApproved && quoteViewed && (
             <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-md"
               style={{ backgroundColor: '#F3E8FF', color: '#7C3AED' }}>
-              👁 Viewed
+              <Eye className="w-2.5 h-2.5" />Viewed
             </span>
           )}
           <div className="flex items-center gap-0.5 ml-1">
