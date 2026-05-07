@@ -1028,35 +1028,57 @@ export default function PipelinesPage() {
               </div>
             </div>
 
-            {/* Drop indicator bar at bottom */}
+            {/* Stage picker strip at bottom — tap any stage to move there */}
             <div style={{
               position: 'fixed',
               bottom: 0, left: 0, right: 0,
               zIndex: 9998,
-              pointerEvents: 'none',
-              padding: '12px 16px',
-              background: 'linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 100%)',
+              background: 'linear-gradient(to top, rgba(10,18,28,0.97) 60%, transparent 100%)',
+              paddingTop: 32,
+              paddingBottom: 28,
+              paddingLeft: 16,
+              paddingRight: 16,
             }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-                backgroundColor: targetStage ? stageColor : 'rgba(255,255,255,0.15)',
-                borderRadius: 100,
-                paddingLeft: 16, paddingRight: 20,
-                paddingTop: 10, paddingBottom: 10,
-                backdropFilter: 'blur(8px)',
-                boxShadow: `0 4px 24px ${stageColor}55`,
-                maxWidth: 280,
-                margin: '0 auto',
-              }}>
-                {targetStage && (
-                  <div className="w-2.5 h-2.5 rounded-full bg-white opacity-80" />
-                )}
-                <span style={{ color: '#fff', fontSize: 13, fontWeight: 700 }}>
-                  {targetStage ? `Drop into "${targetStage.name}"` : 'Drag over a stage to move'}
-                </span>
+              <p style={{ color: 'rgba(255,255,255,0.38)', fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', textAlign: 'center', marginBottom: 10 }}>
+                Move to stage
+              </p>
+              <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
+                {(activePipeline?.stages ?? []).map(s => {
+                  const isCurrent = s.id === mobileDrag.lead.stage_id;
+                  const isTarget  = s.id === mobileDrag.targetStageId;
+                  return (
+                    <button
+                      key={s.id}
+                      onTouchEnd={e => {
+                        e.stopPropagation();
+                        if (!isCurrent) {
+                          stageMutation.mutate({ leadId: mobileDrag.lead.id, stageId: s.id });
+                        }
+                        mobileDragRef.current = null;
+                        setMobileDrag(null);
+                        dragCleanupRef.current?.();
+                      }}
+                      style={{
+                        flexShrink: 0,
+                        display: 'flex', alignItems: 'center', gap: 7,
+                        paddingLeft: 14, paddingRight: 16,
+                        paddingTop: 10, paddingBottom: 10,
+                        borderRadius: 100,
+                        border: isTarget ? `2px solid ${s.color}` : isCurrent ? `2px solid ${s.color}55` : '2px solid rgba(255,255,255,0.08)',
+                        backgroundColor: isTarget ? s.color + '28' : isCurrent ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.06)',
+                        boxShadow: isTarget ? `0 0 0 3px ${s.color}33, 0 4px 16px ${s.color}44` : 'none',
+                        transform: isTarget ? 'scale(1.06)' : 'scale(1)',
+                        transition: 'all 0.15s',
+                        cursor: 'pointer',
+                      }}>
+                      <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: s.color, boxShadow: isTarget ? `0 0 8px ${s.color}` : 'none', flexShrink: 0 }} />
+                      <span style={{ color: isTarget ? '#fff' : isCurrent ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.75)', fontSize: 12, fontWeight: isTarget ? 700 : 600, whiteSpace: 'nowrap' }}>
+                        {s.name}
+                      </span>
+                      {isCurrent && <span style={{ fontSize: 9, fontWeight: 700, color: s.color, backgroundColor: s.color + '22', borderRadius: 100, paddingLeft: 6, paddingRight: 6, paddingTop: 2, paddingBottom: 2 }}>now</span>}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </>
