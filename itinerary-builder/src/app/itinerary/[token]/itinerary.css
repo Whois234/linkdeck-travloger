@@ -290,7 +290,7 @@
 .tl-wa-float { position: fixed; bottom: calc(130px + env(safe-area-inset-bottom, 0px)); right: 14px; z-index: 100; width: 52px; height: 52px; border-radius: 50%; background: #25D366; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 20px rgba(37,211,102,0.45); text-decoration: none; transition: transform 0.2s, box-shadow 0.2s; }
 .tl-wa-float:hover { transform: scale(1.1); box-shadow: 0 6px 28px rgba(37,211,102,0.55); }
 /* GROUP bar is ~150px tall incl safe-area padding — float clears it with extra room */
-.tl-wa-float-group { bottom: calc(90px + env(safe-area-inset-bottom, 0px)); }
+.tl-wa-float-group { bottom: calc(142px + env(safe-area-inset-bottom, 0px)); }
 
 /* ── MODALS ── */
 .tl-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; z-index: 200; backdrop-filter: blur(8px); padding: 20px; }
