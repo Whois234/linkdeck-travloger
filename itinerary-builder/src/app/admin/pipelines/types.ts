@@ -11,7 +11,7 @@ export interface Lead {
   created_at: string;
   stage?: { id: string; name: string; color: string; order: number } | null;
   _count?: { call_logs: number; lead_notes: number };
-  quotes?: { id: string; status: string; events: { event_type: string }[] }[];
+  quotes?: QuoteRef[];
 }
 
 export interface Pipeline { id: string; name: string; is_default: boolean; stages: Stage[]; leads: Lead[] }
@@ -20,7 +20,7 @@ export interface CallLog { id: string; duration: number | null; outcome: string;
 export interface Task { id: string; type: string; due_time: string; status: string; notes: string | null }
 export interface Activity { id: string; type: string; metadata: Record<string, unknown> | null; created_at: string; created_by: string }
 export interface QuoteOption { id: string; option_name: string; final_price: number; is_most_popular: boolean }
-export interface QuoteEvent  { id: string; event_type: string; metadata: Record<string, unknown> | null; created_at: string }
+export interface QuoteEvent  { id: string; event_type: string; metadata?: Record<string, unknown> | null; created_at: string }
 export interface QuoteRef {
   id: string; quote_number: string; status: string; created_at: string; updated_at: string;
   quote_name: string | null; start_date: string; end_date: string; adults: number; duration_days: number;
