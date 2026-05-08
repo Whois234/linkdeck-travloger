@@ -74,7 +74,7 @@ export default function DestinationsPage() {
               rowMapper={r => ({ 'Destination Name *': r.name, 'State Name *': r.state.name, 'Description': '', 'Hero Image URL': r.hero_image ?? '' })}
               importMapper={r => {
                 const st = states.find(s => s.name.toLowerCase() === (r['State Name *'] ?? '').toLowerCase());
-                return { name: r['Destination Name *'], state_id: st?.id ?? '', description: r['Description'] || '', hero_image: r['Hero Image URL'] || '' };
+                return { name: r['Destination Name *'], state_id: st?.id ?? undefined, description: r['Description'] || undefined, hero_image: r['Hero Image URL'] || undefined };
               }}
               importUrl="/api/v1/destinations"
               onImportDone={load}

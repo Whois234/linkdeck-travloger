@@ -68,7 +68,7 @@ export default function StatesPage() {
               ]}
               rows={rows}
               rowMapper={r => ({ 'State Name *': r.name, 'Country': r.country, 'Code *': r.code, 'Trip ID Prefix': r.trip_id_prefix, 'Description': r.description ?? '' })}
-              importMapper={r => ({ name: r['State Name *'], country: r['Country'] || 'India', code: r['Code *'], trip_id_prefix: r['Trip ID Prefix'] || '', description: r['Description'] || '' })}
+              importMapper={r => ({ name: r['State Name *'], country: r['Country'] || 'India', code: r['Code *'], trip_id_prefix: r['Trip ID Prefix'] || undefined, description: r['Description'] || undefined })}
               importUrl="/api/v1/states"
               onImportDone={load}
             />

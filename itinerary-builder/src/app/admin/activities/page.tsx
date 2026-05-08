@@ -79,7 +79,7 @@ export default function ActivitiesPage() {
               rowMapper={r => ({ 'Destination Name *': r.destination.name, 'Activity Name *': r.activity_name, 'Activity Type': r.activity_type ?? '', 'Duration': r.duration ?? '', 'Adult Cost (₹) *': r.adult_cost, 'Child Cost (₹)': r.child_cost ?? '', 'Rate Type (PER_PERSON/PER_GROUP)': r.rate_type })}
               importMapper={r => {
                 const dest = dests.find(d => d.name.toLowerCase() === (r['Destination Name *'] ?? '').toLowerCase());
-                return { destination_id: dest?.id ?? '', activity_name: r['Activity Name *'], activity_type: r['Activity Type'] || '', duration: r['Duration'] || '', adult_cost: Number(r['Adult Cost (₹) *']) || 0, child_cost: r['Child Cost (₹)'] ? Number(r['Child Cost (₹)']) : null, rate_type: r['Rate Type (PER_PERSON/PER_GROUP)'] || 'PER_PERSON' };
+                return { destination_id: dest?.id ?? undefined, activity_name: r['Activity Name *'], activity_type: r['Activity Type'] || undefined, duration: r['Duration'] || undefined, adult_cost: Number(r['Adult Cost (₹) *']) || 0, child_cost: r['Child Cost (₹)'] ? Number(r['Child Cost (₹)']) : null, rate_type: r['Rate Type (PER_PERSON/PER_GROUP)'] || 'PER_PERSON' };
               }}
               importUrl="/api/v1/activities"
               onImportDone={load}

@@ -137,7 +137,7 @@ export default function HotelsPage() {
               rowMapper={r => ({ 'Hotel Name *': r.hotel_name, 'Destination Name *': r.destination.name, 'Hotel Type (HOTEL/RESORT/VILLA/HOMESTAY/HOUSEBOAT)': r.hotel_type, 'Category (BUDGET/STANDARD/DELUXE/PREMIUM/LUXURY)': r.category_label, 'Star Rating (1-5)': r.star_rating ?? '', 'Address': r.address ?? '' })}
               importMapper={r => {
                 const dest = dests.find(d => d.name.toLowerCase() === (r['Destination Name *'] ?? '').toLowerCase());
-                return { hotel_name: r['Hotel Name *'], destination_id: dest?.id ?? '', hotel_type: r['Hotel Type (HOTEL/RESORT/VILLA/HOMESTAY/HOUSEBOAT)'] || 'HOTEL', category_label: r['Category (BUDGET/STANDARD/DELUXE/PREMIUM/LUXURY)'] || 'STANDARD', star_rating: r['Star Rating (1-5)'] ? Number(r['Star Rating (1-5)']) : null, address: r['Address'] || '' };
+                return { hotel_name: r['Hotel Name *'], destination_id: dest?.id ?? undefined, hotel_type: r['Hotel Type (HOTEL/RESORT/VILLA/HOMESTAY/HOUSEBOAT)'] || 'HOTEL', category_label: r['Category (BUDGET/STANDARD/DELUXE/PREMIUM/LUXURY)'] || 'STANDARD', star_rating: r['Star Rating (1-5)'] ? Number(r['Star Rating (1-5)']) : null, address: r['Address'] || undefined };
               }}
               importUrl="/api/v1/hotels"
               onImportDone={load}

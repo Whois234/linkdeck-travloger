@@ -76,7 +76,7 @@ export default function DayPlansPage() {
               rowMapper={r => ({ 'Destination Name *': r.destination.name, 'Title *': r.title, 'Duration Label': r.duration_label ?? '', 'Short Description': '', 'Description (Full)': r.description ?? '', 'Internal Notes': '' })}
               importMapper={r => {
                 const dest = dests.find(d => d.name.toLowerCase() === (r['Destination Name *'] ?? '').toLowerCase());
-                return { destination_id: dest?.id ?? '', title: r['Title *'], duration_label: r['Duration Label'] || '', short_description: r['Short Description'] || '', description: r['Description (Full)'] || '', internal_notes: r['Internal Notes'] || '' };
+                return { destination_id: dest?.id ?? undefined, title: r['Title *'], duration_label: r['Duration Label'] || undefined, short_description: r['Short Description'] || undefined, description: r['Description (Full)'] || undefined, internal_notes: r['Internal Notes'] || undefined };
               }}
               importUrl="/api/v1/day-plans"
               onImportDone={load}
