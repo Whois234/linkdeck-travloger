@@ -34,13 +34,20 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const destination_id = searchParams.get('destination_id');
   const state_id       = searchParams.get('state_id');
+  const state_ids_raw  = searchParams.get('state_ids'); // comma-separated
+  const state_ids      = state_ids_raw ? state_ids_raw.split(',').filter(Boolean) : null;
   const category       = searchParams.get('category') as HotelCategory | null;
+
+  // Build state filter: state_ids (multi) takes priority over state_id (single)
+  const stateFilter = state_ids?.length
+    ? { destination: { state_id: { in: state_ids } } }
+    : state_id ? { destination: { state_id } } : {};
 
   const hotels = await prisma.hotel.findMany({
     where: {
       status: true,
       ...(destination_id ? { destination_id } : {}),
-      ...(state_id ? { destination: { state_id } } : {}),
+      ...stateFilter,
       ...(category ? { category_label: category } : {}),
     },
     include: {

@@ -586,6 +586,7 @@ model PrivateTemplate {
   id                      String        @id @default(cuid())
   template_name           String
   state_id                String
+  state_ids               String[]
   destinations            Json
   duration_days           Int
   duration_nights         Int
@@ -734,6 +735,8 @@ model GroupBatch {
 model Lead {
   id                   String     @id @default(cuid())
   customer_id          String?
+  crm_contact_id       String?
+  owner_id             String?
   name                 String
   phone                String
   email                String?
@@ -744,14 +747,31 @@ model Lead {
   status               LeadStatus @default(NEW)
   assigned_agent_id    String?
   notes                String?
+  pipeline_id          String?
+  stage_id             String?
+  is_converted         Boolean    @default(false)
+  converted_at         DateTime?
   created_at           DateTime   @default(now())
   updated_at           DateTime   @updatedAt
 
+  crm_contact          CrmContact?     @relation(fields: [crm_contact_id], references: [id])
   customers            Customer[]
   quotes               Quote[]
+  pipeline             Pipeline?       @relation(fields: [pipeline_id], references: [id])
+  stage                PipelineStage?  @relation(fields: [stage_id], references: [id])
+  lead_notes           LeadNote[]
+  call_logs            CallLog[]
+  lead_tasks           LeadTask[]
+  lead_activities      LeadActivity[]
 
   @@index([status])
   @@index([assigned_agent_id])
+  @@index([pipeline_id, stage_id])
+  @@index([pipeline_id, owner_id])
+  @@index([pipeline_id, created_at])
+  @@index([crm_contact_id])
+  @@index([owner_id])
+  @@index([is_converted])
 }
 
 model Customer {
@@ -785,6 +805,7 @@ model Quote {
   customer_id             String
   lead_id                 String?
   state_id                String
+  state_ids               String[]
   status                  QuoteStatus @default(DRAFT)
   start_date              DateTime
   end_date                DateTime
@@ -801,6 +822,8 @@ model Quote {
   public_token            String      @unique @default(cuid())
   link_active             Boolean     @default(true)
   selected_quote_option_id String?
+  discount_amount         Float      @default(0)
+  discount_expires_at     DateTime?
   private_template_id     String?
   group_template_id       String?
   group_batch_id          String?
@@ -844,6 +867,7 @@ model QuoteOption {
   profit_value            Float
   profit_amount           Float
   discount_amount         Float      @default(0)
+  discount_expires_at     DateTime?
   selling_before_gst      Float
   gst_percent             Float
   gst_amount              Float
@@ -968,6 +992,7 @@ model User {
   updated_at    DateTime  @updatedAt
 
   notifications Notification[]
+  contacts      CrmContact[]
 
   @@index([role])
   @@index([status])
@@ -986,4 +1011,157 @@ model Notification {
 
   @@index([user_id, is_read])
   @@index([created_at])
+}
+
+// ─── CRM Contact (phone-unique, one owner) ────────────────────────────────────
+
+model CrmContact {
+  id           String    @id @default(cuid())
+  name         String
+  phone        String    @unique
+  email        String?
+  source       String?
+  owner_id     String
+  is_converted Boolean   @default(false)
+  converted_at DateTime?
+  notes        String?
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
+
+  owner        User      @relation(fields: [owner_id], references: [id])
+  leads        Lead[]
+
+  @@index([phone])
+  @@index([owner_id])
+  @@index([is_converted])
+  @@index([created_at])
+}
+
+// ─── CRM Pipeline Models ──────────────────────────────────────────────────────
+
+model Pipeline {
+  id         String          @id @default(cuid())
+  name       String
+  is_default Boolean         @default(false)
+  status     Boolean         @default(true)
+  created_at DateTime        @default(now())
+  updated_at DateTime        @updatedAt
+
+  stages     PipelineStage[]
+  leads      Lead[]
+}
+
+model PipelineStage {
+  id          String   @id @default(cuid())
+  pipeline_id String
+  name        String
+  order       Int
+  color       String   @default("#64748B")
+  status      Boolean  @default(true)
+  created_at  DateTime @default(now())
+
+  pipeline    Pipeline         @relation(fields: [pipeline_id], references: [id], onDelete: Cascade)
+  leads       Lead[]
+  automations StageAutomation[]
+
+  @@index([pipeline_id, order])
+}
+
+model LeadNote {
+  id         String   @id @default(cuid())
+  lead_id    String
+  content    String
+  created_by String
+  created_at DateTime @default(now())
+
+  lead       Lead     @relation(fields: [lead_id], references: [id], onDelete: Cascade)
+
+  @@index([lead_id])
+}
+
+model CallLog {
+  id              String   @id @default(cuid())
+  lead_id         String
+  duration        Int?
+  outcome         String
+  notes           String?
+  next_task_type  String?
+  next_task_time  DateTime?
+  created_by      String
+  created_at      DateTime @default(now())
+
+  lead            Lead     @relation(fields: [lead_id], references: [id], onDelete: Cascade)
+
+  @@index([lead_id])
+  @@index([lead_id, created_at])
+}
+
+model LeadTask {
+  id         String   @id @default(cuid())
+  lead_id    String
+  type       String
+  due_time   DateTime
+  status     String   @default("pending")
+  notes      String?
+  notified   Boolean  @default(false)
+  created_by String
+  created_at DateTime @default(now())
+
+  lead       Lead     @relation(fields: [lead_id], references: [id], onDelete: Cascade)
+
+  @@index([lead_id])
+  @@index([due_time, notified, status])
+}
+
+model LeadActivity {
+  id         String   @id @default(cuid())
+  lead_id    String
+  type       String
+  metadata   Json?
+  created_by String
+  created_at DateTime @default(now())
+
+  lead       Lead     @relation(fields: [lead_id], references: [id], onDelete: Cascade)
+
+  @@index([lead_id, created_at])
+}
+
+model DuplicateContactAttempt {
+  id                String   @id @default(cuid())
+  phone             String
+  attempted_by      String
+  existing_owner_id String
+  created_at        DateTime @default(now())
+
+  @@index([phone])
+  @@index([attempted_by])
+}
+
+model StageAutomation {
+  id          String   @id @default(cuid())
+  pipeline_id String
+  stage_id    String
+  trigger     String   @default("on_enter")
+  action_type String
+  action_data Json
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  stage       PipelineStage @relation(fields: [stage_id], references: [id], onDelete: Cascade)
+
+  @@index([stage_id])
+  @@index([pipeline_id])
+}
+
+model CrmWorkflow {
+  id         String   @id @default(cuid())
+  name       String
+  module     String
+  trigger    String
+  conditions Json?
+  actions    Json
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
 }

@@ -8,6 +8,7 @@ import { UserRole } from '@prisma/client';
 const Schema = z.object({
   template_name: z.string().min(1),
   state_id: z.string(),
+  state_ids: z.array(z.string()).min(1).optional(),
   destinations: z.array(z.string()),
   duration_days: z.number().int().positive(),
   duration_nights: z.number().int().min(0),
@@ -29,10 +30,16 @@ export async function GET(req: NextRequest) {
   if (!user) return unauthorized();
 
   const { searchParams } = new URL(req.url);
-  const state_id = searchParams.get('state_id');
+  const state_id      = searchParams.get('state_id');
+  const state_ids_raw = searchParams.get('state_ids');
+  const state_ids     = state_ids_raw ? state_ids_raw.split(',').filter(Boolean) : null;
+
+  const stateFilter = state_ids?.length
+    ? { state_id: { in: state_ids } }
+    : state_id ? { state_id } : {};
 
   const templates = await prisma.privateTemplate.findMany({
-    where: { status: true, ...(state_id ? { state_id } : {}) },
+    where: { status: true, ...stateFilter },
     include: {
       state: { select: { name: true } },
       template_days: { orderBy: { sort_order: 'asc' } },
@@ -52,6 +59,10 @@ export async function POST(req: NextRequest) {
   const parsed = Schema.safeParse(body);
   if (!parsed.success) return err('Validation failed', 400, parsed.error.flatten());
 
-  const record = await prisma.privateTemplate.create({ data: parsed.data as Parameters<typeof prisma.privateTemplate.create>[0]['data'] });
+  const state_ids = parsed.data.state_ids?.length ? parsed.data.state_ids : [parsed.data.state_id];
+  const { state_ids: _si, ...templateData } = parsed.data;
+  const record = await prisma.privateTemplate.create({
+    data: { ...templateData, state_id: state_ids[0], state_ids } as Parameters<typeof prisma.privateTemplate.create>[0]['data'],
+  });
   return created(record);
 }

@@ -31,10 +31,16 @@ export async function GET(req: NextRequest) {
   if (!user) return unauthorized();
 
   const { searchParams } = new URL(req.url);
-  const state_id = searchParams.get('state_id');
+  const state_id      = searchParams.get('state_id');
+  const state_ids_raw = searchParams.get('state_ids');
+  const state_ids     = state_ids_raw ? state_ids_raw.split(',').filter(Boolean) : null;
+
+  const stateFilter = state_ids?.length
+    ? { state_id: { in: state_ids } }
+    : state_id ? { state_id } : {};
 
   const rates = await prisma.vehiclePackageRate.findMany({
-    where: { status: true, ...(state_id ? { state_id } : {}) },
+    where: { status: true, ...stateFilter },
     include: { vehicle_type: true, state: { select: { name: true } } },
     orderBy: { route_name: 'asc' },
   });

@@ -1,7 +1,8 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { PageHeader } from '@/components/admin/PageHeader';
+import MultiStateSelect from '@/components/MultiStateSelect';
 import {
   Users, MapPin, LayoutList, DollarSign, FileText, Link2,
   Check, Copy, ExternalLink, ChevronRight, Plus, Minus,
@@ -76,6 +77,7 @@ const OPTION_NAMES = ['Option A', 'Option B', 'Option C'];
 /* ════════════════════════════════════════════════════════ */
 export default function CreateQuotePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   /* ─── Global ─── */
   const [step, setStep]           = useState(1);
@@ -87,10 +89,11 @@ export default function CreateQuotePage() {
 
   /* ─── Step 1 fields ─── */
   const [quoteName, setQuoteName]     = useState('');
-  const [custName, setCustName]       = useState('');
-  const [custMobile, setCustMobile]   = useState('');
-  const [custEmail, setCustEmail]     = useState('');
-  const [stateId, setStateId]         = useState('');
+  const [custName, setCustName]       = useState(searchParams.get('lead_name') ?? '');
+  const [custMobile, setCustMobile]   = useState(searchParams.get('lead_phone') ?? '');
+  const [custEmail, setCustEmail]     = useState(searchParams.get('lead_email') ?? '');
+  const [stateIds, setStateIds]       = useState<string[]>([]);
+  const stateId = stateIds[0] ?? ''; // primary state (backward compat)
   const [startDate, setStartDate]     = useState('');
   const [durationDays, setDurationDays] = useState(5);
   const [adults, setAdults]           = useState(2);
@@ -154,27 +157,29 @@ export default function CreateQuotePage() {
     });
   }, []);
 
-  /* ─── Load hotels + veh rates when state changes ─── */
+  /* ─── Load hotels + veh rates when state(s) change ─── */
   useEffect(() => {
-    if (!stateId) return;
+    if (!stateIds.length) return;
+    const stateParam = stateIds.length === 1 ? `state_id=${stateIds[0]}` : `state_ids=${stateIds.join(',')}`;
     Promise.all([
-      fetch(`/api/v1/hotels?state_id=${stateId}`).then(r => r.json()),
-      fetch(`/api/v1/vehicle-package-rates?state_id=${stateId}`).then(r => r.json()),
+      fetch(`/api/v1/hotels?${stateParam}`).then(r => r.json()),
+      fetch(`/api/v1/vehicle-package-rates?${stateParam}`).then(r => r.json()),
     ]).then(([hd, vd]) => {
       if (hd.success) setHotels(hd.data);
       if (vd.success) setVehRates(vd.data);
     });
-  }, [stateId]);
+  }, [stateIds]);
 
   /* ─── Load templates when step 2 is reached ─── */
   useEffect(() => {
-    if (step !== 2 || !stateId) return;
+    if (step !== 2 || !stateIds.length) return;
+    const stateParam = stateIds.length === 1 ? `state_id=${stateIds[0]}` : `state_ids=${stateIds.join(',')}`;
     if (quoteType === 'PRIVATE') {
-      fetch(`/api/v1/private-templates?state_id=${stateId}`).then(r => r.json()).then(d => { if (d.success) setPrivateTpls(d.data); });
+      fetch(`/api/v1/private-templates?${stateParam}`).then(r => r.json()).then(d => { if (d.success) setPrivateTpls(d.data); });
     } else {
       fetch(`/api/v1/group-templates?state_id=${stateId}`).then(r => r.json()).then(d => { if (d.success) setGroupTpls(d.data); });
     }
-  }, [step, stateId, quoteType]);
+  }, [step, stateIds, quoteType]);
 
   /* ─── Scaffold options when template selected ─── */
   const scaffoldOptions = useCallback((tpl: PT) => {
@@ -346,7 +351,9 @@ export default function CreateQuotePage() {
         quote_name: quoteName || selectedGT?.group_template_name || selectedPT?.template_name || null,
         quote_type: quoteType,
         customer_id: customerId,
+        lead_id: searchParams.get('lead_id') || null,
         state_id: stateId,
+        state_ids: stateIds,
         start_date: new Date(startDate).toISOString(),
         end_date: new Date(endDate).toISOString(),
         duration_days: durationDays,
@@ -459,7 +466,7 @@ export default function CreateQuotePage() {
     if (step === 1) {
       if (!custName.trim()) { setErrMsg('Customer name is required'); return; }
       if (!custMobile.trim()) { setErrMsg('Mobile number is required'); return; }
-      if (!stateId) { setErrMsg('Please select a state'); return; }
+      if (!stateIds.length) { setErrMsg('Please select at least one state'); return; }
       // Travel start date only required for PRIVATE quotes (GROUP gets dates from the batch)
       if (quoteType === 'PRIVATE' && !startDate) { setErrMsg('Please select a start date'); return; }
       setStep(2);
@@ -534,6 +541,20 @@ export default function CreateQuotePage() {
       {/* ══════════════════════════════════════════════════════════════ */}
       {step === 1 && (
         <div className="flex flex-col gap-4">
+          {/* Lead pre-fill banner */}
+          {searchParams.get('lead_id') && (
+            <div className="flex items-center justify-between gap-2 px-4 py-3 rounded-xl text-sm font-medium" style={{ backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0', color: '#15803D' }}>
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 flex-shrink-0" />
+                Customer details pre-filled from lead. Select quote type, fill trip details and proceed.
+              </div>
+              <a href="/admin/pipelines"
+                className="flex-shrink-0 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors hover:bg-green-100"
+                style={{ color: '#15803D', border: '1px solid #BBF7D0', whiteSpace: 'nowrap' }}>
+                ← Back to Pipeline
+              </a>
+            </div>
+          )}
           {/* Quote type */}
           <div className="bg-white rounded-2xl p-5" style={card}>
             <p className={lbl}>Quote Type</p>
@@ -579,10 +600,18 @@ export default function CreateQuotePage() {
               )}
               <div className="col-span-2">
                 <label className={lbl}>State / Region <span className="text-red-500">*</span></label>
-                <select className={sel} style={inpSt} value={stateId} onChange={e => setStateId(e.target.value)}>
-                  <option value="">Select state…</option>
-                  {states.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
+                <MultiStateSelect
+                  states={states}
+                  selected={stateIds}
+                  onChange={setStateIds}
+                  placeholder="Select states (e.g. Karnataka + Tamil Nadu)…"
+                  error={!stateIds.length && !!errMsg}
+                />
+                {stateIds.length > 1 && (
+                  <p className="text-[11px] mt-1.5" style={{ color: '#64748B' }}>
+                    💡 Tip: drag order matters — the first state is the primary region for quote numbering
+                  </p>
+                )}
               </div>
 
               {/* Travel dates — PRIVATE only (GROUP dates come from the batch) */}
@@ -669,7 +698,7 @@ export default function CreateQuotePage() {
         <div className="flex flex-col gap-3">
           <div className="bg-white rounded-2xl p-5" style={card}>
             <p className="text-sm font-bold text-[#0F172A] mb-1">Select Package</p>
-            <p className="text-xs text-[#94A3B8]">{states.find(s => s.id === stateId)?.name} · {durationDays}D / {durationNights}N · {adults} adult{adults !== 1 ? 's' : ''}</p>
+            <p className="text-xs text-[#94A3B8]">{stateIds.map(id => states.find(s => s.id === id)?.name).filter(Boolean).join(" + ")} · {durationDays}D / {durationNights}N · {adults} adult{adults !== 1 ? 's' : ''}</p>
           </div>
           {privateTpls.length === 0 ? (
             <div className="py-14 text-center bg-white rounded-2xl" style={card}>
@@ -719,7 +748,7 @@ export default function CreateQuotePage() {
         <div className="flex flex-col gap-3">
           <div className="bg-white rounded-2xl p-5" style={card}>
             <p className="text-sm font-bold text-[#0F172A] mb-1">Select Group Tour &amp; Batch</p>
-            <p className="text-xs text-[#94A3B8]">{states.find(s => s.id === stateId)?.name} · Select a departure date below</p>
+            <p className="text-xs text-[#94A3B8]">{stateIds.map(id => states.find(s => s.id === id)?.name).filter(Boolean).join(" + ")} · Select a departure date below</p>
           </div>
           {groupTpls.length === 0 ? (
             <div className="py-14 text-center bg-white rounded-2xl" style={card}>
