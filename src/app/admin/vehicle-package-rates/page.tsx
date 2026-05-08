@@ -112,7 +112,7 @@ export default function VehicleRatesPage() {
 
   return (
     <div className="max-w-[1400px]">
-      <PageHeader title="Vehicle Package Rates" subtitle="Route-based vehicle pricing and cost management" crumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Vehicle Rates' }]}
+      <PageHeader title="Vehicle Package Rates" subtitle="⚡ v2 · Route-based vehicle pricing and cost management" crumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Vehicle Rates' }]}
         action={
           <div className="flex items-center gap-2 flex-wrap">
             <button onClick={openCreate} className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white transition-colors hover:opacity-90" style={{ backgroundColor: '#134956' }}><Plus className="w-4 h-4" /> Add Rate</button>
