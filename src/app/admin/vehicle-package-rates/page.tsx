@@ -3,7 +3,6 @@ import { useState, useEffect } from 'react';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
 import { Plus, Pencil, Trash2, Search } from 'lucide-react';
-import ExcelIO from '@/components/ExcelIO';
 
 interface State { id: string; name: string }
 interface City  { id: string; name: string; state_id: string }
@@ -116,73 +115,6 @@ export default function VehicleRatesPage() {
       <PageHeader title="Vehicle Package Rates" subtitle="Route-based vehicle pricing and cost management" crumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Vehicle Rates' }]}
         action={
           <div className="flex items-center gap-2 flex-wrap">
-            <ExcelIO
-              moduleName="Vehicle_Rates"
-              columns={[
-                { key: 'route_name',           label: 'Route Name *',                        example: 'Cochin – Munnar – Alleppey' },
-                { key: 'state',                label: 'State Name *',                        example: 'Kerala' },
-                { key: 'vehicle_type',         label: 'Vehicle Type Code *',                 example: 'SUV' },
-                { key: 'start_city',           label: 'Start City *',                        example: 'Cochin' },
-                { key: 'end_city',             label: 'End City *',                          example: 'Alleppey' },
-                { key: 'duration_days',        label: 'Duration Days *',                     example: '3' },
-                { key: 'duration_nights',      label: 'Duration Nights *',                   example: '2' },
-                { key: 'base_cost',            label: 'Base Cost (₹) *',                     example: '12000' },
-                { key: 'extra_day_cost',       label: 'Extra Day Cost (₹)',                  example: '2000' },
-                { key: 'extra_km_cost',        label: 'Extra KM Cost (₹)',                   example: '15' },
-                { key: 'supplier',             label: 'Supplier Name',                       example: 'Kerala Cab Co.' },
-                { key: 'driver_bata',          label: 'Driver Bata Included (YES/NO)',        example: 'YES' },
-                { key: 'toll_parking',         label: 'Toll & Parking Included (YES/NO)',     example: 'NO' },
-                { key: 'valid_from',           label: 'Valid From (YYYY-MM-DD) *',           example: '2026-01-01' },
-                { key: 'valid_to',             label: 'Valid To (YYYY-MM-DD) *',             example: '2026-12-31' },
-              ]}
-              rows={rows}
-              rowMapper={r => {
-                const st  = states.find(s => s.id === r.state_id);
-                const vt  = vehicleTypes.find(v => v.id === r.vehicle_type_id);
-                const sup = suppliers.find(s => s.id === r.supplier_id);
-                return {
-                  'Route Name *':                      r.route_name,
-                  'State Name *':                      st?.name ?? '',
-                  'Vehicle Type Code *':               vt?.vehicle_type ?? '',
-                  'Start City *':                      r.start_city,
-                  'End City *':                        r.end_city,
-                  'Duration Days *':                   r.duration_days,
-                  'Duration Nights *':                 r.duration_nights,
-                  'Base Cost (₹) *':                   r.base_cost,
-                  'Extra Day Cost (₹)':                r.extra_day_cost ?? '',
-                  'Extra KM Cost (₹)':                 r.extra_km_cost ?? '',
-                  'Supplier Name':                     sup?.name ?? '',
-                  'Driver Bata Included (YES/NO)':     r.driver_bata_included ? 'YES' : 'NO',
-                  'Toll & Parking Included (YES/NO)':  r.toll_parking_included ? 'YES' : 'NO',
-                  'Valid From (YYYY-MM-DD) *':         r.valid_from.slice(0, 10),
-                  'Valid To (YYYY-MM-DD) *':           r.valid_to.slice(0, 10),
-                };
-              }}
-              importMapper={r => {
-                const st  = states.find(s => s.name.toLowerCase() === (r['State Name *'] ?? '').toLowerCase());
-                const vt  = vehicleTypes.find(v => v.vehicle_type.toLowerCase() === (r['Vehicle Type Code *'] ?? '').toLowerCase());
-                const sup = suppliers.find(s => s.name.toLowerCase() === (r['Supplier Name'] ?? '').toLowerCase());
-                return {
-                  route_name:            r['Route Name *'],
-                  state_id:              st?.id ?? undefined,
-                  vehicle_type_id:       vt?.id ?? undefined,
-                  start_city:            r['Start City *'],
-                  end_city:              r['End City *'],
-                  duration_days:         Number(r['Duration Days *']) || 1,
-                  duration_nights:       Number(r['Duration Nights *']) || 0,
-                  base_cost:             Number(r['Base Cost (₹) *']) || 0,
-                  extra_day_cost:        r['Extra Day Cost (₹)'] ? Number(r['Extra Day Cost (₹)']) : undefined,
-                  extra_km_cost:         r['Extra KM Cost (₹)'] ? Number(r['Extra KM Cost (₹)']) : undefined,
-                  supplier_id:           sup?.id ?? undefined,
-                  driver_bata_included:  (r['Driver Bata Included (YES/NO)'] ?? '').toUpperCase() === 'YES',
-                  toll_parking_included: (r['Toll & Parking Included (YES/NO)'] ?? '').toUpperCase() === 'YES',
-                  valid_from:            new Date(r['Valid From (YYYY-MM-DD) *']).toISOString(),
-                  valid_to:              new Date(r['Valid To (YYYY-MM-DD) *']).toISOString(),
-                };
-              }}
-              importUrl="/api/v1/vehicle-package-rates"
-              onImportDone={load}
-            />
             <button onClick={openCreate} className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white transition-colors hover:opacity-90" style={{ backgroundColor: '#134956' }}><Plus className="w-4 h-4" /> Add Rate</button>
           </div>
         }

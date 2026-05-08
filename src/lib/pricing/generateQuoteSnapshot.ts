@@ -149,11 +149,11 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
 
   // All hotel-related IDs across all options — for batch lookup
   const allOptionHotels = quote.quote_options.flatMap(o => o.option_hotels);
-  const hotelIds       = [...new Set(allOptionHotels.map(h => h.hotel_id).filter(Boolean))];
-  const roomIds        = [...new Set(allOptionHotels.map(h => h.room_category_id).filter(Boolean))];
-  const mealIds        = [...new Set(allOptionHotels.map(h => h.meal_plan_id).filter(Boolean))];
-  const optionDestIds  = [...new Set(allOptionHotels.map(h => h.destination_id).filter(Boolean))];
-  const allDestIds     = [...new Set([...itineraryDestIds, ...optionDestIds])];
+  const hotelIds       = Array.from(new Set(allOptionHotels.map(h => h.hotel_id).filter(Boolean) as string[]));
+  const roomIds        = Array.from(new Set(allOptionHotels.map(h => h.room_category_id).filter(Boolean) as string[]));
+  const mealIds        = Array.from(new Set(allOptionHotels.map(h => h.meal_plan_id).filter(Boolean) as string[]));
+  const optionDestIds  = Array.from(new Set(allOptionHotels.map(h => h.destination_id).filter(Boolean) as string[]));
+  const allDestIds     = Array.from(new Set([...itineraryDestIds, ...optionDestIds]));
 
   // ── STEP 5: ALL remaining DB reads in ONE parallel batch ─────────────────────
   const [
@@ -260,6 +260,7 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
       adults: quote.adults, children_below_5: quote.children_below_5,
       children_5_12: quote.children_5_12, infants: quote.infants,
       pickup_point: quote.pickup_point, drop_point: quote.drop_point, expiry_date: quote.expiry_date,
+      discount_amount: quote.discount_amount, discount_expires_at: quote.discount_expires_at,
     },
     customer: quote.customer,
     agent: resolvedAgent,
@@ -278,6 +279,9 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
     },
     quote_options:         enrichedOptions,
     group_package_options: groupPackageOptions,
+    group_pricing_mode:    (groupCms as Record<string,unknown>)?.pricing_mode ?? 'date_based',
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    group_trip_dates:      Array.isArray((groupCms as any)?.trip_dates) ? (groupCms as any).trip_dates : [],
     day_snapshots:         enrichedDaySnapshots,
     inclusions, exclusions, policies,
   };

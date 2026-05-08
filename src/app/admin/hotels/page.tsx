@@ -9,14 +9,14 @@ import ExcelIO from '@/components/ExcelIO';
 const HOTEL_TYPES = ['HOTEL','RESORT','VILLA','HOMESTAY','HOUSEBOAT'];
 const HOTEL_CATS  = ['BUDGET','STANDARD','DELUXE','PREMIUM','LUXURY'];
 
-type SortKey = 'name_asc' | 'name_desc' | 'dest_asc' | 'dest_desc' | 'cat_asc' | 'stars_desc' | 'rooms_desc';
+type SortKey = 'newest' | 'oldest' | 'name_asc' | 'name_desc' | 'dest_asc' | 'dest_desc' | 'cat_asc' | 'stars_desc' | 'rooms_desc';
 
 interface Dest  { id: string; name: string }
 interface Hotel {
   id: string; hotel_name: string; hotel_type: string; category_label: string;
   star_rating?: number | null; destination: { name: string }; destination_id: string;
   status: boolean; address?: string | null; images?: string[] | null;
-  room_categories?: { id: string }[];
+  room_categories?: { id: string }[]; created_at: string;
 }
 
 const EMPTY = { hotel_name:'', destination_id:'', hotel_type:'HOTEL', category_label:'STANDARD', star_rating:'3', address:'', hotel_description:'' };
@@ -33,6 +33,8 @@ const CAT_BADGE: Record<string,{bg:string;text:string}> = {
 };
 
 const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: 'newest',     label: 'Newest First' },
+  { value: 'oldest',     label: 'Oldest First' },
   { value: 'name_asc',   label: 'Name A → Z' },
   { value: 'name_desc',  label: 'Name Z → A' },
   { value: 'dest_asc',   label: 'Destination A → Z' },
@@ -46,6 +48,8 @@ function sortHotels(hotels: Hotel[], key: SortKey): Hotel[] {
   const CAT_ORDER = ['BUDGET','STANDARD','DELUXE','PREMIUM','LUXURY'];
   return [...hotels].sort((a, b) => {
     switch (key) {
+      case 'newest':     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      case 'oldest':     return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       case 'name_asc':   return a.hotel_name.localeCompare(b.hotel_name);
       case 'name_desc':  return b.hotel_name.localeCompare(a.hotel_name);
       case 'dest_asc':   return a.destination.name.localeCompare(b.destination.name);
@@ -70,7 +74,7 @@ export default function HotelsPage() {
   const [search, setSearch]     = useState('');
   const [catFilter, setCatFilter]   = useState('');
   const [destFilter, setDestFilter] = useState('');
-  const [sortKey, setSortKey]   = useState<SortKey>('name_asc');
+  const [sortKey, setSortKey]   = useState<SortKey>('newest');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
   async function load() {
@@ -295,6 +299,8 @@ function HotelGrid({ hotels, viewMode, onSelect }: { hotels: Hotel[]; viewMode: 
               <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Category</th>
               <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Stars</th>
               <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Rooms</th>
+              <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Created By</th>
+              <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Created</th>
               <th className="w-8" />
             </tr>
           </thead>
@@ -318,6 +324,8 @@ function HotelGrid({ hotels, viewMode, onSelect }: { hotels: Hotel[]; viewMode: 
                     ) : <span className="text-[#CBD5E1]">—</span>}
                   </td>
                   <td className="px-4 py-3.5 text-[#64748B]">{h.room_categories?.length ?? 0}</td>
+                  <td className="px-4 py-3.5 text-[#64748B]">Admin</td>
+                  <td className="px-4 py-3.5 text-[#64748B]">{new Date(h.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
                   <td className="px-4 py-3.5"><ChevronRight className="w-4 h-4 text-[#CBD5E1]" /></td>
                 </tr>
               );

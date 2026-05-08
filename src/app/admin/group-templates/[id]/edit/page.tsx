@@ -51,6 +51,8 @@ interface CmsData {
   hero_images: string[];
   state_gallery_image: string;
   destination_cards: Array<{ destination_id: string; custom_name: string | null; description: string; image_url: string }>;
+  pricing_mode: 'date_based' | 'package_based';
+  trip_dates: Array<{ start_date: string; end_date: string; label: string; availability: 'available' | 'few_left' | 'filling_fast' | 'sold_out' }>;
   package_options: CmsOption[];
   inclusions: string[];
   exclusions: string[];
@@ -94,6 +96,8 @@ const DEFAULT_CMS: CmsData = {
   min_pax: 10, max_pax: 25,
   hero_heading: '', hero_subheading: '',
   hero_tags: [], hero_images: [], state_gallery_image: '', destination_cards: [],
+  pricing_mode: 'date_based',
+  trip_dates: [],
   package_options: [
     { tier_name: 'Standard', display_order: 1, is_most_popular: false, inclusions: [], adult_price: 0, child_price: 0 },
     { tier_name: 'Deluxe',   display_order: 2, is_most_popular: true,  inclusions: [], adult_price: 0, child_price: 0 },
@@ -201,6 +205,10 @@ export default function GroupTemplateEditPage() {
       if (!Array.isArray(c.exclusions)) c.exclusions = [...DEFAULT_CMS.exclusions];
       if (!Array.isArray(c.hero_images)) c.hero_images = [];
       if (typeof c.state_gallery_image !== 'string') c.state_gallery_image = '';
+      if (c.pricing_mode !== 'date_based' && c.pricing_mode !== 'package_based') c.pricing_mode = 'date_based';
+      if (!Array.isArray(c.trip_dates)) c.trip_dates = [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      c.trip_dates = (c.trip_dates as any[]).map((td) => ({ ...td, availability: td.availability ?? 'available' }));
       setCms(c);
       setDays(t.group_template_days.map(d => ({
         ...d,
@@ -584,7 +592,52 @@ export default function GroupTemplateEditPage() {
           {/* ═══ PACKAGE OPTIONS ═══ */}
           {activeSection === 'options' && (
             <div className="bg-white rounded-2xl p-6" style={card}>
-              <SectionHeader title="Package Options" desc="Define 1–3 options with direct pricing. Each option can have its own adult/child price." />
+              <SectionHeader title="Package Options" desc="Choose how customers see pricing: date-based (batch price from departure dates) or fixed package pricing." />
+
+              {/* Pricing mode toggle */}
+              <div className="mb-6 p-4 rounded-xl" style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: '#64748B' }}>Pricing Mode</p>
+                <div className="flex gap-3">
+                  {([
+                    { value: 'date_based',    label: 'Date-based Pricing',    desc: 'Price comes from departure batch dates' },
+                    { value: 'package_based', label: 'Fixed Package Pricing', desc: 'Price set directly on each package option' },
+                  ] as const).map(({ value, label, desc }) => (
+                    <button
+                      key={value}
+                      onClick={() => updCms('pricing_mode', value)}
+                      className="flex-1 p-3 rounded-xl text-left transition-all"
+                      style={{
+                        border: `2px solid ${cms.pricing_mode === value ? T : '#E2E8F0'}`,
+                        backgroundColor: cms.pricing_mode === value ? `${T}08` : '#fff',
+                      }}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="w-3.5 h-3.5 rounded-full flex-shrink-0" style={{
+                          border: `2px solid ${cms.pricing_mode === value ? T : '#CBD5E1'}`,
+                          backgroundColor: cms.pricing_mode === value ? T : 'transparent',
+                        }} />
+                        <span className="text-sm font-semibold" style={{ color: cms.pricing_mode === value ? T : '#0F172A' }}>{label}</span>
+                      </div>
+                      <p className="text-xs ml-5" style={{ color: '#64748B' }}>{desc}</p>
+                    </button>
+                  ))}
+                </div>
+                {cms.pricing_mode === 'date_based' && (
+                  <p className="text-xs mt-3 flex items-center gap-1.5" style={{ color: '#64748B' }}>
+                    <span style={{ color: '#F59E0B' }}>ℹ</span>
+                    Customer will see a date picker with prices from your batches. Package options below are hidden.
+                  </p>
+                )}
+                {cms.pricing_mode === 'package_based' && (
+                  <p className="text-xs mt-3 flex items-center gap-1.5" style={{ color: '#64748B' }}>
+                    <span style={{ color: '#F59E0B' }}>ℹ</span>
+                    Customer will see the package options below with fixed prices. Date picker is hidden.
+                  </p>
+                )}
+              </div>
+
+              {/* Package options — only shown when package_based */}
+              {cms.pricing_mode === 'package_based' && (
               <div className="flex gap-3 mb-2 flex-wrap">
                 {cms.package_options.map((opt, oi) => (
                   <div key={oi} className="flex-1 min-w-[180px] rounded-xl p-4" style={{ border: `2px solid ${opt.is_most_popular ? T : '#E2E8F0'}` }}>
@@ -648,6 +701,71 @@ export default function GroupTemplateEditPage() {
                   </button>
                 )}
               </div>
+              )} {/* end pricing_mode === package_based */}
+
+              {/* ── Trip Dates (package_based only — no prices, just date ranges) ── */}
+              {cms.pricing_mode === 'package_based' && (
+                <div className="mt-6 pt-6" style={{ borderTop: '1px solid #E2E8F0' }}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>Trip Dates</p>
+                      <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>Add available departure windows — shown on the itinerary as simple date info, no price.</p>
+                    </div>
+                    <button
+                      onClick={() => updCms('trip_dates', [...cms.trip_dates, { start_date: '', end_date: '', label: '', availability: 'available' }])}
+                      className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold text-white hover:opacity-90"
+                      style={{ backgroundColor: T }}>
+                      <Plus className="w-3.5 h-3.5" /> Add Date
+                    </button>
+                  </div>
+
+                  {cms.trip_dates.length === 0 && (
+                    <div className="py-6 text-center rounded-xl" style={{ border: '2px dashed #E2E8F0' }}>
+                      <p className="text-sm" style={{ color: '#94A3B8' }}>No dates added yet. Click &ldquo;Add Date&rdquo; to add a departure window.</p>
+                    </div>
+                  )}
+
+                  <div className="flex flex-col gap-2">
+                    {cms.trip_dates.map((td, i) => (
+                      <div key={i} className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] gap-2 items-end p-3 rounded-xl" style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                        <div>
+                          <label className="block text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: '#94A3B8' }}>Start Date</label>
+                          <input type="date" className="w-full h-8 px-2 rounded-lg border text-sm focus:outline-none" style={{ borderColor: '#E2E8F0' }}
+                            value={td.start_date}
+                            onChange={e => { const d = [...cms.trip_dates]; d[i] = { ...d[i], start_date: e.target.value }; updCms('trip_dates', d); }} />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: '#94A3B8' }}>End Date</label>
+                          <input type="date" className="w-full h-8 px-2 rounded-lg border text-sm focus:outline-none" style={{ borderColor: '#E2E8F0' }}
+                            value={td.end_date}
+                            onChange={e => { const d = [...cms.trip_dates]; d[i] = { ...d[i], end_date: e.target.value }; updCms('trip_dates', d); }} />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: '#94A3B8' }}>Label (optional)</label>
+                          <input type="text" placeholder="e.g. May Long Weekend" className="w-full h-8 px-2 rounded-lg border text-sm focus:outline-none" style={{ borderColor: '#E2E8F0' }}
+                            value={td.label}
+                            onChange={e => { const d = [...cms.trip_dates]; d[i] = { ...d[i], label: e.target.value }; updCms('trip_dates', d); }} />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: '#94A3B8' }}>Availability</label>
+                          <select className="w-full h-8 px-2 rounded-lg border text-sm focus:outline-none" style={{ borderColor: '#E2E8F0' }}
+                            value={td.availability ?? 'available'}
+                            onChange={e => { const d = [...cms.trip_dates]; d[i] = { ...d[i], availability: e.target.value as 'available' | 'few_left' | 'filling_fast' | 'sold_out' }; updCms('trip_dates', d); }}>
+                            <option value="available">✅ Available</option>
+                            <option value="few_left">🔴 Few Slots Left</option>
+                            <option value="filling_fast">🔥 Filling Fast</option>
+                            <option value="sold_out">❌ Sold Out</option>
+                          </select>
+                        </div>
+                        <button onClick={() => updCms('trip_dates', cms.trip_dates.filter((_, j) => j !== i))}
+                          className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-[#94A3B8] hover:text-red-500">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

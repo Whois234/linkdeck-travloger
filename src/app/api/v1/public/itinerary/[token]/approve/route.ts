@@ -26,6 +26,12 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
     data: { quote_id: quote.id, event_type: 'approve_clicked' },
   });
 
+  if (quote.lead_id) {
+    await prisma.leadActivity.create({
+      data: { lead_id: quote.lead_id, type: 'quote_approved', metadata: { quote_id: quote.id }, created_by: 'customer' },
+    });
+  }
+
   // Notify assigned agent
   if (quote.assigned_agent?.user_account_id) {
     await prisma.notification.create({

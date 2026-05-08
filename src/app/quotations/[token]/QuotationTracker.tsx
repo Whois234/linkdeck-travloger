@@ -35,6 +35,8 @@ export default function QuotationTracker({ token }: Props) {
   const flushTimerRef      = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef       = useRef<number>(Date.now());
   const finalFlushedRef    = useRef(false);   // guard: only one is_final=true flush per session
+  // Stable session ID so the admin page can group intermediate + final flushes into one session
+  const sessionIdRef       = useRef<string>(crypto.randomUUID());
 
   function post(event_type: string, metadata?: Record<string, unknown>) {
     const payload = JSON.stringify({ event_type, metadata });
@@ -74,6 +76,7 @@ export default function QuotationTracker({ token }: Props) {
     snapshotActiveTime();
     const timeSpent = Math.round((Date.now() - startTimeRef.current) / 1000);
     post('quote_viewed', {
+      session_id:           sessionIdRef.current,
       section_views:        { ...sectionViewsRef.current },
       section_time_seconds: { ...sectionTimeRef.current },
       time_spent_seconds:   timeSpent,
@@ -82,9 +85,10 @@ export default function QuotationTracker({ token }: Props) {
   }
 
   useEffect(() => {
-    // Reset per-mount state
+    // Reset per-mount state (new session on every page load)
     finalFlushedRef.current  = false;
     startTimeRef.current     = Date.now();
+    sessionIdRef.current     = crypto.randomUUID();
     sectionViewsRef.current  = {};
     sectionTimeRef.current   = {};
     sectionEnterRef.current  = {};
@@ -96,39 +100,60 @@ export default function QuotationTracker({ token }: Props) {
     flushTimerRef.current = setInterval(() => flush(), 30_000);
 
     // 3. IntersectionObserver — track entry/exit per section
+    // Uses a reference-count so multiple elements sharing a data-section name
+    // (e.g. group-template sub-components) don't cause double-counting.
+    // activeCountRef[section] = number of elements currently visible
+    const activeCountRef: Record<string, number> = {};
+
     const observer = new IntersectionObserver(
       (entries) => {
         const now = Date.now();
         entries.forEach((entry) => {
           const section = (entry.target as HTMLElement).dataset.section;
-          if (!section) return;
+          if (!section || !TRACKED_SECTIONS.includes(section)) return;
 
           if (entry.isIntersecting) {
-            // Section entered viewport
-            sectionViewsRef.current[section] =
-              (sectionViewsRef.current[section] ?? 0) + 1;
-            sectionEnterRef.current[section] = now;
+            activeCountRef[section] = (activeCountRef[section] ?? 0) + 1;
+            if (activeCountRef[section] === 1) {
+              // First element of this section just became visible
+              sectionViewsRef.current[section] = (sectionViewsRef.current[section] ?? 0) + 1;
+              sectionEnterRef.current[section] = now;
+            }
           } else {
-            // Section left viewport — accumulate time
-            const enterMs = sectionEnterRef.current[section];
-            if (enterMs && enterMs > 0) {
-              sectionTimeRef.current[section] =
-                (sectionTimeRef.current[section] ?? 0) +
-                Math.round((now - enterMs) / 1000);
-              sectionEnterRef.current[section] = 0;
+            activeCountRef[section] = Math.max(0, (activeCountRef[section] ?? 0) - 1);
+            if (activeCountRef[section] === 0) {
+              // Last element of this section left viewport — accumulate time
+              const enterMs = sectionEnterRef.current[section];
+              if (enterMs && enterMs > 0) {
+                sectionTimeRef.current[section] =
+                  (sectionTimeRef.current[section] ?? 0) +
+                  Math.round((now - enterMs) / 1000);
+                sectionEnterRef.current[section] = 0;
+              }
             }
           }
         });
       },
-      { threshold: 0.2 },
+      { threshold: 0.15 },
     );
 
-    const observeTimeout = setTimeout(() => {
-      TRACKED_SECTIONS.forEach((s) => {
-        const el = document.querySelector(`[data-section="${s}"]`);
-        if (el) observer.observe(el);
+    // Observe all data-section elements currently in DOM
+    const observedEls = new Set<Element>();
+    function observeAll() {
+      document.querySelectorAll('[data-section]').forEach((el) => {
+        if (!observedEls.has(el)) {
+          observedEls.add(el);
+          observer.observe(el);
+        }
       });
-    }, 800);
+    }
+
+    // Initial pass after a brief paint delay
+    const observeTimeout = setTimeout(observeAll, 500);
+
+    // MutationObserver catches elements added after initial render (group template async data, etc.)
+    const mutationObs = new MutationObserver(() => observeAll());
+    mutationObs.observe(document.body, { childList: true, subtree: true });
 
     // 4. WhatsApp click listener
     function onWhatsApp() {
@@ -148,6 +173,7 @@ export default function QuotationTracker({ token }: Props) {
       if (flushTimerRef.current) clearInterval(flushTimerRef.current);
       clearTimeout(observeTimeout);
       observer.disconnect();
+      mutationObs.disconnect();
       window.removeEventListener('itinerary:whatsapp_clicked', onWhatsApp);
       document.removeEventListener('visibilitychange', onVisChange);
       window.removeEventListener('pagehide', onHide);

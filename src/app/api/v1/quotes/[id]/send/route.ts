@@ -28,6 +28,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     data: { quote_id: params.id, event_type: 'quote_sent', metadata: { sent_by: user.sub } },
   });
 
+  if (quote.lead_id) {
+    await prisma.leadActivity.create({
+      data: { lead_id: quote.lead_id, type: 'quote_sent', metadata: { quote_id: quote.id }, created_by: user.sub },
+    });
+  }
+
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3001';
   return ok({
     share_link: `${appUrl}/itinerary/${quote.public_token}`,

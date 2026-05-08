@@ -24,6 +24,8 @@ interface QuoteOption {
   selling_before_gst: number;
   gst_percent: number;
   gst_amount: number;
+  discount_amount?: number;
+  discount_expires_at?: string | null;
   option_hotels: OptionHotel[];
   customer_visible_notes?: string | null;
 }
@@ -72,6 +74,7 @@ interface GroupPackageOption {
   inclusions: string[];
   adult_price: number;
   child_price: number;
+  gst_percent?: number;
 }
 
 interface ItineraryData {
@@ -92,6 +95,8 @@ interface ItineraryData {
     pickup_point?: string | null;
     drop_point?: string | null;
     expiry_date?: string | null;
+    discount_amount?: number | null;
+    discount_expires_at?: string | null;
   };
   customer: { name: string };
   agent?: {
@@ -109,6 +114,8 @@ interface ItineraryData {
   state: { name: string; description?: string | null; hero_image?: string | null; hero_images?: string[] | null };
   quote_options: QuoteOption[];
   group_package_options?: GroupPackageOption[];
+  group_pricing_mode?: 'date_based' | 'package_based';
+  group_trip_dates?: Array<{ start_date: string; end_date: string; label: string; availability?: 'available' | 'few_left' | 'filling_fast' | 'sold_out' }>;
   day_snapshots: DaySnapshot[];
   inclusions: Array<{ id: string; text: string }>;
   exclusions: Array<{ id: string; text: string }>;
@@ -170,7 +177,6 @@ function Nav({ quoteNum, pkgName }: { quoteNum: string; pkgName?: string }) {
         </a>
       </div>
       <div className="tl-nav-right">
-        <span className="tl-nav-pill">#{quoteNum}</span>
         {pkgName && <span className="tl-nav-pill pkg">{pkgName}</span>}
       </div>
     </nav>
@@ -222,17 +228,17 @@ function Hero({ data }: { data: ItineraryData }) {
           alt={heroTitle}
           className="tl-hero-bg-img tl-hero-slide"
           loading={idx === 0 ? 'eager' : 'lazy'}
-          style={{ opacity: idx === activeSlide ? 0.40 : 0, transition: 'opacity 1.2s ease-in-out', zIndex: idx === activeSlide ? 1 : 0 }}
+          style={{ opacity: idx === activeSlide ? 0.58 : 0, transition: 'opacity 1.4s ease-in-out', zIndex: idx === activeSlide ? 1 : 0 }}
         />
       ))}
       {/* Slide dots */}
       {slides.length > 1 && (
-        <div style={{ position: 'absolute', bottom: 90, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 6, zIndex: 5 }}>
+        <div style={{ position: 'absolute', bottom: 108, right: 22, display: 'flex', flexDirection: 'column', gap: 5, zIndex: 5 }}>
           {slides.map((_, idx) => (
             <button key={idx} onClick={() => setActiveSlide(idx)} style={{
-              width: idx === activeSlide ? 20 : 6, height: 6, borderRadius: 3,
-              background: idx === activeSlide ? 'white' : 'rgba(255,255,255,0.4)',
-              border: 'none', cursor: 'pointer', transition: 'all 0.3s ease', padding: 0,
+              width: 3, height: idx === activeSlide ? 22 : 6, borderRadius: 2,
+              background: idx === activeSlide ? '#C9A97A' : 'rgba(255,255,255,0.3)',
+              border: 'none', cursor: 'pointer', transition: 'all 0.35s cubic-bezier(0.4,0,0.2,1)', padding: 0,
             }} />
           ))}
         </div>
@@ -252,24 +258,58 @@ function Hero({ data }: { data: ItineraryData }) {
       </svg>
 
       <div className="tl-hero-body">
-        <div className="tl-hero-eyebrow">Travloger Exclusive Itinerary</div>
+        {/* Eyebrow pill */}
+        <div className="tl-hero-eyebrow">
+          Travloger Exclusive Itinerary
+        </div>
+
+        {/* Main title */}
         <div className="tl-hero-title">{heroTitle}</div>
-        {heroSub && <div className="tl-hero-sub">{heroSub}</div>}
-        {quote.pickup_point && (
-          <div className="tl-hero-dest">Ex-{quote.pickup_point}</div>
+
+        {/* Destinations as an elegant dot-separated row */}
+        {heroSub && (
+          <div className="tl-hero-sub">
+            {heroSub.split(' · ').map((d, i, arr) => (
+              <span key={i}>
+                {d}
+                {i < arr.length - 1 && <span className="tl-hero-sub-dot" />}
+              </span>
+            ))}
+          </div>
         )}
+
+        {/* Departure city */}
+        {quote.pickup_point && (
+          <div className="tl-hero-from">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            Departing from {quote.pickup_point}
+          </div>
+        )}
+
+        {/* Divider accent */}
+        <div className="tl-hero-divider" />
+
+        {/* Chips row */}
         <div className="tl-hero-chips">
-          <span className="tl-hero-chip">{customer.name}</span>
+          <span className="tl-hero-chip">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            {customer.name}
+          </span>
           {quote.adults > 0 && (
             <span className="tl-hero-chip">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
               {quote.adults} Adult{quote.adults > 1 ? 's' : ''}
-              {(quote.children_5_12 ?? 0) > 0 ? ` + ${quote.children_5_12} Child${(quote.children_5_12 ?? 0) > 1 ? 'ren' : ''}` : ''}
-              {(quote.children_below_5 ?? 0) > 0 ? ` + ${quote.children_below_5} Infant${(quote.children_below_5 ?? 0) > 1 ? 's' : ''}` : ''}
+              {(quote.children_5_12 ?? 0) > 0 ? ` · ${quote.children_5_12} Child` : ''}
             </span>
           )}
-          <span className="tl-hero-chip">{dateRange}</span>
-          <span className="tl-hero-chip">{quote.duration_days} Days · {quote.duration_nights} Nights</span>
-          {quote.pickup_point && <span className="tl-hero-chip">✈ {quote.pickup_point}</span>}
+          <span className="tl-hero-chip">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            {dateRange}
+          </span>
+          <span className="tl-hero-chip">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            {quote.duration_days}D · {quote.duration_nights}N
+          </span>
         </div>
       </div>
     </div>
@@ -279,13 +319,17 @@ function Hero({ data }: { data: ItineraryData }) {
 /* ─────────────────────────── Strip ─────────────────────────── */
 function Strip({ quote }: { quote: ItineraryData['quote'] }) {
   const expiry = quote.expiry_date ? fmtDate(quote.expiry_date) : null;
+  if (!expiry) return null;
   return (
     <div className="tl-strip">
-      {expiry ? (
-        <>Quote valid until <strong>{expiry}</strong> · #{quote.quote_number}</>
-      ) : (
-        <>Quote Reference: <strong>#{quote.quote_number}</strong></>
-      )}
+      <div className="tl-strip-left">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+          <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+        </svg>
+        Quote valid till <strong>{expiry}</strong>
+      </div>
+      <span className="tl-strip-sep">·</span>
+      <span className="tl-strip-pill">#{quote.quote_number}</span>
     </div>
   );
 }
@@ -328,11 +372,206 @@ function Gallery({ state, day_snapshots }: { state: ItineraryData['state']; day_
   );
 }
 
+/* ─────────────────────── Discount helpers ──────────────────────── */
+function isDiscountExpired(expiresAt?: string | null): boolean {
+  if (!expiresAt) return false;
+  return new Date(expiresAt).getTime() <= Date.now();
+}
+
+function useCountdown(expiresAt: string | null | undefined) {
+  const [remaining, setRemaining] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!expiresAt) { setRemaining(null); return; }
+    const tick = () => {
+      const diff = new Date(expiresAt).getTime() - Date.now();
+      setRemaining(diff > 0 ? diff : 0);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [expiresAt]);
+
+  return remaining;
+}
+
+/* Discount banner — two variants:
+   "card"  → rendered inside the dark teal .tl-pkg-head (white text on dark)
+   "fare"  → rendered on white background in Fare Summary (full standalone card) */
+function DiscountBanner({
+  discountAmount,
+  discountExpiresAt,
+  origPerAdult,
+  newPerAdult,
+  variant = 'card',
+}: {
+  discountAmount: number;
+  discountExpiresAt?: string | null;
+  origPerAdult: number;
+  newPerAdult: number;
+  variant?: 'card' | 'fare';
+}) {
+  const remaining = useCountdown(discountExpiresAt);
+  const discount  = discountAmount;
+
+  if (discount <= 0) return null;
+  if (discountExpiresAt && remaining === 0) return null;
+
+  const fmtC = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
+
+  const hasExpiry   = !!discountExpiresAt && remaining !== null && remaining > 0;
+  const totalSecs   = hasExpiry ? Math.floor(remaining! / 1000) : 0;
+  const hh          = Math.floor(totalSecs / 3600);
+  const mm          = Math.floor((totalSecs % 3600) / 60);
+  const ss          = totalSecs % 60;
+  const pad         = (n: number) => String(n).padStart(2, '0');
+
+  /* ── CARD VARIANT (inside teal header) ─────────────────────────── */
+  if (variant === 'card') {
+    return (
+      <>
+        {/* Price row */}
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ color: 'white', fontFamily: 'var(--f-num)', fontSize: 34, fontWeight: 700, lineHeight: 1, letterSpacing: '-0.5px' }}>
+            {fmtC(newPerAdult)}
+          </span>
+          <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: 15, textDecoration: 'line-through', letterSpacing: '-0.3px' }}>
+            {fmtC(origPerAdult)}
+          </span>
+        </div>
+        <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, marginTop: 4, fontFamily: 'var(--f-body)' }}>
+          per adult · incl. GST
+        </div>
+
+        {/* Save badge */}
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: 10 }}>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 5,
+            background: 'rgba(255,255,255,0.12)', backdropFilter: 'blur(8px)',
+            border: '1px solid rgba(255,255,255,0.18)',
+            color: '#FFD580', fontSize: 11, fontWeight: 700,
+            padding: '4px 12px', borderRadius: 20, fontFamily: 'var(--f-body)',
+            letterSpacing: '0.02em',
+          }}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#FFD580" strokeWidth="2.5"><polyline points="20 6 9 17 4 12" /></svg>
+            You save {fmtC(discount)}
+          </span>
+        </div>
+
+        {/* Countdown strip */}
+        {hasExpiry && (
+          <div style={{
+            marginTop: 12,
+            padding: '10px 12px',
+            borderRadius: 12,
+            background: 'rgba(0,0,0,0.25)',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          }}>
+            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', fontFamily: 'var(--f-body)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>
+              Offer ends in
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              {[{ v: pad(hh), l: 'HR' }, { v: pad(mm), l: 'MIN' }, { v: pad(ss), l: 'SEC' }].map((t, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  {i > 0 && <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 14, fontWeight: 300, lineHeight: 1 }}>:</span>}
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{
+                      background: 'rgba(255,255,255,0.15)',
+                      borderRadius: 6, padding: '3px 8px',
+                      color: 'white', fontSize: 15, fontWeight: 700, fontFamily: 'var(--f-num)', lineHeight: 1.2,
+                      minWidth: 32,
+                    }}>{t.v}</div>
+                    <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: 8, fontFamily: 'var(--f-body)', marginTop: 2, letterSpacing: '0.1em' }}>{t.l}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  /* ── FARE VARIANT (on white background) ────────────────────────── */
+  return (
+    <div style={{
+      borderRadius: 16,
+      overflow: 'hidden',
+      marginBottom: 16,
+      border: '1px solid #F1E8D8',
+    }}>
+      {/* Top accent bar */}
+      <div style={{
+        background: 'linear-gradient(90deg, #C8860A 0%, #E6A020 100%)',
+        padding: '6px 16px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      }}>
+        <span style={{ color: 'white', fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', fontFamily: 'var(--f-body)' }}>
+          Limited Time Offer
+        </span>
+        {hasExpiry && (
+          <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: 10, fontFamily: 'var(--f-body)', fontWeight: 600 }}>
+            Ends {new Date(discountExpiresAt!).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}
+          </span>
+        )}
+      </div>
+
+      {/* Body */}
+      <div style={{ background: '#FFFBF2', padding: '14px 16px' }}>
+        {/* Price row */}
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 4 }}>
+          <span style={{ fontSize: 28, fontWeight: 700, color: '#1A1A1A', fontFamily: 'var(--f-num)', letterSpacing: '-0.5px', lineHeight: 1 }}>
+            {fmtC(newPerAdult)}
+          </span>
+          <span style={{ fontSize: 15, color: '#B0A090', textDecoration: 'line-through', fontFamily: 'var(--f-num)' }}>
+            {fmtC(origPerAdult)}
+          </span>
+          <span style={{
+            fontSize: 11, fontWeight: 700, color: '#C8860A',
+            background: '#FFF3D6', border: '1px solid #F5D796',
+            padding: '2px 10px', borderRadius: 20, fontFamily: 'var(--f-body)',
+          }}>
+            Save {fmtC(discount)}
+          </span>
+        </div>
+        <p style={{ fontSize: 11, color: '#A09080', fontFamily: 'var(--f-body)', margin: 0 }}>
+          per adult · incl. GST
+        </p>
+
+        {/* Countdown */}
+        {hasExpiry && (
+          <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 11, color: '#7A6A5A', fontFamily: 'var(--f-body)', fontWeight: 500, flexShrink: 0 }}>
+              Hurry, ends in
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              {[{ v: pad(hh), l: 'hr' }, { v: pad(mm), l: 'min' }, { v: pad(ss), l: 'sec' }].map((t, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  {i > 0 && <span style={{ color: '#C8860A', fontSize: 14, fontWeight: 300 }}>:</span>}
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{
+                      background: 'white', border: '1px solid #EDD89A',
+                      borderRadius: 8, padding: '4px 8px',
+                      color: '#C8860A', fontSize: 16, fontWeight: 800, fontFamily: 'var(--f-num)', lineHeight: 1.2,
+                      minWidth: 36, boxShadow: '0 1px 3px rgba(200,134,10,0.12)',
+                    }}>{t.v}</div>
+                    <div style={{ color: '#B09A70', fontSize: 8, fontFamily: 'var(--f-body)', marginTop: 2, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{t.l}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ─────────────────────────── Packages ─────────────────────────── */
 function Packages({
-  options, selectedId, onSelect
+  options, selectedId, onSelect, adults
 }: {
-  options: QuoteOption[]; selectedId: string | null; onSelect: (id: string) => void;
+  options: QuoteOption[]; selectedId: string | null; onSelect: (id: string) => void; adults: number;
 }) {
   if (options.length === 0) return null;
 
@@ -356,13 +595,35 @@ function Packages({
             byDest[name].push(oh);
           });
 
+          const discountAmt = opt.discount_amount ?? 0;
+          const discExpired = discountAmt > 0 && isDiscountExpired(opt.discount_expires_at);
+          const origPerAdult = adults > 0
+            ? Math.round(((opt.selling_before_gst + discountAmt) * (1 + opt.gst_percent / 100)) / adults)
+            : 0;
+
           return (
             <div key={opt.id} className={`tl-pkg-card${isSel ? ' sel' : ''}`} onClick={() => onSelect(opt.id)}>
               {opt.is_most_popular && <div className="tl-pkg-badge">Most Popular</div>}
               <div className={`tl-pkg-head${opt.is_most_popular ? ' pop' : ''}`}>
                 <div className="tl-pkg-tier">{opt.option_name}</div>
-                <div className="tl-pkg-price">{fmtCurrency(opt.price_per_adult_display)}</div>
-                <div className="tl-pkg-per">per adult · all-inclusive</div>
+                {discountAmt > 0 && !discExpired ? (
+                  <DiscountBanner
+                    discountAmount={discountAmt}
+                    discountExpiresAt={opt.discount_expires_at}
+                    origPerAdult={origPerAdult}
+                    newPerAdult={opt.price_per_adult_display}
+                  />
+                ) : (
+                  <>
+                    <div className="tl-pkg-price">{fmtCurrency(discExpired ? origPerAdult : opt.price_per_adult_display)}</div>
+                    <div className="tl-pkg-per">per adult · all-inclusive</div>
+                    {discExpired && (
+                      <div style={{ marginTop: 6, display: 'inline-block', background: '#FEE2E2', color: '#DC2626', fontSize: 10, fontWeight: 700, padding: '2px 10px', borderRadius: 20, fontFamily: 'var(--f-body)', letterSpacing: '0.05em' }}>
+                        Offer Expired
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
               <div className="tl-pkg-body">
                 {Object.entries(byDest).map(([destName, hotels]) => (
@@ -726,16 +987,44 @@ function Stats() {
 /* ─────────────────────────── Fare Summary ─────────────────────────── */
 function FareSummary({ option, adults }: { option: QuoteOption | undefined; adults: number }) {
   if (!option) return null;
-  // Per-adult pre-GST so the math adds up: (perAdultPreGst × adults) = selling_before_gst
-  const perAdultPreGst = adults > 0 ? option.selling_before_gst / adults : 0;
-  const total = option.final_price;
+  const discount = option.discount_amount ?? 0;
+  const discExpired = discount > 0 && isDiscountExpired(option.discount_expires_at);
+  const activeDiscount = discount > 0 && !discExpired;
+
+  // Original (pre-discount) totals
+  const origSellBGST = option.selling_before_gst + discount;
+  const origGST = (origSellBGST * option.gst_percent) / 100;
+  const origTotal = origSellBGST + origGST;
+  const origPerAdult = adults > 0 ? Math.round(origTotal / adults) : origTotal;
+
+  // Show original figures if discount is expired, discounted if active
+  const displaySellBGST = discExpired ? origSellBGST : option.selling_before_gst;
+  const displayGST = discExpired ? origGST : option.gst_amount;
+  const displayTotal = discExpired ? origTotal : option.final_price;
+  const displayPerAdult = discExpired ? origPerAdult : option.price_per_adult_display;
+  const perAdultPreGst = adults > 0 ? displaySellBGST / adults : 0;
 
   return (
-    <div style={{ background: 'white', borderTop: '1px solid var(--tl-border)' }} data-section="hotels">
+    <div style={{ background: 'white', borderTop: '1px solid var(--tl-border)' }} data-section="fare">
       <div className="tl-sec">
         <div className="tl-sec-eyebrow">Cost Breakdown</div>
         <div className="tl-sec-h">Fare Summary</div>
         <div className="tl-sec-sub">{adults} Adult{adults > 1 ? 's' : ''} · {option.option_name} Package</div>
+        {activeDiscount && (
+          <DiscountBanner
+            discountAmount={discount}
+            discountExpiresAt={option.discount_expires_at}
+            origPerAdult={origPerAdult}
+            newPerAdult={option.price_per_adult_display}
+            variant="fare"
+          />
+        )}
+        {discExpired && (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#FEE2E2', border: '1px solid #FECACA', borderRadius: 20, padding: '4px 12px', marginBottom: 14, fontSize: 11, fontWeight: 700, color: '#DC2626', fontFamily: 'var(--f-body)' }}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            Offer Expired
+          </div>
+        )}
         <div className="tl-fare-card">
           <div className="tl-fare-row">
             <span>Per Adult (before GST)</span>
@@ -743,20 +1032,26 @@ function FareSummary({ option, adults }: { option: QuoteOption | undefined; adul
           </div>
           <div className="tl-fare-row">
             <span>× {adults} Adult{adults > 1 ? 's' : ''}</span>
-            <span style={{ fontWeight: 700 }}>{fmtCurrency(option.selling_before_gst)}</span>
+            <span style={{ fontWeight: 700 }}>{fmtCurrency(displaySellBGST)}</span>
           </div>
+          {activeDiscount && (
+            <div className="tl-fare-row" style={{ color: '#DC2626' }}>
+              <span>Discount Applied</span>
+              <span style={{ fontWeight: 700 }}>−{fmtCurrency(discount)}</span>
+            </div>
+          )}
           <div className="tl-fare-row">
             <span>{option.gst_percent}% GST</span>
-            <span>{fmtCurrency(option.gst_amount)}</span>
+            <span>{fmtCurrency(displayGST)}</span>
           </div>
           <div className="tl-fare-total">
             <div>
               <span className="tl-fare-total-label">Total Amount</span>
               <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2, fontFamily: 'var(--f-body)' }}>
-                {fmtCurrency(option.price_per_adult_display)} per person · incl. GST
+                {fmtCurrency(displayPerAdult)} per person · incl. GST
               </div>
             </div>
-            <span className="tl-fare-total-val">{fmtCurrency(total)}</span>
+            <span className="tl-fare-total-val">{fmtCurrency(displayTotal)}</span>
           </div>
         </div>
 
@@ -1059,7 +1354,8 @@ function AgentSection({ agent, waUrl }: { agent: ItineraryData['agent']; waUrl: 
         )}
 
         {/* WhatsApp CTA — premium glow button */}
-        <a href={waUrl} target="_blank" rel="noopener noreferrer" className="tl-wa-cta" style={{ borderRadius: 16 }}>
+        <a href={waUrl} target="_blank" rel="noopener noreferrer" className="tl-wa-cta" style={{ borderRadius: 16 }}
+          onClick={() => window.dispatchEvent(new CustomEvent('itinerary:whatsapp_clicked'))}>
           <WASvg size={20} color="white" />
           Chat with {name.split(' ')[0]} on WhatsApp
         </a>
@@ -1090,7 +1386,8 @@ function Footer({ quoteNum, expiryDate, waUrl }: { quoteNum: string; expiryDate?
             { label: 'Facebook', href: 'https://www.facebook.com/people/travlogerin/100083471165858/', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.65)" strokeWidth="2"><path d="M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z" strokeLinecap="round" strokeLinejoin="round" /></svg> },
             { label: 'WhatsApp', href: waUrl, icon: <WASvg size={16} color="rgba(255,255,255,0.65)" /> },
           ].map((s, i) => (
-            <a key={i} href={s.href} target="_blank" rel="noopener noreferrer" className="tl-social-btn" title={s.label}>{s.icon}</a>
+            <a key={i} href={s.href} target="_blank" rel="noopener noreferrer" className="tl-social-btn" title={s.label}
+              onClick={s.label === 'WhatsApp' ? () => window.dispatchEvent(new CustomEvent('itinerary:whatsapp_clicked')) : undefined}>{s.icon}</a>
           ))}
         </div>
         {/* Instagram follower count badge */}
@@ -1152,7 +1449,8 @@ function SuccessModal({ option, adults, waUrl, agentName, onClose }: {
         <div className="tl-modal-agent">
           <strong>{firstName}</strong> will call you within <strong>24 hours</strong> to confirm and collect the advance.
         </div>
-        <a href={waUrl} target="_blank" rel="noopener noreferrer" className="tl-modal-wa">
+        <a href={waUrl} target="_blank" rel="noopener noreferrer" className="tl-modal-wa"
+          onClick={() => window.dispatchEvent(new CustomEvent('itinerary:whatsapp_clicked'))}>
           <WASvg size={18} color="white" />
           WhatsApp {firstName} Now
         </a>
@@ -1569,6 +1867,165 @@ function GroupWhatsCovered({
   );
 }
 
+/* ─────────────────────────── GROUP: Selectable Trip Dates (package_based) ─── */
+const AVAIL_CONFIG = {
+  available:    { label: 'Available',      bg: '#DCFCE7', color: '#15803D', border: '#BBF7D0' },
+  few_left:     { label: 'Few Slots Left', bg: '#FEF3C7', color: '#B45309', border: '#FDE68A' },
+  filling_fast: { label: '🔥 Filling Fast', bg: '#FEE2E2', color: '#DC2626', border: '#FECACA' },
+  sold_out:     { label: 'Sold Out',        bg: '#F1F5F9', color: '#94A3B8', border: '#E2E8F0' },
+} as const;
+
+function TripDates({
+  dates, selectedIdx, onSelect,
+}: {
+  dates: Array<{ start_date: string; end_date: string; label: string; availability?: 'available' | 'few_left' | 'filling_fast' | 'sold_out' }>;
+  selectedIdx: number | null;
+  onSelect: (i: number) => void;
+}) {
+  if (!dates || dates.length === 0) return null;
+  const fmt = (s: string) => s ? new Date(s).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+  return (
+    <div className="tl-sec" data-section="dates" style={{ background: 'rgb(248, 250, 252)', borderTop: '1px solid var(--tl-border)' }}>
+      <div className="tl-sec-h" style={{ marginBottom: 4 }}>Choose Your Travel Dates</div>
+      <p style={{ fontSize: 13, color: '#64748B', marginBottom: 20 }}>Select a departure window to confirm your travel dates</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {dates.map((d, i) => {
+          const avail = d.availability ?? 'available';
+          const isSoldOut = avail === 'sold_out';
+          const isSelected = selectedIdx === i;
+          const cfg = AVAIL_CONFIG[avail];
+          return (
+            <div key={i}
+              onClick={() => !isSoldOut && onSelect(i)}
+              style={{
+                borderRadius: 12, padding: '14px 18px',
+                border: isSoldOut ? '2px solid #E2E8F0' : `2px solid ${isSelected ? '#134956' : '#E2E8F0'}`,
+                display: 'flex', alignItems: 'center', gap: 14,
+                boxShadow: isSelected ? '0 0 0 3px rgba(19,73,86,0.10)' : '0 1px 4px rgba(0,0,0,0.05)',
+                cursor: isSoldOut ? 'not-allowed' : 'pointer',
+                transition: 'border-color 0.15s, box-shadow 0.15s',
+                backgroundColor: isSoldOut ? '#F8FAFC' : isSelected ? 'rgba(19,73,86,0.03)' : '#fff',
+                opacity: isSoldOut ? 0.75 : 1,
+                position: 'relative', overflow: 'hidden',
+              }}
+            >
+              {/* Sold-out diagonal strikethrough line */}
+              {isSoldOut && (
+                <div style={{
+                  position: 'absolute', inset: 0, pointerEvents: 'none',
+                  background: 'repeating-linear-gradient(135deg, transparent, transparent 10px, rgba(239,68,68,0.08) 10px, rgba(239,68,68,0.08) 12px)',
+                }} />
+              )}
+
+              <div style={{
+                width: 40, height: 40, borderRadius: 10,
+                background: isSoldOut ? '#E2E8F0' : isSelected ? '#134956' : '#E8F4F6',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                transition: 'background 0.15s',
+              }}>
+                {isSoldOut ? (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round">
+                    <circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+                  </svg>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                    stroke={isSelected ? '#fff' : '#134956'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+                  </svg>
+                )}
+              </div>
+
+              <div style={{ flex: 1 }}>
+                {d.label && (
+                  <p style={{ fontSize: 12, fontWeight: 600, color: isSoldOut ? '#94A3B8' : '#134956', marginBottom: 2, textDecoration: isSoldOut ? 'line-through' : 'none' }}>
+                    {d.label}
+                  </p>
+                )}
+                <p style={{ fontSize: 14, fontWeight: 700, color: isSoldOut ? '#94A3B8' : '#0F172A', textDecoration: isSoldOut ? 'line-through' : 'none' }}>
+                  {fmt(d.start_date)} <span style={{ color: '#CBD5E1', fontWeight: 400 }}>→</span> {fmt(d.end_date)}
+                </p>
+                {isSoldOut && (
+                  <p style={{ fontSize: 11, color: '#EF4444', fontWeight: 600, marginTop: 2 }}>This departure is full — pick another date</p>
+                )}
+              </div>
+
+              {isSelected ? (
+                <div style={{ width: 22, height: 22, borderRadius: '50%', background: '#134956', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M5 13l4.5 4.5L19 7"/>
+                  </svg>
+                </div>
+              ) : (
+                <div style={{ fontSize: 11, fontWeight: 700, color: cfg.color, background: cfg.bg, border: `1px solid ${cfg.border}`, padding: '4px 10px', borderRadius: 20, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                  {cfg.label}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────── GROUP: Package-based sticky CTA ─────────────── */
+function PackageStickyCTA({
+  selectedOption, selectedDate, adults, onBookNow, booking, quoteDiscount, quoteDiscountExpiry,
+}: {
+  selectedOption: GroupPackageOption | null;
+  selectedDate: { start_date: string; end_date: string; label: string } | null;
+  adults: number;
+  onBookNow: () => void;
+  booking: boolean;
+  quoteDiscount?: number | null;
+  quoteDiscountExpiry?: string | null;
+}) {
+  const gstPct = selectedOption?.gst_percent ?? 5;
+  const pricePerAdultInclGst = selectedOption ? Math.round(selectedOption.adult_price * (1 + gstPct / 100)) : 0;
+  const discPerPerson = (quoteDiscount ?? 0) > 0 && !isDiscountExpired(quoteDiscountExpiry) ? quoteDiscount! : 0;
+  const discountedPerAdult = Math.max(0, pricePerAdultInclGst - discPerPerson);
+  const price = discountedPerAdult * adults;
+  const fmt = (s: string) => s ? new Date(s).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+  const dateLabel = selectedDate
+    ? (selectedDate.label || `${fmt(selectedDate.start_date)} → ${fmt(selectedDate.end_date)}`)
+    : null;
+  const isEmpty = !selectedOption || !selectedDate;
+
+  return (
+    <div className="tl-grp-bar">
+      <div className="tl-grp-bar-row">
+        <div className="tl-grp-bar-date">
+          {selectedOption && selectedDate
+            ? `${selectedOption.tier_name} · ${dateLabel}`
+            : !selectedOption
+              ? 'Choose a package above ↑'
+              : 'Pick a date above ↑'}
+        </div>
+        {selectedOption && <div className="tl-grp-bar-price">{fmtCurrency(price)}</div>}
+      </div>
+      {selectedOption && selectedDate && (
+        <div className="tl-grp-bar-sub">
+          {adults} adult{adults !== 1 ? 's' : ''} · {selectedOption.tier_name} · No payment now
+        </div>
+      )}
+      <button
+        className={`tl-grp-bar-btn${isEmpty ? ' tl-grp-bar-btn-empty' : ''}`}
+        onClick={onBookNow}
+        disabled={isEmpty || booking}
+      >
+        {booking ? 'Sending…' : isEmpty ? (selectedOption ? 'Pick a Date First ↑' : 'Choose a Package ↑') : (
+          <>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--tl-teal)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+            </svg>
+            Book Now — {fmtCurrency(price)}
+          </>
+        )}
+      </button>
+    </div>
+  );
+}
+
 /* ─────────────────────────── GROUP: Package Options ─────────────────────────── */
 function GroupPackageOptions({
   options, selectedTier, onSelect,
@@ -1589,6 +2046,9 @@ function GroupPackageOptions({
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {options.map((opt) => {
             const isSel = selectedTier === opt.tier_name;
+            const gstPct = opt.gst_percent ?? 5;
+            const adultInclGst = Math.round(opt.adult_price * (1 + gstPct / 100));
+            const childInclGst = opt.child_price > 0 ? Math.round(opt.child_price * (1 + gstPct / 100)) : 0;
             return (
               <div
                 key={opt.tier_name}
@@ -1638,22 +2098,22 @@ function GroupPackageOptions({
                       <div style={{ fontFamily: 'var(--f-display)', fontSize: 18, fontWeight: 800, color: isSel ? T : '#0F172A', lineHeight: 1.1 }}>
                         {opt.tier_name}
                       </div>
-                      {opt.child_price > 0 && (
+                      {childInclGst > 0 && (
                         <div style={{ fontFamily: 'var(--f-body)', fontSize: 10.5, color: '#94A3B8', marginTop: 2 }}>
-                          Child: {fmtCurrency(opt.child_price)}
+                          Child: {fmtCurrency(childInclGst)}
                         </div>
                       )}
                     </div>
                   </div>
-                  {opt.adult_price > 0 && (
+                  {adultInclGst > 0 && (
                     <div style={{ textAlign: 'right', flexShrink: 0 }}>
                       <div style={{
                         fontFamily: 'var(--f-num)', fontSize: 22, fontWeight: 900,
                         color: isSel ? T : '#0F172A', lineHeight: 1,
                       }}>
-                        {fmtCurrency(opt.adult_price)}
+                        {fmtCurrency(adultInclGst)}
                       </div>
-                      <div style={{ fontFamily: 'var(--f-body)', fontSize: 10.5, color: '#94A3B8', marginTop: 3 }}>per adult</div>
+                      <div style={{ fontFamily: 'var(--f-body)', fontSize: 10.5, color: '#94A3B8', marginTop: 3 }}>per adult · incl. GST</div>
                     </div>
                   )}
                 </div>
@@ -1687,9 +2147,11 @@ function GroupPackageOptions({
 
 /* ─────────────────────────── GROUP: Fare Summary ─────────────────────────── */
 function GroupFareSummary({
-  batch, adults, onAdultsChange, onBookNow, booking,
+  batch, adults, onAdultsChange, onBookNow, booking, quoteDiscount, quoteDiscountExpiry,
 }: {
   batch: GroupBatch | null;
+  quoteDiscount?: number | null;
+  quoteDiscountExpiry?: string | null;
   adults: number;
   onAdultsChange: (n: number) => void;
   token: string;
@@ -1720,6 +2182,11 @@ function GroupFareSummary({
   const total = subtotal + gstAmount;
   const pricePerAdultInclGst = Math.round(total / adults);
 
+  // Per-person discount (active only when not expired)
+  const discPerPerson = (quoteDiscount ?? 0) > 0 && !isDiscountExpired(quoteDiscountExpiry) ? quoteDiscount! : 0;
+  const discountedTotal = Math.max(0, total - discPerPerson * adults);
+  const discountedPerAdult = discPerPerson > 0 ? Math.max(0, pricePerAdultInclGst - discPerPerson) : pricePerAdultInclGst;
+
   const startD = new Date(batch.start_date);
   const endD   = new Date(batch.end_date);
   const nights = Math.round((endD.getTime() - startD.getTime()) / 86400000);
@@ -1731,7 +2198,24 @@ function GroupFareSummary({
       <div className="tl-sec">
         <div className="tl-sec-eyebrow">Your Booking</div>
         <div className="tl-sec-h">Fare Summary</div>
-        <div className="tl-sec-sub" style={{ marginBottom: 24 }}>Adjust traveller count to see live pricing.</div>
+        <div className="tl-sec-sub" style={{ marginBottom: (quoteDiscount ?? 0) > 0 ? 16 : 24 }}>Adjust traveller count to see live pricing.</div>
+
+        {/* Quote-level discount banner */}
+        {(quoteDiscount ?? 0) > 0 && !isDiscountExpired(quoteDiscountExpiry) && (
+          <DiscountBanner
+            discountAmount={quoteDiscount!}
+            discountExpiresAt={quoteDiscountExpiry}
+            origPerAdult={pricePerAdultInclGst}
+            newPerAdult={Math.max(0, pricePerAdultInclGst - quoteDiscount!)}
+            variant="fare"
+          />
+        )}
+        {(quoteDiscount ?? 0) > 0 && isDiscountExpired(quoteDiscountExpiry) && (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#FEE2E2', border: '1px solid #FECACA', borderRadius: 20, padding: '4px 12px', marginBottom: 14, fontSize: 11, fontWeight: 700, color: '#DC2626', fontFamily: 'var(--f-body)' }}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            Offer Expired
+          </div>
+        )}
 
         {/* Selected date banner */}
         <div style={{
@@ -1801,17 +2285,20 @@ function GroupFareSummary({
 
           {/* Price rows */}
           <div style={{ borderTop: '1px solid #F1F5F9', padding: '14px 20px 0' }}>
-            {[
-              { label: `₹${Math.round(pricePerAdult).toLocaleString('en-IN')} × ${adults} adult${adults > 1 ? 's' : ''}`, value: subtotal, dimVal: false },
-              { label: `GST ${batch.gst_percent}%`, value: gstAmount, dimVal: true },
-            ].map((row, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12 }}>
-                <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#64748B' }}>{row.label}</span>
-                <span style={{ fontFamily: 'var(--f-num)', fontSize: 14, fontWeight: 600, color: row.dimVal ? '#94A3B8' : '#0F172A' }}>
-                  {fmtCurrency(row.value)}
-                </span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12 }}>
+              <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#64748B' }}>₹{Math.round(pricePerAdult).toLocaleString('en-IN')} × {adults} adult{adults > 1 ? 's' : ''}</span>
+              <span style={{ fontFamily: 'var(--f-num)', fontSize: 14, fontWeight: 600, color: '#0F172A' }}>{fmtCurrency(subtotal)}</span>
+            </div>
+            {discPerPerson > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12 }}>
+                <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#DC2626' }}>Discount ({fmtCurrency(discPerPerson)}/person)</span>
+                <span style={{ fontFamily: 'var(--f-num)', fontSize: 14, fontWeight: 600, color: '#DC2626' }}>−{fmtCurrency(discPerPerson * adults)}</span>
               </div>
-            ))}
+            )}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12 }}>
+              <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#94A3B8' }}>GST {batch.gst_percent}%</span>
+              <span style={{ fontFamily: 'var(--f-num)', fontSize: 14, fontWeight: 600, color: '#94A3B8' }}>{fmtCurrency(gstAmount)}</span>
+            </div>
           </div>
 
           {/* Total row */}
@@ -1823,11 +2310,11 @@ function GroupFareSummary({
             <div>
               <div style={{ fontFamily: 'var(--f-body)', fontSize: 13, fontWeight: 700, color: '#0F172A' }}>Total Amount</div>
               <div style={{ fontFamily: 'var(--f-body)', fontSize: 11, color: '#94A3B8', marginTop: 2 }}>
-                {fmtCurrency(pricePerAdultInclGst)} per person · incl. GST
+                {fmtCurrency(discountedPerAdult)} per person · incl. GST
               </div>
             </div>
             <div style={{ fontFamily: 'var(--f-num)', fontSize: 26, fontWeight: 900, color: T }}>
-              {fmtCurrency(total)}
+              {fmtCurrency(discountedTotal)}
             </div>
           </div>
 
@@ -1853,7 +2340,7 @@ function GroupFareSummary({
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round">
                     <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" />
                   </svg>
-                  Book Now — {fmtCurrency(total)}
+                  Book Now — {fmtCurrency(discountedTotal)}
                 </>
               )}
             </button>
@@ -1903,14 +2390,221 @@ function GroupFareSummary({
   );
 }
 
+/* ─────────────────────────── GROUP: Package-based Fare Summary ──────────── */
+function PackageFareSummary({
+  packageOption, tripDate, adults, onAdultsChange, onBookNow, booking, quoteDiscount, quoteDiscountExpiry,
+}: {
+  packageOption: GroupPackageOption | null;
+  tripDate: { start_date: string; end_date: string; label: string } | null;
+  adults: number;
+  onAdultsChange: (n: number) => void;
+  onBookNow: () => void;
+  booking: boolean;
+  quoteDiscount?: number | null;
+  quoteDiscountExpiry?: string | null;
+}) {
+  const fmt = (s: string) => s ? new Date(s).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+
+  // Empty state — prompt to choose package + date
+  if (!packageOption || !tripDate) {
+    return (
+      <div style={{ background: '#F8FAFC', borderTop: '1px solid var(--tl-border)' }} data-section="fare">
+        <div className="tl-sec" style={{ textAlign: 'center', paddingTop: 40, paddingBottom: 40 }}>
+          <div style={{ width: 56, height: 56, borderRadius: '50%', background: `${T}12`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="1.8" strokeLinecap="round">
+              <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+            </svg>
+          </div>
+          <div style={{ fontFamily: 'var(--f-display)', fontSize: 17, fontWeight: 700, color: '#0F172A', marginBottom: 6 }}>
+            {!packageOption ? 'Pick a Package' : 'Pick Your Travel Dates'}
+          </div>
+          <div style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#64748B', lineHeight: 1.5 }}>
+            {!packageOption ? 'Choose a package option above to see pricing.' : 'Select a departure date above to see the fare breakdown.'}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const gstPct       = packageOption.gst_percent ?? 5;
+  const priceExclGst = packageOption.adult_price; // stored price is ex-GST
+  const gstPerAdult  = Math.round(priceExclGst * gstPct / 100);
+  const priceInclGst = priceExclGst + gstPerAdult;
+  const subtotalExcl = priceExclGst * adults;
+  const gstTotal     = gstPerAdult * adults;
+  const total        = priceInclGst * adults;
+  // Per-person discount (active only when not expired)
+  const pkgDiscPerPerson = (quoteDiscount ?? 0) > 0 && !isDiscountExpired(quoteDiscountExpiry) ? quoteDiscount! : 0;
+  const pkgDiscountedTotal = Math.max(0, total - pkgDiscPerPerson * adults);
+  const pkgDiscountedPerAdult = pkgDiscPerPerson > 0 ? Math.max(0, priceInclGst - pkgDiscPerPerson) : priceInclGst;
+  const startFmt = fmt(tripDate.start_date);
+  const endFmt   = tripDate.end_date ? new Date(tripDate.end_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '';
+  const nights   = tripDate.start_date && tripDate.end_date
+    ? Math.round((new Date(tripDate.end_date).getTime() - new Date(tripDate.start_date).getTime()) / 86400000)
+    : null;
+
+  return (
+    <div style={{ background: '#F8FAFC', borderTop: '1px solid var(--tl-border)' }} data-section="fare">
+      <div className="tl-sec">
+        <div className="tl-sec-eyebrow">Your Booking</div>
+        <div className="tl-sec-h">Fare Summary</div>
+        <div className="tl-sec-sub" style={{ marginBottom: (quoteDiscount ?? 0) > 0 ? 16 : 24 }}>Adjust traveller count to see live pricing.</div>
+
+        {/* Quote-level discount banner */}
+        {(quoteDiscount ?? 0) > 0 && !isDiscountExpired(quoteDiscountExpiry) && (
+          <DiscountBanner
+            discountAmount={quoteDiscount!}
+            discountExpiresAt={quoteDiscountExpiry}
+            origPerAdult={priceInclGst}
+            newPerAdult={Math.max(0, priceInclGst - quoteDiscount!)}
+            variant="fare"
+          />
+        )}
+        {(quoteDiscount ?? 0) > 0 && isDiscountExpired(quoteDiscountExpiry) && (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#FEE2E2', border: '1px solid #FECACA', borderRadius: 20, padding: '4px 12px', marginBottom: 14, fontSize: 11, fontWeight: 700, color: '#DC2626', fontFamily: 'var(--f-body)' }}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            Offer Expired
+          </div>
+        )}
+
+        {/* Selected package + date banner */}
+        <div style={{
+          background: `linear-gradient(135deg, ${T} 0%, #1a6070 100%)`,
+          borderRadius: 18, padding: '18px 20px', marginBottom: 16,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+        }}>
+          <div>
+            <div style={{ fontFamily: 'var(--f-body)', fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', color: 'rgba(255,255,255,0.55)', marginBottom: 4 }}>
+              Selected Departure
+            </div>
+            <div style={{ fontFamily: 'var(--f-display)', fontSize: 18, fontWeight: 800, color: 'white', marginBottom: 2 }}>
+              {startFmt} — {endFmt}
+            </div>
+            <div style={{ fontFamily: 'var(--f-body)', fontSize: 12, color: 'rgba(255,255,255,0.6)' }}>
+              {tripDate.label || packageOption.tier_name}{nights ? ` · ${nights} nights` : ''}
+            </div>
+          </div>
+          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+            <div style={{ fontFamily: 'var(--f-num)', fontSize: 22, fontWeight: 900, color: 'white', lineHeight: 1 }}>
+              {fmtCurrency(priceInclGst)}
+            </div>
+            <div style={{ fontFamily: 'var(--f-body)', fontSize: 10, color: 'rgba(255,255,255,0.55)', marginTop: 2 }}>
+              per adult · incl. GST
+            </div>
+          </div>
+        </div>
+
+        {/* Fare card */}
+        <div style={{ background: 'white', borderRadius: 18, border: '1.5px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 2px 16px rgba(0,0,0,0.05)' }}>
+          {/* Adult counter */}
+          <div style={{ padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontFamily: 'var(--f-body)', fontSize: 14, fontWeight: 700, color: '#0F172A' }}>Travellers</div>
+              <div style={{ fontFamily: 'var(--f-body)', fontSize: 11, color: '#94A3B8', marginTop: 2 }}>Number of adults</div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 0, borderRadius: 12, overflow: 'hidden', border: `1.5px solid ${T}` }}>
+              <button onClick={() => onAdultsChange(Math.max(1, adults - 1))}
+                style={{ width: 40, height: 40, background: adults <= 1 ? '#F8FAFC' : `${T}10`, border: 'none', cursor: adults <= 1 ? 'default' : 'pointer', fontSize: 20, fontWeight: 300, color: adults <= 1 ? '#CBD5E1' : T, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
+              <div style={{ width: 48, textAlign: 'center', fontFamily: 'var(--f-num)', fontSize: 20, fontWeight: 800, color: T, background: `${T}06`, borderLeft: `1px solid ${T}22`, borderRight: `1px solid ${T}22`, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{adults}</div>
+              <button onClick={() => onAdultsChange(Math.min(30, adults + 1))}
+                style={{ width: 40, height: 40, background: `${T}10`, border: 'none', cursor: 'pointer', fontSize: 20, fontWeight: 300, color: T, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+            </div>
+          </div>
+
+          {/* Price rows */}
+          <div style={{ borderTop: '1px solid #F1F5F9', padding: '14px 20px 0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12 }}>
+              <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#64748B' }}>{fmtCurrency(priceExclGst)} × {adults} adult{adults > 1 ? 's' : ''}</span>
+              <span style={{ fontFamily: 'var(--f-num)', fontSize: 14, fontWeight: 600, color: '#0F172A' }}>{fmtCurrency(subtotalExcl)}</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12 }}>
+              <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#94A3B8' }}>{packageOption.tier_name} package</span>
+              <span style={{ fontFamily: 'var(--f-num)', fontSize: 12, fontWeight: 600, color: '#94A3B8' }}>incl.</span>
+            </div>
+            {pkgDiscPerPerson > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12 }}>
+                <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#DC2626' }}>Discount ({fmtCurrency(pkgDiscPerPerson)}/person)</span>
+                <span style={{ fontFamily: 'var(--f-num)', fontSize: 14, fontWeight: 600, color: '#DC2626' }}>−{fmtCurrency(pkgDiscPerPerson * adults)}</span>
+              </div>
+            )}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12 }}>
+              <span style={{ fontFamily: 'var(--f-body)', fontSize: 13, color: '#94A3B8' }}>GST {gstPct}%</span>
+              <span style={{ fontFamily: 'var(--f-num)', fontSize: 14, fontWeight: 600, color: '#94A3B8' }}>{fmtCurrency(gstTotal)}</span>
+            </div>
+          </div>
+
+          {/* Total */}
+          <div style={{ margin: '0 20px 20px', padding: '14px 0 0', borderTop: '2px solid #EEF2F5', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontFamily: 'var(--f-body)', fontSize: 13, fontWeight: 700, color: '#0F172A' }}>Total Amount</div>
+              <div style={{ fontFamily: 'var(--f-body)', fontSize: 11, color: '#94A3B8', marginTop: 2 }}>
+                {fmtCurrency(pkgDiscountedPerAdult)} per person · incl. {gstPct}% GST
+              </div>
+            </div>
+            <div style={{ fontFamily: 'var(--f-num)', fontSize: 26, fontWeight: 900, color: T }}>{fmtCurrency(pkgDiscountedTotal)}</div>
+          </div>
+
+          {/* Book Now */}
+          <div style={{ padding: '0 16px 16px' }}>
+            <button onClick={onBookNow} disabled={booking}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                width: '100%', height: 54, borderRadius: 14,
+                background: booking ? '#94A3B8' : `linear-gradient(135deg, ${T} 0%, #1e6b7e 100%)`,
+                color: 'white', border: 'none', cursor: booking ? 'not-allowed' : 'pointer',
+                fontFamily: 'var(--f-body)', fontSize: 16, fontWeight: 700,
+                boxShadow: booking ? 'none' : `0 6px 20px ${T}50`, transition: 'all 0.2s ease',
+              }}
+              onMouseEnter={e => { if (!booking) { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = `0 10px 28px ${T}60`; }}}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = `0 6px 20px ${T}50`; }}
+            >
+              {booking ? 'Sending…' : (
+                <>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round">
+                    <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
+                  </svg>
+                  Book Now — {fmtCurrency(pkgDiscountedTotal)}
+                </>
+              )}
+            </button>
+            <p style={{ textAlign: 'center', fontFamily: 'var(--f-body)', fontSize: 11, color: '#94A3B8', marginTop: 9 }}>
+              We&apos;ll confirm within 2 hours · No payment needed now
+            </p>
+          </div>
+        </div>
+
+        {/* Trust strips */}
+        <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {[
+            { icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="2" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>, bg: '#EEF5F7', t: 'Secure Booking', d: 'No payment now' },
+            { icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="#25D366"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>, bg: '#F0FDF4', t: 'WhatsApp Support', d: '24/7 reachable' },
+            { icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="2" strokeLinecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>, bg: '#EEF5F7', t: 'Free Cancellation', d: '30+ days before' },
+            { icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>, bg: '#FFFBEB', t: '15,000+ Trips', d: 'Since 2018' },
+          ].map((x, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'white', border: '1px solid #F1F5F9', borderRadius: 12, padding: '11px 12px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+              <div style={{ width: 32, height: 32, borderRadius: 9, background: x.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{x.icon}</div>
+              <div>
+                <div style={{ fontFamily: 'var(--f-body)', fontSize: 11, fontWeight: 700, color: '#0F172A' }}>{x.t}</div>
+                <div style={{ fontFamily: 'var(--f-body)', fontSize: 10, color: '#94A3B8', marginTop: 1 }}>{x.d}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─────────────────────────── GROUP: Sticky Bottom Bar ─────────────────────────── */
 function GroupStickyCTA({
-  batch, adults, onBookNow, booking,
+  batch, adults, onBookNow, booking, quoteDiscount, quoteDiscountExpiry,
 }: {
   batch: GroupBatch | null; adults: number; onBookNow: () => void; booking: boolean;
+  quoteDiscount?: number | null; quoteDiscountExpiry?: string | null;
 }) {
+  const discPerPerson = (quoteDiscount ?? 0) > 0 && !isDiscountExpired(quoteDiscountExpiry) ? quoteDiscount! : 0;
   const total = batch
-    ? (() => { const sub = batch.adult_price * adults; return sub + Math.round(sub * batch.gst_percent / 100); })()
+    ? (() => { const sub = batch.adult_price * adults; const raw = sub + Math.round(sub * batch.gst_percent / 100); return Math.max(0, raw - discPerPerson * adults); })()
     : 0;
 
   const startFmt = batch
@@ -1963,13 +2657,15 @@ function GroupStickyCTA({
 
 /* ─────────────────────────── GROUP: Booking Intent Modal ─────────────────────────── */
 function BookingIntentModal({
-  batch, adults, total, customerName, agentName, waUrl, onClose,
+  batch, adults, total, origTotal, customerName, agentName, waUrl, onClose,
 }: {
-  batch: GroupBatch; adults: number; total: number;
+  batch: GroupBatch; adults: number; total: number; origTotal?: number;
   customerName: string; agentName: string; waUrl: string; onClose: () => void;
 }) {
   const startFmt = new Date(batch.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
   const firstName = agentName.split(' ')[0];
+  const hasDiscount = origTotal != null && origTotal > total;
+  const saved = hasDiscount ? origTotal! - total : 0;
 
   return (
     <div className="tl-overlay" onClick={onClose}>
@@ -1984,13 +2680,20 @@ function BookingIntentModal({
           You&apos;ve selected <strong>{batch.batch_name}</strong> — <strong>{startFmt}</strong>
         </div>
         <div className="tl-modal-price-box">
+          {hasDiscount && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 4 }}>
+              <span style={{ fontSize: 14, color: '#94A3B8', textDecoration: 'line-through', fontFamily: 'var(--f-num)' }}>{fmtCurrency(origTotal!)}</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#15803D', background: '#DCFCE7', padding: '2px 8px', borderRadius: 20, fontFamily: 'var(--f-body)' }}>Save {fmtCurrency(saved)}</span>
+            </div>
+          )}
           <div className="tl-modal-price-main">{fmtCurrency(total)} for {adults} adult{adults > 1 ? 's' : ''}</div>
           <div className="tl-modal-price-sub">(inclusive of {batch.gst_percent}% GST)</div>
         </div>
         <div className="tl-modal-agent">
           <strong>{firstName}</strong> will call you within <strong>2 hours</strong> to confirm seats and collect the advance.
         </div>
-        <a href={waUrl} target="_blank" rel="noopener noreferrer" className="tl-modal-wa">
+        <a href={waUrl} target="_blank" rel="noopener noreferrer" className="tl-modal-wa"
+          onClick={() => window.dispatchEvent(new CustomEvent('itinerary:whatsapp_clicked'))}>
           <WASvg size={18} color="white" />
           WhatsApp {firstName} Now
         </a>
@@ -2002,9 +2705,12 @@ function BookingIntentModal({
 
 /* ─────────────────────────── Main Component ─────────────────────────── */
 export function ItineraryClient({ data, token }: Props) {
-  const { quote, customer, agent, state, quote_options, group_package_options, day_snapshots, inclusions, exclusions, policies } = data;
+  const { quote, customer, agent, state, quote_options, group_package_options, group_pricing_mode, group_trip_dates, day_snapshots, inclusions, exclusions, policies } = data;
 
   const isGroup = quote.quote_type?.toUpperCase() === 'GROUP';
+  // date_based = show batch date picker + fare summary (default for backwards compat)
+  // package_based = show package options with fixed prices, hide date picker
+  const pricingMode: 'date_based' | 'package_based' = group_pricing_mode ?? 'date_based';
 
   const defaultOption = data.selected_option_id
     ? quote_options.find((o) => o.id === data.selected_option_id)?.id ?? null
@@ -2022,7 +2728,8 @@ export function ItineraryClient({ data, token }: Props) {
   const [booking, setBooking]               = useState(false);
   const [showBookingIntent, setShowBookingIntent] = useState(false);
   const defaultTier = group_package_options?.find(o => o.is_most_popular)?.tier_name ?? group_package_options?.[0]?.tier_name ?? null;
-  const [selectedTier, setSelectedTier]     = useState<string | null>(defaultTier);
+  const [selectedTier, setSelectedTier]         = useState<string | null>(defaultTier);
+  const [selectedTripDateIdx, setSelectedTripDateIdx] = useState<number | null>(null);
 
   const selectedOption = quote_options.find((o) => o.id === selectedId);
   const waUrl = buildWaUrl(agent, quote.quote_number, customer.name, state.name);
@@ -2051,6 +2758,16 @@ export function ItineraryClient({ data, token }: Props) {
 
   async function handleSelectOption(id: string) {
     setSelectedId(id);
+    // Fire package_selected analytics (non-blocking)
+    const selectedOpt = quote_options.find(o => o.id === id);
+    fetch(`/api/v1/public/itinerary/${token}/analytics`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event_type: 'package_selected',
+        metadata: { option_id: id, option_name: selectedOpt?.option_name ?? null },
+      }),
+    }).catch(() => {});
     try {
       await fetch(`/api/v1/public/itinerary/${token}/select-option`, {
         method: 'POST',
@@ -2113,7 +2830,43 @@ export function ItineraryClient({ data, token }: Props) {
   }
 
   async function handleBookNow() {
-    if (!selectedBatch || booking) return;
+    if (booking) return;
+
+    // package_based: need a tier + a date selected
+    if (pricingMode === 'package_based') {
+      const pkgOption = group_package_options?.find(o => o.tier_name === selectedTier);
+      const tripDate  = (group_trip_dates ?? [])[selectedTripDateIdx!];
+      if (!pkgOption || !tripDate) return;
+      setBooking(true);
+      const pkgGstPct = pkgOption.gst_percent ?? 5;
+      const total = Math.round(pkgOption.adult_price * (1 + pkgGstPct / 100)) * groupAdults;
+      try {
+        await fetch(`/api/v1/public/itinerary/${token}/analytics`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            event_type: 'booking_intent',
+            metadata: {
+              customer_name:    customer.name,
+              adults:           groupAdults,
+              package_tier:     pkgOption.tier_name,
+              trip_start_date:  tripDate.start_date,
+              trip_end_date:    tripDate.end_date,
+              total_price:      total,
+              quote_number:     quote.quote_number,
+            },
+          }),
+        });
+      } catch { /* non-critical */ }
+      finally {
+        setBooking(false);
+        setShowBookingIntent(true);
+      }
+      return;
+    }
+
+    // date_based: need a batch selected
+    if (!selectedBatch) return;
     setBooking(true);
 
     const pricePerAdult = selectedBatch.adult_price;
@@ -2139,45 +2892,50 @@ export function ItineraryClient({ data, token }: Props) {
           },
         }),
       });
-    } catch {
-      // non-critical — show confirmation anyway
-    } finally {
+    } catch { /* non-critical */ }
+    finally {
       setBooking(false);
       setShowBookingIntent(true);
     }
   }
 
-  // Derived group fare
-  const groupTotal = selectedBatch
-    ? (() => {
-        const sub = selectedBatch.adult_price * groupAdults;
-        return sub + Math.round(sub * selectedBatch.gst_percent / 100);
-      })()
+  // Derived group fare (with and without discount)
+  const groupOrigTotal = selectedBatch
+    ? (() => { const sub = selectedBatch.adult_price * groupAdults; return sub + Math.round(sub * selectedBatch.gst_percent / 100); })()
     : 0;
+  const groupDiscPerPerson = (quote.discount_amount ?? 0) > 0 && !isDiscountExpired(quote.discount_expires_at) ? (quote.discount_amount ?? 0) : 0;
+  const groupTotal = selectedBatch ? Math.max(0, groupOrigTotal - groupDiscPerPerson * groupAdults) : 0;
 
   return (
     <div className="tl-page">
       <Nav quoteNum={quote.quote_number} pkgName={selectedOption?.option_name} />
 
       <div style={{ marginTop: 58 }}>
-        <Hero data={data} />
         <Strip quote={quote} />
+        <Hero data={data} />
         <Gallery state={state} day_snapshots={day_snapshots} />
 
         {/* Package options — PRIVATE only (GROUP has its own tier selector below) */}
-        {!isGroup && <Packages options={quote_options} selectedId={selectedId} onSelect={handleSelectOption} />}
+        {!isGroup && <Packages options={quote_options} selectedId={selectedId} onSelect={handleSelectOption} adults={quote.adults} />}
 
-        {/* ── GROUP: tier selector ── */}
-        {isGroup && (
-          <GroupPackageOptions
-            options={group_package_options ?? []}
-            selectedTier={selectedTier}
-            onSelect={handleTierSelect}
-          />
+        {/* ── GROUP: package_based → fixed package tiers + selectable trip dates ── */}
+        {isGroup && pricingMode === 'package_based' && (
+          <>
+            <GroupPackageOptions
+              options={group_package_options ?? []}
+              selectedTier={selectedTier}
+              onSelect={handleTierSelect}
+            />
+            <TripDates
+              dates={group_trip_dates ?? []}
+              selectedIdx={selectedTripDateIdx}
+              onSelect={setSelectedTripDateIdx}
+            />
+          </>
         )}
 
-        {/* ── GROUP: date picker ── */}
-        {isGroup && (
+        {/* ── GROUP: date_based → batch date picker with prices ── */}
+        {isGroup && pricingMode === 'date_based' && (
           <BatchDatePicker
             batches={batches}
             selectedBatchId={selectedBatch?.id ?? null}
@@ -2194,8 +2952,8 @@ export function ItineraryClient({ data, token }: Props) {
           : <IncExc inclusions={inclusions} exclusions={exclusions} />
         }
 
-        {/* ── GROUP: fare summary with adult counter + Book Now ── */}
-        {isGroup && (
+        {/* ── GROUP: fare summary — date_based uses batch, package_based uses tier ── */}
+        {isGroup && pricingMode === 'date_based' && (
           <GroupFareSummary
             batch={selectedBatch}
             adults={groupAdults}
@@ -2205,6 +2963,20 @@ export function ItineraryClient({ data, token }: Props) {
             quoteNumber={quote.quote_number}
             onBookNow={handleBookNow}
             booking={booking}
+            quoteDiscount={quote.discount_amount}
+            quoteDiscountExpiry={quote.discount_expires_at}
+          />
+        )}
+        {isGroup && pricingMode === 'package_based' && (
+          <PackageFareSummary
+            packageOption={group_package_options?.find(o => o.tier_name === selectedTier) ?? null}
+            tripDate={(group_trip_dates ?? [])[selectedTripDateIdx!] ?? null}
+            adults={groupAdults}
+            onAdultsChange={setGroupAdults}
+            onBookNow={handleBookNow}
+            booking={booking}
+            quoteDiscount={quote.discount_amount}
+            quoteDiscountExpiry={quote.discount_expires_at}
           />
         )}
 
@@ -2222,13 +2994,25 @@ export function ItineraryClient({ data, token }: Props) {
       </div>
 
       {/* Sticky CTA */}
-      {isGroup ? (
-        /* GROUP: fixed bottom bar with selected batch + Book Now */
+      {isGroup && pricingMode === 'package_based' ? (
+        <PackageStickyCTA
+          selectedOption={group_package_options?.find(o => o.tier_name === selectedTier) ?? null}
+          selectedDate={(group_trip_dates ?? [])[selectedTripDateIdx!] ?? null}
+          adults={groupAdults}
+          onBookNow={handleBookNow}
+          booking={booking}
+          quoteDiscount={quote.discount_amount}
+          quoteDiscountExpiry={quote.discount_expires_at}
+        />
+      ) : isGroup ? (
+        /* GROUP date_based: fixed bottom bar with selected batch + Book Now */
         <GroupStickyCTA
           batch={selectedBatch}
           adults={groupAdults}
           onBookNow={handleBookNow}
           booking={booking}
+          quoteDiscount={quote.discount_amount}
+          quoteDiscountExpiry={quote.discount_expires_at}
         />
       ) : (
         <StickyCTA
@@ -2241,7 +3025,8 @@ export function ItineraryClient({ data, token }: Props) {
       )}
 
       {/* WhatsApp float */}
-      <a href={waUrl} target="_blank" rel="noopener noreferrer" className={`tl-wa-float${isGroup ? ' tl-wa-float-group' : ''}`} title="Chat on WhatsApp">
+      <a href={waUrl} target="_blank" rel="noopener noreferrer" className={`tl-wa-float${isGroup ? ' tl-wa-float-group' : ''}`} title="Chat on WhatsApp"
+        onClick={() => window.dispatchEvent(new CustomEvent('itinerary:whatsapp_clicked'))}>
         <svg viewBox="0 0 24 24" fill="white" width="24" height="24">
           <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
         </svg>
@@ -2257,17 +3042,64 @@ export function ItineraryClient({ data, token }: Props) {
           onClose={() => setShowSuccess(false)}
         />
       )}
-      {showBookingIntent && selectedBatch && (
+      {/* Booking intent modal — date_based uses batch, package_based uses package tier + trip date */}
+      {showBookingIntent && pricingMode === 'date_based' && selectedBatch && (
         <BookingIntentModal
           batch={selectedBatch}
           adults={groupAdults}
           total={groupTotal}
+          origTotal={groupDiscPerPerson > 0 ? groupOrigTotal : undefined}
           customerName={customer.name}
           agentName={agent?.name ?? 'Your Agent'}
           waUrl={waUrl}
           onClose={() => setShowBookingIntent(false)}
         />
       )}
+      {showBookingIntent && pricingMode === 'package_based' && (() => {
+        const pkgOpt  = group_package_options?.find(o => o.tier_name === selectedTier);
+        const tripDt  = (group_trip_dates ?? [])[selectedTripDateIdx!];
+        if (!pkgOpt || !tripDt) return null;
+        const fmt = (s: string) => new Date(s).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+        const modalGstPct = pkgOpt.gst_percent ?? 5;
+        const modalOrigTotal = Math.round(pkgOpt.adult_price * (1 + modalGstPct / 100)) * groupAdults;
+        const modalDiscPerPerson = (quote.discount_amount ?? 0) > 0 && !isDiscountExpired(quote.discount_expires_at) ? (quote.discount_amount ?? 0) : 0;
+        const total = Math.max(0, modalOrigTotal - modalDiscPerPerson * groupAdults);
+        const saved = modalDiscPerPerson > 0 ? modalOrigTotal - total : 0;
+        return (
+          <div className="tl-overlay" onClick={() => setShowBookingIntent(false)}>
+            <div className="tl-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="tl-modal-tick">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+                  <path d="M5 13l4.5 4.5L19 7" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </div>
+              <div className="tl-modal-h">Booking Interest Noted! 🎉</div>
+              <div className="tl-modal-pkg">
+                You&apos;ve selected <strong>{pkgOpt.tier_name}</strong> — <strong>{fmt(tripDt.start_date)}</strong> to <strong>{fmt(tripDt.end_date)}</strong>
+              </div>
+              <div className="tl-modal-price-box">
+                {modalDiscPerPerson > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 4 }}>
+                    <span style={{ fontSize: 14, color: '#94A3B8', textDecoration: 'line-through', fontFamily: 'var(--f-num)' }}>{fmtCurrency(modalOrigTotal)}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: '#15803D', background: '#DCFCE7', padding: '2px 8px', borderRadius: 20, fontFamily: 'var(--f-body)' }}>Save {fmtCurrency(saved)}</span>
+                  </div>
+                )}
+                <div className="tl-modal-price-main">{fmtCurrency(total)} for {groupAdults} adult{groupAdults > 1 ? 's' : ''}</div>
+                <div className="tl-modal-price-sub">No payment required now</div>
+              </div>
+              <div className="tl-modal-agent">
+                <strong>{(agent?.name ?? 'Your Agent').split(' ')[0]}</strong> will call you within <strong>2 hours</strong> to confirm your booking.
+              </div>
+              <a href={waUrl} target="_blank" rel="noopener noreferrer" className="tl-modal-wa"
+                onClick={() => window.dispatchEvent(new CustomEvent('itinerary:whatsapp_clicked'))}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                Chat on WhatsApp
+              </a>
+              <button className="tl-modal-close" onClick={() => setShowBookingIntent(false)}>Close</button>
+            </div>
+          </div>
+        );
+      })()}
       {showReview && <ReviewModal onClose={() => setShowReview(false)} token={token} />}
     </div>
   );
