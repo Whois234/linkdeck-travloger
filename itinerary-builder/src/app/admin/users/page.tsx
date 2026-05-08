@@ -45,6 +45,7 @@ const MODULE_GROUPS: { group: string; collapsedByDefault?: boolean; items: { key
     items: [
       { key: 'states',                 label: 'States' },
       { key: 'destinations',           label: 'Destinations' },
+      { key: 'cities',                 label: 'Cities' },
       { key: 'suppliers',              label: 'Suppliers' },
       { key: 'hotels',                 label: 'Hotels' },
       { key: 'vehicle-types',          label: 'Vehicle Types' },
