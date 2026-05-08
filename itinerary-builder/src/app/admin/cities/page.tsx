@@ -29,6 +29,10 @@ export default function CitiesPage() {
   const [search, setSearch]   = useState('');
   const [stateFilter, setStateFilter] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('state_az');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [pageSize, setPageSize] = useState(25);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -60,6 +64,16 @@ export default function CitiesPage() {
     setDeleting(null); load();
   }
 
+  async function handleBulkDelete() {
+    if (!selected.size) return;
+    if (!confirm(`Deactivate ${selected.size} selected item${selected.size !== 1 ? 's' : ''}?`)) return;
+    setBulkDeleting(true);
+    await Promise.all(Array.from(selected).map(id => fetch(`/api/v1/cities/${id}`, { method: 'DELETE' })));
+    setBulkDeleting(false);
+    setSelected(new Set());
+    load();
+  }
+
   const sorted = useMemo(() => {
     const arr = [...rows];
     if (sortKey === 'newest')   arr.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
@@ -75,6 +89,8 @@ export default function CitiesPage() {
     const s = !stateFilter || r.state_id === stateFilter;
     return q && s;
   });
+  const totalPages = Math.ceil(filtered.length / pageSize);
+  const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   return (
     <div className="max-w-[1400px]">
@@ -114,19 +130,29 @@ export default function CitiesPage() {
 
       <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E2E8F0', ...cardShadow }}>
         <div className="flex items-center justify-between gap-3 px-5 py-4 flex-wrap" style={{ borderBottom: '1px solid #F1F5F9' }}>
-          <p className="text-sm font-semibold" style={{ color: '#64748B' }}>
-            {loading ? 'Loading…' : `${filtered.length} cit${filtered.length !== 1 ? 'ies' : 'y'}`}
-          </p>
+          <div className="flex items-center gap-3">
+            <p className="text-sm font-semibold" style={{ color: '#64748B' }}>
+              {loading ? 'Loading…' : `${filtered.length} cit${filtered.length !== 1 ? 'ies' : 'y'}`}
+            </p>
+            {selected.size > 0 && (
+              <button onClick={handleBulkDelete} disabled={bulkDeleting}
+                className="flex items-center gap-1.5 h-9 px-3 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50"
+                style={{ backgroundColor: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
+                <Trash2 className="w-3.5 h-3.5" />
+                {bulkDeleting ? 'Deleting…' : `Delete ${selected.size} selected`}
+              </button>
+            )}
+          </div>
           <div className="flex items-center gap-2 flex-wrap">
             {/* State filter */}
-            <select value={stateFilter} onChange={e => setStateFilter(e.target.value)}
+            <select value={stateFilter} onChange={e => { setStateFilter(e.target.value); setCurrentPage(1); setSelected(new Set()); }}
               className="h-9 px-3 rounded-lg border text-sm focus:outline-none bg-white appearance-none"
               style={{ borderColor: '#E2E8F0', color: '#64748B' }}>
               <option value="">All States</option>
               {states.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
             {/* Sort */}
-            <select value={sortKey} onChange={e => setSortKey(e.target.value as SortKey)}
+            <select value={sortKey} onChange={e => { setSortKey(e.target.value as SortKey); setCurrentPage(1); setSelected(new Set()); }}
               className="h-9 px-3 rounded-lg border text-sm focus:outline-none bg-white appearance-none"
               style={{ borderColor: '#E2E8F0', color: '#64748B' }}>
               <option value="state_az">State A → Z</option>
@@ -135,10 +161,18 @@ export default function CitiesPage() {
               <option value="newest">Newest First</option>
               <option value="oldest">Oldest First</option>
             </select>
+            {/* Rows per page */}
+            <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setCurrentPage(1); setSelected(new Set()); }}
+              className="h-9 px-3 rounded-lg border text-sm focus:outline-none bg-white appearance-none"
+              style={{ borderColor: '#E2E8F0', color: '#64748B' }}>
+              <option value={25}>25 / page</option>
+              <option value={50}>50 / page</option>
+              <option value={100}>100 / page</option>
+            </select>
             {/* Search */}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: '#94A3B8' }} />
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search cities…"
+              <input value={search} onChange={e => { setSearch(e.target.value); setCurrentPage(1); setSelected(new Set()); }} placeholder="Search cities…"
                 className="w-52 h-9 pl-9 pr-3 rounded-lg border text-sm placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white"
                 style={{ borderColor: '#E2E8F0' }} />
             </div>
@@ -153,17 +187,39 @@ export default function CitiesPage() {
             <p className="text-sm mt-1" style={{ color: '#64748B' }}>{search ? 'Try a different search' : 'Add your first city'}</p>
           </div>
         ) : (
+          <>
           <table className="w-full text-sm">
             <thead>
               <tr style={{ backgroundColor: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
+                <th className="px-5 py-3.5 w-10">
+                  <input type="checkbox"
+                    className="w-4 h-4 rounded border-gray-300 accent-[#134956] cursor-pointer"
+                    checked={paginated.length > 0 && paginated.every(r => selected.has(r.id))}
+                    onChange={e => {
+                      if (e.target.checked) setSelected(prev => new Set([...Array.from(prev), ...paginated.map(r => r.id)]));
+                      else setSelected(prev => { const n = new Set(prev); paginated.forEach(r => n.delete(r.id)); return n; });
+                    }}
+                  />
+                </th>
                 {['City', 'State', 'Created', ''].map(h => (
                   <th key={h} className="px-5 py-3.5 text-left text-[11px] font-semibold uppercase tracking-wider" style={{ color: '#64748B' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {filtered.map(r => (
+              {paginated.map(r => (
                 <tr key={r.id} className="transition-colors hover:bg-[#F8FAFC]" style={{ borderBottom: '1px solid #F1F5F9', height: 52 }}>
+                  <td className="px-5 py-0 w-10">
+                    <input type="checkbox"
+                      className="w-4 h-4 rounded border-gray-300 accent-[#134956] cursor-pointer"
+                      checked={selected.has(r.id)}
+                      onChange={e => setSelected(prev => {
+                        const n = new Set(prev);
+                        e.target.checked ? n.add(r.id) : n.delete(r.id);
+                        return n;
+                      })}
+                    />
+                  </td>
                   <td className="px-5 py-0 font-semibold" style={{ color: '#0F172A' }}>{r.name}</td>
                   <td className="px-5 py-0">
                     <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold" style={{ backgroundColor: '#CCFBF1', color: '#0F766E' }}>
@@ -189,6 +245,23 @@ export default function CitiesPage() {
               ))}
             </tbody>
           </table>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-5 py-3" style={{ borderTop: '1px solid #F1F5F9' }}>
+              <p className="text-xs" style={{ color: '#94A3B8' }}>
+                Showing {(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, filtered.length)} of {filtered.length}
+              </p>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
+                  className="h-8 px-3 rounded-lg text-xs font-semibold disabled:opacity-40 hover:bg-[#F1F5F9] transition-colors"
+                  style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>← Prev</button>
+                <span className="text-xs px-2" style={{ color: '#64748B' }}>Page {currentPage} of {totalPages}</span>
+                <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}
+                  className="h-8 px-3 rounded-lg text-xs font-semibold disabled:opacity-40 hover:bg-[#F1F5F9] transition-colors"
+                  style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>Next →</button>
+              </div>
+            </div>
+          )}
+          </>
         )}
       </div>
     </div>
