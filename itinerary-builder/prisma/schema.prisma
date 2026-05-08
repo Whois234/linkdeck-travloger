@@ -586,6 +586,7 @@ model PrivateTemplate {
   id                      String        @id @default(cuid())
   template_name           String
   state_id                String
+  state_ids               String[]
   destinations            Json
   duration_days           Int
   duration_nights         Int
@@ -804,6 +805,7 @@ model Quote {
   customer_id             String
   lead_id                 String?
   state_id                String
+  state_ids               String[]
   status                  QuoteStatus @default(DRAFT)
   start_date              DateTime
   end_date                DateTime

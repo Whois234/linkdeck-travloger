@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
+import MultiStateSelect from '@/components/MultiStateSelect';
 import { Plus, Search, Pencil, Trash2, FileText, Map, ChevronRight, LayoutGrid, List, ArrowUpDown, CheckCircle2 } from 'lucide-react';
 
 type SortKey = 'name_asc' | 'name_desc' | 'state_asc' | 'nights_asc' | 'nights_desc' | 'days_desc';
@@ -15,7 +16,7 @@ const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: 'days_desc',  label: 'Most Day Plans' },
 ];
 
-interface State { id: string; name: string }
+interface State { id: string; name: string; code: string }
 interface Dest  { id: string; name: string; state_id: string; hero_image?: string | null }
 interface PT {
   id: string; template_name: string; duration_days: number; duration_nights: number;
@@ -54,10 +55,12 @@ function PrivateTemplatesPageInner() {
   const [deleting, setDeleting] = useState<string | null>(null);
 
   const [setup, setSetup] = useState({
-    template_name: '', state_id: '', duration_nights: '4', duration_days: '5',
+    template_name: '', state_ids: [] as string[], duration_nights: '4', duration_days: '5',
     pax_count: '2', start_city: '', end_city: '', theme: '', tab_title: '',
     destination_ids: [] as string[],
   });
+  // primary state (first in array) for backward compat
+  const setupStateId = setup.state_ids[0] ?? '';
 
   async function load() {
     setLoading(true);
@@ -74,7 +77,7 @@ function PrivateTemplatesPageInner() {
   }
   useEffect(() => { load(); }, []);
 
-  const filteredDests = dests.filter(d => !setup.state_id || d.state_id === setup.state_id);
+  const filteredDests = dests.filter(d => !setup.state_ids.length || setup.state_ids.includes(d.state_id));
 
   function toggleDest(id: string) {
     setSetup(p => ({
@@ -125,7 +128,8 @@ function PrivateTemplatesPageInner() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         template_name: setup.template_name,
-        state_id: setup.state_id,
+        state_id: setupStateId,
+        state_ids: setup.state_ids,
         destinations: setup.destination_ids,
         duration_days: days,
         duration_nights: nights,
@@ -174,7 +178,7 @@ function PrivateTemplatesPageInner() {
         subtitle="Build and manage itinerary templates for private tours"
         crumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Private Templates' }]}
         action={
-          <button onClick={() => { setSetup({ template_name:'', state_id:'', duration_nights:'4', duration_days:'5', pax_count:'2', start_city:'', end_city:'', theme:'', tab_title:'', destination_ids:[] }); setErr(''); setStep(1); setShowSetup(true); }}
+          <button onClick={() => { setSetup({ template_name:'', state_ids:[], duration_nights:'4', duration_days:'5', pax_count:'2', start_city:'', end_city:'', theme:'', tab_title:'', destination_ids:[] }); setErr(''); setStep(1); setShowSetup(true); }}
             className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white hover:opacity-90" style={{ backgroundColor: T }}>
             <Plus className="w-4 h-4" /> Create Template
           </button>
@@ -362,12 +366,14 @@ function PrivateTemplatesPageInner() {
           </div>
           <div>
             <label className={lbl}>State / Region <span className="text-red-500">*</span></label>
-            <select className={sel} style={inpSt} value={setup.state_id} onChange={e => setSetup(p => ({ ...p, state_id: e.target.value, destination_ids: [] }))}>
-              <option value="">Select state…</option>
-              {states.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
+            <MultiStateSelect
+              states={states}
+              selected={setup.state_ids}
+              onChange={ids => setSetup(p => ({ ...p, state_ids: ids, destination_ids: [] }))}
+              placeholder="Select states (e.g. Karnataka + Tamil Nadu)…"
+            />
           </div>
-          {setup.state_id && (
+          {setup.state_ids.length > 0 && (
             <div>
               <label className={lbl}>Destinations <span className="text-[#94A3B8] font-normal normal-case text-[10px]">(select all that apply)</span></label>
               <div className="flex flex-wrap gap-2">
@@ -380,7 +386,7 @@ function PrivateTemplatesPageInner() {
                     {d.name}
                   </button>
                 ))}
-                {filteredDests.length === 0 && <p className="text-xs text-[#94A3B8]">No destinations found for this state</p>}
+                {filteredDests.length === 0 && <p className="text-xs text-[#94A3B8]">No destinations found for selected states</p>}
               </div>
             </div>
           )}
@@ -388,7 +394,7 @@ function PrivateTemplatesPageInner() {
 
         <div className="flex justify-end gap-3 mt-5 pt-5" style={{ borderTop: '1px solid #F1F5F9' }}>
           <button onClick={() => setShowSetup(false)} className="h-9 px-4 rounded-lg text-sm font-semibold text-[#64748B] hover:bg-[#F8FAFC]" style={{ border: '1px solid #E2E8F0' }}>Cancel</button>
-          <button onClick={createTemplate} disabled={saving || !setup.template_name || !setup.state_id}
+          <button onClick={createTemplate} disabled={saving || !setup.template_name || !setup.state_ids.length}
             className="h-9 px-5 rounded-lg text-sm font-semibold text-white disabled:opacity-50 hover:opacity-90" style={{ backgroundColor: T }}>
             {saving ? 'Creating…' : 'Continue to CMS →'}
           </button>

@@ -13,6 +13,7 @@ const QuoteSchema = z.object({
   customer_id: z.string(),
   lead_id: z.string().optional().nullable(),
   state_id: z.string(),
+  state_ids: z.array(z.string()).min(1).optional(),
   start_date: z.string().datetime(),
   end_date: z.string().datetime(),
   duration_days: z.number().int().positive(),
@@ -101,11 +102,17 @@ export async function POST(req: NextRequest) {
   const parsed = QuoteSchema.safeParse(body);
   if (!parsed.success) return err('Validation failed', 400, parsed.error.flatten());
 
-  const quote_number = await generateQuoteNumber(parsed.data.state_id);
+  // state_ids: use provided array or fall back to [state_id]
+  const state_ids = parsed.data.state_ids?.length ? parsed.data.state_ids : [parsed.data.state_id];
+  const primaryStateId = state_ids[0];
+  const quote_number = await generateQuoteNumber(primaryStateId);
 
+  const { state_ids: _si, ...quoteData } = parsed.data;
   const quote = await prisma.quote.create({
     data: {
-      ...parsed.data,
+      ...quoteData,
+      state_id: primaryStateId,
+      state_ids,
       quote_number,
       status: QuoteStatus.DRAFT,
       created_by: user.sub,
