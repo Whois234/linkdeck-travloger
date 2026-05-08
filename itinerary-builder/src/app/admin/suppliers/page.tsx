@@ -1,12 +1,13 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
 import { Plus, Pencil, Trash2, Search } from 'lucide-react';
 import ExcelIO from '@/components/ExcelIO';
 
 const SUPPLIER_TYPES = ['HOTEL', 'VEHICLE', 'ACTIVITY', 'DMC', 'OTHER'];
-interface Supplier { id: string; name: string; supplier_type: string; contact_person?: string | null; phone?: string | null; status: boolean }
+interface Supplier { id: string; name: string; supplier_type: string; contact_person?: string | null; phone?: string | null; status: boolean; created_at: string }
+type SortKey = 'newest' | 'oldest' | 'az' | 'za' | 'type_az';
 const EMPTY = { name: '', supplier_type: 'HOTEL', contact_person: '', phone: '', email: '', address: '' };
 const inp = 'w-full h-10 px-3 rounded-lg border text-sm placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white transition-colors';
 const inpStyle = { borderColor: '#E2E8F0' };
@@ -33,6 +34,7 @@ export default function SuppliersPage() {
   const [error, setError] = useState('');
   const [deleting, setDeleting] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [sortKey, setSortKey] = useState<SortKey>('newest');
 
   async function load() { setLoading(true); const r = await fetch('/api/v1/suppliers'); const d = await r.json(); if (d.success) setRows(d.data); setLoading(false); }
   useEffect(() => { load(); }, []);
@@ -54,7 +56,17 @@ export default function SuppliersPage() {
     setDeleting(id); await fetch(`/api/v1/suppliers/${id}`, { method: 'DELETE' }); setDeleting(null); load();
   }
 
-  const filtered = rows.filter(r => !search || r.name.toLowerCase().includes(search.toLowerCase()) || r.supplier_type.toLowerCase().includes(search.toLowerCase()));
+  const sorted = useMemo(() => {
+    const arr = [...rows];
+    if (sortKey === 'newest') arr.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    else if (sortKey === 'oldest') arr.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    else if (sortKey === 'az') arr.sort((a, b) => a.name.localeCompare(b.name));
+    else if (sortKey === 'za') arr.sort((a, b) => b.name.localeCompare(a.name));
+    else if (sortKey === 'type_az') arr.sort((a, b) => a.supplier_type.localeCompare(b.supplier_type));
+    return arr;
+  }, [rows, sortKey]);
+
+  const filtered = sorted.filter(r => !search || r.name.toLowerCase().includes(search.toLowerCase()) || r.supplier_type.toLowerCase().includes(search.toLowerCase()));
 
   return (
     <div className="max-w-[1400px]">
@@ -105,12 +117,26 @@ export default function SuppliersPage() {
       <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E2E8F0', ...cardShadow }}>
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #F1F5F9' }}>
           <p className="text-sm font-semibold" style={{ color: '#64748B' }}>{loading ? 'Loading…' : `${filtered.length} supplier${filtered.length !== 1 ? 's' : ''}`}</p>
-          <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: '#94A3B8' }} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search suppliers…" className="w-60 h-9 pl-9 pr-3 rounded-lg border text-sm placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white transition-colors" style={{ borderColor: '#E2E8F0' }} /></div>
+          <div className="flex items-center gap-2">
+            <select
+              value={sortKey}
+              onChange={e => setSortKey(e.target.value as SortKey)}
+              className="h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white appearance-none pr-8"
+              style={{ borderColor: '#E2E8F0', color: '#64748B' }}
+            >
+              <option value="newest">Newest First</option>
+              <option value="oldest">Oldest First</option>
+              <option value="az">A → Z</option>
+              <option value="za">Z → A</option>
+              <option value="type_az">Type A → Z</option>
+            </select>
+            <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: '#94A3B8' }} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search suppliers…" className="w-60 h-9 pl-9 pr-3 rounded-lg border text-sm placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white transition-colors" style={{ borderColor: '#E2E8F0' }} /></div>
+          </div>
         </div>
         {loading ? <div className="py-16 text-center"><div className="w-8 h-8 rounded-full border-2 border-[#134956] border-t-transparent animate-spin mx-auto" /></div>
           : filtered.length === 0 ? <div className="py-16 text-center"><p className="font-semibold text-sm" style={{ color: '#0F172A' }}>No suppliers found</p><p className="text-sm mt-1" style={{ color: '#64748B' }}>{search ? 'Try a different search' : 'Add your first supplier'}</p></div>
           : <table className="w-full text-sm">
-              <thead><tr style={{ backgroundColor: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>{['Name', 'Type', 'Contact', 'Phone', 'Status', ''].map(h => <th key={h} className="px-5 py-3.5 text-left text-[11px] font-semibold uppercase tracking-wider whitespace-nowrap" style={{ color: '#64748B' }}>{h}</th>)}</tr></thead>
+              <thead><tr style={{ backgroundColor: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>{['Name', 'Type', 'Contact', 'Phone', 'Status', 'Created By', 'Created', ''].map(h => <th key={h} className="px-5 py-3.5 text-left text-[11px] font-semibold uppercase tracking-wider whitespace-nowrap" style={{ color: '#64748B' }}>{h}</th>)}</tr></thead>
               <tbody>
                 {filtered.map(r => {
                   const badge = TYPE_BADGE[r.supplier_type] ?? TYPE_BADGE.OTHER;
@@ -121,6 +147,10 @@ export default function SuppliersPage() {
                       <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>{r.contact_person ?? '—'}</td>
                       <td className="px-5 py-0 text-sm font-mono" style={{ color: '#64748B' }}>{r.phone ?? '—'}</td>
                       <td className="px-5 py-0"><span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold" style={r.status ? { backgroundColor: '#DCFCE7', color: '#15803D' } : { backgroundColor: '#F1F5F9', color: '#475569' }}>{r.status ? 'Active' : 'Inactive'}</span></td>
+                      <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>Admin</td>
+                      <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>
+                        {new Date(r.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </td>
                       <td className="px-5 py-0"><div className="flex items-center justify-end gap-1">
                         <button onClick={() => openEdit(r)} className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors hover:bg-[#F1F5F9]" style={{ color: '#94A3B8' }} onMouseEnter={e => (e.currentTarget.style.color = '#134956')} onMouseLeave={e => (e.currentTarget.style.color = '#94A3B8')}><Pencil className="w-3.5 h-3.5" /></button>
                         <button onClick={() => handleDelete(r.id)} disabled={deleting === r.id} className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors hover:bg-[#FEF2F2] disabled:opacity-40" style={{ color: '#94A3B8' }} onMouseEnter={e => (e.currentTarget.style.color = '#DC2626')} onMouseLeave={e => (e.currentTarget.style.color = '#94A3B8')}><Trash2 className="w-3.5 h-3.5" /></button>

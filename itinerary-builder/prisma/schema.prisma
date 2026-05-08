@@ -177,6 +177,7 @@ model State {
   description     String?
   hero_image      String?
   status          Boolean       @default(true)
+  created_by      String?       @default("Admin")
   created_at      DateTime      @default(now())
   updated_at      DateTime      @updatedAt
 
@@ -208,6 +209,7 @@ model Destination {
   gallery_images        Json?
   tags                  Json?
   status                Boolean  @default(true)
+  created_by            String?  @default("Admin")
   created_at            DateTime @default(now())
   updated_at            DateTime @updatedAt
 
@@ -240,6 +242,7 @@ model Supplier {
   contract_end_date   DateTime?
   notes               String?
   status              Boolean      @default(true)
+  created_by          String?      @default("Admin")
   created_at          DateTime     @default(now())
   updated_at          DateTime     @updatedAt
 
@@ -362,15 +365,18 @@ model HotelRate {
 }
 
 model VehicleType {
-  id               String  @id @default(cuid())
+  id               String   @id @default(cuid())
   vehicle_type     String
   display_name     String
   capacity         Int
   luggage_capacity Int?
-  ac_available     Boolean @default(true)
+  ac_available     Boolean  @default(true)
   description      String?
   images           Json?
-  status           Boolean @default(true)
+  status           Boolean  @default(true)
+  created_by       String?  @default("Admin")
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
 
   vehicle_package_rates VehiclePackageRate[]
   transfers             Transfer[]
@@ -452,6 +458,7 @@ model Activity {
   time_slots     Json?
   images         Json?
   status         Boolean          @default(true)
+  created_by     String?          @default("Admin")
   created_at     DateTime         @default(now())
   updated_at     DateTime         @updatedAt
 
@@ -476,6 +483,7 @@ model DayPlan {
   meals_included     Json?
   internal_notes     String?
   status             Boolean     @default(true)
+  created_by         String?     @default("Admin")
   created_at         DateTime    @default(now())
   updated_at         DateTime    @updatedAt
 
@@ -492,6 +500,7 @@ model InclusionExclusion {
   text           String
   destination_id String?
   status         Boolean           @default(true)
+  created_by     String?           @default("Admin")
   created_at     DateTime          @default(now())
   updated_at     DateTime          @updatedAt
 
