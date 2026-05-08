@@ -4,6 +4,7 @@ import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
 import { Plus, Pencil, Trash2, Search } from 'lucide-react';
 import ExcelIO from '@/components/ExcelIO';
+import { ImageUploader } from '@/components/admin/ImageUploader';
 
 interface State { id: string; name: string }
 interface Dest { id: string; name: string; state: { name: string }; state_id: string; hero_image: string | null; status: boolean }
@@ -96,12 +97,15 @@ export default function DestinationsPage() {
             </div>
             <div className="sm:col-span-2"><label className={lbl} style={lblStyle}>Description</label><textarea rows={3} className={textarea} style={inpStyle} value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="Brief description…" /></div>
             <div className="sm:col-span-2">
-              <label className={lbl} style={lblStyle}>Hero Image URL</label>
-              <input className={inp} style={inpStyle} value={form.hero_image} onChange={e => setForm(p => ({ ...p, hero_image: e.target.value }))} placeholder="https://… paste image URL" />
-              <p style={{ fontSize: 11, color: '#94A3B8', marginTop: 4, fontFamily: 'sans-serif' }}>📐 Recommended size: <strong>1200 × 630 px</strong> (landscape, 16:9). Use the Media Library to upload &amp; copy the URL.</p>
-              {form.hero_image && (
-                <img src={form.hero_image} alt="Preview" style={{ marginTop: 8, width: '100%', height: 140, objectFit: 'cover', borderRadius: 8, border: '1px solid #E2E8F0' }} />
-              )}
+              <ImageUploader
+                label="Hero Image"
+                value={form.hero_image || null}
+                onChange={url => setForm(p => ({ ...p, hero_image: url ?? '' }))}
+                folder="destinations"
+                accept="image/*"
+                placeholder="Click to upload or drag & drop a destination photo"
+                sizeHint="1200 × 630 px (landscape, 16:9)"
+              />
             </div>
           </div>
           <div className="flex justify-end gap-3 mt-5 pt-5" style={{ borderTop: '1px solid #F1F5F9' }}>
