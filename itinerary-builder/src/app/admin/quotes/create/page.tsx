@@ -243,13 +243,16 @@ export default function CreateQuotePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [options.map(o => o.hotels.map(h => `${h.hotel_id}|${h.room_category_id}|${h.meal_plan_id}|${h.check_in_date}|${h.check_out_date}|${h.rooms}`).join(',')).join(';')]);
 
-  /* ─── Auto-fill vehicle cost ─── */
+  /* ─── Auto-fill vehicle cost — prefer exact duration match ─── */
   function autoFillVehicle(vtId: string) {
     setVehicleTypeId(vtId);
     if (!vtId) { setVehicleCost(0); return; }
-    const matching = vehRates.filter(r => r.vehicle_type_id === vtId)
+    // First try exact duration match, then fall back to closest
+    const exactMatch = vehRates.find(r => r.vehicle_type_id === vtId && r.duration_days === durationDays);
+    if (exactMatch) { setVehicleCost(exactMatch.base_cost); return; }
+    const closest = vehRates.filter(r => r.vehicle_type_id === vtId)
       .sort((a, b) => Math.abs(a.duration_days - durationDays) - Math.abs(b.duration_days - durationDays));
-    setVehicleCost(matching[0]?.base_cost ?? 0);
+    setVehicleCost(closest[0]?.base_cost ?? 0);
   }
 
   /* ─── Hotel row updater ─── */
@@ -705,9 +708,20 @@ export default function CreateQuotePage() {
               <p className="text-sm text-[#64748B]">No packages found for this state.</p>
               <p className="text-xs text-[#94A3B8] mt-1">Add packages via Admin → Private Templates.</p>
             </div>
-          ) : (
+          ) : (() => {
+            const matchingTpls = privateTpls.filter(t => t.duration_days === durationDays);
+            const otherTpls    = privateTpls.filter(t => t.duration_days !== durationDays);
+            const showOther    = matchingTpls.length === 0; // show all if no exact match
+            const tplsToShow   = showOther ? privateTpls : matchingTpls;
+            return (
+            <>
+              {matchingTpls.length === 0 && (
+                <div className="px-4 py-2.5 rounded-xl text-xs font-medium" style={{ backgroundColor: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A' }}>
+                  ⚠ No templates for {durationDays}D/{durationNights}N — showing all templates. Consider creating one that matches.
+                </div>
+              )}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {privateTpls.map(tpl => {
+              {tplsToShow.map(tpl => {
                 const destNames = ((tpl.destinations ?? []) as string[]).map(did => dests.find(d => d.id === did)?.name).filter(Boolean);
                 const isSelected = selectedPT?.id === tpl.id;
                 return (
@@ -740,7 +754,9 @@ export default function CreateQuotePage() {
                 );
               })}
             </div>
-          )}
+            </>
+            );
+          })()}
         </div>
       )}
 
@@ -1053,21 +1069,41 @@ export default function CreateQuotePage() {
               </div>
             </div>
 
-            {/* Rate chips */}
-            {vehicleTypeId && vehRates.filter(r => r.vehicle_type_id === vehicleTypeId).length > 0 && (
-              <div className="mt-4">
-                <p className={lbl}>Available Rates — Click to Apply</p>
-                <div className="flex flex-wrap gap-2 mt-1">
-                  {vehRates.filter(r => r.vehicle_type_id === vehicleTypeId).map(r => (
-                    <button key={r.id} type="button" onClick={() => setVehicleCost(r.base_cost)}
-                      className="text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors"
-                      style={vehicleCost === r.base_cost ? { backgroundColor: `${T}15`, borderColor: T, color: T } : { backgroundColor: '#F8FAFC', borderColor: '#E2E8F0', color: '#64748B' }}>
-                      {r.route_name} · {r.duration_days}D · ₹{r.base_cost.toLocaleString('en-IN')}
-                    </button>
-                  ))}
+            {/* Rate chips — only show rates matching the trip duration */}
+            {vehicleTypeId && (() => {
+              const exactRates  = vehRates.filter(r => r.vehicle_type_id === vehicleTypeId && r.duration_days === durationDays);
+              const otherRates  = vehRates.filter(r => r.vehicle_type_id === vehicleTypeId && r.duration_days !== durationDays);
+              if (exactRates.length === 0 && otherRates.length === 0) return null;
+              return (
+                <div className="mt-4">
+                  <p className={lbl}>Available Rates — Click to Apply</p>
+                  <div className="flex flex-wrap gap-2 mt-1">
+                    {exactRates.map(r => (
+                      <button key={r.id} type="button" onClick={() => setVehicleCost(r.base_cost)}
+                        className="text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors"
+                        style={vehicleCost === r.base_cost ? { backgroundColor: `${T}15`, borderColor: T, color: T } : { backgroundColor: '#F8FAFC', borderColor: '#E2E8F0', color: '#64748B' }}>
+                        {r.route_name} · {r.duration_days}D · ₹{r.base_cost.toLocaleString('en-IN')}
+                      </button>
+                    ))}
+                    {exactRates.length === 0 && <p className="text-xs text-[#94A3B8]">No rates for {durationDays}D — showing others below</p>}
+                    {otherRates.length > 0 && (
+                      <details className="w-full">
+                        <summary className="text-xs text-[#94A3B8] cursor-pointer mt-1">Other durations ({otherRates.length})</summary>
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {otherRates.map(r => (
+                            <button key={r.id} type="button" onClick={() => setVehicleCost(r.base_cost)}
+                              className="text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors"
+                              style={{ backgroundColor: '#FFF7ED', borderColor: '#FED7AA', color: '#92400E' }}>
+                              {r.route_name} · {r.duration_days}D · ₹{r.base_cost.toLocaleString('en-IN')}
+                            </button>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Preview per option */}
             {options.length > 0 && vehicleCost > 0 && (

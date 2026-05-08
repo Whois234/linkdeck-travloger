@@ -188,7 +188,22 @@ model State {
   quotes          Quote[]
   quote_sequences QuoteSequence[]
   policies        Policy[]
+  cities          City[]
 
+  @@index([status])
+}
+
+model City {
+  id         String   @id @default(cuid())
+  name       String
+  state_id   String
+  status     Boolean  @default(true)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  state      State    @relation(fields: [state_id], references: [id])
+
+  @@index([state_id])
   @@index([status])
 }
 

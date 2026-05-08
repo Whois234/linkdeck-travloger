@@ -43,6 +43,7 @@ function PrivateTemplatesPageInner() {
   const [rows, setRows]       = useState<PT[]>([]);
   const [states, setStates]   = useState<State[]>([]);
   const [dests, setDests]     = useState<Dest[]>([]);
+  const [cities, setCities]   = useState<{ id: string; name: string; state_id: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch]     = useState('');
   const [stateFilter, setStateFilter] = useState('');
@@ -64,15 +65,17 @@ function PrivateTemplatesPageInner() {
 
   async function load() {
     setLoading(true);
-    const [tr, sr, dr] = await Promise.all([
+    const [tr, sr, dr, cr] = await Promise.all([
       fetch('/api/v1/private-templates'),
       fetch('/api/v1/states'),
       fetch('/api/v1/destinations'),
+      fetch('/api/v1/cities'),
     ]);
-    const [td, sd, dd] = await Promise.all([tr.json(), sr.json(), dr.json()]);
+    const [td, sd, dd, cd] = await Promise.all([tr.json(), sr.json(), dr.json(), cr.json()]);
     if (td.success) setRows(td.data);
     if (sd.success) setStates(sd.data);
     if (dd.success) setDests(dd.data);
+    if (cd.success) setCities(cd.data);
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
@@ -357,11 +360,17 @@ function PrivateTemplatesPageInner() {
             </div>
             <div>
               <label className={lbl}>Start City</label>
-              <input className={inp} style={inpSt} value={setup.start_city} onChange={e => setSetup(p => ({ ...p, start_city: e.target.value }))} placeholder="Cochin" />
+              <select className={inp + ' appearance-none'} style={inpSt} value={setup.start_city} onChange={e => setSetup(p => ({ ...p, start_city: e.target.value }))}>
+                <option value="">Select city…</option>
+                {(setup.state_ids.length ? cities.filter(c => setup.state_ids.includes(c.state_id)) : cities).map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+              </select>
             </div>
             <div>
               <label className={lbl}>End City</label>
-              <input className={inp} style={inpSt} value={setup.end_city} onChange={e => setSetup(p => ({ ...p, end_city: e.target.value }))} placeholder="Trivandrum" />
+              <select className={inp + ' appearance-none'} style={inpSt} value={setup.end_city} onChange={e => setSetup(p => ({ ...p, end_city: e.target.value }))}>
+                <option value="">Select city…</option>
+                {(setup.state_ids.length ? cities.filter(c => setup.state_ids.includes(c.state_id)) : cities).map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+              </select>
             </div>
           </div>
           <div>

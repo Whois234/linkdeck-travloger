@@ -6,6 +6,7 @@ import { Plus, Pencil, Trash2, Search } from 'lucide-react';
 import ExcelIO from '@/components/ExcelIO';
 
 interface State { id: string; name: string }
+interface City  { id: string; name: string; state_id: string }
 interface VehicleType { id: string; vehicle_type: string; display_name: string }
 interface Supplier { id: string; name: string }
 interface Rate { id: string; route_name: string; start_city: string; end_city: string; base_cost: number; valid_from: string; valid_to: string; status: boolean; vehicle_type_id: string; state_id: string }
@@ -20,6 +21,7 @@ const cardShadow = { boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,
 export default function VehicleRatesPage() {
   const [rows, setRows] = useState<Rate[]>([]);
   const [states, setStates] = useState<State[]>([]);
+  const [cities, setCities] = useState<City[]>([]);
   const [vehicleTypes, setVehicleTypes] = useState<VehicleType[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,10 +35,11 @@ export default function VehicleRatesPage() {
 
   async function load() {
     setLoading(true);
-    const [rr, sr, vr, supr] = await Promise.all([fetch('/api/v1/vehicle-package-rates'), fetch('/api/v1/states'), fetch('/api/v1/vehicle-types'), fetch('/api/v1/suppliers')]);
-    const [rd, sd, vd, supd] = await Promise.all([rr.json(), sr.json(), vr.json(), supr.json()]);
+    const [rr, sr, cr, vr, supr] = await Promise.all([fetch('/api/v1/vehicle-package-rates'), fetch('/api/v1/states'), fetch('/api/v1/cities'), fetch('/api/v1/vehicle-types'), fetch('/api/v1/suppliers')]);
+    const [rd, sd, cd, vd, supd] = await Promise.all([rr.json(), sr.json(), cr.json(), vr.json(), supr.json()]);
     if (rd.success) setRows(rd.data);
     if (sd.success) setStates(sd.data);
+    if (cd.success) setCities(cd.data);
     if (vd.success) setVehicleTypes(vd.data);
     if (supd.success) setSuppliers(supd.data.filter((s: Supplier & { supplier_type: string }) => s.supplier_type === 'VEHICLE'));
     setLoading(false);
@@ -120,8 +123,21 @@ export default function VehicleRatesPage() {
                 {vehicleTypes.map(v => <option key={v.id} value={v.id}>{v.display_name}</option>)}
               </select>
             </div>
-            <div><label className={lbl} style={lblStyle}>Start City <span style={{ color: '#EF4444' }}>*</span></label><input className={inp} style={inpStyle} value={form.start_city} onChange={e => setForm(p => ({ ...p, start_city: e.target.value }))} placeholder="Cochin" /></div>
-            <div><label className={lbl} style={lblStyle}>End City <span style={{ color: '#EF4444' }}>*</span></label><input className={inp} style={inpStyle} value={form.end_city} onChange={e => setForm(p => ({ ...p, end_city: e.target.value }))} placeholder="Trivandrum" /></div>
+            <div>
+              <label className={lbl} style={lblStyle}>Start City <span style={{ color: '#EF4444' }}>*</span></label>
+              <select className={sel} style={inpStyle} value={form.start_city} onChange={e => setForm(p => ({ ...p, start_city: e.target.value }))}>
+                <option value="">Select city…</option>
+                {(form.state_id ? cities.filter(c => c.state_id === form.state_id) : cities).map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+              </select>
+              {!form.state_id && <p className="text-[11px] mt-1" style={{ color: '#94A3B8' }}>Select a state above to filter cities</p>}
+            </div>
+            <div>
+              <label className={lbl} style={lblStyle}>End City <span style={{ color: '#EF4444' }}>*</span></label>
+              <select className={sel} style={inpStyle} value={form.end_city} onChange={e => setForm(p => ({ ...p, end_city: e.target.value }))}>
+                <option value="">Select city…</option>
+                {(form.state_id ? cities.filter(c => c.state_id === form.state_id) : cities).map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+              </select>
+            </div>
             <div><label className={lbl} style={lblStyle}>Duration Days <span style={{ color: '#EF4444' }}>*</span></label><input type="number" min="1" className={inp} style={inpStyle} value={form.duration_days} onChange={e => setForm(p => ({ ...p, duration_days: e.target.value }))} /></div>
             <div><label className={lbl} style={lblStyle}>Duration Nights <span style={{ color: '#EF4444' }}>*</span></label><input type="number" min="0" className={inp} style={inpStyle} value={form.duration_nights} onChange={e => setForm(p => ({ ...p, duration_nights: e.target.value }))} /></div>
             <div><label className={lbl} style={lblStyle}>Base Cost (₹) <span style={{ color: '#EF4444' }}>*</span></label><input type="number" min="0" className={inp} style={inpStyle} value={form.base_cost} onChange={e => setForm(p => ({ ...p, base_cost: e.target.value }))} /></div>

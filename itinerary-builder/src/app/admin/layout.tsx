@@ -22,6 +22,7 @@ const ALL_NAV: NavGroup[] = [
     items: [
       { label: 'States',             href: '/admin/states',                icon: MapPin    },
       { label: 'Destinations',       href: '/admin/destinations',          icon: Map       },
+      { label: 'Cities',             href: '/admin/cities',                icon: MapPin    },
       { label: 'Suppliers',          href: '/admin/suppliers',             icon: Tag       },
       { label: 'Hotels',             href: '/admin/hotels',                icon: Building2 },
       { label: 'Vehicle Types',      href: '/admin/vehicle-types',         icon: Car       },
