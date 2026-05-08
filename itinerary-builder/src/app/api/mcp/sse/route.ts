@@ -1,111 +1,264 @@
 /**
- * MCP SSE Server Route
+ * MCP Streamable HTTP endpoint — compatible with ChatGPT custom MCP integration.
  *
- * GET  /api/mcp/sse          — Opens an SSE stream. Emits an "endpoint" event
- *                              pointing the client to POST /api/mcp/sse?sid=<id>
- * POST /api/mcp/sse?sid=<id> — Delivers a JSON-RPC message to the MCP server
- *                              running in the session identified by <sid>.
+ * Protocol: JSON-RPC 2.0 over HTTP (no persistent sessions).
+ *   OPTIONS /api/mcp/sse  — CORS preflight
+ *   GET     /api/mcp/sse  — SSE keepalive stream (connection check)
+ *   POST    /api/mcp/sse  — JSON-RPC method handler (all MCP traffic)
  *
- * Both endpoints require the x-api-key header to match MCP_API_KEY in .env.
+ * Auth: x-api-key header must match MCP_API_KEY env var (POST only).
  */
 
-// Force dynamic so Next.js never attempts static page-data collection for
-// this route (which would execute the module and require the MCP SDK at
-// build time, before node_modules are fully available in the worker).
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createMcpServer } from '@/lib/mcp/server';
-import { NextSSETransport, sessions } from '@/lib/mcp/transport';
+import { prisma } from '@/lib/prisma';
 
-function checkApiKey(req: NextRequest): boolean {
-  const key = req.headers.get('x-api-key');
-  return key === process.env.MCP_API_KEY;
-}
+// ── CORS ──────────────────────────────────────────────────────────────────────
 
-// ── GET — open SSE stream ───────────────────────────────────────────────────
-export async function GET(req: NextRequest) {
-  if (!checkApiKey(req)) {
-    return new NextResponse('Unauthorized', { status: 401 });
-  }
+const CORS: HeadersInit = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, x-api-key',
+};
 
-  const sid = crypto.randomUUID();
+// ── Tool registry ─────────────────────────────────────────────────────────────
 
-  const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
-      const transport = new NextSSETransport(controller);
-      sessions.set(sid, transport);
+const TOOLS = [
+  {
+    name: 'ping',
+    description: 'Health check — returns pong. Use this to verify the MCP server is reachable.',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'get_leads',
+    description: 'Return the 50 most recent leads from the Travloger CRM.',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'get_destinations',
+    description: 'Return all active travel destinations.',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'get_states',
+    description: 'Return all active states/regions.',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'get_hotels',
+    description: 'Return hotels, optionally filtered by destination.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        destination_id: { type: 'string', description: 'Filter by destination ID (optional)' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'get_quotes',
+    description: 'Return quotes, optionally filtered by status.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        status: {
+          type: 'string',
+          description: 'Filter by status: DRAFT | SENT | VIEWED | ACCEPTED | REJECTED | EXPIRED | CONVERTED',
+        },
+        limit: { type: 'number', description: 'Max results (default 20)' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'create_lead',
+    description: 'Create a new lead in the CRM.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name:  { type: 'string', description: 'Customer name' },
+        phone: { type: 'string', description: 'Phone number' },
+        email: { type: 'string', description: 'Email address (optional)' },
+        source: { type: 'string', description: 'Lead source e.g. Instagram, Walk-in' },
+        destination_interest: { type: 'string', description: 'Destination of interest' },
+        travel_month: { type: 'string', description: 'Expected travel month e.g. Dec 2025' },
+        budget_range:  { type: 'string', description: 'Budget range' },
+        notes: { type: 'string', description: 'Internal notes' },
+      },
+      required: ['name', 'phone'],
+    },
+  },
+];
 
-      // Build the POST endpoint URL from the incoming request
-      const url = new URL(req.url);
-      const endpointUrl = `${url.origin}/api/mcp/sse?sid=${sid}`;
+// ── Tool executor ─────────────────────────────────────────────────────────────
 
-      // Send MCP "endpoint" event so the client knows where to POST
-      const encoder = new TextEncoder();
-      controller.enqueue(encoder.encode(`event: endpoint\ndata: ${endpointUrl}\n\n`));
+async function executeTool(name: string, args: Record<string, unknown>): Promise<unknown> {
+  switch (name) {
 
-      // Wire up and start the MCP server
-      const server = createMcpServer();
-      server.connect(transport).catch(err => {
-        console.error('[MCP] connect error:', err);
-        sessions.delete(sid);
+    case 'ping':
+      return { message: 'pong' };
+
+    case 'get_leads':
+      return prisma.lead.findMany({
+        orderBy: { created_at: 'desc' },
+        take: 50,
+        include: {
+          stage:    { select: { name: true } },
+          pipeline: { select: { name: true } },
+        },
       });
 
-      // Keepalive every 25 s to prevent proxy timeouts
-      const keepaliveTimer = setInterval(() => {
-        if (sessions.has(sid)) {
-          transport.keepalive();
-        } else {
-          clearInterval(keepaliveTimer);
-        }
-      }, 25_000);
+    case 'get_destinations':
+      return prisma.destination.findMany({
+        where: { status: true },
+        orderBy: { name: 'asc' },
+        include: { state: { select: { name: true, code: true } } },
+      });
 
-      // Clean up when the client disconnects
-      transport.onclose = () => {
-        clearInterval(keepaliveTimer);
-        sessions.delete(sid);
-      };
-    },
-    cancel() {
-      sessions.delete(sid);
+    case 'get_states':
+      return prisma.state.findMany({
+        where: { status: true },
+        orderBy: { name: 'asc' },
+        select: { id: true, name: true, code: true, country: true, trip_id_prefix: true },
+      });
+
+    case 'get_hotels': {
+      const dest = args.destination_id as string | undefined;
+      return prisma.hotel.findMany({
+        where: { status: true, ...(dest ? { destination_id: dest } : {}) },
+        orderBy: { hotel_name: 'asc' },
+        include: {
+          destination: { select: { name: true } },
+          supplier:    { select: { name: true } },
+        },
+        take: 50,
+      });
+    }
+
+    case 'get_quotes': {
+      const limit = typeof args.limit === 'number' ? args.limit : 20;
+      return prisma.quote.findMany({
+        where: args.status ? { status: args.status as import('@prisma/client').QuoteStatus } : undefined,
+        include: {
+          customer:      { select: { name: true, phone: true } },
+          state:         { select: { name: true, code: true } },
+          quote_options: { select: { option_name: true, final_price: true, is_most_popular: true } },
+        },
+        orderBy: { created_at: 'desc' },
+        take: limit,
+      });
+    }
+
+    case 'create_lead':
+      return prisma.lead.create({
+        data: {
+          name:                 String(args.name),
+          phone:                String(args.phone),
+          email:                args.email   ? String(args.email)   : null,
+          source:               args.source  ? String(args.source)  : null,
+          destination_interest: args.destination_interest ? String(args.destination_interest) : null,
+          travel_month:         args.travel_month ? String(args.travel_month) : null,
+          budget_range:         args.budget_range ? String(args.budget_range) : null,
+          notes:                args.notes ? String(args.notes) : null,
+          status:               'NEW',
+        },
+      });
+
+    default:
+      throw new Error(`Unknown tool: ${name}`);
+  }
+}
+
+// ── JSON-RPC helpers ──────────────────────────────────────────────────────────
+
+function ok(id: unknown, result: unknown) {
+  return NextResponse.json({ jsonrpc: '2.0', id, result }, { headers: CORS });
+}
+
+function rpcError(id: unknown, code: number, message: string) {
+  return NextResponse.json(
+    { jsonrpc: '2.0', id, error: { code, message } },
+    { status: 200, headers: CORS },   // keep 200 so ChatGPT parses the body
+  );
+}
+
+// ── Route handlers ────────────────────────────────────────────────────────────
+
+/** CORS preflight */
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: CORS });
+}
+
+/** GET — lightweight SSE ping stream so ChatGPT can verify the endpoint */
+export async function GET() {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    start(ctrl) {
+      ctrl.enqueue(encoder.encode('data: {"type":"connected","server":"travloger-crm"}\n\n'));
     },
   });
-
   return new NextResponse(stream, {
-    headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache, no-transform',
-      Connection: 'keep-alive',
-      'X-Accel-Buffering': 'no', // disable nginx buffering
-    },
+    headers: { ...CORS, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
   });
 }
 
-// ── POST — deliver JSON-RPC message ────────────────────────────────────────
+/** POST — JSON-RPC 2.0 dispatcher */
 export async function POST(req: NextRequest) {
-  if (!checkApiKey(req)) {
-    return new NextResponse('Unauthorized', { status: 401 });
+  // Auth
+  const key = req.headers.get('x-api-key');
+  if (!key || key !== process.env.MCP_API_KEY) {
+    return rpcError(null, -32001, 'Unauthorized: invalid or missing x-api-key');
   }
 
-  const sid = new URL(req.url).searchParams.get('sid');
-  if (!sid) {
-    return NextResponse.json({ error: 'Missing sid query parameter' }, { status: 400 });
-  }
-
-  const transport = sessions.get(sid);
-  if (!transport) {
-    return NextResponse.json({ error: 'Session not found or expired' }, { status: 404 });
-  }
-
-  let body: unknown;
+  // Parse body
+  let body: { jsonrpc?: string; id?: unknown; method?: string; params?: unknown };
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+    return rpcError(null, -32700, 'Parse error: invalid JSON');
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  transport.receiveMessage(body as any);
+  const { id = null, method = '', params } = body;
+  const args = (params && typeof params === 'object' && !Array.isArray(params)
+    ? params
+    : {}) as Record<string, unknown>;
 
-  return new NextResponse(null, { status: 202 });
+  // Dispatch
+  switch (method) {
+
+    case 'initialize':
+      return ok(id, {
+        protocolVersion: '2024-11-05',
+        capabilities: { tools: {} },
+        serverInfo: { name: 'travloger-crm', version: '1.0.0' },
+      });
+
+    case 'notifications/initialized':
+      return ok(id, {});
+
+    case 'tools/list':
+      return ok(id, { tools: TOOLS });
+
+    case 'tools/call': {
+      const toolName = typeof args.name === 'string' ? args.name : '';
+      const toolArgs = (args.arguments && typeof args.arguments === 'object'
+        ? args.arguments
+        : {}) as Record<string, unknown>;
+
+      if (!toolName) return rpcError(id, -32602, 'Invalid params: missing tool name');
+
+      try {
+        const result = await executeTool(toolName, toolArgs);
+        return ok(id, {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        });
+      } catch (e) {
+        return rpcError(id, -32603, `Tool error: ${e}`);
+      }
+    }
+
+    default:
+      return rpcError(id, -32601, `Method not found: ${method}`);
+  }
 }
