@@ -4,9 +4,9 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useState, useEffect, useRef } from 'react';
 import {
   LayoutDashboard, MapPin, Map, Building2, Car, Activity, BookOpen,
-  ListPlus, ScrollText, Image, Users, DollarSign,
+  ListPlus, ScrollText, Users,
   Layout, CalendarDays, Layers, FileText, Menu, LogOut,
-  Bell, ChevronDown, Tag, Briefcase, Settings, User, X,
+  Bell, ChevronDown, Tag, Settings, User, X, Kanban, SlidersHorizontal, UserCheck, Cog,
 } from 'lucide-react';
 
 // Roles that can see each nav group/item. Empty = all roles.
@@ -22,6 +22,7 @@ const ALL_NAV: NavGroup[] = [
     items: [
       { label: 'States',             href: '/admin/states',                icon: MapPin    },
       { label: 'Destinations',       href: '/admin/destinations',          icon: Map       },
+      { label: 'Cities',             href: '/admin/cities',                icon: MapPin    },
       { label: 'Suppliers',          href: '/admin/suppliers',             icon: Tag       },
       { label: 'Hotels',             href: '/admin/hotels',                icon: Building2 },
       { label: 'Vehicle Types',      href: '/admin/vehicle-types',         icon: Car       },
@@ -30,9 +31,6 @@ const ALL_NAV: NavGroup[] = [
       { label: 'Day Plans',          href: '/admin/day-plans',             icon: BookOpen  },
       { label: 'Inclusions / Excl.', href: '/admin/inclusions-exclusions', icon: ListPlus  },
       { label: 'Policies',           href: '/admin/policies',              icon: ScrollText},
-      { label: 'Media Library',      href: '/admin/media-library',         icon: Image     },
-      { label: 'Agents',             href: '/admin/agents',                icon: Briefcase, roles: ['ADMIN', 'MANAGER'] },
-      { label: 'Pricing Rules',      href: '/admin/pricing-rules',         icon: DollarSign, roles: ['ADMIN', 'MANAGER'] },
     ],
   },
   {
@@ -53,8 +51,11 @@ const ALL_NAV: NavGroup[] = [
   {
     group: 'CRM',
     items: [
-      { label: 'Leads',     href: '/admin/leads',     icon: DollarSign },
-      { label: 'Customers', href: '/admin/customers', icon: Users      },
+      { label: 'Pipelines',           href: '/admin/pipelines',           icon: Kanban           },
+      { label: 'Pipeline Config',     href: '/admin/pipelines/config',    icon: SlidersHorizontal, roles: ['ADMIN', 'MANAGER'] },
+      { label: 'Contacts',            href: '/admin/contacts',            icon: Users            },
+      { label: 'Converted Customers', href: '/admin/converted-customers', icon: UserCheck        },
+      { label: 'CRM Settings',        href: '/admin/crm-settings',        icon: Cog,               roles: ['ADMIN', 'MANAGER'] },
     ],
   },
   {
@@ -236,6 +237,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const initials = user?.name?.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2) ?? 'AU';
   const visibleNav = filterNav(user?.role ?? 'SALES', user?.module_access);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set(['MASTERS']));
+
+  function toggleGroup(group: string) {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      next.has(group) ? next.delete(group) : next.add(group);
+      return next;
+    });
+  }
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full" style={{ backgroundColor: '#0D3340' }}>
@@ -262,33 +272,53 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           Dashboard
         </Link>
 
-        {visibleNav.map(({ group, items }) => (
-          <div key={group} className="pt-5">
-            <p className="px-3 mb-1.5 text-[10px] font-bold tracking-[0.15em] uppercase" style={{ color: 'rgba(255,255,255,0.35)' }}>
-              {group}
-            </p>
-            <div className="space-y-0.5">
-              {items.map(({ label, href, icon: Icon }) => {
-                const active = pathname === href || pathname.startsWith(href + '/');
-                return (
-                  <Link
-                    key={href}
-                    href={href}
-                    onClick={() => setSidebarOpen(false)}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 group ${
-                      active
-                        ? 'bg-[#134956] text-white'
-                        : 'text-[#94A3B8] hover:bg-[#1a5568] hover:text-white'
-                    }`}
-                  >
-                    <Icon className={`w-[18px] h-[18px] flex-shrink-0 transition-colors ${active ? 'text-white' : 'text-[#64748B] group-hover:text-white'}`} />
-                    <span className="truncate">{label}</span>
-                  </Link>
-                );
-              })}
+        {visibleNav.map(({ group, items }) => {
+          const isCollapsible = group === 'MASTERS';
+          const isCollapsed = collapsedGroups.has(group);
+          const hasActiveChild = items.some(({ href }) => pathname === href || pathname.startsWith(href + '/'));
+
+          return (
+            <div key={group} className="pt-5">
+              <button
+                onClick={isCollapsible ? () => toggleGroup(group) : undefined}
+                className={`w-full flex items-center justify-between px-3 mb-1.5 ${isCollapsible ? 'cursor-pointer' : 'cursor-default'}`}
+                style={{ background: 'none', border: 'none', padding: '0 12px', marginBottom: 6 }}
+              >
+                <p className="text-[10px] font-bold tracking-[0.15em] uppercase" style={{ color: isCollapsible && hasActiveChild ? '#7DD3C0' : 'rgba(255,255,255,0.35)' }}>
+                  {group}
+                </p>
+                {isCollapsible && (
+                  <ChevronDown
+                    className="w-3 h-3 transition-transform duration-200 flex-shrink-0"
+                    style={{ color: 'rgba(255,255,255,0.3)', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}
+                  />
+                )}
+              </button>
+              {!isCollapsed && (
+                <div className="space-y-0.5">
+                  {items.map(({ label, href, icon: Icon }) => {
+                    const active = pathname === href || pathname.startsWith(href + '/');
+                    return (
+                      <Link
+                        key={href}
+                        href={href}
+                        onClick={() => setSidebarOpen(false)}
+                        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 group ${
+                          active
+                            ? 'bg-[#134956] text-white'
+                            : 'text-[#94A3B8] hover:bg-[#1a5568] hover:text-white'
+                        }`}
+                      >
+                        <Icon className={`w-[18px] h-[18px] flex-shrink-0 transition-colors ${active ? 'text-white' : 'text-[#64748B] group-hover:text-white'}`} />
+                        <span className="truncate">{label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </nav>
 
       {/* User */}
