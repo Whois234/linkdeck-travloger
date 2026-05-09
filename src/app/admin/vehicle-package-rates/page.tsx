@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
+import ExcelIO from '@/components/ExcelIO';
 import { Plus, Pencil, Trash2, Search } from 'lucide-react';
 
 interface State { id: string; name: string }
@@ -112,9 +113,71 @@ export default function VehicleRatesPage() {
 
   return (
     <div className="max-w-[1400px]">
-      <PageHeader title="Vehicle Package Rates" subtitle="⚡ v2 · Route-based vehicle pricing and cost management" crumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Vehicle Rates' }]}
+      <PageHeader title="Vehicle Package Rates" subtitle="Route-based vehicle pricing and cost management" crumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Vehicle Rates' }]}
         action={
           <div className="flex items-center gap-2 flex-wrap">
+            <ExcelIO
+              moduleName="VehicleRates"
+              columns={[
+                { key: 'route_name',            label: 'Route Name *',                          example: 'Cochin – Munnar – Thekkady' },
+                { key: 'state',                 label: 'State *',                               example: 'Kerala' },
+                { key: 'vehicle_type',          label: 'Vehicle Type *',                        example: 'SUV (7 Seater)' },
+                { key: 'start_city',            label: 'Start City *',                          example: 'Cochin' },
+                { key: 'end_city',              label: 'End City *',                            example: 'Munnar' },
+                { key: 'duration_days',         label: 'Duration Days *',                       example: '3' },
+                { key: 'duration_nights',       label: 'Duration Nights *',                     example: '2' },
+                { key: 'base_cost',             label: 'Base Cost (₹) *',                       example: '12000' },
+                { key: 'extra_day_cost',        label: 'Extra Day Cost (₹)',                    example: '3000' },
+                { key: 'extra_km_cost',         label: 'Extra KM Cost (₹)',                     example: '15' },
+                { key: 'supplier',              label: 'Supplier Name',                         example: 'Ratan Travels' },
+                { key: 'driver_bata_included',  label: 'Driver Bata Included (YES/NO)',         example: 'YES' },
+                { key: 'toll_parking_included', label: 'Toll & Parking Included (YES/NO)',      example: 'NO' },
+                { key: 'valid_from',            label: 'Valid From (YYYY-MM-DD) *',             example: '2025-01-01' },
+                { key: 'valid_to',              label: 'Valid To (YYYY-MM-DD) *',               example: '2025-12-31' },
+              ]}
+              rows={rows}
+              rowMapper={r => ({
+                'Route Name *':                     r.route_name,
+                'State *':                          states.find(s => s.id === r.state_id)?.name ?? '',
+                'Vehicle Type *':                   vehicleTypes.find(v => v.id === r.vehicle_type_id)?.display_name ?? '',
+                'Start City *':                     r.start_city,
+                'End City *':                       r.end_city,
+                'Duration Days *':                  r.duration_days,
+                'Duration Nights *':                r.duration_nights,
+                'Base Cost (₹) *':                  r.base_cost,
+                'Extra Day Cost (₹)':               r.extra_day_cost ?? '',
+                'Extra KM Cost (₹)':                r.extra_km_cost ?? '',
+                'Supplier Name':                    r.supplier?.name ?? '',
+                'Driver Bata Included (YES/NO)':    r.driver_bata_included ? 'YES' : 'NO',
+                'Toll & Parking Included (YES/NO)': r.toll_parking_included ? 'YES' : 'NO',
+                'Valid From (YYYY-MM-DD) *':        r.valid_from.slice(0, 10),
+                'Valid To (YYYY-MM-DD) *':          r.valid_to.slice(0, 10),
+              })}
+              importMapper={r => {
+                const st   = states.find(s => s.name.toLowerCase() === (r['State *'] ?? '').toLowerCase());
+                const vt   = vehicleTypes.find(v => v.display_name.toLowerCase() === (r['Vehicle Type *'] ?? '').toLowerCase());
+                const sup  = suppliers.find(s => s.name.toLowerCase() === (r['Supplier Name'] ?? '').toLowerCase());
+                return {
+                  route_name:            r['Route Name *'],
+                  state_id:              st?.id ?? undefined,
+                  vehicle_type_id:       vt?.id ?? undefined,
+                  start_city:            r['Start City *'],
+                  end_city:              r['End City *'],
+                  duration_days:         Number(r['Duration Days *']) || 1,
+                  duration_nights:       Number(r['Duration Nights *']) || 0,
+                  base_cost:             Number(r['Base Cost (₹) *']) || 0,
+                  extra_day_cost:        r['Extra Day Cost (₹)'] ? Number(r['Extra Day Cost (₹)']) : null,
+                  extra_km_cost:         r['Extra KM Cost (₹)'] ? Number(r['Extra KM Cost (₹)']) : null,
+                  supplier_id:           sup?.id ?? null,
+                  driver_bata_included:  (r['Driver Bata Included (YES/NO)'] ?? '').toUpperCase() === 'YES',
+                  toll_parking_included: (r['Toll & Parking Included (YES/NO)'] ?? '').toUpperCase() === 'YES',
+                  valid_from:            r['Valid From (YYYY-MM-DD) *'] ? new Date(r['Valid From (YYYY-MM-DD) *']).toISOString() : undefined,
+                  valid_to:              r['Valid To (YYYY-MM-DD) *']   ? new Date(r['Valid To (YYYY-MM-DD) *']).toISOString()   : undefined,
+                };
+              }}
+              importUrl="/api/v1/vehicle-package-rates"
+              onImportDone={load}
+            />
             <button onClick={openCreate} className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white transition-colors hover:opacity-90" style={{ backgroundColor: '#134956' }}><Plus className="w-4 h-4" /> Add Rate</button>
           </div>
         }
@@ -154,6 +217,7 @@ export default function VehicleRatesPage() {
             <div><label className={lbl} style={lblStyle}>Duration Nights <span style={{ color: '#EF4444' }}>*</span></label><input type="number" min="0" className={inp} style={inpStyle} value={form.duration_nights} onChange={e => setForm(p => ({ ...p, duration_nights: e.target.value }))} /></div>
             <div><label className={lbl} style={lblStyle}>Base Cost (₹) <span style={{ color: '#EF4444' }}>*</span></label><input type="number" min="0" className={inp} style={inpStyle} value={form.base_cost} onChange={e => setForm(p => ({ ...p, base_cost: e.target.value }))} /></div>
             <div><label className={lbl} style={lblStyle}>Extra Day Cost (₹)</label><input type="number" min="0" className={inp} style={inpStyle} value={form.extra_day_cost} onChange={e => setForm(p => ({ ...p, extra_day_cost: e.target.value }))} /></div>
+            <div><label className={lbl} style={lblStyle}>Extra KM Cost (₹)</label><input type="number" min="0" className={inp} style={inpStyle} value={form.extra_km_cost} onChange={e => setForm(p => ({ ...p, extra_km_cost: e.target.value }))} /></div>
             <div><label className={lbl} style={lblStyle}>Supplier</label>
               <select value={form.supplier_id} onChange={e => setForm(p => ({ ...p, supplier_id: e.target.value }))} className={sel} style={inpStyle}>
                 <option value="">None</option>

@@ -7,7 +7,7 @@ import ExcelIO from '@/components/ExcelIO';
 
 const RATE_TYPES = ['PER_PERSON', 'PER_GROUP'];
 interface Dest { id: string; name: string }
-interface Activity { id: string; activity_name: string; activity_type?: string | null; duration?: string | null; adult_cost: number; child_cost?: number | null; rate_type: string; destination: { name: string }; destination_id: string; status: boolean; created_at: string }
+interface Activity { id: string; activity_name: string; activity_type?: string | null; duration?: string | null; description?: string | null; adult_cost: number; child_cost?: number | null; rate_type: string; destination: { name: string }; destination_id: string; status: boolean; created_at: string }
 type SortKey = 'newest' | 'oldest' | 'az' | 'za' | 'dest_az';
 const EMPTY = { destination_id: '', activity_name: '', activity_type: '', duration: '', description: '', adult_cost: '', child_cost: '', rate_type: 'PER_PERSON' };
 const inp = 'w-full h-10 px-3 rounded-lg border text-sm placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white transition-colors';
@@ -102,12 +102,13 @@ export default function ActivitiesPage() {
                 { key: 'adult_cost', label: 'Adult Cost (₹) *', example: '500' },
                 { key: 'child_cost', label: 'Child Cost (₹)', example: '300' },
                 { key: 'rate_type', label: 'Rate Type (PER_PERSON/PER_GROUP)', example: 'PER_PERSON' },
+                { key: 'description', label: 'Description', example: 'Scenic boat ride through backwaters' },
               ]}
               rows={rows}
-              rowMapper={r => ({ 'Destination Name *': r.destination.name, 'Activity Name *': r.activity_name, 'Activity Type': r.activity_type ?? '', 'Duration': r.duration ?? '', 'Adult Cost (₹) *': r.adult_cost, 'Child Cost (₹)': r.child_cost ?? '', 'Rate Type (PER_PERSON/PER_GROUP)': r.rate_type })}
+              rowMapper={r => ({ 'Destination Name *': r.destination.name, 'Activity Name *': r.activity_name, 'Activity Type': r.activity_type ?? '', 'Duration': r.duration ?? '', 'Adult Cost (₹) *': r.adult_cost, 'Child Cost (₹)': r.child_cost ?? '', 'Rate Type (PER_PERSON/PER_GROUP)': r.rate_type, 'Description': r.description ?? '' })}
               importMapper={r => {
                 const dest = dests.find(d => d.name.toLowerCase() === (r['Destination Name *'] ?? '').toLowerCase());
-                return { destination_id: dest?.id ?? undefined, activity_name: r['Activity Name *'], activity_type: r['Activity Type'] || undefined, duration: r['Duration'] || undefined, adult_cost: Number(r['Adult Cost (₹) *']) || 0, child_cost: r['Child Cost (₹)'] ? Number(r['Child Cost (₹)']) : null, rate_type: r['Rate Type (PER_PERSON/PER_GROUP)'] || 'PER_PERSON' };
+                return { destination_id: dest?.id ?? undefined, activity_name: r['Activity Name *'], activity_type: r['Activity Type'] || undefined, duration: r['Duration'] || undefined, adult_cost: Number(r['Adult Cost (₹) *']) || 0, child_cost: r['Child Cost (₹)'] ? Number(r['Child Cost (₹)']) : null, rate_type: r['Rate Type (PER_PERSON/PER_GROUP)'] || 'PER_PERSON', description: r['Description'] || undefined };
               }}
               importUrl="/api/v1/activities"
               onImportDone={load}
