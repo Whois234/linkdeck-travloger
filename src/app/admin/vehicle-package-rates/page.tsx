@@ -119,60 +119,52 @@ export default function VehicleRatesPage() {
             <ExcelIO
               moduleName="VehicleRates"
               columns={[
-                { key: 'route_name',            label: 'Route Name *',                          example: 'Cochin – Munnar – Thekkady' },
-                { key: 'state',                 label: 'State *',                               example: 'Kerala' },
-                { key: 'vehicle_type',          label: 'Vehicle Type *',                        example: 'SUV (7 Seater)' },
-                { key: 'start_city',            label: 'Start City *',                          example: 'Cochin' },
-                { key: 'end_city',              label: 'End City *',                            example: 'Munnar' },
-                { key: 'duration_days',         label: 'Duration Days *',                       example: '3' },
-                { key: 'duration_nights',       label: 'Duration Nights *',                     example: '2' },
-                { key: 'base_cost',             label: 'Base Cost (₹) *',                       example: '12000' },
-                { key: 'extra_day_cost',        label: 'Extra Day Cost (₹)',                    example: '3000' },
-                { key: 'extra_km_cost',         label: 'Extra KM Cost (₹)',                     example: '15' },
-                { key: 'supplier',              label: 'Supplier Name',                         example: 'Ratan Travels' },
-                { key: 'driver_bata_included',  label: 'Driver Bata Included (YES/NO)',         example: 'YES' },
-                { key: 'toll_parking_included', label: 'Toll & Parking Included (YES/NO)',      example: 'NO' },
-                { key: 'valid_from',            label: 'Valid From (YYYY-MM-DD) *',             example: '2025-01-01' },
-                { key: 'valid_to',              label: 'Valid To (YYYY-MM-DD) *',               example: '2025-12-31' },
+                { key: 'route_name',    label: 'Route Name',              example: 'Cochin – Munnar – Thekkady – Alleppey' },
+                { key: 'state',         label: 'State Name',              example: 'Kerala' },
+                { key: 'start_city',    label: 'Start City',              example: 'Cochin' },
+                { key: 'end_city',      label: 'End City',                example: 'Alleppey' },
+                { key: 'vehicle_type',  label: 'Vehicle Type Code',       example: 'SUV' },
+                { key: 'base_cost',     label: 'Base Cost (₹)',           example: '14500' },
+                { key: 'duration_days', label: 'Duration Days',           example: '4' },
+                { key: 'duration_nights', label: 'Duration Nights',       example: '3' },
+                { key: 'valid_from',    label: 'Valid From (YYYY-MM-DD)', example: '2025-01-01' },
+                { key: 'valid_to',      label: 'Valid To (YYYY-MM-DD)',   example: '2025-12-31' },
+                { key: 'supplier',      label: 'Supplier',                example: 'Ratan Travels Pvt Ltd' },
               ]}
               rows={rows}
               rowMapper={r => ({
-                'Route Name *':                     r.route_name,
-                'State *':                          states.find(s => s.id === r.state_id)?.name ?? '',
-                'Vehicle Type *':                   vehicleTypes.find(v => v.id === r.vehicle_type_id)?.display_name ?? '',
-                'Start City *':                     r.start_city,
-                'End City *':                       r.end_city,
-                'Duration Days *':                  r.duration_days,
-                'Duration Nights *':                r.duration_nights,
-                'Base Cost (₹) *':                  r.base_cost,
-                'Extra Day Cost (₹)':               r.extra_day_cost ?? '',
-                'Extra KM Cost (₹)':                r.extra_km_cost ?? '',
-                'Supplier Name':                    r.supplier?.name ?? '',
-                'Driver Bata Included (YES/NO)':    r.driver_bata_included ? 'YES' : 'NO',
-                'Toll & Parking Included (YES/NO)': r.toll_parking_included ? 'YES' : 'NO',
-                'Valid From (YYYY-MM-DD) *':        r.valid_from.slice(0, 10),
-                'Valid To (YYYY-MM-DD) *':          r.valid_to.slice(0, 10),
+                'Route Name':              r.route_name,
+                'State Name':              states.find(s => s.id === r.state_id)?.name ?? '',
+                'Start City':              r.start_city,
+                'End City':               r.end_city,
+                'Vehicle Type Code':      vehicleTypes.find(v => v.id === r.vehicle_type_id)?.vehicle_type ?? '',
+                'Base Cost (₹)':          r.base_cost,
+                'Duration Days':          r.duration_days,
+                'Duration Nights':        r.duration_nights,
+                'Valid From (YYYY-MM-DD)': r.valid_from.slice(0, 10),
+                'Valid To (YYYY-MM-DD)':   r.valid_to.slice(0, 10),
+                'Supplier':               r.supplier?.name ?? '',
               })}
               importMapper={r => {
-                const st   = states.find(s => s.name.toLowerCase() === (r['State *'] ?? '').toLowerCase());
-                const vt   = vehicleTypes.find(v => v.display_name.toLowerCase() === (r['Vehicle Type *'] ?? '').toLowerCase());
-                const sup  = suppliers.find(s => s.name.toLowerCase() === (r['Supplier Name'] ?? '').toLowerCase());
+                const st  = states.find(s => s.name.toLowerCase() === (r['State Name'] ?? '').toLowerCase());
+                const vt  = vehicleTypes.find(v => v.vehicle_type.toLowerCase() === (r['Vehicle Type Code'] ?? '').toLowerCase());
+                const sup = suppliers.find(s => s.name.toLowerCase() === (r['Supplier'] ?? '').toLowerCase());
                 return {
-                  route_name:            r['Route Name *'],
+                  route_name:            r['Route Name'],
                   state_id:              st?.id ?? undefined,
                   vehicle_type_id:       vt?.id ?? undefined,
-                  start_city:            r['Start City *'],
-                  end_city:              r['End City *'],
-                  duration_days:         Number(r['Duration Days *']) || 1,
-                  duration_nights:       Number(r['Duration Nights *']) || 0,
-                  base_cost:             Number(r['Base Cost (₹) *']) || 0,
-                  extra_day_cost:        r['Extra Day Cost (₹)'] ? Number(r['Extra Day Cost (₹)']) : null,
-                  extra_km_cost:         r['Extra KM Cost (₹)'] ? Number(r['Extra KM Cost (₹)']) : null,
+                  start_city:            r['Start City'],
+                  end_city:              r['End City'],
+                  base_cost:             Number(r['Base Cost (₹)']) || 0,
+                  duration_days:         Number(r['Duration Days']) || 1,
+                  duration_nights:       Number(r['Duration Nights']) || 0,
+                  valid_from:            r['Valid From (YYYY-MM-DD)'] ? new Date(r['Valid From (YYYY-MM-DD)']).toISOString() : undefined,
+                  valid_to:              r['Valid To (YYYY-MM-DD)']   ? new Date(r['Valid To (YYYY-MM-DD)']).toISOString()   : undefined,
                   supplier_id:           sup?.id ?? null,
-                  driver_bata_included:  (r['Driver Bata Included (YES/NO)'] ?? '').toUpperCase() === 'YES',
-                  toll_parking_included: (r['Toll & Parking Included (YES/NO)'] ?? '').toUpperCase() === 'YES',
-                  valid_from:            r['Valid From (YYYY-MM-DD) *'] ? new Date(r['Valid From (YYYY-MM-DD) *']).toISOString() : undefined,
-                  valid_to:              r['Valid To (YYYY-MM-DD) *']   ? new Date(r['Valid To (YYYY-MM-DD) *']).toISOString()   : undefined,
+                  extra_day_cost:        null,
+                  extra_km_cost:         null,
+                  driver_bata_included:  false,
+                  toll_parking_included: false,
                 };
               }}
               importUrl="/api/v1/vehicle-package-rates"
