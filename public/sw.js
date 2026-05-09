@@ -5,8 +5,8 @@
 //   /api/*           → network-only (bypass SW entirely)
 //   navigation       → network-first, offline fallback
 
-const STATIC_CACHE  = 'tl-static-v2';
-const DYNAMIC_CACHE = 'tl-dynamic-v2';
+const STATIC_CACHE  = 'tl-static-v3';
+const DYNAMIC_CACHE = 'tl-dynamic-v3';
 const OFFLINE_URL   = '/offline.html';
 
 const STATIC_ORIGINS = [
@@ -25,17 +25,20 @@ self.addEventListener('install', event => {
   );
 });
 
-// ─── Activate: purge old caches ───────────────────────────────────────────────
+// ─── Activate: purge old caches, claim clients, trigger page reload ───────────
 
 self.addEventListener('activate', event => {
   event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(
+    caches.keys()
+      .then(keys => Promise.all(
         keys
           .filter(k => k !== STATIC_CACHE && k !== DYNAMIC_CACHE)
           .map(k => caches.delete(k))
-      )
-    ).then(() => self.clients.claim())
+      ))
+      .then(() => self.clients.claim())
+      // Tell every open tab to reload so it picks up fresh JS chunk hashes
+      .then(() => self.clients.matchAll({ type: 'window' }))
+      .then(clients => clients.forEach(c => c.postMessage({ type: 'SW_UPDATED' })))
   );
 });
 
@@ -116,4 +119,4 @@ async function networkFirstWithFallback(request) {
     return offlinePage || new Response('Offline', { status: 503 });
   }
 }
-// cache-bust 1778262704
+// cache-bust 1778349087
