@@ -24,6 +24,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta httpEquiv="Expires" content="0" />
       </head>
       <body className="antialiased">
+        {/* Kill-switch: unregister any lingering service worker, then reload for fresh JS */}
+        <script dangerouslySetInnerHTML={{ __html: `
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function(regs) {
+              regs.forEach(function(r) { r.unregister(); });
+              if (regs.length > 0) { window.location.reload(); }
+            });
+          }
+        ` }} />
         <QueryProvider>{children}</QueryProvider>
       </body>
     </html>
