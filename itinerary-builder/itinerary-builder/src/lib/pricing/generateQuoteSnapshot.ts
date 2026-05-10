@@ -297,6 +297,19 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
           image_url:      dc.image_url?.trim()   || destsMap[dc.destination_id]?.hero_image || '',
         }));
     })(),
+    // Why Choose items from template CMS — with icon keys
+    why_choose: (() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = (templateCmsData as any)?.why_choose;
+      if (!Array.isArray(raw) || raw.length === 0) return null;
+      return (raw as Array<{ title?: string; description?: string; icon?: string }>)
+        .filter(w => w.title?.trim())
+        .map(w => ({
+          title:       w.title?.trim() ?? '',
+          description: w.description?.trim() ?? '',
+          icon:        w.icon ?? 'star',
+        }));
+    })(),
     inclusions, exclusions, policies,
   };
 

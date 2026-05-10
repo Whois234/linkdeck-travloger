@@ -34,7 +34,7 @@ interface CmsOption {
   is_most_popular: boolean;
   inclusions: string[];
 }
-interface WhyItem { title: string; description: string }
+interface WhyItem { title: string; description: string; icon?: string }
 interface CmsData {
   pax_count: number;
   hero_heading: string;
@@ -53,8 +53,17 @@ interface CmsData {
 
 // Normalise legacy string[] entries to WhyItem objects
 function normaliseWhy(items: (string | WhyItem)[]): WhyItem[] {
-  return items.map(i => typeof i === 'string' ? { title: i, description: '' } : i);
+  return items.map(i => typeof i === 'string' ? { title: i, description: '', icon: 'star' } : { icon: 'star', ...i });
 }
+
+const ICON_OPTS = [
+  { key: 'star',   label: '★' },
+  { key: 'dollar', label: '$' },
+  { key: 'shield', label: '✓' },
+  { key: 'clock',  label: '⏱' },
+  { key: 'heart',  label: '♥' },
+  { key: 'pin',    label: '📍' },
+] as const;
 interface TDay {
   id?: string; day_number: number; destination_id: string; title: string;
   description_override: string | null; image_override: string | null;
@@ -82,11 +91,11 @@ const DEFAULT_CMS: CmsData = {
     { tier_name: 'Deluxe',   display_order: 2, is_most_popular: true,  inclusions: [] },
   ],
   why_choose: [
-    { title: 'Ranked Professionals',    description: 'Expert travel consultants with years of on-ground experience.' },
-    { title: 'Best Prices Guaranteed',  description: 'Competitive rates with no hidden charges — ever.' },
-    { title: 'Top-tier Standards',      description: 'Carefully vetted hotels, vehicles and activity partners.' },
-    { title: '24×7 Monitoring',         description: 'Round-the-clock support throughout your journey.' },
-    { title: 'On-ground Support',       description: 'Local guides and coordinators at every destination.' },
+    { title: 'Ranked Professionals',    description: 'Expert travel consultants with years of on-ground experience.',  icon: 'star'   },
+    { title: 'Best Prices Guaranteed',  description: 'Competitive rates with no hidden charges — ever.',                icon: 'dollar' },
+    { title: 'Top-tier Standards',      description: 'Carefully vetted hotels, vehicles and activity partners.',        icon: 'shield' },
+    { title: '24×7 Monitoring',         description: 'Round-the-clock support throughout your journey.',               icon: 'clock'  },
+    { title: 'On-ground Support',       description: 'Local guides and coordinators at every destination.',             icon: 'pin'    },
   ],
   inclusions: [], exclusions: [],
   faqs_enabled: false, custom_faqs: [],
@@ -121,6 +130,7 @@ export default function TemplateEditPage() {
   const [policies, setPolicies]  = useState<Policy[]>([]);
   const [states,   setStates]   = useState<StateItem[]>([]);
   const [cities,   setCities]   = useState<City[]>([]);
+  const [hotelRatesCache, setHotelRatesCache] = useState<Record<string, { room_category_id: string; meal_plan_id: string }[]>>({});
   const [loading,  setLoading]  = useState(true);
   const [saving,   setSaving]   = useState(false);
   const [saved,    setSaved]    = useState(false);
@@ -134,6 +144,23 @@ export default function TemplateEditPage() {
     theme: '', start_city: '', end_city: '', state_id: '',
     destination_ids: [] as string[],
   });
+
+  const fetchHotelRates = useCallback(async (hotelId: string) => {
+    if (!hotelId || hotelRatesCache[hotelId]) return;
+    try {
+      const res = await fetch(`/api/v1/hotels/${hotelId}/rates`);
+      const d = await res.json();
+      if (d.success) {
+        setHotelRatesCache(prev => ({
+          ...prev,
+          [hotelId]: (d.data as { room_category_id: string; meal_plan_id: string }[]).map(r => ({
+            room_category_id: r.room_category_id,
+            meal_plan_id: r.meal_plan_id,
+          })),
+        }));
+      }
+    } catch { /* silent */ }
+  }, [hotelRatesCache]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -178,6 +205,8 @@ export default function TemplateEditPage() {
       setCms(c);
       setDays(t.template_days.map(d => ({ ...d, description_override: d.description_override ?? null, image_override: d.image_override ?? null, gallery_images: (d as unknown as { gallery_images?: string[] | null }).gallery_images ?? null, day_plan_id: d.day_plan_id ?? null, meals: d.meals as Record<string,boolean> | null ?? null })));
       setTiers(t.template_hotel_tiers);
+      // Pre-fetch rates for already-selected hotels
+      t.template_hotel_tiers.forEach(tier => { if (tier.default_hotel_id) fetchHotelRates(tier.default_hotel_id); });
       setSelectedPolicies((t as unknown as { default_policy_ids?: string[] }).default_policy_ids ?? []);
     }
     if (dd.success) setDests(dd.data);
@@ -186,7 +215,7 @@ export default function TemplateEditPage() {
     if (dpd.success) setDayPlans(dpd.data);
     if (pd.success) setPolicies(pd.data);
     setLoading(false);
-  }, [id]);
+  }, [id, fetchHotelRates]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -713,7 +742,11 @@ export default function TemplateEditPage() {
                           <div>
                             <label className={lbl}>Hotel</label>
                             <select className={sel} style={inpSt} value={tier.default_hotel_id ?? ''}
-                              onChange={e => updTier(opt.tier_name, did, { default_hotel_id: e.target.value || null, default_room_category_id: null })}>
+                              onChange={e => {
+                                const newHotelId = e.target.value || null;
+                                if (newHotelId) fetchHotelRates(newHotelId);
+                                updTier(opt.tier_name, did, { default_hotel_id: newHotelId, default_room_category_id: null, default_meal_plan_id: null });
+                              }}>
                               <option value="">Select…</option>
                               {destHotels.map(h => <option key={h.id} value={h.id}>{h.hotel_name}</option>)}
                             </select>
@@ -721,19 +754,32 @@ export default function TemplateEditPage() {
                           <div>
                             <label className={lbl}>Room</label>
                             <select className={sel} style={inpSt} value={tier.default_room_category_id ?? ''}
-                              onChange={e => updTier(opt.tier_name, did, { default_room_category_id: e.target.value || null })}
+                              onChange={e => updTier(opt.tier_name, did, { default_room_category_id: e.target.value || null, default_meal_plan_id: null })}
                               disabled={!tier.default_hotel_id}>
                               <option value="">Select…</option>
                               {rooms.map(r => <option key={r.id} value={r.id}>{r.room_category_name}</option>)}
                             </select>
                           </div>
                           <div>
-                            <label className={lbl}>Meal Plan</label>
-                            <select className={sel} style={inpSt} value={tier.default_meal_plan_id ?? ''}
-                              onChange={e => updTier(opt.tier_name, did, { default_meal_plan_id: e.target.value || null })}>
-                              <option value="">Select…</option>
-                              {mealPlans.map(m => <option key={m.id} value={m.id}>{m.code} — {m.name}</option>)}
-                            </select>
+                            <label className={lbl}>
+                              Meal Plan
+                              {(() => { const cr = hotelRatesCache[tier.default_hotel_id ?? ''] ?? []; const ai = tier.default_room_category_id ? new Set(cr.filter(r => r.room_category_id === tier.default_room_category_id).map(r => r.meal_plan_id)) : null; return ai && ai.size === 0 && tier.default_room_category_id ? <span className="text-[10px] text-red-400 ml-1 normal-case">No rates</span> : null; })()}
+                            </label>
+                            {(() => {
+                              const cachedRates = hotelRatesCache[tier.default_hotel_id ?? ''] ?? [];
+                              const availMpIds = tier.default_room_category_id
+                                ? new Set(cachedRates.filter(r => r.room_category_id === tier.default_room_category_id).map(r => r.meal_plan_id))
+                                : null;
+                              const filteredMealPlans = availMpIds ? mealPlans.filter(m => availMpIds.has(m.id)) : mealPlans;
+                              return (
+                                <select className={sel} style={inpSt} value={tier.default_meal_plan_id ?? ''}
+                                  onChange={e => updTier(opt.tier_name, did, { default_meal_plan_id: e.target.value || null })}
+                                  disabled={!tier.default_hotel_id}>
+                                  <option value="">Select…</option>
+                                  {filteredMealPlans.map(m => <option key={m.id} value={m.id}>{m.code} — {m.name}</option>)}
+                                </select>
+                              );
+                            })()}
                           </div>
                           <div>
                             <label className={lbl}>Nights</label>
@@ -891,6 +937,29 @@ export default function TemplateEditPage() {
               <div className="flex flex-col gap-3">
                 {normaliseWhy(cms.why_choose).map((item, i) => (
                   <div key={i} className="p-4 rounded-xl" style={{ border: '1px solid #E2E8F0', backgroundColor: '#F8FAFC' }}>
+                    {/* Icon picker */}
+                    <div className="flex items-center gap-1 mb-2">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-[#94A3B8] mr-1">Icon</span>
+                      {ICON_OPTS.map(opt => (
+                        <button key={opt.key} type="button"
+                          onClick={() => {
+                            const w = normaliseWhy(cms.why_choose);
+                            w[i] = { ...w[i], icon: opt.key };
+                            updCms('why_choose', w);
+                          }}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-sm border transition-all"
+                          style={{
+                            borderColor: item.icon === opt.key ? T : '#E2E8F0',
+                            backgroundColor: item.icon === opt.key ? `${T}18` : 'white',
+                            color: item.icon === opt.key ? T : '#64748B',
+                            fontWeight: item.icon === opt.key ? 700 : 400,
+                          }}
+                          title={opt.key}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
                     <div className="flex items-center gap-2 mb-2">
                       <div className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center text-white text-[10px] font-bold" style={{ backgroundColor: T }}>{i + 1}</div>
                       <input

@@ -118,6 +118,7 @@ interface ItineraryData {
   group_trip_dates?: Array<{ start_date: string; end_date: string; label: string; availability?: 'available' | 'few_left' | 'filling_fast' | 'sold_out' }>;
   day_snapshots: DaySnapshot[];
   destination_cards?: Array<{ destination_id: string; name: string; description: string; image_url: string }> | null;
+  why_choose?: Array<{ title: string; description: string; icon: string }> | null;
   inclusions: Array<{ id: string; text: string }>;
   exclusions: Array<{ id: string; text: string }>;
   policies: PolicyRecord[];
@@ -993,6 +994,15 @@ function IncExc({ inclusions, exclusions }: { inclusions: ItineraryData['inclusi
 }
 
 /* ─────────────────────────── Why Choose ─────────────────────────── */
+const ICON_SVG_MAP: Record<string, JSX.Element> = {
+  star:   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="1.8"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" strokeLinecap="round" strokeLinejoin="round" /></svg>,
+  dollar: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="1.8"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" strokeLinecap="round" /></svg>,
+  shield: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="1.8"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" strokeLinecap="round" strokeLinejoin="round" /></svg>,
+  clock:  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="1.8"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" strokeLinecap="round" /></svg>,
+  heart:  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="1.8"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" strokeLinecap="round" /></svg>,
+  pin:    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="1.8"><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" strokeLinecap="round" /><path d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" strokeLinecap="round" /></svg>,
+};
+
 const WHY_ITEMS = [
   { title: 'Expert Professionals', desc: 'Years of on-ground destination expertise — not call-centre agents.', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="1.8"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" strokeLinecap="round" strokeLinejoin="round" /></svg> },
   { title: 'Best Prices', desc: 'High volume lets us negotiate deals individual travellers simply can\'t.', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="1.8"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" strokeLinecap="round" /></svg> },
@@ -1002,7 +1012,11 @@ const WHY_ITEMS = [
   { title: 'On-ground Support', desc: 'A dedicated local coordinator at every destination — zero stress.', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="1.8"><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" strokeLinecap="round" /><path d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" strokeLinecap="round" /></svg> },
 ];
 
-function WhyChoose() {
+function WhyChoose({ whyItems }: { whyItems?: Array<{ title: string; description: string; icon: string }> | null }) {
+  const items = whyItems && whyItems.length > 0
+    ? whyItems.map(w => ({ title: w.title, desc: w.description, icon: ICON_SVG_MAP[w.icon] ?? ICON_SVG_MAP.star }))
+    : WHY_ITEMS;
+
   return (
     <div className="tl-why-wrap">
       <div className="tl-sec">
@@ -1010,7 +1024,7 @@ function WhyChoose() {
         <div className="tl-sec-h">Why Choose Travloger?</div>
         <div className="tl-sec-sub">Here&apos;s what makes us different from every other travel company.</div>
         <div className="tl-why-grid">
-          {WHY_ITEMS.map((item, i) => (
+          {items.map((item, i) => (
             <div key={i} className="tl-why-card">
               <div className="tl-why-icon-wrap">{item.icon}</div>
               <div className="tl-why-title">{item.title}</div>
@@ -3075,7 +3089,7 @@ export function ItineraryClient({ data, token }: Props) {
           />
         )}
 
-        <WhyChoose />
+        <WhyChoose whyItems={data.why_choose} />
         <Stats />
 
         {/* Regular fare summary for non-GROUP quotes */}
