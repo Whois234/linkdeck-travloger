@@ -6,8 +6,10 @@ import { Modal } from '@/components/admin/Modal';
 import MultiStateSelect from '@/components/MultiStateSelect';
 import { Plus, Search, Pencil, Trash2, FileText, Map, ChevronRight, LayoutGrid, List, ArrowUpDown, CheckCircle2, SlidersHorizontal, X } from 'lucide-react';
 
-type SortKey = 'name_asc' | 'name_desc' | 'state_asc' | 'nights_asc' | 'nights_desc' | 'days_desc';
+type SortKey = 'name_asc' | 'name_desc' | 'state_asc' | 'nights_asc' | 'nights_desc' | 'days_desc' | 'newest' | 'oldest';
 const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: 'newest',     label: 'Newest First' },
+  { value: 'oldest',     label: 'Oldest First' },
   { value: 'name_asc',   label: 'Name A → Z' },
   { value: 'name_desc',  label: 'Name Z → A' },
   { value: 'state_asc',  label: 'Destination A → Z' },
@@ -68,7 +70,7 @@ function PrivateTemplatesPageInner() {
   const [filterNights, setFilterNights] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [showFilters, setShowFilters] = useState(false);
-  const [sortKey, setSortKey]   = useState<SortKey>('name_asc');
+  const [sortKey, setSortKey]   = useState<SortKey>('newest');
   const [viewMode, setViewMode] = useState<'grid'|'list'>('list');
   const [showSetup, setShowSetup] = useState(false);
   const [step, setStep]       = useState(1);
@@ -207,6 +209,8 @@ function PrivateTemplatesPageInner() {
     });
     return [...f].sort((a, b) => {
       switch (sortKey) {
+        case 'newest':      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        case 'oldest':      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
         case 'name_asc':    return a.template_name.localeCompare(b.template_name);
         case 'name_desc':   return b.template_name.localeCompare(a.template_name);
         case 'state_asc':   return a.state.name.localeCompare(b.state.name);
