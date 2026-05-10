@@ -7,7 +7,7 @@ import { ImageUploader } from '@/components/admin/ImageUploader';
 import {
   Plus, Pencil, Trash2, ChevronDown, ChevronRight,
   Image as ImageIcon, X, Bed, Calendar, CheckCircle2,
-  Download, Upload, FileSpreadsheet,
+  Download, Upload, FileSpreadsheet, Save,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -523,6 +523,16 @@ export default function HotelDetailPage() {
         title={hotel.hotel_name}
         subtitle={`${hotel.hotel_type} · ${hotel.destination.name}`}
         crumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Hotels', href: '/admin/hotels' }, { label: hotel.hotel_name }]}
+        action={
+          tab === 'overview' ? (
+            <button onClick={saveOverview} disabled={ovSaving}
+              className="flex items-center gap-2 h-9 px-5 rounded-lg text-sm font-semibold text-white disabled:opacity-50 hover:opacity-90 transition-opacity"
+              style={{ backgroundColor: T }}>
+              <Save className="w-4 h-4" />
+              {ovSaving ? 'Saving…' : 'Save Changes'}
+            </button>
+          ) : undefined
+        }
       />
 
       {/* Tabs */}
