@@ -197,7 +197,16 @@ export default function ExcelIO<T>({
               className="absolute z-50 mt-8 w-96 rounded-xl border bg-white shadow-xl text-xs p-3 space-y-1 max-h-60 overflow-y-auto"
               style={{ borderColor: '#E2E8F0', top: 'auto' }}
             >
-              <p className="font-semibold text-red-600 mb-2">Import errors ({importResult.errors.length})</p>
+              <div className="flex items-center justify-between mb-2">
+                <p className="font-semibold text-red-600">Import errors ({importResult.errors.length})</p>
+                <button
+                  onClick={() => setShowErrors(false)}
+                  className="w-5 h-5 flex items-center justify-center rounded hover:bg-red-50 text-red-400 hover:text-red-600 transition-colors flex-shrink-0"
+                  title="Close"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
               {importResult.errors.map((e, i) => (
                 <div key={i} className="text-red-700 bg-red-50 rounded px-2 py-1">{e.message}</div>
               ))}
