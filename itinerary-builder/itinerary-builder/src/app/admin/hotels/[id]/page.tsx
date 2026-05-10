@@ -348,6 +348,7 @@ export default function HotelDetailPage() {
   }
 
   /* ── Loaders ── */
+  // Full load — only called on mount. Resets overview form from server.
   const loadAll = useCallback(async () => {
     setLoading(true);
     const [hr, rr, mr] = await Promise.all([
@@ -369,6 +370,17 @@ export default function HotelDetailPage() {
     if (rd.success) setRooms(rd.data);
     if (md.success) setMealPlans(md.data);
     setLoading(false);
+  }, [id]);
+
+  // Rooms-only reload — used after room/rate CRUD so we never wipe unsaved overview edits
+  const loadRoomsOnly = useCallback(async () => {
+    const [rr, mr] = await Promise.all([
+      fetch(`/api/v1/hotels/${id}/room-categories`),
+      fetch('/api/v1/meal-plans'),
+    ]);
+    const [rd, md] = await Promise.all([rr.json(), mr.json()]);
+    if (rd.success) setRooms(rd.data);
+    if (md.success) setMealPlans(md.data);
   }, [id]);
 
   const loadRates = useCallback(async () => {
@@ -410,13 +422,13 @@ export default function HotelDetailPage() {
     const url = editRoom ? `/api/v1/hotels/${id}/room-categories/${editRoom.id}` : `/api/v1/hotels/${id}/room-categories`;
     const res = await fetch(url, { method: editRoom ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     const d = await res.json();
-    if (!res.ok) { setRoomErr(d.error ?? 'Save failed'); } else { setShowRoomForm(false); loadAll(); showToast(editRoom ? 'Room category updated!' : 'Room category added!'); }
+    if (!res.ok) { setRoomErr(d.error ?? 'Save failed'); } else { setShowRoomForm(false); loadRoomsOnly(); showToast(editRoom ? 'Room category updated!' : 'Room category added!'); }
     setRoomSaving(false);
   }
   async function deleteRoom(roomId: string) {
     if (!confirm('Deactivate this room category?')) return;
     await fetch(`/api/v1/hotels/${id}/room-categories/${roomId}`, { method: 'DELETE' });
-    loadAll();
+    loadRoomsOnly();
   }
 
   /* ── Rate CRUD ── */
@@ -625,7 +637,7 @@ export default function HotelDetailPage() {
                 rooms={rooms}
                 rates={rates}
                 mealPlans={mealPlans}
-                onDone={() => { loadAll(); loadRates(); }}
+                onDone={() => { loadRoomsOnly(); loadRates(); }}
               />
               <button onClick={openAddRoom} className="flex items-center gap-2 h-8 px-4 rounded-lg text-sm font-semibold text-white hover:opacity-90" style={{ backgroundColor: T }}>
                 <Plus className="w-4 h-4" /> Add Room Category
