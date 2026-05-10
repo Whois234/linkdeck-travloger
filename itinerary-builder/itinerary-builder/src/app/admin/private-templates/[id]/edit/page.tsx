@@ -7,7 +7,7 @@ import { RichTextEditor } from '@/components/admin/RichTextEditor';
 import {
   ChevronDown, ChevronRight, Plus, Trash2, Check,
   Save, Star, Image as ImgIcon, FileText, LayoutList,
-  MapPin, Shield, HelpCircle, BookOpen, ListPlus,
+  MapPin, Shield, HelpCircle, BookOpen, ListPlus, Settings,
 } from 'lucide-react';
 
 /* ── Shared style tokens ── */
@@ -20,11 +20,13 @@ const T     = '#134956';
 const card  = { border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' };
 
 /* ── Types ── */
-interface Dest   { id: string; name: string }
+interface Dest   { id: string; name: string; state_id: string }
 interface Hotel  { id: string; hotel_name: string; destination_id: string; room_categories: { id: string; room_category_name: string }[] }
 interface MealPlan { id: string; code: string; name: string }
 interface DayPlan  { id: string; title: string; destination_id: string; description?: string | null }
 interface Policy   { id: string; title: string; policy_type: string; content: string }
+interface StateItem { id: string; name: string }
+interface City { id: string; name: string; state_id: string }
 
 interface CmsOption {
   tier_name: string;
@@ -91,6 +93,7 @@ const DEFAULT_CMS: CmsData = {
 };
 
 const SECTIONS = [
+  { id: 'settings', label: 'Settings',         icon: Settings    },
   { id: 'hero',    label: 'Hero',              icon: ImgIcon     },
   { id: 'dests',   label: 'Destination Cards', icon: MapPin      },
   { id: 'options', label: 'Package Options',   icon: LayoutList  },
@@ -116,27 +119,50 @@ export default function TemplateEditPage() {
   const [mealPlans,setMealPlans] = useState<MealPlan[]>([]);
   const [dayPlans, setDayPlans]  = useState<DayPlan[]>([]);
   const [policies, setPolicies]  = useState<Policy[]>([]);
+  const [states,   setStates]   = useState<StateItem[]>([]);
+  const [cities,   setCities]   = useState<City[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [saving,   setSaving]   = useState(false);
   const [saved,    setSaved]    = useState(false);
-  const [activeSection, setActiveSection] = useState('hero');
+  const [activeSection, setActiveSection] = useState('settings');
   const [expandedDays, setExpandedDays]   = useState<Set<number>>(new Set([1]));
   const [selectedPolicies, setSelectedPolicies] = useState<string[]>([]);
 
+  // ── Editable template settings (mirrors the create-modal fields) ──
+  const [tplSettings, setTplSettings] = useState({
+    template_name: '', duration_nights: '4', duration_days: '5',
+    theme: '', start_city: '', end_city: '', state_id: '',
+    destination_ids: [] as string[],
+  });
+
   const load = useCallback(async () => {
     setLoading(true);
-    const [tr, dr, hr, mr, dpr, pr] = await Promise.all([
+    const [tr, dr, hr, mr, dpr, pr, sr, cr] = await Promise.all([
       fetch(`/api/v1/private-templates/${id}`),
       fetch('/api/v1/destinations'),
       fetch('/api/v1/hotels'),
       fetch('/api/v1/meal-plans'),
       fetch('/api/v1/day-plans'),
       fetch('/api/v1/policies'),
+      fetch('/api/v1/states'),
+      fetch('/api/v1/cities'),
     ]);
-    const [td, dd, hd, md, dpd, pd] = await Promise.all([tr.json(), dr.json(), hr.json(), mr.json(), dpr.json(), pr.json()]);
+    const [td, dd, hd, md, dpd, pd, sd, cd] = await Promise.all([tr.json(), dr.json(), hr.json(), mr.json(), dpr.json(), pr.json(), sr.json(), cr.json()]);
+    if (sd.success) setStates(sd.data);
+    if (cd.success) setCities(cd.data);
     if (td.success) {
       const t: Template = td.data;
       setTpl(t);
+      setTplSettings({
+        template_name: t.template_name,
+        duration_nights: String(t.duration_nights),
+        duration_days: String(t.duration_days),
+        theme: t.theme ?? '',
+        start_city: t.start_city ?? '',
+        end_city: t.end_city ?? '',
+        state_id: t.state_id,
+        destination_ids: (t.destinations as string[]) ?? [],
+      });
       const c: CmsData = t.cms_data ?? { ...DEFAULT_CMS };
       // Backfill any destinations missing from destination_cards
       const existingCardIds = new Set(c.destination_cards.map((dc: { destination_id: string }) => dc.destination_id));
@@ -207,7 +233,15 @@ export default function TemplateEditPage() {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            cms_data: cms,
+            template_name:    tplSettings.template_name || undefined,
+            duration_nights:  Number(tplSettings.duration_nights) || undefined,
+            duration_days:    Number(tplSettings.duration_days) || undefined,
+            theme:            tplSettings.theme || null,
+            start_city:       tplSettings.start_city || null,
+            end_city:         tplSettings.end_city || null,
+            state_id:         tplSettings.state_id || undefined,
+            destinations:     tplSettings.destination_ids,
+            cms_data: { ...cms, pax_count: cms.pax_count },
             hero_image: cms.hero_tags[0] ?? null,
             default_policy_ids: selectedPolicies,
             status: publish ? true : undefined,
@@ -234,7 +268,7 @@ export default function TemplateEditPage() {
     } finally {
       setSaving(false);
     }
-  }, [id, cms, days, tiers, selectedPolicies, router]);
+  }, [id, cms, days, tiers, selectedPolicies, tplSettings, router]);
 
   /* ── Helpers ── */
   function updCms<K extends keyof CmsData>(key: K, val: CmsData[K]) {
@@ -323,6 +357,121 @@ export default function TemplateEditPage() {
 
         {/* ── MAIN content ── */}
         <div className="flex-1 min-w-0">
+
+          {/* ═══ SETTINGS ═══ */}
+          {activeSection === 'settings' && (
+            <div className="bg-white rounded-2xl p-6" style={card}>
+              <SectionHeader title="Template Settings" desc="Edit the basic details you set when creating this template." />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Template Name */}
+                <div className="sm:col-span-2">
+                  <label className={lbl}>Template Name <span className="text-red-500">*</span></label>
+                  <input className={inp} style={inpSt}
+                    value={tplSettings.template_name}
+                    onChange={e => setTplSettings(p => ({ ...p, template_name: e.target.value }))}
+                    placeholder="Kerala Backwaters 5D/4N" />
+                </div>
+
+                {/* Nights / Days */}
+                <div>
+                  <label className={lbl}>Nights <span className="text-red-500">*</span></label>
+                  <input type="number" min="0" className={inp} style={inpSt}
+                    value={tplSettings.duration_nights}
+                    onChange={e => setTplSettings(p => ({ ...p, duration_nights: e.target.value, duration_days: String(Number(e.target.value) + 1) }))} />
+                </div>
+                <div>
+                  <label className={lbl}>Days</label>
+                  <input type="number" min="1" className={inp} style={inpSt}
+                    value={tplSettings.duration_days}
+                    onChange={e => setTplSettings(p => ({ ...p, duration_days: e.target.value }))} />
+                </div>
+
+                {/* Default Pax */}
+                <div>
+                  <label className={lbl}>Default Pax</label>
+                  <input type="number" min="1" className={inp} style={inpSt}
+                    value={cms.pax_count}
+                    onChange={e => updCms('pax_count', Number(e.target.value) || 2)} />
+                </div>
+
+                {/* Theme */}
+                <div>
+                  <label className={lbl}>Theme</label>
+                  <input className={inp} style={inpSt}
+                    value={tplSettings.theme}
+                    onChange={e => setTplSettings(p => ({ ...p, theme: e.target.value }))}
+                    placeholder="Backwaters, Hill Station…" />
+                </div>
+
+                {/* Start City */}
+                <div>
+                  <label className={lbl}>Start City</label>
+                  <select className={sel} style={inpSt}
+                    value={tplSettings.start_city}
+                    onChange={e => setTplSettings(p => ({ ...p, start_city: e.target.value }))}>
+                    <option value="">Select city…</option>
+                    {cities.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                  </select>
+                </div>
+
+                {/* End City */}
+                <div>
+                  <label className={lbl}>End City</label>
+                  <select className={sel} style={inpSt}
+                    value={tplSettings.end_city}
+                    onChange={e => setTplSettings(p => ({ ...p, end_city: e.target.value }))}>
+                    <option value="">Select city…</option>
+                    {cities.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                  </select>
+                </div>
+
+                {/* State */}
+                <div className="sm:col-span-2">
+                  <label className={lbl}>State / Region <span className="text-red-500">*</span></label>
+                  <select className={sel} style={inpSt}
+                    value={tplSettings.state_id}
+                    onChange={e => setTplSettings(p => ({ ...p, state_id: e.target.value, destination_ids: [] }))}>
+                    <option value="">Select state…</option>
+                    {states.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+
+                {/* Destinations */}
+                {tplSettings.state_id && (
+                  <div className="sm:col-span-2">
+                    <label className={lbl}>Destinations <span className="text-[#94A3B8] font-normal normal-case text-[10px]">(select all that apply)</span></label>
+                    <div className="flex flex-wrap gap-2">
+                      {dests.filter(d => d.state_id === tplSettings.state_id).map(d => {
+                        const active = tplSettings.destination_ids.includes(d.id);
+                        return (
+                          <button key={d.id} type="button"
+                            onClick={() => setTplSettings(p => ({
+                              ...p,
+                              destination_ids: active
+                                ? p.destination_ids.filter(x => x !== d.id)
+                                : [...p.destination_ids, d.id],
+                            }))}
+                            className="h-8 px-3 rounded-lg text-xs font-semibold transition-colors"
+                            style={active
+                              ? { backgroundColor: T, color: 'white', border: `1px solid ${T}` }
+                              : { backgroundColor: '#F8FAFC', color: '#64748B', border: '1px solid #E2E8F0' }}>
+                            {d.name}
+                          </button>
+                        );
+                      })}
+                      {dests.filter(d => d.state_id === tplSettings.state_id).length === 0 && (
+                        <p className="text-xs text-[#94A3B8]">No destinations for this state</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <p className="mt-5 text-xs text-[#94A3B8]">
+                Click <strong>Save Draft</strong> at the top to apply these changes.
+              </p>
+            </div>
+          )}
 
           {/* ═══ HERO ═══ */}
           {activeSection === 'hero' && (
