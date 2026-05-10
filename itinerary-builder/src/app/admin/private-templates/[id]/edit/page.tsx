@@ -241,7 +241,14 @@ export default function TemplateEditPage() {
             end_city:         tplSettings.end_city || null,
             state_id:         tplSettings.state_id || undefined,
             destinations:     tplSettings.destination_ids,
-            cms_data: { ...cms, pax_count: cms.pax_count },
+            cms_data: {
+              ...cms,
+              pax_count: cms.pax_count,
+              // Only keep destination_cards for currently-selected destinations
+              destination_cards: cms.destination_cards.filter(dc =>
+                tplSettings.destination_ids.includes(dc.destination_id)
+              ),
+            },
             hero_image: cms.hero_tags[0] ?? null,
             default_policy_ids: selectedPolicies,
             status: publish ? true : undefined,
@@ -596,10 +603,13 @@ export default function TemplateEditPage() {
                     sizeHint="800 × 600 px (4:3)"
                   />
                 </div>
-                {cms.destination_cards.map((dc, i) => {
+                {cms.destination_cards
+                  .filter(dc => tplSettings.destination_ids.includes(dc.destination_id))
+                  .map((dc) => {
                   const dest = dests.find(d => d.id === dc.destination_id);
+                  const i = cms.destination_cards.indexOf(dc);
                   return (
-                    <div key={i} className="rounded-xl p-4" style={{ border: '1px solid #E2E8F0' }}>
+                    <div key={dc.destination_id} className="rounded-xl p-4" style={{ border: '1px solid #E2E8F0' }}>
                       <p className="text-sm font-semibold text-[#0F172A] mb-3">{dest?.name ?? dc.destination_id}</p>
                       <div className="grid grid-cols-2 gap-3">
                         <div className="col-span-2">
