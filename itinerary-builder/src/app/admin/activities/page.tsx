@@ -100,14 +100,20 @@ export default function ActivitiesPage() {
   // ── duplicate detection ──
   const duplicateIds = useMemo(() => {
     const dupKey = (r: Activity) => `${r.activity_name.trim().toLowerCase()}||${r.destination_id}`;
-    const groups = new Map<string, string[]>();
+    const groups = new Map<string, { id: string; created_at: string }[]>();
     rows.forEach(r => {
       const k = dupKey(r);
       if (!groups.has(k)) groups.set(k, []);
-      groups.get(k)!.push(r.id);
+      groups.get(k)!.push({ id: r.id, created_at: r.created_at });
     });
     const ids = new Set<string>();
-    groups.forEach(arr => { if (arr.length > 1) arr.forEach(id => ids.add(id)); });
+    groups.forEach(arr => {
+      if (arr.length > 1) {
+        // Sort oldest → newest; protect the oldest, flag the rest
+        const sorted = [...arr].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+        sorted.slice(1).forEach(({ id }) => ids.add(id));
+      }
+    });
     return ids;
   }, [rows]);
 
