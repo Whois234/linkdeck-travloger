@@ -444,29 +444,36 @@ export default function HotelDetailPage() {
   }
   async function saveRate() {
     setRateSaving(true); setRateErr('');
-    const n = (v: string) => v === '' ? null : Number(v);
-    const payload: Record<string, unknown> = {
-      room_category_id: rateForRoom,
-      meal_plan_id: rateForm.meal_plan_id,
-      season_name: rateForm.season_name || null,
-      valid_from: new Date(rateForm.valid_from).toISOString(),
-      valid_to: new Date(rateForm.valid_to).toISOString(),
-      single_occupancy_cost: Number(rateForm.single_occupancy_cost),
-      double_occupancy_cost: Number(rateForm.double_occupancy_cost),
-      triple_occupancy_cost: n(rateForm.triple_occupancy_cost),
-      quad_occupancy_cost: n(rateForm.quad_occupancy_cost),
-      extra_adult_cost: n(rateForm.extra_adult_cost),
-      child_with_bed_cost: n(rateForm.child_with_bed_cost),
-      child_without_bed_cost: n(rateForm.child_without_bed_cost),
-      weekend_surcharge: n(rateForm.weekend_surcharge),
-      tax_included: rateForm.tax_included,
-      notes: rateForm.notes || null,
-    };
-    const url = editRate ? `/api/v1/hotels/${id}/rates/${editRate.id}` : `/api/v1/hotels/${id}/rates`;
-    const res = await fetch(url, { method: editRate ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    const d = await res.json();
-    if (!res.ok) { setRateErr(d.error ?? 'Save failed'); } else { setShowRateForm(false); loadRates(); showToast(editRate ? 'Rate updated!' : 'Rate added!'); }
-    setRateSaving(false);
+    // n: parse optional number fields — empty string → null
+    const n = (v: string) => v === '' ? null : Math.max(0, Number(v));
+    try {
+      const payload: Record<string, unknown> = {
+        room_category_id: rateForRoom,
+        meal_plan_id: rateForm.meal_plan_id,
+        season_name: rateForm.season_name || null,
+        valid_from: new Date(rateForm.valid_from).toISOString(),
+        valid_to: new Date(rateForm.valid_to).toISOString(),
+        single_occupancy_cost: Math.max(0, Number(rateForm.single_occupancy_cost)),
+        double_occupancy_cost: Math.max(0, Number(rateForm.double_occupancy_cost)),
+        triple_occupancy_cost: n(rateForm.triple_occupancy_cost),
+        quad_occupancy_cost: n(rateForm.quad_occupancy_cost),
+        extra_adult_cost: n(rateForm.extra_adult_cost),
+        child_with_bed_cost: n(rateForm.child_with_bed_cost),
+        child_without_bed_cost: n(rateForm.child_without_bed_cost),
+        weekend_surcharge: n(rateForm.weekend_surcharge),
+        tax_included: rateForm.tax_included,
+        notes: rateForm.notes || null,
+      };
+      const url = editRate ? `/api/v1/hotels/${id}/rates/${editRate.id}` : `/api/v1/hotels/${id}/rates`;
+      const res = await fetch(url, { method: editRate ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const d = await res.json();
+      if (!res.ok) { setRateErr(d.error ?? 'Save failed'); } else { setShowRateForm(false); loadRates(); showToast(editRate ? 'Rate updated!' : 'Rate added!'); }
+    } catch (e) {
+      setRateErr('Network error — please try again.');
+      console.error('saveRate error:', e);
+    } finally {
+      setRateSaving(false);
+    }
   }
   async function deleteRate(rateId: string) {
     if (!confirm('Remove this rate?')) return;
