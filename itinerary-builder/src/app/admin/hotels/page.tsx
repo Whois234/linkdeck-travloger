@@ -144,11 +144,15 @@ export default function HotelsPage() {
 
   async function handleBulkDelete() {
     if (!selected.size) return;
-    if (!confirm(`Delete ${selected.size} hotel${selected.size !== 1 ? 's' : ''}? This cannot be undone.`)) return;
+    if (!confirm(`Delete ${selected.size} hotel${selected.size !== 1 ? 's' : ''}? Hotels used in quotes will be deactivated instead. This cannot be undone.`)) return;
     setBulkDeleting(true);
-    await Promise.all(Array.from(selected).map(id => fetch(`/api/v1/hotels/${id}`, { method: 'DELETE' })));
+    const results = await Promise.all(
+      Array.from(selected).map(id => fetch(`/api/v1/hotels/${id}`, { method: 'DELETE' }).then(r => r.json()))
+    );
     setBulkDeleting(false);
     setSelected(new Set());
+    const softCount = results.filter(r => r.data?.soft).length;
+    if (softCount > 0) alert(`${softCount} hotel${softCount !== 1 ? 's were' : ' was'} used in quotes and got deactivated instead of deleted.`);
     load();
   }
 
