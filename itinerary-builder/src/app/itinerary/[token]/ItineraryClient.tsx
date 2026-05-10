@@ -711,10 +711,24 @@ function LogoMarquee() {
 
 /* ─────────────────────────── Day Description Renderer ─────────────────────────── */
 /**
- * Smart renderer: if description has lines starting with "- " or "• ", render as a
- * bulleted list. Otherwise render as a paragraph (preserving line breaks).
+ * Smart renderer:
+ * - If text contains HTML tags (from the rich-text editor) → render as HTML
+ * - If lines start with "- " or "• " → render as bulleted list (legacy plain text)
+ * - Otherwise → render as plain paragraph
  */
 function DayDescription({ text }: { text: string }) {
+  // Rich-text HTML path (new editor output)
+  if (/<[a-z][\s\S]*>/i.test(text)) {
+    return (
+      <div
+        className="tl-day-desc-html"
+        style={{ fontSize: 'inherit', lineHeight: 'inherit', color: 'inherit' }}
+        dangerouslySetInnerHTML={{ __html: text }}
+      />
+    );
+  }
+
+  // Legacy plain-text path
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   const isBullet = lines.every(l => /^[-•*]\s/.test(l));
 
@@ -730,7 +744,6 @@ function DayDescription({ text }: { text: string }) {
     );
   }
 
-  // Mixed: some lines are bullets, others are prose — render line-by-line
   const hasSomeBullets = lines.some(l => /^[-•*]\s/.test(l));
   if (hasSomeBullets) {
     return (

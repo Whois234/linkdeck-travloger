@@ -4,6 +4,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
 import { ImageUploader } from '@/components/admin/ImageUploader';
+import { RichTextEditor } from '@/components/admin/RichTextEditor';
 import {
   ChevronDown, ChevronRight, Plus, Trash2, Check,
   Save, Star, Image as ImgIcon, FileText, LayoutList,
@@ -819,9 +820,12 @@ export default function GroupTemplateEditPage() {
                           </div>
                           <div className="col-span-2">
                             <label className={lbl}>Description</label>
-                            <textarea className={ta} style={inpSt} rows={4} value={day.description_override ?? ''}
-                              onChange={e => updDay(i, { description_override: e.target.value || null })}
-                              placeholder="Describe the day's activities…" />
+                            <RichTextEditor
+                              value={day.description_override}
+                              onChange={html => updDay(i, { description_override: html || null })}
+                              placeholder="Describe the day's activities…"
+                              minHeight={130}
+                            />
                           </div>
                           <div className="col-span-2">
                             <ImageUploader
