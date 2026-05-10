@@ -107,6 +107,7 @@ export default function VehicleRatesPage() {
   const [filterVehicleType, setFilterVehicleType]  = useState('');
   const [filterStatus,      setFilterStatus]       = useState('');
   const [filterDuration,    setFilterDuration]     = useState('');
+  const [filterDuplicates,  setFilterDuplicates]   = useState(false);
   const [sortKey,           setSortKey]            = useState<SortKey>('route_az');
   const [showFilters,       setShowFilters]        = useState(true);
 
@@ -183,16 +184,32 @@ export default function VehicleRatesPage() {
   function resetPage() { setCurrentPage(1); setSelected(new Set()); }
   function clearFilters() {
     setFilterState(''); setFilterSupplier(''); setFilterVehicleType('');
-    setFilterStatus(''); setFilterDuration(''); setSearch(''); resetPage();
+    setFilterStatus(''); setFilterDuration(''); setFilterDuplicates(false); setSearch(''); resetPage();
   }
 
   // ── unique filter option lists derived from data ──
-  const stateOptions   = useMemo(() => [...new Set(rows.map(r => r.state?.name).filter(Boolean) as string[])].sort(), [rows]);
-  const supplierOptions = useMemo(() => [...new Set(rows.map(r => r.supplier?.name).filter(Boolean) as string[])].sort(), [rows]);
-  const vtOptions      = useMemo(() => [...new Set(rows.map(r => r.vehicle_type?.display_name).filter(Boolean) as string[])].sort(), [rows]);
-  const durOptions     = useMemo(() => [...new Set(rows.map(r => `${r.duration_days}D / ${r.duration_nights}N`))].sort((a, b) => {
-    const da = parseInt(a); const db = parseInt(b); return da - db;
-  }), [rows]);
+  const stateOptions    = useMemo(() => Array.from(new Set(rows.map(r => r.state?.name).filter(Boolean) as string[])).sort(), [rows]);
+  const supplierOptions = useMemo(() => Array.from(new Set(rows.map(r => r.supplier?.name).filter(Boolean) as string[])).sort(), [rows]);
+  const vtOptions       = useMemo(() => Array.from(new Set(rows.map(r => r.vehicle_type?.display_name).filter(Boolean) as string[])).sort(), [rows]);
+  const durOptions      = useMemo(() => Array.from(new Set(rows.map(r => `${r.duration_days}D / ${r.duration_nights}N`))).sort((a, b) => parseInt(a) - parseInt(b)), [rows]);
+
+  // ── duplicate detection ──
+  // Key: route+vehicle+cities+dates — any key with >1 entry = duplicate set
+  const duplicateIds = useMemo(() => {
+    const dupKey = (r: Rate) =>
+      [r.route_name.trim().toLowerCase(), r.vehicle_type_id,
+       r.start_city.trim().toLowerCase(), r.end_city.trim().toLowerCase(),
+       r.valid_from.slice(0, 10), r.valid_to.slice(0, 10)].join('||');
+    const groups = new Map<string, string[]>();
+    rows.forEach(r => {
+      const k = dupKey(r);
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k)!.push(r.id);
+    });
+    const ids = new Set<string>();
+    groups.forEach(arr => { if (arr.length > 1) arr.forEach(id => ids.add(id)); });
+    return ids;
+  }, [rows]);
 
   // ── filter + sort pipeline ──
   const processed = useMemo(() => {
@@ -215,7 +232,8 @@ export default function VehicleRatesPage() {
     if (filterVehicleType) arr = arr.filter(r => r.vehicle_type?.display_name === filterVehicleType);
     if (filterStatus === 'active')   arr = arr.filter(r =>  r.status);
     if (filterStatus === 'inactive') arr = arr.filter(r => !r.status);
-    if (filterDuration) arr = arr.filter(r => `${r.duration_days}D / ${r.duration_nights}N` === filterDuration);
+    if (filterDuration)    arr = arr.filter(r => `${r.duration_days}D / ${r.duration_nights}N` === filterDuration);
+    if (filterDuplicates)  arr = arr.filter(r => duplicateIds.has(r.id));
 
     // sort
     switch (sortKey) {
@@ -236,7 +254,7 @@ export default function VehicleRatesPage() {
   const totalPages = Math.ceil(processed.length / pageSize);
   const paginated  = processed.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  const activeFilterCount = [filterState, filterSupplier, filterVehicleType, filterStatus, filterDuration].filter(Boolean).length;
+  const activeFilterCount = [filterState, filterSupplier, filterVehicleType, filterStatus, filterDuration, filterDuplicates ? 'dup' : ''].filter(Boolean).length;
 
   return (
     <div className="max-w-[1400px]">
@@ -387,6 +405,14 @@ export default function VehicleRatesPage() {
               {loading ? 'Loading…' : `${processed.length} rate${processed.length !== 1 ? 's' : ''}`}
               {activeFilterCount > 0 && <span className="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold" style={{ background: '#134956', color: '#fff' }}>{activeFilterCount} filter{activeFilterCount !== 1 ? 's' : ''}</span>}
             </p>
+            {filterDuplicates && duplicateIds.size > 0 && selected.size === 0 && (
+              <button
+                onClick={() => setSelected(new Set(Array.from(duplicateIds)))}
+                className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold transition-colors"
+                style={{ backgroundColor: '#FEF9C3', color: '#B45309', border: '1px solid #FDE68A' }}>
+                Select all {duplicateIds.size} duplicates
+              </button>
+            )}
             {selected.size > 0 && (
               <button onClick={handleBulkDelete} disabled={bulkDeleting}
                 className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50"
@@ -438,6 +464,23 @@ export default function VehicleRatesPage() {
               </select>
               <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: '#94A3B8' }} />
             </div>
+
+            {/* duplicates button */}
+            {duplicateIds.size > 0 && (
+              <button
+                onClick={() => { setFilterDuplicates(v => !v); resetPage(); }}
+                className="flex items-center gap-1.5 h-9 px-3 rounded-lg text-sm font-semibold transition-colors"
+                style={{
+                  border: '1px solid ' + (filterDuplicates ? '#DC2626' : '#FECACA'),
+                  color:  filterDuplicates ? '#DC2626' : '#B45309',
+                  background: filterDuplicates ? '#FEF2F2' : '#FEF9C3',
+                }}
+                title="Show only duplicate rates"
+              >
+                <span className="text-base leading-none">⚠</span>
+                {duplicateIds.size} Duplicates
+              </button>
+            )}
 
             {/* toggle filters */}
             <button
@@ -565,17 +608,24 @@ export default function VehicleRatesPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {paginated.map(r => (
-                        <tr key={r.id} className="group/row transition-colors hover:bg-[#F8FAFC]" style={{ borderBottom: '1px solid #F1F5F9' }}>
-                          <td className="px-4 py-0 bg-white group-hover/row:bg-[#F8FAFC]"
+                      {paginated.map(r => {
+                        const isDup = duplicateIds.has(r.id);
+                        return (
+                        <tr key={r.id}
+                          className={`group/row transition-colors ${isDup ? 'hover:bg-[#FFF1F1]' : 'hover:bg-[#F8FAFC]'}`}
+                          style={{ borderBottom: '1px solid #F1F5F9', backgroundColor: isDup ? '#FFF8F8' : undefined }}>
+                          <td className={`px-4 py-0 ${isDup ? 'bg-[#FFF8F8] group-hover/row:bg-[#FFF1F1]' : 'bg-white group-hover/row:bg-[#F8FAFC]'}`}
                             style={{ height: 56, position: 'sticky', left: 0, zIndex: 1, borderBottom: '1px solid #F1F5F9' }}>
                             <input type="checkbox" className="w-4 h-4 rounded border-gray-300 accent-[#134956] cursor-pointer"
                               checked={selected.has(r.id)}
                               onChange={e => setSelected(prev => { const n = new Set(prev); e.target.checked ? n.add(r.id) : n.delete(r.id); return n; })} />
                           </td>
-                          <td className="px-4 py-3 font-semibold bg-white group-hover/row:bg-[#F8FAFC]"
+                          <td className={`px-4 py-3 font-semibold ${isDup ? 'bg-[#FFF8F8] group-hover/row:bg-[#FFF1F1]' : 'bg-white group-hover/row:bg-[#F8FAFC]'}`}
                             style={{ color: '#0F172A', position: 'sticky', left: 44, zIndex: 1, borderBottom: '1px solid #F1F5F9', boxShadow: '3px 0 8px rgba(0,0,0,0.07)', maxWidth: 220, whiteSpace: 'normal', lineHeight: '1.35' }}>
-                            {r.route_name}
+                            <div className="flex items-start gap-1.5">
+                              {isDup && <span className="mt-0.5 text-[10px] text-red-500 flex-shrink-0" title="Duplicate rate">⚠</span>}
+                              {r.route_name}
+                            </div>
                           </td>
                           <td className="px-4 py-3 text-sm whitespace-nowrap" style={{ color: '#64748B' }}>{r.vehicle_type?.display_name ?? '—'}</td>
                           <td className="px-4 py-3 text-sm whitespace-nowrap" style={{ color: '#64748B' }}>{r.start_city}</td>
@@ -602,7 +652,8 @@ export default function VehicleRatesPage() {
                             </div>
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
