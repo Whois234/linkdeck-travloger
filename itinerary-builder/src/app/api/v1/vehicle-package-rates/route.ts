@@ -56,8 +56,24 @@ export async function POST(req: NextRequest) {
   const parsed = Schema.safeParse(body);
   if (!parsed.success) return err('Validation failed', 400, parsed.error.flatten());
 
+  const validFrom = new Date(parsed.data.valid_from);
+  const validTo   = new Date(parsed.data.valid_to);
+
+  // Duplicate check: same route + vehicle + cities + validity period
+  const duplicate = await prisma.vehiclePackageRate.findFirst({
+    where: {
+      route_name:      { equals: parsed.data.route_name, mode: 'insensitive' },
+      vehicle_type_id: parsed.data.vehicle_type_id,
+      start_city:      { equals: parsed.data.start_city, mode: 'insensitive' },
+      end_city:        { equals: parsed.data.end_city,   mode: 'insensitive' },
+      valid_from:      validFrom,
+      valid_to:        validTo,
+    },
+  });
+  if (duplicate) return err('Duplicate value — this rate already exists (same route, vehicle type, cities and validity period).', 409);
+
   const record = await prisma.vehiclePackageRate.create({
-    data: { ...parsed.data, valid_from: new Date(parsed.data.valid_from), valid_to: new Date(parsed.data.valid_to) } as Parameters<typeof prisma.vehiclePackageRate.create>[0]['data'],
+    data: { ...parsed.data, valid_from: validFrom, valid_to: validTo } as Parameters<typeof prisma.vehiclePackageRate.create>[0]['data'],
   });
   return created(record);
 }

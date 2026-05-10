@@ -34,6 +34,23 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 
   if (Object.keys(data).length === 0) return err('No valid fields to update', 400);
 
+  // Duplicate check on update — compare against effective state after merge
+  const merged = { ...record, ...data };
+  const vfDate = merged.valid_from instanceof Date ? merged.valid_from : new Date(String(merged.valid_from));
+  const vtDate = merged.valid_to   instanceof Date ? merged.valid_to   : new Date(String(merged.valid_to));
+  const duplicate = await prisma.vehiclePackageRate.findFirst({
+    where: {
+      id:              { not: params.id },
+      route_name:      { equals: String(merged.route_name),      mode: 'insensitive' },
+      vehicle_type_id: String(merged.vehicle_type_id),
+      start_city:      { equals: String(merged.start_city),      mode: 'insensitive' },
+      end_city:        { equals: String(merged.end_city),        mode: 'insensitive' },
+      valid_from:      vfDate,
+      valid_to:        vtDate,
+    },
+  });
+  if (duplicate) return err('Duplicate value — this rate already exists (same route, vehicle type, cities and validity period).', 409);
+
   const updated = await prisma.vehiclePackageRate.update({ where: { id: params.id }, data });
   return ok(updated);
 }

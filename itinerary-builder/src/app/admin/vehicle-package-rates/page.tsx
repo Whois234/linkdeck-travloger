@@ -567,14 +567,14 @@ export default function VehicleRatesPage() {
                     <tbody>
                       {paginated.map(r => (
                         <tr key={r.id} className="group/row transition-colors hover:bg-[#F8FAFC]" style={{ borderBottom: '1px solid #F1F5F9' }}>
-                          <td className="px-4 py-0 group-hover/row:bg-[#F8FAFC]"
-                            style={{ height: 56, position: 'sticky', left: 0, zIndex: 1, background: '#fff', borderBottom: '1px solid #F1F5F9' }}>
+                          <td className="px-4 py-0 bg-white group-hover/row:bg-[#F8FAFC]"
+                            style={{ height: 56, position: 'sticky', left: 0, zIndex: 1, borderBottom: '1px solid #F1F5F9' }}>
                             <input type="checkbox" className="w-4 h-4 rounded border-gray-300 accent-[#134956] cursor-pointer"
                               checked={selected.has(r.id)}
                               onChange={e => setSelected(prev => { const n = new Set(prev); e.target.checked ? n.add(r.id) : n.delete(r.id); return n; })} />
                           </td>
-                          <td className="px-4 py-3 font-semibold group-hover/row:bg-[#F8FAFC]"
-                            style={{ color: '#0F172A', position: 'sticky', left: 44, zIndex: 1, background: '#fff', borderBottom: '1px solid #F1F5F9', boxShadow: '2px 0 6px rgba(0,0,0,0.08)', maxWidth: 220, whiteSpace: 'normal', lineHeight: '1.35' }}>
+                          <td className="px-4 py-3 font-semibold bg-white group-hover/row:bg-[#F8FAFC]"
+                            style={{ color: '#0F172A', position: 'sticky', left: 44, zIndex: 1, borderBottom: '1px solid #F1F5F9', boxShadow: '3px 0 8px rgba(0,0,0,0.07)', maxWidth: 220, whiteSpace: 'normal', lineHeight: '1.35' }}>
                             {r.route_name}
                           </td>
                           <td className="px-4 py-3 text-sm whitespace-nowrap" style={{ color: '#64748B' }}>{r.vehicle_type?.display_name ?? '—'}</td>
