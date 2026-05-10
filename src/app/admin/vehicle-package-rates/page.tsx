@@ -2,7 +2,6 @@
 import { useState, useEffect } from 'react';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
-import ExcelIO from '@/components/ExcelIO';
 import { Plus, Pencil, Trash2, Search } from 'lucide-react';
 
 interface State { id: string; name: string }
@@ -116,60 +115,6 @@ export default function VehicleRatesPage() {
       <PageHeader title="Vehicle Package Rates" subtitle="Route-based vehicle pricing and cost management" crumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Vehicle Rates' }]}
         action={
           <div className="flex items-center gap-2 flex-wrap">
-            <ExcelIO
-              moduleName="VehicleRates"
-              columns={[
-                { key: 'route_name',    label: 'Route Name',              example: 'Cochin – Munnar – Thekkady – Alleppey' },
-                { key: 'state',         label: 'State Name',              example: 'Kerala' },
-                { key: 'start_city',    label: 'Start City',              example: 'Cochin' },
-                { key: 'end_city',      label: 'End City',                example: 'Alleppey' },
-                { key: 'vehicle_type',  label: 'Vehicle Type Code',       example: 'SUV' },
-                { key: 'base_cost',     label: 'Base Cost (₹)',           example: '14500' },
-                { key: 'duration_days', label: 'Duration Days',           example: '4' },
-                { key: 'duration_nights', label: 'Duration Nights',       example: '3' },
-                { key: 'valid_from',    label: 'Valid From (YYYY-MM-DD)', example: '2025-01-01' },
-                { key: 'valid_to',      label: 'Valid To (YYYY-MM-DD)',   example: '2025-12-31' },
-                { key: 'supplier',      label: 'Supplier',                example: 'Ratan Travels Pvt Ltd' },
-              ]}
-              rows={rows}
-              rowMapper={r => ({
-                'Route Name':              r.route_name,
-                'State Name':              states.find(s => s.id === r.state_id)?.name ?? '',
-                'Start City':              r.start_city,
-                'End City':               r.end_city,
-                'Vehicle Type Code':      vehicleTypes.find(v => v.id === r.vehicle_type_id)?.vehicle_type ?? '',
-                'Base Cost (₹)':          r.base_cost,
-                'Duration Days':          r.duration_days,
-                'Duration Nights':        r.duration_nights,
-                'Valid From (YYYY-MM-DD)': r.valid_from.slice(0, 10),
-                'Valid To (YYYY-MM-DD)':   r.valid_to.slice(0, 10),
-                'Supplier':               r.supplier?.name ?? '',
-              })}
-              importMapper={r => {
-                const st  = states.find(s => s.name.toLowerCase() === (r['State Name'] ?? '').toLowerCase());
-                const vt  = vehicleTypes.find(v => v.vehicle_type.toLowerCase() === (r['Vehicle Type Code'] ?? '').toLowerCase());
-                const sup = suppliers.find(s => s.name.toLowerCase() === (r['Supplier'] ?? '').toLowerCase());
-                return {
-                  route_name:            r['Route Name'],
-                  state_id:              st?.id ?? undefined,
-                  vehicle_type_id:       vt?.id ?? undefined,
-                  start_city:            r['Start City'],
-                  end_city:              r['End City'],
-                  base_cost:             Number(r['Base Cost (₹)']) || 0,
-                  duration_days:         Number(r['Duration Days']) || 1,
-                  duration_nights:       Number(r['Duration Nights']) || 0,
-                  valid_from:            r['Valid From (YYYY-MM-DD)'] ? new Date(r['Valid From (YYYY-MM-DD)']).toISOString() : undefined,
-                  valid_to:              r['Valid To (YYYY-MM-DD)']   ? new Date(r['Valid To (YYYY-MM-DD)']).toISOString()   : undefined,
-                  supplier_id:           sup?.id ?? null,
-                  extra_day_cost:        null,
-                  extra_km_cost:         null,
-                  driver_bata_included:  false,
-                  toll_parking_included: false,
-                };
-              }}
-              importUrl="/api/v1/vehicle-package-rates"
-              onImportDone={load}
-            />
             <button onClick={openCreate} className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white transition-colors hover:opacity-90" style={{ backgroundColor: '#134956' }}><Plus className="w-4 h-4" /> Add Rate</button>
           </div>
         }
