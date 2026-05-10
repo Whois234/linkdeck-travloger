@@ -87,14 +87,18 @@
 
 /* ── PACKAGES ── */
 .tl-pkg-wrap { background: white; border-top: 1px solid var(--tl-border); border-bottom: 1px solid var(--tl-border); padding: 36px 0; }
-.tl-pkg-scroll { display: flex; gap: 12px; overflow-x: auto; padding: 0 18px 8px; scroll-snap-type: x mandatory; scroll-padding-inline-start: 18px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+/* Extra top padding so the badge + selection shadow above the card aren't clipped by the scroll container */
+.tl-pkg-scroll { display: flex; gap: 12px; overflow-x: auto; padding: 24px 18px 8px; scroll-snap-type: x mandatory; scroll-padding-inline-start: 18px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .tl-pkg-scroll::-webkit-scrollbar { display: none; }
 .tl-pkg-scroll::after { content: ''; flex-shrink: 0; width: 18px; }
-.tl-pkg-card { flex-shrink: 0; width: 78vw; max-width: 290px; background: white; border-radius: 20px; border: 2px solid var(--tl-border); overflow: hidden; scroll-snap-align: start; transition: all 0.25s; position: relative; cursor: pointer; }
-.tl-pkg-card.sel { border-color: var(--tl-teal); box-shadow: 0 8px 32px rgba(19,73,86,0.15); }
-.tl-pkg-card:hover { border-color: var(--tl-teal); transform: translateY(-3px); box-shadow: 0 14px 40px rgba(19,73,86,0.14); }
-.tl-pkg-badge { position: absolute; top: -1px; left: 50%; transform: translateX(-50%); background: var(--tl-warm); color: white; font-size: 9px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; padding: 4px 14px; border-radius: 0 0 10px 10px; white-space: nowrap; font-family: var(--f-body); }
-.tl-pkg-head { background: var(--tl-teal); padding: 24px 18px 18px; text-align: center; }
+/* Remove overflow:hidden so the selection box-shadow and badge are never clipped at the top */
+.tl-pkg-card { flex-shrink: 0; width: 78vw; max-width: 290px; background: white; border-radius: 20px; border: 2px solid var(--tl-border); overflow: visible; scroll-snap-align: start; transition: all 0.25s; position: relative; cursor: pointer; }
+.tl-pkg-card.sel { border-color: var(--tl-teal); box-shadow: 0 -4px 20px rgba(19,73,86,0.12), 0 8px 32px rgba(19,73,86,0.15); }
+.tl-pkg-card:hover { border-color: var(--tl-teal); transform: translateY(-3px); box-shadow: 0 -4px 16px rgba(19,73,86,0.08), 0 14px 40px rgba(19,73,86,0.14); }
+/* Badge sits above the card — give it a higher z-index so it renders cleanly */
+.tl-pkg-badge { position: absolute; top: -14px; left: 50%; transform: translateX(-50%); background: var(--tl-warm); color: white; font-size: 9px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; padding: 4px 14px; border-radius: 20px; white-space: nowrap; font-family: var(--f-body); z-index: 2; box-shadow: 0 2px 8px rgba(201,169,122,0.4); }
+/* Head needs its own rounded top corners since the card is now overflow:visible */
+.tl-pkg-head { background: var(--tl-teal); padding: 24px 18px 18px; text-align: center; border-radius: 18px 18px 0 0; overflow: hidden; }
 .tl-pkg-head.pop { padding-top: 32px; }
 .tl-pkg-tier { color: rgba(255,255,255,0.5); font-size: 9.5px; letter-spacing: 3px; text-transform: uppercase; margin-bottom: 8px; font-family: var(--f-body); font-weight: 600; }
 .tl-pkg-price { color: white; font-family: var(--f-num); font-size: 34px; font-weight: 700; font-style: normal; line-height: 1; letter-spacing: -0.5px; }
@@ -108,6 +112,8 @@
 .tl-pkg-perk { font-size: 12px; color: #666; display: flex; align-items: center; gap: 7px; font-family: var(--f-body); }
 .tl-pkg-btn { margin: 14px; display: block; text-align: center; padding: 12px; background: var(--tl-pale); color: var(--tl-teal); font-family: var(--f-body); font-size: 13px; font-weight: 600; border-radius: 12px; border: none; cursor: pointer; width: calc(100% - 28px); transition: all 0.2s; }
 .tl-pkg-card.sel .tl-pkg-btn { background: var(--tl-teal); color: white; }
+/* Wrapper div that holds body + button — clips the bottom corners of the card cleanly */
+.tl-pkg-card > *:last-child { border-radius: 0 0 18px 18px; overflow: hidden; }
 
 /* ── LOGOS MARQUEE ── */
 .tl-logos-sec { background: white; border-top: 1px solid var(--tl-border); border-bottom: 1px solid var(--tl-border); padding: 36px 0; }
@@ -308,10 +314,10 @@
 .tl-grp-bar-btn-empty:hover { transform: none; background: #F1F5F9; box-shadow: none; }
 
 /* ── WA FLOAT ── */
-.tl-wa-float { position: fixed; bottom: calc(130px + env(safe-area-inset-bottom, 0px)); right: 14px; z-index: 100; width: 52px; height: 52px; border-radius: 50%; background: #25D366; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 20px rgba(37,211,102,0.45); text-decoration: none; transition: transform 0.2s, box-shadow 0.2s; }
+.tl-wa-float { position: fixed; bottom: calc(170px + env(safe-area-inset-bottom, 0px)); right: 14px; z-index: 100; width: 52px; height: 52px; border-radius: 50%; background: #25D366; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 20px rgba(37,211,102,0.45); text-decoration: none; transition: transform 0.2s, box-shadow 0.2s; }
 .tl-wa-float:hover { transform: scale(1.1); box-shadow: 0 6px 28px rgba(37,211,102,0.55); }
 /* GROUP bar is ~150px tall incl safe-area padding — float clears it with extra room */
-.tl-wa-float-group { bottom: calc(142px + env(safe-area-inset-bottom, 0px)); }
+.tl-wa-float-group { bottom: calc(160px + env(safe-area-inset-bottom, 0px)); }
 
 /* ── MODALS ── */
 .tl-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; z-index: 200; backdrop-filter: blur(8px); padding: 20px; }
