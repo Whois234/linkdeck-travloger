@@ -1,11 +1,12 @@
 'use client';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
-import { Plus, Pencil, Trash2, Search, X, Phone, Mail, MapPin, User, Building2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, X, Phone, Mail, MapPin, User, Building2, ChevronDown } from 'lucide-react';
 import ExcelIO from '@/components/ExcelIO';
 
 const SUPPLIER_TYPES = ['HOTEL', 'VEHICLE', 'ACTIVITY', 'DMC', 'OTHER'];
+interface City { id: string; name: string; state: { name: string } }
 interface Supplier {
   id: string; name: string; supplier_type: string;
   contact_person?: string | null; phone?: string | null;
@@ -46,6 +47,12 @@ export default function SuppliersPage() {
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [detail, setDetail]         = useState<Supplier | null>(null);
 
+  // City combobox state
+  const [cities, setCities]         = useState<City[]>([]);
+  const [citySearch, setCitySearch] = useState('');
+  const [cityOpen, setCityOpen]     = useState(false);
+  const cityRef                     = useRef<HTMLDivElement>(null);
+
   async function load() {
     setLoading(true);
     const r = await fetch('/api/v1/suppliers');
@@ -53,9 +60,23 @@ export default function SuppliersPage() {
     if (d.success) setRows(d.data);
     setLoading(false);
   }
-  useEffect(() => { load(); }, []);
+  async function loadCities() {
+    const r = await fetch('/api/v1/cities');
+    const d = await r.json();
+    if (d.success) setCities(d.data);
+  }
+  useEffect(() => { load(); loadCities(); }, []);
 
-  function openCreate() { setEditing(null); setForm({ ...EMPTY }); setError(''); setShowForm(true); }
+  // Close city dropdown on outside click
+  useEffect(() => {
+    function handle(e: MouseEvent) {
+      if (cityRef.current && !cityRef.current.contains(e.target as Node)) setCityOpen(false);
+    }
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, []);
+
+  function openCreate() { setEditing(null); setForm({ ...EMPTY }); setCitySearch(''); setCityOpen(false); setError(''); setShowForm(true); }
   function openEdit(r: Supplier) {
     setEditing(r);
     setForm({
@@ -66,6 +87,7 @@ export default function SuppliersPage() {
       email: r.email ?? '',
       address: r.address ?? '',
     });
+    setCitySearch(''); setCityOpen(false);
     setError(''); setShowForm(true);
   }
 
@@ -166,7 +188,80 @@ export default function SuppliersPage() {
           <div><label className={lbl} style={lblStyle}>Contact Person</label><input className={inp} style={inpStyle} value={form.contact_person} onChange={e => setForm(p => ({ ...p, contact_person: e.target.value }))} placeholder="John Doe" /></div>
           <div><label className={lbl} style={lblStyle}>Phone</label><input className={inp} style={inpStyle} value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} placeholder="+91 98765 43210" /></div>
           <div><label className={lbl} style={lblStyle}>Email</label><input type="email" className={inp} style={inpStyle} value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} placeholder="supplier@email.com" /></div>
-          <div><label className={lbl} style={lblStyle}>City / Location</label><input className={inp} style={inpStyle} value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))} placeholder="Munnar, Kerala" /></div>
+
+          {/* City combobox */}
+          <div ref={cityRef} className="relative">
+            <label className={lbl} style={lblStyle}>City / Location</label>
+            <div
+              className="w-full h-10 px-3 rounded-lg border text-sm bg-white flex items-center justify-between cursor-pointer focus-within:ring-2 focus-within:ring-[#134956]/10 transition-colors"
+              style={{ borderColor: '#E2E8F0' }}
+              onClick={() => { setCityOpen(o => !o); setCitySearch(''); }}
+            >
+              <span style={{ color: form.address ? '#0F172A' : '#94A3B8' }}>
+                {form.address || 'Select a city…'}
+              </span>
+              <div className="flex items-center gap-1">
+                {form.address && (
+                  <button
+                    type="button"
+                    onClick={e => { e.stopPropagation(); setForm(p => ({ ...p, address: '' })); setCityOpen(false); }}
+                    className="w-5 h-5 flex items-center justify-center rounded hover:bg-gray-100 transition-colors"
+                    style={{ color: '#94A3B8' }}
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+                <ChevronDown className="w-4 h-4 flex-shrink-0" style={{ color: '#94A3B8' }} />
+              </div>
+            </div>
+
+            {cityOpen && (
+              <div className="absolute z-50 mt-1 w-full bg-white rounded-xl border shadow-xl overflow-hidden" style={{ borderColor: '#E2E8F0' }}>
+                {/* Search inside dropdown */}
+                <div className="px-2 pt-2 pb-1">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: '#94A3B8' }} />
+                    <input
+                      autoFocus
+                      value={citySearch}
+                      onChange={e => setCitySearch(e.target.value)}
+                      placeholder="Search cities…"
+                      className="w-full h-8 pl-8 pr-3 rounded-lg border text-sm placeholder:text-[#94A3B8] focus:outline-none bg-[#F8FAFC]"
+                      style={{ borderColor: '#E2E8F0' }}
+                      onClick={e => e.stopPropagation()}
+                    />
+                  </div>
+                </div>
+                <ul className="max-h-52 overflow-y-auto py-1">
+                  {cities
+                    .filter(c =>
+                      !citySearch ||
+                      c.name.toLowerCase().includes(citySearch.toLowerCase()) ||
+                      c.state.name.toLowerCase().includes(citySearch.toLowerCase())
+                    )
+                    .map(c => (
+                      <li
+                        key={c.id}
+                        className="flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-[#F0F7F9] transition-colors text-sm"
+                        style={{ color: form.address === c.name ? '#134956' : '#0F172A' }}
+                        onClick={() => { setForm(p => ({ ...p, address: c.name })); setCityOpen(false); setCitySearch(''); }}
+                      >
+                        <span className={form.address === c.name ? 'font-semibold' : ''}>{c.name}</span>
+                        <span className="text-xs ml-2 flex-shrink-0" style={{ color: '#94A3B8' }}>{c.state.name}</span>
+                      </li>
+                    ))
+                  }
+                  {cities.filter(c =>
+                    !citySearch ||
+                    c.name.toLowerCase().includes(citySearch.toLowerCase()) ||
+                    c.state.name.toLowerCase().includes(citySearch.toLowerCase())
+                  ).length === 0 && (
+                    <li className="px-3 py-3 text-sm text-center" style={{ color: '#94A3B8' }}>No cities found</li>
+                  )}
+                </ul>
+              </div>
+            )}
+          </div>
         </div>
         <div className="flex justify-end gap-3 mt-5 pt-5" style={{ borderTop: '1px solid #F1F5F9' }}>
           <button onClick={() => setShowForm(false)} className="h-9 px-4 rounded-lg text-sm font-semibold transition-colors hover:bg-[#F8FAFC]" style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>Cancel</button>
