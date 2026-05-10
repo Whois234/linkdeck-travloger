@@ -38,14 +38,18 @@ export async function GET(req: NextRequest) {
     ? { state_id: { in: state_ids } }
     : state_id ? { state_id } : {};
 
+  // Admin list returns ALL templates (live + draft); public-facing routes filter by status separately
+  const statusRaw = searchParams.get('status'); // 'live' | 'draft' | null = all
+  const statusFilter = statusRaw === 'live' ? { status: true } : statusRaw === 'draft' ? { status: false } : {};
+
   const templates = await prisma.privateTemplate.findMany({
-    where: { status: true, ...stateFilter },
+    where: { ...statusFilter, ...stateFilter },
     include: {
       state: { select: { name: true } },
       template_days: { orderBy: { sort_order: 'asc' } },
       template_hotel_tiers: { orderBy: [{ tier_name: 'asc' }, { sort_order: 'asc' }] },
     },
-    orderBy: { template_name: 'asc' },
+    orderBy: { created_at: 'desc' },
   });
   return ok(templates);
 }

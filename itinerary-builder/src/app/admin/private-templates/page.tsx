@@ -7,6 +7,7 @@ import MultiStateSelect from '@/components/MultiStateSelect';
 import { Plus, Search, Pencil, Trash2, FileText, Map, ChevronRight, LayoutGrid, List, ArrowUpDown, CheckCircle2, SlidersHorizontal, X } from 'lucide-react';
 
 type SortKey = 'name_asc' | 'name_desc' | 'state_asc' | 'nights_asc' | 'nights_desc' | 'days_desc' | 'newest' | 'oldest';
+type StatusTab = 'all' | 'live' | 'draft';
 const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: 'newest',     label: 'Newest First' },
   { value: 'oldest',     label: 'Oldest First' },
@@ -69,6 +70,7 @@ function PrivateTemplatesPageInner() {
   const [filterTheme, setFilterTheme] = useState('');
   const [filterNights, setFilterNights] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [statusTab, setStatusTab] = useState<StatusTab>('all');
   const [showFilters, setShowFilters] = useState(false);
   const [sortKey, setSortKey]   = useState<SortKey>('newest');
   const [viewMode, setViewMode] = useState<'grid'|'list'>('list');
@@ -205,7 +207,8 @@ function PrivateTemplatesPageInner() {
       const th = !filterTheme || (r.theme ?? '') === filterTheme;
       const ni = !filterNights || r.duration_nights === Number(filterNights);
       const st = !filterStatus || (filterStatus === 'active' ? r.status : !r.status);
-      return q && s && th && ni && st;
+      const tab = statusTab === 'all' || (statusTab === 'live' ? r.status : !r.status);
+      return q && s && th && ni && st && tab;
     });
     return [...f].sort((a, b) => {
       switch (sortKey) {
@@ -220,8 +223,10 @@ function PrivateTemplatesPageInner() {
         default: return 0;
       }
     });
-  }, [rows, search, stateFilter, filterTheme, filterNights, filterStatus, sortKey]);
+  }, [rows, search, stateFilter, filterTheme, filterNights, filterStatus, statusTab, sortKey]);
 
+  const liveCount  = useMemo(() => rows.filter(r => r.status).length, [rows]);
+  const draftCount = useMemo(() => rows.filter(r => !r.status).length, [rows]);
   const allSelected = filtered.length > 0 && filtered.every(r => selected.has(r.id));
 
   function toggleSelectAll() {
@@ -256,6 +261,30 @@ function PrivateTemplatesPageInner() {
           Template published successfully! It is now live and available for quote creation.
         </div>
       )}
+
+      {/* Live / Draft tabs */}
+      <div className="flex items-center gap-1 mb-4 p-1 rounded-xl w-fit" style={{ backgroundColor: '#F1F5F9' }}>
+        {([
+          { key: 'all',   label: 'All',   count: rows.length },
+          { key: 'live',  label: 'Live',  count: liveCount   },
+          { key: 'draft', label: 'Draft', count: draftCount  },
+        ] as { key: StatusTab; label: string; count: number }[]).map(tab => (
+          <button key={tab.key} onClick={() => setStatusTab(tab.key)}
+            className="flex items-center gap-2 h-8 px-4 rounded-lg text-sm font-semibold transition-all"
+            style={statusTab === tab.key
+              ? { backgroundColor: 'white', color: T, boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }
+              : { color: '#64748B' }}>
+            {tab.label}
+            <span className="text-[11px] px-1.5 py-0.5 rounded-md font-bold"
+              style={statusTab === tab.key
+                ? { backgroundColor: tab.key === 'live' ? '#DCFCE7' : tab.key === 'draft' ? '#FEF9C3' : '#E2E8F0',
+                    color: tab.key === 'live' ? '#16A34A' : tab.key === 'draft' ? '#A16207' : '#64748B' }
+                : { backgroundColor: '#E2E8F0', color: '#94A3B8' }}>
+              {tab.count}
+            </span>
+          </button>
+        ))}
+      </div>
 
       {/* Toolbar */}
       <div className="flex items-center gap-2 mb-3 flex-wrap">
@@ -359,6 +388,7 @@ function PrivateTemplatesPageInner() {
                   <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} className="w-4 h-4 rounded accent-[#134956]" />
                 </th>
                 <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Template</th>
+                <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Status</th>
                 <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Destination</th>
                 <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Duration</th>
                 <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Theme</th>
@@ -379,6 +409,14 @@ function PrivateTemplatesPageInner() {
                       <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(r.id)} className="w-4 h-4 rounded accent-[#134956]" />
                     </td>
                     <td className="px-4 py-3.5 font-semibold text-[#0F172A]">{r.template_name}</td>
+                    <td className="px-4 py-3.5">
+                      <span className="px-2 py-0.5 rounded-md text-[11px] font-bold"
+                        style={r.status
+                          ? { backgroundColor: '#DCFCE7', color: '#16A34A' }
+                          : { backgroundColor: '#FEF9C3', color: '#A16207' }}>
+                        {r.status ? 'Live' : 'Draft'}
+                      </span>
+                    </td>
                     <td className="px-4 py-3.5">
                       <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold" style={{ backgroundColor: '#CCFBF1', color: '#0F766E' }}>{r.state.name}</span>
                     </td>
@@ -433,6 +471,12 @@ function PrivateTemplatesPageInner() {
                     </div>
                   )}
                   <span className="absolute top-2 right-2 text-[10px] font-bold px-2 py-0.5 rounded-md" style={{ backgroundColor: '#CCFBF1', color: '#0F766E' }}>{r.state.name}</span>
+                  <span className="absolute top-2 left-8 text-[10px] font-bold px-2 py-0.5 rounded-md"
+                    style={r.status
+                      ? { backgroundColor: '#DCFCE7', color: '#16A34A' }
+                      : { backgroundColor: '#FEF9C3', color: '#A16207' }}>
+                    {r.status ? 'Live' : 'Draft'}
+                  </span>
                 </div>
                 <div className="p-4">
                   <div className="flex items-start justify-between gap-2 mb-1">
