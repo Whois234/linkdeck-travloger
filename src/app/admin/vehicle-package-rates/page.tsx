@@ -148,8 +148,11 @@ export default function VehicleRatesPage() {
               })}
               importMapper={r => {
                 const stateName = (r['State Name'] ?? '').trim();
-                const vtCode    = (r['Vehicle Type Code'] ?? '').trim().toLowerCase();
+                const vtCode    = (r['Vehicle Type Code'] ?? '').trim();
                 const supName   = (r['Supplier'] ?? '').trim();
+
+                // Normalise: lowercase, strip spaces / underscores / hyphens / parens
+                const norm = (s: string) => s.toLowerCase().replace(/[\s\-_()\/.]/g, '');
 
                 const st = states.find(s =>
                   s.name.toLowerCase() === stateName.toLowerCase()
@@ -158,11 +161,11 @@ export default function VehicleRatesPage() {
                   throw new Error(`State "${stateName}" not found — check the States module`);
 
                 const vt = vehicleTypes.find(v =>
-                  v.vehicle_type.toLowerCase()  === vtCode ||
-                  v.display_name.toLowerCase()   === vtCode
+                  norm(v.vehicle_type) === norm(vtCode) ||
+                  norm(v.display_name) === norm(vtCode)
                 );
                 if (!vt)
-                  throw new Error(`Vehicle type "${r['Vehicle Type Code']}" not found — check the Vehicle Types module`);
+                  throw new Error(`Vehicle type "${vtCode}" not found in DB. Available: ${vehicleTypes.map(v => v.vehicle_type).join(', ')}`);
 
                 const sup = supName
                   ? suppliers.find(s => s.name.toLowerCase() === supName.toLowerCase())

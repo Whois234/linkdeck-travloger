@@ -8,7 +8,7 @@ import { UserRole } from '@prisma/client';
 
 const Schema = z.object({
   route_name: z.string().min(1),
-  state_id: z.string(),
+  state_id: z.string().min(1),          // required, must be a non-empty UUID
   start_city: z.string().min(1),
   end_city: z.string().min(1),
   destinations_covered: z.array(z.string()).optional().nullable(),
