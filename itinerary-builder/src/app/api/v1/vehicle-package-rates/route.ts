@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
 
   const rates = await prisma.vehiclePackageRate.findMany({
     where: { status: true, ...stateFilter },
-    include: { vehicle_type: true, state: { select: { name: true } } },
+    include: { vehicle_type: true, state: { select: { name: true } }, supplier: { select: { name: true } } },
     orderBy: { route_name: 'asc' },
   });
   return ok(rates);

@@ -16,6 +16,7 @@ interface Rate {
   driver_bata_included: boolean; toll_parking_included: boolean;
   valid_from: string; valid_to: string; status: boolean;
   vehicle_type_id: string; state_id: string;
+  vehicle_type?: { display_name: string } | null;
   supplier_id: string | null;
   supplier?: { name: string } | null;
 }
@@ -267,7 +268,7 @@ export default function VehicleRatesPage() {
                     }}
                   />
                 </th>
-                {['Route', 'From', 'To', 'Base Cost', 'Valid From', 'Valid To', 'Status', ''].map(h => <th key={h} className="px-5 py-3.5 text-left text-[11px] font-semibold uppercase tracking-wider whitespace-nowrap" style={{ color: '#64748B' }}>{h}</th>)}
+                {['Route', 'Vehicle Type', 'From', 'To', 'Duration', 'Supplier', 'Base Cost', 'Valid From', 'Valid To', 'Status', ''].map(h => <th key={h} className="px-5 py-3.5 text-left text-[11px] font-semibold uppercase tracking-wider whitespace-nowrap" style={{ color: '#64748B' }}>{h}</th>)}
               </tr></thead>
               <tbody>
                 {paginated.map(r => (
@@ -284,8 +285,11 @@ export default function VehicleRatesPage() {
                       />
                     </td>
                     <td className="px-5 py-0 font-semibold" style={{ color: '#0F172A' }}>{r.route_name}</td>
+                    <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>{r.vehicle_type?.display_name ?? '—'}</td>
                     <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>{r.start_city}</td>
                     <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>{r.end_city}</td>
+                    <td className="px-5 py-0 text-sm whitespace-nowrap" style={{ color: '#64748B' }}>{r.duration_days}D / {r.duration_nights}N</td>
+                    <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>{r.supplier?.name ?? '—'}</td>
                     <td className="px-5 py-0 font-semibold" style={{ color: '#134956' }}>₹{r.base_cost.toLocaleString('en-IN')}</td>
                     <td className="px-5 py-0 text-xs whitespace-nowrap" style={{ color: '#64748B' }}>{new Date(r.valid_from).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
                     <td className="px-5 py-0 text-xs whitespace-nowrap" style={{ color: '#64748B' }}>{new Date(r.valid_to).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>

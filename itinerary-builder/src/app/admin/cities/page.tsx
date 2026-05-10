@@ -201,7 +201,7 @@ export default function CitiesPage() {
                     }}
                   />
                 </th>
-                {['City', 'State', 'Created', ''].map(h => (
+                {['City', 'State', 'Created By', 'Created', ''].map(h => (
                   <th key={h} className="px-5 py-3.5 text-left text-[11px] font-semibold uppercase tracking-wider" style={{ color: '#64748B' }}>{h}</th>
                 ))}
               </tr>
@@ -226,6 +226,7 @@ export default function CitiesPage() {
                       {r.state.name}
                     </span>
                   </td>
+                  <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>Admin</td>
                   <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>
                     {new Date(r.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                   </td>
