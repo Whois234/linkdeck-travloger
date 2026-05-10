@@ -140,21 +140,25 @@ export default function ExcelIO<T>({
           let errMsg = `HTTP ${res.status}`;
           try {
             const errBody = await res.json();
-            if (errBody?.error) errMsg = errBody.error;
-            else if (errBody?.message) errMsg = errBody.message;
-            else if (errBody?.errors) {
-              // Zod flatten format
+            // Check Zod field errors FIRST (most specific), then fall back to generic message
+            if (errBody?.errors?.fieldErrors || errBody?.errors?.formErrors) {
               const fieldErrors = Object.entries(errBody.errors?.fieldErrors ?? {})
                 .map(([k, v]) => `${k}: ${(v as string[]).join(', ')}`)
                 .join('; ');
               const formErrors = (errBody.errors?.formErrors ?? []).join('; ');
-              errMsg = [fieldErrors, formErrors].filter(Boolean).join(' | ') || errMsg;
+              const zMsg = [fieldErrors, formErrors].filter(Boolean).join(' | ');
+              errMsg = zMsg || errBody.error || errMsg;
+            } else if (errBody?.error) {
+              errMsg = errBody.error;
+            } else if (errBody?.message) {
+              errMsg = errBody.message;
             }
           } catch { /* response wasn't JSON */ }
           errors.push({ row: i + 2, message: `Row ${i + 2}: ${errMsg}` });
         }
       } catch (ex) {
-        errors.push({ row: i + 2, message: `Row ${i + 2}: Network error — ${ex}` });
+        // importMapper threw (e.g. lookup not found) or network failed
+        errors.push({ row: i + 2, message: `Row ${i + 2}: ${ex instanceof Error ? ex.message : String(ex)}` });
       }
     }
 

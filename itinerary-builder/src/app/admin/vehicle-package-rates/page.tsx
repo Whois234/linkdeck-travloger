@@ -147,20 +147,44 @@ export default function VehicleRatesPage() {
                 'Supplier':                 r.supplier?.name ?? '',
               })}
               importMapper={r => {
-                const st  = states.find(s => s.name.toLowerCase() === (r['State Name'] ?? '').toLowerCase());
-                const vt  = vehicleTypes.find(v => v.vehicle_type.toLowerCase() === (r['Vehicle Type Code'] ?? '').toLowerCase());
-                const sup = suppliers.find(s => s.name.toLowerCase() === (r['Supplier'] ?? '').toLowerCase());
+                const stateName = (r['State Name'] ?? '').trim();
+                const vtCode    = (r['Vehicle Type Code'] ?? '').trim().toLowerCase();
+                const supName   = (r['Supplier'] ?? '').trim();
+
+                const st = states.find(s =>
+                  s.name.toLowerCase() === stateName.toLowerCase()
+                );
+                if (stateName && !st)
+                  throw new Error(`State "${stateName}" not found — check the States module`);
+
+                const vt = vehicleTypes.find(v =>
+                  v.vehicle_type.toLowerCase()  === vtCode ||
+                  v.display_name.toLowerCase()   === vtCode
+                );
+                if (!vt)
+                  throw new Error(`Vehicle type "${r['Vehicle Type Code']}" not found — check the Vehicle Types module`);
+
+                const sup = supName
+                  ? suppliers.find(s => s.name.toLowerCase() === supName.toLowerCase())
+                  : undefined;
+                // Supplier is optional — don't throw, just leave null
+
+                const validFrom = r['Valid From (YYYY-MM-DD)'];
+                const validTo   = r['Valid To (YYYY-MM-DD)'];
+                if (!validFrom) throw new Error('Valid From date is empty');
+                if (!validTo)   throw new Error('Valid To date is empty');
+
                 return {
                   route_name:            r['Route Name'],
-                  state_id:              st?.id ?? undefined,
-                  vehicle_type_id:       vt?.id ?? undefined,
+                  state_id:              st?.id,
+                  vehicle_type_id:       vt.id,
                   start_city:            r['Start City'],
                   end_city:              r['End City'],
                   base_cost:             Number(r['Base Cost (₹)']) || 0,
                   duration_days:         Number(r['Duration Days']) || 1,
                   duration_nights:       Number(r['Duration Nights']) || 0,
-                  valid_from:            r['Valid From (YYYY-MM-DD)'] ? new Date(r['Valid From (YYYY-MM-DD)']).toISOString() : undefined,
-                  valid_to:              r['Valid To (YYYY-MM-DD)']   ? new Date(r['Valid To (YYYY-MM-DD)']).toISOString()   : undefined,
+                  valid_from:            new Date(validFrom).toISOString(),
+                  valid_to:              new Date(validTo).toISOString(),
                   supplier_id:           sup?.id ?? null,
                   extra_day_cost:        null,
                   extra_km_cost:         null,
