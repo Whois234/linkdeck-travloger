@@ -117,6 +117,7 @@ interface ItineraryData {
   group_pricing_mode?: 'date_based' | 'package_based';
   group_trip_dates?: Array<{ start_date: string; end_date: string; label: string; availability?: 'available' | 'few_left' | 'filling_fast' | 'sold_out' }>;
   day_snapshots: DaySnapshot[];
+  destination_cards?: Array<{ destination_id: string; name: string; description: string; image_url: string }> | null;
   inclusions: Array<{ id: string; text: string }>;
   exclusions: Array<{ id: string; text: string }>;
   policies: PolicyRecord[];
@@ -864,9 +865,73 @@ function DayCard({ day, open, onToggle }: { day: DaySnapshot; open: boolean; onT
   );
 }
 
-function ItinerarySection({ days }: { days: DaySnapshot[] }) {
+/* ─────────────────────────── Destination Cards Section ─────────────────────────── */
+type DestCard = { destination_id: string; name: string; description: string; image_url: string };
+
+function DestinationCardsSection({ cards, days }: { cards: DestCard[]; days: DaySnapshot[] }) {
+  const [openDay, setOpenDay] = useState<number>(0);
+  const visibleCards = cards.filter(c => c.name);
+  if (visibleCards.length === 0) {
+    // fallback to day cards if no cards
+    return <ItineraryDaysOnly days={days} openDay={openDay} setOpenDay={setOpenDay} />;
+  }
+  return (
+    <div className="tl-sec" data-section="itinerary">
+      <div className="tl-sec-eyebrow">Your Journey</div>
+      <div className="tl-sec-h">Destinations</div>
+      <div className="tl-sec-sub">{visibleCards.length} destination{visibleCards.length !== 1 ? 's' : ''} · crafted just for you.</div>
+      <div className="tl-dest-list">
+        {visibleCards.map((card, idx) => (
+          <div key={card.destination_id} className="tl-dest-card">
+            {card.image_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={card.image_url} alt={card.name} className="tl-dest-img" loading="lazy" />
+            ) : (
+              <div className="tl-dest-img tl-dest-img-placeholder" />
+            )}
+            <div className="tl-dest-body">
+              <div className="tl-dest-index">{String(idx + 1).padStart(2, '0')}</div>
+              <div className="tl-dest-name">{card.name}</div>
+              {card.description && <p className="tl-dest-desc">{card.description}</p>}
+            </div>
+          </div>
+        ))}
+      </div>
+      {/* Day-wise breakdown still shown below */}
+      {days.length > 0 && (
+        <>
+          <div className="tl-sec-eyebrow" style={{ marginTop: 32 }}>Day by Day</div>
+          <div className="tl-day-list">
+            {days.map((d, i) => (
+              <DayCard key={d.day_number} day={d} open={openDay === i} onToggle={() => setOpenDay(openDay === i ? -1 : i)} />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ItineraryDaysOnly({ days, openDay, setOpenDay }: { days: DaySnapshot[]; openDay: number; setOpenDay: (n: number) => void }) {
+  return (
+    <div className="tl-day-list">
+      {days.map((d, i) => (
+        <DayCard key={d.day_number} day={d} open={openDay === i} onToggle={() => setOpenDay(openDay === i ? -1 : i)} />
+      ))}
+    </div>
+  );
+}
+
+function ItinerarySection({ days, destinationCards }: { days: DaySnapshot[]; destinationCards?: DestCard[] | null }) {
   const [openDay, setOpenDay] = useState<number>(0); // first day open by default
-  if (days.length === 0) return null;
+  if (days.length === 0 && (!destinationCards || destinationCards.length === 0)) return null;
+
+  // If destination cards exist → show destination card view (with days folded below)
+  if (destinationCards && destinationCards.length > 0) {
+    return <DestinationCardsSection cards={destinationCards} days={days} />;
+  }
+
+  // Fallback: plain day-by-day
   return (
     <div className="tl-sec" data-section="itinerary">
       <div className="tl-sec-eyebrow">Day by Day</div>
@@ -2735,7 +2800,7 @@ function BookingIntentModal({
 
 /* ─────────────────────────── Main Component ─────────────────────────── */
 export function ItineraryClient({ data, token }: Props) {
-  const { quote, customer, agent, state, quote_options, group_package_options, group_pricing_mode, group_trip_dates, day_snapshots, inclusions, exclusions, policies } = data;
+  const { quote, customer, agent, state, quote_options, group_package_options, group_pricing_mode, group_trip_dates, day_snapshots, destination_cards, inclusions, exclusions, policies } = data;
 
   const isGroup = quote.quote_type?.toUpperCase() === 'GROUP';
   // date_based = show batch date picker + fare summary (default for backwards compat)
@@ -2974,7 +3039,7 @@ export function ItineraryClient({ data, token }: Props) {
         )}
 
         <LogoMarquee />
-        <ItinerarySection days={day_snapshots} />
+        <ItinerarySection days={day_snapshots} destinationCards={destination_cards} />
 
         {/* ── GROUP: visual what's covered; regular: plain inc/exc ── */}
         {isGroup
