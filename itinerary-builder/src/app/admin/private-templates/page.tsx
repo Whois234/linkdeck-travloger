@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
 import MultiStateSelect from '@/components/MultiStateSelect';
-import { Plus, Search, Pencil, Trash2, FileText, Map, ChevronRight, LayoutGrid, List, ArrowUpDown, CheckCircle2 } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, FileText, Map, ChevronRight, LayoutGrid, List, ArrowUpDown, CheckCircle2, SlidersHorizontal, X } from 'lucide-react';
 
 type SortKey = 'name_asc' | 'name_desc' | 'state_asc' | 'nights_asc' | 'nights_desc' | 'days_desc';
 const SORT_OPTIONS: { value: SortKey; label: string }[] = [
@@ -36,6 +36,22 @@ const DEFAULT_OPTIONS = [
   { tier_name: 'Deluxe',   display_order: 2, is_most_popular: true,  inclusions: [] },
 ];
 
+function FilterSelect({ label, value, onChange, options }: {
+  label: string; value: string; onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-[#94A3B8]">{label}</span>
+      <select value={value} onChange={e => onChange(e.target.value)}
+        className="h-8 px-2 pr-6 rounded-lg border text-xs focus:outline-none bg-white appearance-none" style={inpSt}>
+        <option value="">All</option>
+        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    </div>
+  );
+}
+
 function PrivateTemplatesPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -47,20 +63,27 @@ function PrivateTemplatesPageInner() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch]     = useState('');
   const [stateFilter, setStateFilter] = useState('');
+  const [filterTheme, setFilterTheme] = useState('');
+  const [filterNights, setFilterNights] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
   const [sortKey, setSortKey]   = useState<SortKey>('name_asc');
-  const [viewMode, setViewMode] = useState<'grid'|'list'>('grid');
+  const [viewMode, setViewMode] = useState<'grid'|'list'>('list');
   const [showSetup, setShowSetup] = useState(false);
-  const [step, setStep]       = useState(1);  // 1 = setup, saving
+  const [step, setStep]       = useState(1);
   const [saving, setSaving]   = useState(false);
   const [err, setErr]         = useState('');
   const [deleting, setDeleting] = useState<string | null>(null);
+
+  // ── Selection ──
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const [setup, setSetup] = useState({
     template_name: '', state_ids: [] as string[], duration_nights: '4', duration_days: '5',
     pax_count: '2', start_city: '', end_city: '', theme: '', tab_title: '',
     destination_ids: [] as string[],
   });
-  // primary state (first in array) for backward compat
   const setupStateId = setup.state_ids[0] ?? '';
 
   async function load() {
@@ -96,7 +119,6 @@ function PrivateTemplatesPageInner() {
     const nights = Number(setup.duration_nights);
     const days   = Number(setup.duration_days) || nights + 1;
 
-    // Build initial cms_data
     const cms_data = {
       pax_count: Number(setup.pax_count) || 2,
       tab_title: setup.tab_title.trim() || null,
@@ -107,21 +129,10 @@ function PrivateTemplatesPageInner() {
         .filter(Boolean),
       destination_cards: setup.destination_ids.map(id => {
         const dest = dests.find(d => d.id === id);
-        return {
-          destination_id: id,
-          custom_name: null,
-          description: '',
-          image_url: dest?.hero_image ?? '',
-        };
+        return { destination_id: id, custom_name: null, description: '', image_url: dest?.hero_image ?? '' };
       }),
       package_options: DEFAULT_OPTIONS,
-      why_choose: [
-        'Ranked Professionals',
-        'Best Prices Guaranteed',
-        'Top-tier Standards',
-        '24×7 Monitoring',
-        'On-ground Support',
-      ],
+      why_choose: ['Ranked Professionals', 'Best Prices Guaranteed', 'Top-tier Standards', '24×7 Monitoring', 'On-ground Support'],
       faqs_enabled: false,
       custom_faqs: [] as { question: string; answer: string }[],
     };
@@ -155,11 +166,43 @@ function PrivateTemplatesPageInner() {
     load();
   }
 
+  async function handleBulkDelete() {
+    if (!selected.size) return;
+    if (!confirm(`Deactivate ${selected.size} template${selected.size !== 1 ? 's' : ''}? This cannot be undone.`)) return;
+    setBulkDeleting(true);
+    await Promise.all(Array.from(selected).map(id => fetch(`/api/v1/private-templates/${id}`, { method: 'DELETE' })));
+    setBulkDeleting(false);
+    setSelected(new Set());
+    load();
+  }
+
+  function toggleSelect(id: string) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  // Filter option lists
+  const themeOptions = useMemo(() =>
+    Array.from(new Set(rows.map(r => r.theme).filter(Boolean) as string[])).sort()
+      .map(t => ({ value: t, label: t }))
+  , [rows]);
+
+  const nightsOptions = useMemo(() =>
+    Array.from(new Set(rows.map(r => r.duration_nights))).sort((a, b) => a - b)
+      .map(n => ({ value: String(n), label: `${n} Nights` }))
+  , [rows]);
+
   const filtered = useMemo(() => {
     const f = rows.filter(r => {
       const q = !search || r.template_name.toLowerCase().includes(search.toLowerCase()) || r.state.name.toLowerCase().includes(search.toLowerCase());
       const s = !stateFilter || r.state_id === stateFilter;
-      return q && s;
+      const th = !filterTheme || (r.theme ?? '') === filterTheme;
+      const ni = !filterNights || r.duration_nights === Number(filterNights);
+      const st = !filterStatus || (filterStatus === 'active' ? r.status : !r.status);
+      return q && s && th && ni && st;
     });
     return [...f].sort((a, b) => {
       switch (sortKey) {
@@ -172,7 +215,20 @@ function PrivateTemplatesPageInner() {
         default: return 0;
       }
     });
-  }, [rows, search, stateFilter, sortKey]);
+  }, [rows, search, stateFilter, filterTheme, filterNights, filterStatus, sortKey]);
+
+  const allSelected = filtered.length > 0 && filtered.every(r => selected.has(r.id));
+
+  function toggleSelectAll() {
+    if (allSelected) {
+      setSelected(prev => { const next = new Set(prev); filtered.forEach(r => next.delete(r.id)); return next; });
+    } else {
+      setSelected(prev => { const next = new Set(prev); filtered.forEach(r => next.add(r.id)); return next; });
+    }
+  }
+
+  function clearFilters() { setStateFilter(''); setFilterTheme(''); setFilterNights(''); setFilterStatus(''); setSearch(''); }
+  const activeFilterCount = [stateFilter, filterTheme, filterNights, filterStatus].filter(Boolean).length;
 
   return (
     <div className="max-w-[1400px]">
@@ -196,18 +252,39 @@ function PrivateTemplatesPageInner() {
         </div>
       )}
 
-      {/* Search + Sort + View bar */}
-      <div className="flex items-center gap-2 mb-5 flex-wrap">
-        <div className="relative">
+      {/* Toolbar */}
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        {/* Select-all checkbox */}
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <input type="checkbox" checked={allSelected} onChange={toggleSelectAll}
+            className="w-4 h-4 rounded accent-[#134956]" />
+          <span className="text-sm text-[#64748B]">
+            {selected.size > 0 ? `${selected.size} selected` : 'Select all'}
+          </span>
+        </label>
+
+        {/* Bulk delete */}
+        {selected.size > 0 && (
+          <button onClick={handleBulkDelete} disabled={bulkDeleting}
+            className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
+            style={{ backgroundColor: '#DC2626' }}>
+            <Trash2 className="w-3.5 h-3.5" />
+            {bulkDeleting ? 'Deleting…' : `Delete ${selected.size}`}
+          </button>
+        )}
+
+        <div className="relative ml-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#94A3B8]" />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search templates…"
             className="w-52 h-9 pl-9 pr-3 rounded-lg border text-sm placeholder:text-[#94A3B8] focus:outline-none bg-white" style={inpSt} />
         </div>
+
         <select value={stateFilter} onChange={e => setStateFilter(e.target.value)}
           className="h-9 px-3 pr-8 rounded-lg border text-sm focus:outline-none bg-white appearance-none" style={inpSt}>
           <option value="">All Destinations</option>
           {states.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
+
         <div className="flex items-center gap-1.5 h-9 px-3 rounded-lg border bg-white text-sm" style={inpSt}>
           <ArrowUpDown className="w-3.5 h-3.5 text-[#94A3B8]" />
           <select value={sortKey} onChange={e => setSortKey(e.target.value as SortKey)}
@@ -215,6 +292,18 @@ function PrivateTemplatesPageInner() {
             {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
+
+        {/* Filters toggle */}
+        <button onClick={() => setShowFilters(p => !p)}
+          className="flex items-center gap-1.5 h-9 px-3 rounded-lg border text-sm font-medium relative"
+          style={{ borderColor: activeFilterCount ? T : '#E2E8F0', color: activeFilterCount ? T : '#64748B', backgroundColor: activeFilterCount ? '#EEF7F9' : 'white' }}>
+          <SlidersHorizontal className="w-3.5 h-3.5" />
+          Filters
+          {activeFilterCount > 0 && (
+            <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full text-[10px] font-bold flex items-center justify-center text-white" style={{ backgroundColor: T }}>{activeFilterCount}</span>
+          )}
+        </button>
+
         <div className="flex items-center rounded-lg border overflow-hidden ml-auto" style={inpSt}>
           <button onClick={() => setViewMode('grid')}
             className="flex items-center justify-center w-9 h-9 transition-colors"
@@ -230,6 +319,21 @@ function PrivateTemplatesPageInner() {
         <p className="text-sm text-[#94A3B8]">{loading ? 'Loading…' : `${filtered.length} template${filtered.length !== 1 ? 's' : ''}`}</p>
       </div>
 
+      {/* Filter bar */}
+      {showFilters && (
+        <div className="flex items-end gap-4 flex-wrap mb-4 px-4 py-3 rounded-xl" style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+          <FilterSelect label="Theme" value={filterTheme} onChange={setFilterTheme} options={themeOptions} />
+          <FilterSelect label="Duration" value={filterNights} onChange={setFilterNights} options={nightsOptions} />
+          <FilterSelect label="Status" value={filterStatus} onChange={setFilterStatus}
+            options={[{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }]} />
+          {activeFilterCount > 0 && (
+            <button onClick={clearFilters} className="flex items-center gap-1 h-8 px-2 rounded-lg text-xs font-medium text-[#64748B] hover:bg-[#E2E8F0] self-end">
+              <X className="w-3 h-3" /> Clear
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Content */}
       {loading ? (
         <div className="py-20 flex justify-center">
@@ -239,14 +343,17 @@ function PrivateTemplatesPageInner() {
         <div className="py-20 text-center bg-white rounded-2xl" style={{ border: '1px solid #E2E8F0' }}>
           <FileText className="w-10 h-10 mx-auto mb-3 text-[#CBD5E1]" />
           <p className="font-semibold text-sm text-[#0F172A]">No templates yet</p>
-          <p className="text-sm mt-1 text-[#64748B]">{search || stateFilter ? 'Try a different filter' : 'Create your first private template'}</p>
+          <p className="text-sm mt-1 text-[#64748B]">{search || stateFilter || filterTheme || filterNights || filterStatus ? 'Try a different filter' : 'Create your first private template'}</p>
         </div>
       ) : viewMode === 'list' ? (
         <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
           <table className="w-full text-sm">
             <thead>
               <tr style={{ borderBottom: '1px solid #F1F5F9', backgroundColor: '#F8FAFC' }}>
-                <th className="text-left px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Template</th>
+                <th className="px-4 py-3 w-8">
+                  <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} className="w-4 h-4 rounded accent-[#134956]" />
+                </th>
+                <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Template</th>
                 <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Destination</th>
                 <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Duration</th>
                 <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Theme</th>
@@ -255,19 +362,73 @@ function PrivateTemplatesPageInner() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((r, i) => (
-                <tr key={r.id} className="cursor-pointer hover:bg-[#F8FAFC] transition-colors"
-                  style={{ borderBottom: i < filtered.length - 1 ? '1px solid #F1F5F9' : undefined }}
-                  onClick={() => router.push(`/admin/private-templates/${r.id}/edit`)}>
-                  <td className="px-5 py-3.5 font-semibold text-[#0F172A]">{r.template_name}</td>
-                  <td className="px-4 py-3.5">
-                    <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold" style={{ backgroundColor: '#CCFBF1', color: '#0F766E' }}>{r.state.name}</span>
-                  </td>
-                  <td className="px-4 py-3.5 text-[#64748B]">{r.duration_nights}N/{r.duration_days}D</td>
-                  <td className="px-4 py-3.5 text-[#64748B]">{r.theme ?? '—'}</td>
-                  <td className="px-4 py-3.5 text-[#64748B]">{r.template_days.length}</td>
-                  <td className="px-5 py-3.5">
-                    <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
+              {filtered.map((r, i) => {
+                const isSelected = selected.has(r.id);
+                return (
+                  <tr key={r.id} className="cursor-pointer hover:bg-[#F8FAFC] transition-colors"
+                    style={{ borderBottom: i < filtered.length - 1 ? '1px solid #F1F5F9' : undefined, backgroundColor: isSelected ? '#EEF7F9' : undefined }}
+                    onClick={() => router.push(`/admin/private-templates/${r.id}/edit`)}>
+                    <td className="px-4 py-3.5" onClick={e => { e.stopPropagation(); toggleSelect(r.id); }}>
+                      <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(r.id)} className="w-4 h-4 rounded accent-[#134956]" />
+                    </td>
+                    <td className="px-4 py-3.5 font-semibold text-[#0F172A]">{r.template_name}</td>
+                    <td className="px-4 py-3.5">
+                      <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold" style={{ backgroundColor: '#CCFBF1', color: '#0F766E' }}>{r.state.name}</span>
+                    </td>
+                    <td className="px-4 py-3.5 text-[#64748B]">{r.duration_nights}N/{r.duration_days}D</td>
+                    <td className="px-4 py-3.5 text-[#64748B]">{r.theme ?? '—'}</td>
+                    <td className="px-4 py-3.5 text-[#64748B]">{r.template_days.length}</td>
+                    <td className="px-5 py-3.5">
+                      <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
+                        <button onClick={() => router.push(`/admin/private-templates/${r.id}/edit`)}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#F1F5F9] hover:text-[#134956]">
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={() => del(r.id)} disabled={deleting === r.id}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#FEF2F2] hover:text-[#DC2626] disabled:opacity-40">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filtered.map(r => {
+            const isSelected = selected.has(r.id);
+            return (
+              <div key={r.id} className="bg-white rounded-2xl overflow-hidden group cursor-pointer hover:-translate-y-0.5 transition-all relative"
+                style={{ border: isSelected ? `2px solid ${T}` : '1px solid #E2E8F0', boxShadow: isSelected ? `0 0 0 3px ${T}22` : '0 1px 3px rgba(0,0,0,0.06)' }}
+                onClick={() => router.push(`/admin/private-templates/${r.id}/edit`)}>
+                {/* Checkbox overlay */}
+                <div className="absolute top-2 left-2 z-10" onClick={e => { e.stopPropagation(); toggleSelect(r.id); }}>
+                  <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(r.id)}
+                    className="w-4 h-4 rounded accent-[#134956] cursor-pointer" />
+                </div>
+                <div className="aspect-video bg-gradient-to-br from-[#134956]/10 to-[#134956]/20 relative overflow-hidden">
+                  {r.hero_image ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={r.hero_image} alt={r.template_name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <Map className="w-8 h-8" style={{ color: T, opacity: 0.3 }} />
+                    </div>
+                  )}
+                  <span className="absolute top-2 right-2 text-[10px] font-bold px-2 py-0.5 rounded-md" style={{ backgroundColor: '#CCFBF1', color: '#0F766E' }}>{r.state.name}</span>
+                </div>
+                <div className="p-4">
+                  <div className="flex items-start justify-between gap-2 mb-1">
+                    <p className="font-semibold text-sm text-[#0F172A] leading-tight">{r.template_name}</p>
+                    <ChevronRight className="w-4 h-4 text-[#CBD5E1] group-hover:text-[#134956] transition-colors flex-shrink-0 mt-0.5" />
+                  </div>
+                  <p className="text-xs text-[#94A3B8] mb-3">{r.duration_nights}N/{r.duration_days}D · {r.theme ?? 'Custom'}{r.start_city ? ` · ${r.start_city}` : ''}</p>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-medium text-[#64748B]">{r.template_days.length} day plan{r.template_days.length !== 1 ? 's' : ''}</span>
+                    <div className="flex gap-1" onClick={e => e.stopPropagation()}>
                       <button onClick={() => router.push(`/admin/private-templates/${r.id}/edit`)}
                         className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#F1F5F9] hover:text-[#134956]">
                         <Pencil className="w-3.5 h-3.5" />
@@ -277,51 +438,11 @@ function PrivateTemplatesPageInner() {
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map(r => (
-            <div key={r.id} className="bg-white rounded-2xl overflow-hidden group cursor-pointer hover:-translate-y-0.5 transition-all"
-              style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}
-              onClick={() => router.push(`/admin/private-templates/${r.id}/edit`)}>
-              <div className="aspect-video bg-gradient-to-br from-[#134956]/10 to-[#134956]/20 relative overflow-hidden">
-                {r.hero_image ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={r.hero_image} alt={r.template_name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <Map className="w-8 h-8" style={{ color: T, opacity: 0.3 }} />
-                  </div>
-                )}
-                <span className="absolute top-2 right-2 text-[10px] font-bold px-2 py-0.5 rounded-md" style={{ backgroundColor: '#CCFBF1', color: '#0F766E' }}>{r.state.name}</span>
-              </div>
-              <div className="p-4">
-                <div className="flex items-start justify-between gap-2 mb-1">
-                  <p className="font-semibold text-sm text-[#0F172A] leading-tight">{r.template_name}</p>
-                  <ChevronRight className="w-4 h-4 text-[#CBD5E1] group-hover:text-[#134956] transition-colors flex-shrink-0 mt-0.5" />
-                </div>
-                <p className="text-xs text-[#94A3B8] mb-3">{r.duration_nights}N/{r.duration_days}D · {r.theme ?? 'Custom'}{r.start_city ? ` · ${r.start_city}` : ''}</p>
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-medium text-[#64748B]">{r.template_days.length} day plan{r.template_days.length !== 1 ? 's' : ''}</span>
-                  <div className="flex gap-1" onClick={e => e.stopPropagation()}>
-                    <button onClick={() => router.push(`/admin/private-templates/${r.id}/edit`)}
-                      className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#F1F5F9] hover:text-[#134956]">
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                    <button onClick={() => del(r.id)} disabled={deleting === r.id}
-                      className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#FEF2F2] hover:text-[#DC2626] disabled:opacity-40">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
                   </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
