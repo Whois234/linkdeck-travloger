@@ -981,6 +981,17 @@ export default function CreateQuotePage() {
                       const dest     = dests.find(d => d.id === h.destination_id);
                       const roomCats = hotels.find(ht => ht.id === h.hotel_id)?.room_categories ?? [];
                       const pax      = adults + children512 + childrenBelow5;
+                      // Star-rating filter
+                      const allDestHotels    = hotels.filter(ht => ht.destination_id === h.destination_id);
+                      const starFiltered     = allDestHotels.filter(ht => ht.star_rating === hotelCategory);
+                      const hotelList        = starFiltered.length > 0 ? starFiltered : allDestHotels;
+                      const otherStarHotels  = starFiltered.length > 0 ? allDestHotels.filter(ht => ht.star_rating !== hotelCategory) : [];
+                      // Meal-plan filter by room-category rates
+                      const cachedRates      = hotelRatesCache[h.hotel_id] ?? [];
+                      const availMpIds       = h.room_category_id
+                        ? new Set(cachedRates.filter(r => r.room_category_id === h.room_category_id).map(r => r.meal_plan_id))
+                        : null;
+                      const filteredMealPlans = availMpIds ? mealPlans.filter(m => availMpIds.has(m.id)) : mealPlans;
                       return (
                         <div key={hi} className="pt-4" style={{ borderTop: hi > 0 ? '1px dashed #E2E8F0' : 'none', marginTop: hi > 0 ? 16 : 8 }}>
                           <div className="flex items-center justify-between mb-3">
@@ -1003,26 +1014,13 @@ export default function CreateQuotePage() {
                               )}
                             </div>
                           </div>
-                          {/* ─── Hotel / Room / Meal Plan row ─── */}
-                        {(() => {
-                          // Filter hotels by destination AND star rating
-                          const allDestHotels = hotels.filter(ht => ht.destination_id === h.destination_id);
-                          const starFiltered  = allDestHotels.filter(ht => ht.star_rating === hotelCategory);
-                          const hotelList     = starFiltered.length > 0 ? starFiltered : allDestHotels;
-
-                          // Available meal plans for the selected room category
-                          const cachedRates = hotelRatesCache[h.hotel_id] ?? [];
-                          const availMpIds  = h.room_category_id
-                            ? new Set(cachedRates.filter(r => r.room_category_id === h.room_category_id).map(r => r.meal_plan_id))
-                            : null; // null = not loaded yet, show all
-                          const filteredMealPlans = availMpIds
-                            ? mealPlans.filter(m => availMpIds.has(m.id))
-                            : mealPlans;
-
-                          return (
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                          {/* ─── All 6 fields in one grid ─── */}
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                            {/* Hotel */}
                             <div className="col-span-2 sm:col-span-1">
-                              <label className={lbl}>Hotel {starFiltered.length > 0 && <span className="text-[10px] font-normal text-[#22c55e]">{starFiltered.length} {hotelCategory}★ match{starFiltered.length !== 1 ? 'es' : ''}</span>}</label>
+                              <label className={lbl}>
+                                Hotel {starFiltered.length > 0 && <span className="text-[10px] font-normal text-[#22c55e]">{starFiltered.length} {hotelCategory}★ match{starFiltered.length !== 1 ? 'es' : ''}</span>}
+                              </label>
                               <select className={sel} style={inpSt} value={h.hotel_id}
                                 onChange={e => {
                                   const newId = e.target.value;
@@ -1031,12 +1029,8 @@ export default function CreateQuotePage() {
                                 }}>
                                 <option value="">{hotelList.length === 0 ? '⚠ No hotels for this destination' : 'Select hotel…'}</option>
                                 {hotelList.map(ht => <option key={ht.id} value={ht.id}>{ht.hotel_name}{ht.star_rating ? ` (${ht.star_rating}★)` : ''}</option>)}
-                                {starFiltered.length > 0 && allDestHotels.length > starFiltered.length && (
-                                  <option disabled>── Other star ratings ──</option>
-                                )}
-                                {starFiltered.length > 0 && allDestHotels.filter(ht => ht.star_rating !== hotelCategory).map(ht =>
-                                  <option key={ht.id} value={ht.id}>{ht.hotel_name}{ht.star_rating ? ` (${ht.star_rating}★)` : ''}</option>
-                                )}
+                                {otherStarHotels.length > 0 && <option disabled>── Other star ratings ──</option>}
+                                {otherStarHotels.map(ht => <option key={`o-${ht.id}`} value={ht.id}>{ht.hotel_name}{ht.star_rating ? ` (${ht.star_rating}★)` : ''}</option>)}
                               </select>
                               {hotelList.length === 0 && (
                                 <p className="text-[11px] mt-1" style={{ color: '#F59E0B' }}>
@@ -1044,6 +1038,7 @@ export default function CreateQuotePage() {
                                 </p>
                               )}
                             </div>
+                            {/* Room Type */}
                             <div>
                               <label className={lbl}>Room Type</label>
                               <select className={sel} style={inpSt} value={h.room_category_id} disabled={!h.hotel_id}
@@ -1052,8 +1047,11 @@ export default function CreateQuotePage() {
                                 {roomCats.map(r => <option key={r.id} value={r.id}>{r.room_category_name}</option>)}
                               </select>
                             </div>
+                            {/* Meal Plan */}
                             <div>
-                              <label className={lbl}>Meal Plan {availMpIds && availMpIds.size === 0 && h.room_category_id && <span className="text-[10px] text-red-400">No rates</span>}</label>
+                              <label className={lbl}>
+                                Meal Plan {availMpIds && availMpIds.size === 0 && h.room_category_id && <span className="text-[10px] text-red-400">No rates</span>}
+                              </label>
                               <select className={sel} style={inpSt} value={h.meal_plan_id} disabled={!h.room_category_id}
                                 onChange={e => updHotelAndFetch(oi, hi, { meal_plan_id: e.target.value })}>
                                 <option value="">Select…</option>
@@ -1066,9 +1064,7 @@ export default function CreateQuotePage() {
                                 <p className="text-[11px] mt-1 text-red-400">Add rates in Hotels → Rates tab first.</p>
                               )}
                             </div>
-                          </div>
-                          );
-                        })()}
+                            {/* Check-in */}
                             <div>
                               <label className={lbl}>Check-in</label>
                               <input type="date" className={inp} style={inpSt} value={h.check_in_date}
@@ -1078,6 +1074,7 @@ export default function CreateQuotePage() {
                                   updHotelAndFetch(oi, hi, { check_in_date: newIn, check_out_date: newOut });
                                 }} />
                             </div>
+                            {/* Check-out */}
                             <div>
                               <label className={lbl}>Check-out</label>
                               <input type="date" className={inp} style={inpSt} value={h.check_out_date}
@@ -1086,6 +1083,7 @@ export default function CreateQuotePage() {
                                   updHotelAndFetch(oi, hi, { check_out_date: e.target.value, nights });
                                 }} />
                             </div>
+                            {/* Rooms */}
                             <div>
                               <label className={lbl}>Rooms</label>
                               <input type="number" min="1" className={inp} style={inpSt} value={h.rooms}
