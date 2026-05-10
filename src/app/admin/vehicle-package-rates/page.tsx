@@ -256,24 +256,48 @@ export default function VehicleRatesPage() {
         {loading ? <div className="py-16 text-center"><div className="w-8 h-8 rounded-full border-2 border-[#134956] border-t-transparent animate-spin mx-auto" /></div>
           : filtered.length === 0 ? <div className="py-16 text-center"><p className="font-semibold text-sm" style={{ color: '#0F172A' }}>No vehicle rates found</p><p className="text-sm mt-1" style={{ color: '#64748B' }}>{search ? 'Try a different search' : 'Add your first vehicle rate'}</p></div>
           : <>
-            <table className="w-full text-sm">
-              <thead><tr style={{ backgroundColor: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
-                <th className="px-5 py-3.5 w-10">
-                  <input type="checkbox"
-                    className="w-4 h-4 rounded border-gray-300 accent-[#134956] cursor-pointer"
-                    checked={paginated.length > 0 && paginated.every(r => selected.has(r.id))}
-                    onChange={e => {
-                      if (e.target.checked) setSelected(prev => new Set([...Array.from(prev), ...paginated.map(r => r.id)]));
-                      else setSelected(prev => { const n = new Set(prev); paginated.forEach(r => n.delete(r.id)); return n; });
-                    }}
-                  />
-                </th>
-                {['Route', 'Vehicle Type', 'From', 'To', 'Duration', 'Supplier', 'Base Cost', 'Valid From', 'Valid To', 'Status', ''].map(h => <th key={h} className="px-5 py-3.5 text-left text-[11px] font-semibold uppercase tracking-wider whitespace-nowrap" style={{ color: '#64748B' }}>{h}</th>)}
-              </tr></thead>
+            {/* Horizontally scrollable table */}
+            <div className="overflow-x-auto">
+            <table className="text-sm" style={{ minWidth: 1180, width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
+              <colgroup>
+                <col style={{ width: 44 }} />   {/* checkbox */}
+                <col style={{ minWidth: 200 }} />{/* route — sticky */}
+                <col style={{ minWidth: 150 }} />{/* vehicle type */}
+                <col style={{ minWidth: 110 }} />{/* from */}
+                <col style={{ minWidth: 110 }} />{/* to */}
+                <col style={{ minWidth: 100 }} />{/* duration */}
+                <col style={{ minWidth: 140 }} />{/* supplier */}
+                <col style={{ minWidth: 110 }} />{/* base cost */}
+                <col style={{ minWidth: 110 }} />{/* valid from */}
+                <col style={{ minWidth: 110 }} />{/* valid to */}
+                <col style={{ minWidth: 90 }}  />{/* status */}
+                <col style={{ minWidth: 80 }}  />{/* actions */}
+              </colgroup>
+              <thead>
+                <tr style={{ backgroundColor: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
+                  {/* sticky checkbox header */}
+                  <th className="px-4 py-3.5" style={{ position: 'sticky', left: 0, zIndex: 2, background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
+                    <input type="checkbox"
+                      className="w-4 h-4 rounded border-gray-300 accent-[#134956] cursor-pointer"
+                      checked={paginated.length > 0 && paginated.every(r => selected.has(r.id))}
+                      onChange={e => {
+                        if (e.target.checked) setSelected(prev => new Set([...Array.from(prev), ...paginated.map(r => r.id)]));
+                        else setSelected(prev => { const n = new Set(prev); paginated.forEach(r => n.delete(r.id)); return n; });
+                      }}
+                    />
+                  </th>
+                  {/* sticky route header */}
+                  <th className="px-4 py-3.5 text-left text-[11px] font-semibold uppercase tracking-wider" style={{ color: '#64748B', position: 'sticky', left: 44, zIndex: 2, background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', boxShadow: '2px 0 4px rgba(0,0,0,0.05)' }}>Route</th>
+                  {['Vehicle Type', 'From', 'To', 'Duration', 'Supplier', 'Base Cost', 'Valid From', 'Valid To', 'Status', ''].map(h =>
+                    <th key={h} className="px-4 py-3.5 text-left text-[11px] font-semibold uppercase tracking-wider whitespace-nowrap" style={{ color: '#64748B', borderBottom: '1px solid #E2E8F0' }}>{h}</th>
+                  )}
+                </tr>
+              </thead>
               <tbody>
                 {paginated.map(r => (
-                  <tr key={r.id} className="transition-colors hover:bg-[#F8FAFC]" style={{ borderBottom: '1px solid #F1F5F9', height: '56px' }}>
-                    <td className="px-5 py-0 w-10">
+                  <tr key={r.id} className="transition-colors hover:bg-[#F8FAFC]" style={{ borderBottom: '1px solid #F1F5F9' }}>
+                    {/* sticky checkbox cell */}
+                    <td className="px-4 py-0" style={{ height: 56, position: 'sticky', left: 0, zIndex: 1, background: 'inherit', borderBottom: '1px solid #F1F5F9' }}>
                       <input type="checkbox"
                         className="w-4 h-4 rounded border-gray-300 accent-[#134956] cursor-pointer"
                         checked={selected.has(r.id)}
@@ -284,17 +308,18 @@ export default function VehicleRatesPage() {
                         })}
                       />
                     </td>
-                    <td className="px-5 py-0 font-semibold" style={{ color: '#0F172A' }}>{r.route_name}</td>
-                    <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>{r.vehicle_type?.display_name ?? '—'}</td>
-                    <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>{r.start_city}</td>
-                    <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>{r.end_city}</td>
-                    <td className="px-5 py-0 text-sm whitespace-nowrap" style={{ color: '#64748B' }}>{r.duration_days}D / {r.duration_nights}N</td>
-                    <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>{r.supplier?.name ?? '—'}</td>
-                    <td className="px-5 py-0 font-semibold" style={{ color: '#134956' }}>₹{r.base_cost.toLocaleString('en-IN')}</td>
-                    <td className="px-5 py-0 text-xs whitespace-nowrap" style={{ color: '#64748B' }}>{new Date(r.valid_from).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
-                    <td className="px-5 py-0 text-xs whitespace-nowrap" style={{ color: '#64748B' }}>{new Date(r.valid_to).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
-                    <td className="px-5 py-0"><span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold" style={r.status ? { backgroundColor: '#DCFCE7', color: '#15803D' } : { backgroundColor: '#F1F5F9', color: '#475569' }}>{r.status ? 'Active' : 'Inactive'}</span></td>
-                    <td className="px-5 py-0"><div className="flex items-center justify-end gap-1">
+                    {/* sticky route cell */}
+                    <td className="px-4 py-3 font-semibold" style={{ color: '#0F172A', position: 'sticky', left: 44, zIndex: 1, background: 'inherit', borderBottom: '1px solid #F1F5F9', boxShadow: '2px 0 4px rgba(0,0,0,0.05)', maxWidth: 220, whiteSpace: 'normal', lineHeight: '1.35' }}>{r.route_name}</td>
+                    <td className="px-4 py-3 text-sm whitespace-nowrap" style={{ color: '#64748B' }}>{r.vehicle_type?.display_name ?? '—'}</td>
+                    <td className="px-4 py-3 text-sm whitespace-nowrap" style={{ color: '#64748B' }}>{r.start_city}</td>
+                    <td className="px-4 py-3 text-sm whitespace-nowrap" style={{ color: '#64748B' }}>{r.end_city}</td>
+                    <td className="px-4 py-3 text-sm whitespace-nowrap" style={{ color: '#64748B' }}>{r.duration_days}D / {r.duration_nights}N</td>
+                    <td className="px-4 py-3 text-sm" style={{ color: '#64748B', maxWidth: 160, whiteSpace: 'normal' }}>{r.supplier?.name ?? '—'}</td>
+                    <td className="px-4 py-3 font-semibold whitespace-nowrap" style={{ color: '#134956' }}>₹{r.base_cost.toLocaleString('en-IN')}</td>
+                    <td className="px-4 py-3 text-xs whitespace-nowrap" style={{ color: '#64748B' }}>{new Date(r.valid_from).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                    <td className="px-4 py-3 text-xs whitespace-nowrap" style={{ color: '#64748B' }}>{new Date(r.valid_to).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                    <td className="px-4 py-3"><span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold" style={r.status ? { backgroundColor: '#DCFCE7', color: '#15803D' } : { backgroundColor: '#F1F5F9', color: '#475569' }}>{r.status ? 'Active' : 'Inactive'}</span></td>
+                    <td className="px-4 py-3"><div className="flex items-center justify-end gap-1">
                       <button onClick={() => openEdit(r)} className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors hover:bg-[#F1F5F9]" style={{ color: '#94A3B8' }} onMouseEnter={e => (e.currentTarget.style.color = '#134956')} onMouseLeave={e => (e.currentTarget.style.color = '#94A3B8')}><Pencil className="w-3.5 h-3.5" /></button>
                       <button onClick={() => handleDelete(r.id)} disabled={deleting === r.id} className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors hover:bg-[#FEF2F2] disabled:opacity-40" style={{ color: '#94A3B8' }} onMouseEnter={e => (e.currentTarget.style.color = '#DC2626')} onMouseLeave={e => (e.currentTarget.style.color = '#94A3B8')}><Trash2 className="w-3.5 h-3.5" /></button>
                     </div></td>
@@ -302,6 +327,7 @@ export default function VehicleRatesPage() {
                 ))}
               </tbody>
             </table>
+            </div>
             {totalPages > 1 && (
               <div className="flex items-center justify-between px-5 py-3" style={{ borderTop: '1px solid #F1F5F9' }}>
                 <p className="text-xs" style={{ color: '#94A3B8' }}>
