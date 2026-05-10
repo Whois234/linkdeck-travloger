@@ -524,14 +524,12 @@ export default function HotelDetailPage() {
         subtitle={`${hotel.hotel_type} · ${hotel.destination.name}`}
         crumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Hotels', href: '/admin/hotels' }, { label: hotel.hotel_name }]}
         action={
-          tab === 'overview' ? (
-            <button onClick={saveOverview} disabled={ovSaving}
-              className="flex items-center gap-2 h-9 px-5 rounded-lg text-sm font-semibold text-white disabled:opacity-50 hover:opacity-90 transition-opacity"
-              style={{ backgroundColor: T }}>
-              <Save className="w-4 h-4" />
-              {ovSaving ? 'Saving…' : 'Save Changes'}
-            </button>
-          ) : undefined
+          <button onClick={saveOverview} disabled={ovSaving}
+            className="flex items-center gap-2 h-9 px-5 rounded-lg text-sm font-semibold text-white disabled:opacity-50 hover:opacity-90 transition-opacity"
+            style={{ backgroundColor: T }}>
+            <Save className="w-4 h-4" />
+            {ovSaving ? 'Saving…' : 'Save Changes'}
+          </button>
         }
       />
 
