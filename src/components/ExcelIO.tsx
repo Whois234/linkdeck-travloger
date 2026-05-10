@@ -119,10 +119,10 @@ export default function ExcelIO<T>({
       try {
         const body = importMapper(row);
 
-        // Client-side pre-validation: skip rows where required-looking fields are empty
-        const hasName = Object.entries(body).find(([k]) => k === 'name')?.[1];
-        if (hasName === '' || hasName === null || hasName === undefined) {
-          errors.push({ row: i + 2, message: `Row ${i + 2}: Name is empty — skipped` });
+        // Client-side pre-validation: skip completely empty rows
+        const hasAnyValue = Object.values(body).some(v => v !== '' && v !== null && v !== undefined && v !== false);
+        if (!hasAnyValue) {
+          errors.push({ row: i + 2, message: `Row ${i + 2}: Row is empty — skipped` });
           continue;
         }
 
