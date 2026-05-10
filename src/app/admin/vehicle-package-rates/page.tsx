@@ -249,7 +249,7 @@ export default function VehicleRatesPage() {
       case 'created_asc':     arr.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()); break;
     }
     return arr;
-  }, [rows, search, filterState, filterSupplier, filterVehicleType, filterStatus, filterDuration, sortKey]);
+  }, [rows, search, filterState, filterSupplier, filterVehicleType, filterStatus, filterDuration, filterDuplicates, duplicateIds, sortKey]);
 
   const totalPages = Math.ceil(processed.length / pageSize);
   const paginated  = processed.slice((currentPage - 1) * pageSize, currentPage * pageSize);
