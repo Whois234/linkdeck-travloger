@@ -9,6 +9,14 @@ import {
   Calendar, VoicemailIcon, PhoneMissed, PhoneOff, PhoneIncoming,
   type LucideProps,
 } from 'lucide-react';
+import Link from 'next/link';
+import { useLead, useAddNote, useLogCall, useAddTask, useMarkTaskDone, QK } from '@/lib/query-hooks';
+import { DrawerSkeleton } from '@/components/Skeleton';
+import {
+  Stage, Lead, Note, CallLog, Task, Activity, QuoteRef,
+  STATUS_COLORS, QUOTE_STATUS_COLORS, TASK_ICONS, ACTIVITY_CONFIG, SECTION_ORDER,
+  timeAgo, formatDate, formatDateTime, fmtSecs,
+} from './types';
 
 const ICON_MAP: Record<string, React.ComponentType<LucideProps>> = {
   PhoneCall, RefreshCw, FileText, Users, Pin, Sparkles, ArrowLeftRight, Clock, Bell,
@@ -18,14 +26,6 @@ function DynamicIcon({ name, className, style }: { name: string; className?: str
   const Icon = ICON_MAP[name] ?? Bell;
   return <Icon className={className} style={style} />;
 }
-import Link from 'next/link';
-import { useLead, useAddNote, useLogCall, useAddTask, useMarkTaskDone, QK } from '@/lib/query-hooks';
-import { DrawerSkeleton } from '@/components/Skeleton';
-import {
-  Stage, Lead, Note, CallLog, Task, Activity, QuoteRef,
-  STATUS_COLORS, QUOTE_STATUS_COLORS, TASK_ICONS, ACTIVITY_CONFIG, SECTION_ORDER,
-  timeAgo, formatDate, formatDateTime, fmtSecs,
-} from './types';
 
 // ─── Floating Call Banner ─────────────────────────────────────────────────────
 
