@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
 import MultiStateSelect from '@/components/MultiStateSelect';
-import { Plus, Search, Pencil, Trash2, FileText, Map, ChevronRight, LayoutGrid, List, ArrowUpDown, CheckCircle2, SlidersHorizontal, X } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, FileText, Map, ChevronRight, LayoutGrid, List, ArrowUpDown, CheckCircle2, SlidersHorizontal, X, Copy } from 'lucide-react';
 
 type SortKey = 'name_asc' | 'name_desc' | 'state_asc' | 'nights_asc' | 'nights_desc' | 'days_desc' | 'newest' | 'oldest';
 type StatusTab = 'all' | 'live' | 'draft';
@@ -78,7 +78,8 @@ function PrivateTemplatesPageInner() {
   const [step, setStep]       = useState(1);
   const [saving, setSaving]   = useState(false);
   const [err, setErr]         = useState('');
-  const [deleting, setDeleting] = useState<string | null>(null);
+  const [deleting, setDeleting]     = useState<string | null>(null);
+  const [duplicating, setDuplicating] = useState<string | null>(null);
 
   // ── Selection ──
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -169,6 +170,20 @@ function PrivateTemplatesPageInner() {
     await fetch(`/api/v1/private-templates/${id}`, { method: 'DELETE' });
     setDeleting(null);
     load();
+  }
+
+  async function duplicate(id: string, name: string) {
+    if (!confirm(`Duplicate "${name}"? A copy will be created as a Draft.`)) return;
+    setDuplicating(id);
+    const res  = await fetch(`/api/v1/private-templates/${id}/duplicate`, { method: 'POST' });
+    const data = await res.json();
+    setDuplicating(null);
+    if (res.ok && data.data?.id) {
+      router.push(`/admin/private-templates/${data.data.id}/edit`);
+    } else {
+      alert('Duplication failed: ' + (data.error ?? 'Unknown error'));
+      load();
+    }
   }
 
   async function handleBulkDelete() {
@@ -433,10 +448,19 @@ function PrivateTemplatesPageInner() {
                     <td className="px-5 py-3.5">
                       <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
                         <button onClick={() => router.push(`/admin/private-templates/${r.id}/edit`)}
+                          title="Edit"
                           className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#F1F5F9] hover:text-[#134956]">
                           <Pencil className="w-3.5 h-3.5" />
                         </button>
+                        <button onClick={() => duplicate(r.id, r.template_name)} disabled={duplicating === r.id}
+                          title="Duplicate"
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#EEF7F9] hover:text-[#134956] disabled:opacity-40">
+                          {duplicating === r.id
+                            ? <div className="w-3.5 h-3.5 rounded-full border-2 border-t-transparent animate-spin" style={{borderColor:'#134956'}} />
+                            : <Copy className="w-3.5 h-3.5" />}
+                        </button>
                         <button onClick={() => del(r.id)} disabled={deleting === r.id}
+                          title="Delete"
                           className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#FEF2F2] hover:text-[#DC2626] disabled:opacity-40">
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -491,10 +515,19 @@ function PrivateTemplatesPageInner() {
                     <span className="text-[11px] font-medium text-[#64748B]">{r.template_days.length} day plan{r.template_days.length !== 1 ? 's' : ''}</span>
                     <div className="flex gap-1" onClick={e => e.stopPropagation()}>
                       <button onClick={() => router.push(`/admin/private-templates/${r.id}/edit`)}
+                        title="Edit"
                         className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#F1F5F9] hover:text-[#134956]">
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
+                      <button onClick={() => duplicate(r.id, r.template_name)} disabled={duplicating === r.id}
+                        title="Duplicate"
+                        className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#EEF7F9] hover:text-[#134956] disabled:opacity-40">
+                        {duplicating === r.id
+                          ? <div className="w-3.5 h-3.5 rounded-full border-2 border-t-transparent animate-spin" style={{borderColor:'#134956'}} />
+                          : <Copy className="w-3.5 h-3.5" />}
+                      </button>
                       <button onClick={() => del(r.id)} disabled={deleting === r.id}
+                        title="Delete"
                         className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#FEF2F2] hover:text-[#DC2626] disabled:opacity-40">
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
