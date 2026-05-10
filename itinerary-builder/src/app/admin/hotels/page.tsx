@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
-import { Plus, Search, Star, ChevronRight, Building2, LayoutGrid, List, ArrowUpDown } from 'lucide-react';
+import { Plus, Search, Star, ChevronRight, Building2, LayoutGrid, List, ArrowUpDown, Trash2 } from 'lucide-react';
 import ExcelIO from '@/components/ExcelIO';
 
 const HOTEL_TYPES = ['HOTEL','RESORT','VILLA','HOMESTAY','HOUSEBOAT'];
@@ -77,6 +77,10 @@ export default function HotelsPage() {
   const [sortKey, setSortKey]   = useState<SortKey>('newest');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
+  // ── Selection ──
+  const [selected, setSelected]       = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
   async function load() {
     setLoading(true);
     const [hr, dr] = await Promise.all([fetch('/api/v1/hotels'), fetch('/api/v1/destinations')]);
@@ -95,6 +99,24 @@ export default function HotelsPage() {
     if (!res.ok) { setError(data.error ?? 'Save failed'); }
     else { setShowForm(false); load(); router.push(`/admin/hotels/${data.data.id}`); }
     setSaving(false);
+  }
+
+  async function handleBulkDelete() {
+    if (!selected.size) return;
+    if (!confirm(`Delete ${selected.size} hotel${selected.size !== 1 ? 's' : ''}? This cannot be undone.`)) return;
+    setBulkDeleting(true);
+    await Promise.all(Array.from(selected).map(id => fetch(`/api/v1/hotels/${id}`, { method: 'DELETE' })));
+    setBulkDeleting(false);
+    setSelected(new Set());
+    load();
+  }
+
+  function toggleSelect(id: string) {
+    setSelected(prev => {
+      const n = new Set(prev);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
   }
 
   const displayed = useMemo(() => {
@@ -119,6 +141,17 @@ export default function HotelsPage() {
     return map;
   }, [displayed, sortKey]);
 
+  const allDisplayedIds = displayed.map(h => h.id);
+  const allSelected = allDisplayedIds.length > 0 && allDisplayedIds.every(id => selected.has(id));
+
+  function toggleSelectAll() {
+    if (allSelected) {
+      setSelected(prev => { const n = new Set(prev); allDisplayedIds.forEach(id => n.delete(id)); return n; });
+    } else {
+      setSelected(prev => new Set([...Array.from(prev), ...allDisplayedIds]));
+    }
+  }
+
   return (
     <div className="max-w-[1400px]">
       <PageHeader
@@ -130,18 +163,32 @@ export default function HotelsPage() {
             <ExcelIO
               moduleName="Hotels"
               columns={[
-                { key: 'hotel_name', label: 'Hotel Name *', example: 'The Windermere Hotel' },
-                { key: 'destination', label: 'Destination Name *', example: 'Munnar' },
-                { key: 'hotel_type', label: 'Hotel Type (HOTEL/RESORT/VILLA/HOMESTAY/HOUSEBOAT)', example: 'RESORT' },
-                { key: 'category_label', label: 'Category (BUDGET/STANDARD/DELUXE/PREMIUM/LUXURY)', example: 'DELUXE' },
-                { key: 'star_rating', label: 'Star Rating (1-5)', example: '4' },
-                { key: 'address', label: 'Address', example: 'Pothamedu, Munnar' },
+                { key: 'hotel_name',     label: 'Hotel Name *',                                        example: 'The Windermere Hotel' },
+                { key: 'destination',    label: 'Destination Name *',                                  example: 'Munnar' },
+                { key: 'hotel_type',     label: 'Hotel Type (HOTEL/RESORT/VILLA/HOMESTAY/HOUSEBOAT)',  example: 'RESORT' },
+                { key: 'category_label', label: 'Category (BUDGET/STANDARD/DELUXE/PREMIUM/LUXURY)',   example: 'DELUXE' },
+                { key: 'star_rating',    label: 'Star Rating (1-5)',                                   example: '4' },
+                { key: 'address',        label: 'Address',                                             example: 'Pothamedu, Munnar' },
               ]}
               rows={rows}
-              rowMapper={r => ({ 'Hotel Name *': r.hotel_name, 'Destination Name *': r.destination.name, 'Hotel Type (HOTEL/RESORT/VILLA/HOMESTAY/HOUSEBOAT)': r.hotel_type, 'Category (BUDGET/STANDARD/DELUXE/PREMIUM/LUXURY)': r.category_label, 'Star Rating (1-5)': r.star_rating ?? '', 'Address': r.address ?? '' })}
+              rowMapper={r => ({
+                'Hotel Name *': r.hotel_name,
+                'Destination Name *': r.destination.name,
+                'Hotel Type (HOTEL/RESORT/VILLA/HOMESTAY/HOUSEBOAT)': r.hotel_type,
+                'Category (BUDGET/STANDARD/DELUXE/PREMIUM/LUXURY)': r.category_label,
+                'Star Rating (1-5)': r.star_rating ?? '',
+                'Address': r.address ?? '',
+              })}
               importMapper={r => {
                 const dest = dests.find(d => d.name.toLowerCase() === (r['Destination Name *'] ?? '').toLowerCase());
-                return { hotel_name: r['Hotel Name *'], destination_id: dest?.id ?? undefined, hotel_type: r['Hotel Type (HOTEL/RESORT/VILLA/HOMESTAY/HOUSEBOAT)'] || 'HOTEL', category_label: r['Category (BUDGET/STANDARD/DELUXE/PREMIUM/LUXURY)'] || 'STANDARD', star_rating: r['Star Rating (1-5)'] ? Number(r['Star Rating (1-5)']) : null, address: r['Address'] || undefined };
+                return {
+                  hotel_name: r['Hotel Name *'],
+                  destination_id: dest?.id ?? undefined,
+                  hotel_type: r['Hotel Type (HOTEL/RESORT/VILLA/HOMESTAY/HOUSEBOAT)'] || 'HOTEL',
+                  category_label: r['Category (BUDGET/STANDARD/DELUXE/PREMIUM/LUXURY)'] || 'STANDARD',
+                  star_rating: r['Star Rating (1-5)'] ? Number(r['Star Rating (1-5)']) : null,
+                  address: r['Address'] || undefined,
+                };
               }}
               importUrl="/api/v1/hotels"
               onImportDone={load}
@@ -155,28 +202,51 @@ export default function HotelsPage() {
         }
       />
 
-      {/* Filters + sort + view bar */}
+      {/* ── Toolbar ── */}
       <div className="flex items-center gap-2 mb-5 flex-wrap">
+
+        {/* Select all checkbox */}
+        <label className="flex items-center gap-2 h-9 px-3 rounded-lg border bg-white cursor-pointer select-none text-sm font-medium"
+          style={{ borderColor: selected.size > 0 ? '#134956' : '#E2E8F0', color: selected.size > 0 ? '#134956' : '#64748B', background: selected.size > 0 ? '#F0F7F9' : '#fff' }}>
+          <input
+            type="checkbox"
+            className="w-4 h-4 rounded border-gray-300 accent-[#134956] cursor-pointer"
+            checked={allSelected}
+            onChange={toggleSelectAll}
+          />
+          {selected.size > 0 ? `${selected.size} selected` : 'Select all'}
+        </label>
+
+        {/* Bulk delete */}
+        {selected.size > 0 && (
+          <button onClick={handleBulkDelete} disabled={bulkDeleting}
+            className="flex items-center gap-1.5 h-9 px-3 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50"
+            style={{ backgroundColor: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
+            <Trash2 className="w-3.5 h-3.5" />
+            {bulkDeleting ? 'Deleting…' : `Delete ${selected.size} selected`}
+          </button>
+        )}
+
         {/* Search */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#94A3B8]" />
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search hotels…"
+          <input value={search} onChange={e=>{ setSearch(e.target.value); setSelected(new Set()); }} placeholder="Search hotels…"
             className="w-52 h-9 pl-9 pr-3 rounded-lg border text-sm placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white"
             style={inpSt} />
         </div>
 
         {/* Category filter */}
-        <select value={catFilter} onChange={e=>setCatFilter(e.target.value)}
+        <select value={catFilter} onChange={e=>{setCatFilter(e.target.value); setSelected(new Set());}}
           className="h-9 px-3 pr-8 rounded-lg border text-sm focus:outline-none bg-white appearance-none"
-          style={inpSt}>
+          style={{ borderColor: catFilter ? '#134956' : '#E2E8F0', color: catFilter ? '#134956' : '#64748B', backgroundColor: catFilter ? '#F0F7F9' : '#fff' }}>
           <option value="">All Categories</option>
           {HOTEL_CATS.map(c=><option key={c} value={c}>{c.charAt(0)+c.slice(1).toLowerCase()}</option>)}
         </select>
 
         {/* Destination filter */}
-        <select value={destFilter} onChange={e=>setDestFilter(e.target.value)}
+        <select value={destFilter} onChange={e=>{setDestFilter(e.target.value); setSelected(new Set());}}
           className="h-9 px-3 pr-8 rounded-lg border text-sm focus:outline-none bg-white appearance-none"
-          style={inpSt}>
+          style={{ borderColor: destFilter ? '#134956' : '#E2E8F0', color: destFilter ? '#134956' : '#64748B', backgroundColor: destFilter ? '#F0F7F9' : '#fff' }}>
           <option value="">All Destinations</option>
           {dests.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
@@ -207,7 +277,7 @@ export default function HotelsPage() {
         <p className="text-sm text-[#94A3B8]">{loading ? 'Loading…' : `${displayed.length} hotel${displayed.length!==1?'s':''}`}</p>
       </div>
 
-      {/* Content */}
+      {/* ── Content ── */}
       {loading ? (
         <div className="py-20 flex justify-center">
           <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{borderColor:T}} />
@@ -228,15 +298,17 @@ export default function HotelsPage() {
                 <div className="flex-1 h-px" style={{backgroundColor:'#E2E8F0'}} />
                 <span className="text-xs text-[#94A3B8]">{hotels.length}</span>
               </div>
-              <HotelGrid hotels={hotels} viewMode={viewMode} onSelect={id=>router.push(`/admin/hotels/${id}`)} />
+              <HotelGrid hotels={hotels} viewMode={viewMode} selected={selected} onToggleSelect={toggleSelect}
+                onSelect={id=>router.push(`/admin/hotels/${id}`)} />
             </div>
           ))}
         </div>
       ) : (
-        <HotelGrid hotels={displayed} viewMode={viewMode} onSelect={id=>router.push(`/admin/hotels/${id}`)} />
+        <HotelGrid hotels={displayed} viewMode={viewMode} selected={selected} onToggleSelect={toggleSelect}
+          onSelect={id=>router.push(`/admin/hotels/${id}`)} />
       )}
 
-      {/* Add Hotel Modal */}
+      {/* ── Add Hotel Modal ── */}
       <Modal open={showForm} onClose={()=>setShowForm(false)} title="Add New Hotel" subtitle="Fill in the basic details — you can add rooms and rates after creating." maxWidth="max-w-lg">
         {error && <div className="mb-4 p-3 rounded-lg text-sm font-medium" style={{backgroundColor:'#FEF2F2',color:'#DC2626',border:'1px solid #FECACA'}}>{error}</div>}
         <div className="grid grid-cols-2 gap-4">
@@ -286,13 +358,20 @@ export default function HotelsPage() {
 }
 
 /* ── Shared grid/list renderer ── */
-function HotelGrid({ hotels, viewMode, onSelect }: { hotels: Hotel[]; viewMode: 'grid'|'list'; onSelect: (id:string)=>void }) {
+function HotelGrid({
+  hotels, viewMode, selected, onToggleSelect, onSelect,
+}: {
+  hotels: Hotel[]; viewMode: 'grid'|'list';
+  selected: Set<string>; onToggleSelect: (id: string) => void;
+  onSelect: (id: string) => void;
+}) {
   if (viewMode === 'list') {
     return (
       <div className="bg-white rounded-xl overflow-hidden" style={{border:'1px solid #E2E8F0', boxShadow:'0 1px 3px rgba(0,0,0,0.06)'}}>
         <table className="w-full text-sm">
           <thead>
             <tr style={{borderBottom:'1px solid #F1F5F9', backgroundColor:'#F8FAFC'}}>
+              <th className="w-10 px-4 py-3" />
               <th className="text-left px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Hotel</th>
               <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Destination</th>
               <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Type</th>
@@ -307,26 +386,33 @@ function HotelGrid({ hotels, viewMode, onSelect }: { hotels: Hotel[]; viewMode: 
           <tbody>
             {hotels.map((h, i) => {
               const cat = CAT_BADGE[h.category_label] ?? CAT_BADGE.STANDARD;
+              const isSelected = selected.has(h.id);
               return (
-                <tr key={h.id} onClick={()=>onSelect(h.id)} className="cursor-pointer transition-colors hover:bg-[#F8FAFC]"
-                  style={{ borderBottom: i < hotels.length-1 ? '1px solid #F1F5F9' : undefined }}>
-                  <td className="px-5 py-3.5 font-semibold text-[#0F172A]">{h.hotel_name}</td>
-                  <td className="px-4 py-3.5 text-[#475569]">{h.destination.name}</td>
-                  <td className="px-4 py-3.5 text-[#64748B]">{h.hotel_type}</td>
-                  <td className="px-4 py-3.5">
+                <tr key={h.id} className="transition-colors hover:bg-[#F8FAFC]"
+                  style={{ borderBottom: i < hotels.length-1 ? '1px solid #F1F5F9' : undefined, backgroundColor: isSelected ? '#F0F7F9' : undefined }}>
+                  {/* Checkbox — stop propagation so clicking it doesn't open the hotel */}
+                  <td className="px-4 py-3.5 w-10" onClick={e => e.stopPropagation()}>
+                    <input type="checkbox" className="w-4 h-4 rounded border-gray-300 accent-[#134956] cursor-pointer"
+                      checked={isSelected}
+                      onChange={() => onToggleSelect(h.id)} />
+                  </td>
+                  <td className="px-5 py-3.5 font-semibold text-[#0F172A] cursor-pointer" onClick={()=>onSelect(h.id)}>{h.hotel_name}</td>
+                  <td className="px-4 py-3.5 text-[#475569] cursor-pointer" onClick={()=>onSelect(h.id)}>{h.destination.name}</td>
+                  <td className="px-4 py-3.5 text-[#64748B] cursor-pointer" onClick={()=>onSelect(h.id)}>{h.hotel_type}</td>
+                  <td className="px-4 py-3.5 cursor-pointer" onClick={()=>onSelect(h.id)}>
                     <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold" style={{backgroundColor:cat.bg,color:cat.text}}>{h.category_label}</span>
                   </td>
-                  <td className="px-4 py-3.5">
+                  <td className="px-4 py-3.5 cursor-pointer" onClick={()=>onSelect(h.id)}>
                     {h.star_rating ? (
                       <div className="flex gap-0.5">
                         {Array.from({length:h.star_rating}).map((_,i)=><Star key={i} className="w-3 h-3 fill-current text-amber-400" />)}
                       </div>
                     ) : <span className="text-[#CBD5E1]">—</span>}
                   </td>
-                  <td className="px-4 py-3.5 text-[#64748B]">{h.room_categories?.length ?? 0}</td>
+                  <td className="px-4 py-3.5 text-[#64748B] cursor-pointer" onClick={()=>onSelect(h.id)}>{h.room_categories?.length ?? 0}</td>
                   <td className="px-4 py-3.5 text-[#64748B]">Admin</td>
                   <td className="px-4 py-3.5 text-[#64748B]">{new Date(h.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
-                  <td className="px-4 py-3.5"><ChevronRight className="w-4 h-4 text-[#CBD5E1]" /></td>
+                  <td className="px-4 py-3.5 cursor-pointer" onClick={()=>onSelect(h.id)}><ChevronRight className="w-4 h-4 text-[#CBD5E1]" /></td>
                 </tr>
               );
             })}
@@ -336,38 +422,52 @@ function HotelGrid({ hotels, viewMode, onSelect }: { hotels: Hotel[]; viewMode: 
     );
   }
 
+  /* ── Grid view ── */
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
       {hotels.map(h=>{
         const cat  = CAT_BADGE[h.category_label] ?? CAT_BADGE.STANDARD;
         const hero = h.images?.[0];
         const roomCount = h.room_categories?.length ?? 0;
+        const isSelected = selected.has(h.id);
         return (
-          <div key={h.id} onClick={()=>onSelect(h.id)}
-            className="bg-white rounded-2xl overflow-hidden cursor-pointer group transition-all hover:-translate-y-0.5"
-            style={{border:'1px solid #E2E8F0', boxShadow:'0 1px 3px rgba(0,0,0,0.06)'}}>
-            <div className="aspect-video bg-[#F1F5F9] relative overflow-hidden">
-              {hero ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={hero} alt={h.hotel_name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center"><Building2 className="w-8 h-8 text-[#CBD5E1]" /></div>
-              )}
-              <span className="absolute top-2 right-2 text-[10px] font-bold px-2 py-0.5 rounded-md" style={{backgroundColor:cat.bg, color:cat.text}}>{h.category_label}</span>
+          <div key={h.id}
+            className="bg-white rounded-2xl overflow-hidden group transition-all hover:-translate-y-0.5 relative"
+            style={{border: isSelected ? '2px solid #134956' : '1px solid #E2E8F0', boxShadow: isSelected ? '0 0 0 3px rgba(19,73,86,0.1)' : '0 1px 3px rgba(0,0,0,0.06)'}}>
+
+            {/* Checkbox overlay */}
+            <div className="absolute top-2 left-2 z-10" onClick={e => e.stopPropagation()}>
+              <input type="checkbox"
+                className="w-4 h-4 rounded border-gray-300 accent-[#134956] cursor-pointer shadow-sm"
+                checked={isSelected}
+                onChange={() => onToggleSelect(h.id)} />
             </div>
-            <div className="p-4">
-              <div className="flex items-start justify-between gap-2 mb-1">
-                <p className="font-semibold text-sm text-[#0F172A] leading-tight line-clamp-1">{h.hotel_name}</p>
-                <ChevronRight className="w-4 h-4 flex-shrink-0 text-[#CBD5E1] group-hover:text-[#134956] transition-colors mt-0.5" />
+
+            {/* Card body — click to open */}
+            <div className="cursor-pointer" onClick={()=>onSelect(h.id)}>
+              <div className="aspect-video bg-[#F1F5F9] relative overflow-hidden">
+                {hero ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={hero} alt={h.hotel_name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center"><Building2 className="w-8 h-8 text-[#CBD5E1]" /></div>
+                )}
+                <span className="absolute top-2 right-2 text-[10px] font-bold px-2 py-0.5 rounded-md" style={{backgroundColor:cat.bg, color:cat.text}}>{h.category_label}</span>
               </div>
-              <p className="text-xs text-[#94A3B8] mb-2">{h.destination.name} · {h.hotel_type}</p>
-              <div className="flex items-center gap-3">
-                {h.star_rating ? (
-                  <div className="flex items-center gap-0.5">
-                    {Array.from({length:h.star_rating}).map((_,i)=><Star key={i} className="w-3 h-3 fill-current text-amber-400" />)}
-                  </div>
-                ) : null}
-                <span className="text-[11px] text-[#94A3B8]">{roomCount} room type{roomCount!==1?'s':''}</span>
+              <div className="p-4">
+                <div className="flex items-start justify-between gap-2 mb-1">
+                  <p className="font-semibold text-sm text-[#0F172A] leading-tight line-clamp-1">{h.hotel_name}</p>
+                  <ChevronRight className="w-4 h-4 flex-shrink-0 text-[#CBD5E1] group-hover:text-[#134956] transition-colors mt-0.5" />
+                </div>
+                <p className="text-xs text-[#94A3B8] mb-2">{h.destination.name} · {h.hotel_type}</p>
+                <div className="flex items-center gap-3">
+                  {h.star_rating ? (
+                    <div className="flex items-center gap-0.5">
+                      {Array.from({length:h.star_rating}).map((_,i)=><Star key={i} className="w-3 h-3 fill-current text-amber-400" />)}
+                    </div>
+                  ) : null}
+                  <span className="text-[11px] text-[#94A3B8]">{roomCount} room type{roomCount!==1?'s':''}</span>
+                </div>
               </div>
             </div>
           </div>
