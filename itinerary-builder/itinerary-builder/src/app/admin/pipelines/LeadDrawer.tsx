@@ -10,14 +10,6 @@ import {
   type LucideProps,
 } from 'lucide-react';
 
-/** Format seconds → "45s" or "1m 30s" */
-function fmtSecs(s: number): string {
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  const r = s % 60;
-  return r > 0 ? `${m}m ${r}s` : `${m}m`;
-}
-
 const ICON_MAP: Record<string, React.ComponentType<LucideProps>> = {
   PhoneCall, RefreshCw, FileText, Users, Pin, Sparkles, ArrowLeftRight, Clock, Bell,
   Send, Eye, CheckCircle,
