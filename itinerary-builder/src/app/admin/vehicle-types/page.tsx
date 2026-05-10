@@ -87,7 +87,7 @@ export default function VehicleTypesPage() {
 
   // ── duplicate detection ──
   const duplicateIds = useMemo(() => {
-    const dupKey = (r: VehicleType) => `${r.vehicle_type.trim().toLowerCase()}`;
+    const dupKey = (r: VehicleType) => `${r.vehicle_type.trim().toLowerCase()}||${r.display_name.trim().toLowerCase()}`;
     const groups = new Map<string, string[]>();
     rows.forEach(r => {
       const k = dupKey(r);
