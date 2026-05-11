@@ -77,7 +77,7 @@ export default function PipelineConfigPage() {
     const res = await fetch('/api/v1/pipelines');
     const d = await res.json();
     if (d.success) {
-      setPipelines(d.data);
+      setPipelines(Array.isArray(d.data) ? d.data : []);
       if (!selectedId && d.data.length > 0) {
         const def = d.data.find((p: Pipeline) => p.is_default) ?? d.data[0];
         setSelectedId(def.id);

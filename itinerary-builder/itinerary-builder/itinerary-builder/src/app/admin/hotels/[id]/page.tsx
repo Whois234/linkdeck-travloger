@@ -62,7 +62,7 @@ const EMPTY_RATE = {
   weekend_surcharge: '', tax_included: false, notes: '',
 };
 
-function fmt(n: number) { return '₹' + n.toLocaleString('en-IN'); }
+function fmt(n: number) { return '₹' + Math.round(n).toLocaleString('en-IN', { maximumFractionDigits: 0 }); }
 function fmtDate(d: string) { return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }); }
 
 /* ─── Hotel Room + Rate Excel Import/Export ──────────────────────────────── */

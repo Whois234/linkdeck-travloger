@@ -34,14 +34,13 @@ export function Modal({ open, onClose, title, subtitle, children, maxWidth = 'ma
   return (
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-stretch sm:items-center justify-center sm:p-4"
       style={{ backgroundColor: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(2px)' }}
       onMouseDown={e => { if (e.target === overlayRef.current) onClose(); }}
     >
       <div
-        className={`relative w-full ${maxWidth} bg-white rounded-2xl flex flex-col`}
+        className={`relative w-full ${maxWidth} bg-white flex flex-col rounded-none sm:rounded-2xl h-[100dvh] sm:h-auto sm:max-h-[calc(100vh-2rem)]`}
         style={{
-          maxHeight: 'calc(100vh - 2rem)',
           boxShadow: '0 20px 60px rgba(0,0,0,0.2), 0 4px 16px rgba(0,0,0,0.1)',
           border: '1px solid #E2E8F0',
         }}

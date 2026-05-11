@@ -361,7 +361,7 @@ export default function TemplateEditPage() {
         <div>
           {/* Breadcrumbs */}
           <nav className="flex items-center gap-1 mb-2">
-            {[{ label: 'Admin', href: '/admin' }, { label: 'Private Templates', href: '/admin/private-templates' }, { label: 'Edit' }].map((c, i, arr) => (
+            {[{ label: 'Admin', href: '/admin' }, { label: 'Private Templates', href: '/admin/private-templates' }, { label: tplSettings.template_name || tpl.template_name || 'Edit' }].map((c, i, arr) => (
               <span key={i} className="flex items-center gap-1">
                 {c.href ? (
                   <a href={c.href} className="text-xs font-medium" style={{ color: '#94A3B8' }}>{c.label}</a>

@@ -302,7 +302,7 @@ export default function CitiesPage() {
           </div>
         ) : (
           <>
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
               <tr style={{ backgroundColor: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
                 <th className="px-5 py-3.5 w-10">
@@ -373,7 +373,7 @@ export default function CitiesPage() {
                 );
               })}
             </tbody>
-          </table>
+          </table></div>
           {totalPages > 1 && (
             <div className="flex items-center justify-between px-5 py-3" style={{ borderTop: '1px solid #F1F5F9' }}>
               <p className="text-xs" style={{ color: '#94A3B8' }}>

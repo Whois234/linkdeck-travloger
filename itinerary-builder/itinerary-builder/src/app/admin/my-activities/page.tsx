@@ -188,7 +188,7 @@ export default function MyActivitiesPage() {
               </p>
             </div>
           ) : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead>
                 <tr style={{ backgroundColor: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
                   {['Task', 'Related Lead', 'Due', 'Status', ...(scope === 'all' ? ['Owner'] : []), 'Created', ''].map(h => (
@@ -257,7 +257,7 @@ export default function MyActivitiesPage() {
                   );
                 })}
               </tbody>
-            </table>
+            </table></div>
           )
         ) : (
           notifs.length === 0 ? (
