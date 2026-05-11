@@ -17,7 +17,7 @@ import { toast } from '@/components/Toaster';
 
 type LeadStage      = 'NEW' | 'CONTACTED' | 'FOLLOW_UP' | 'HOT' | 'CONVERTED' | 'LOST';
 type LeadSource     = 'CTWA' | 'META_LEAD_FORM' | 'GOOGLE_ADS' | 'WEBSITE' | 'WALK_IN' | 'REFERRAL';
-type TripType       = 'GROUP' | 'PRIVATE';
+type TripType       = 'HONEYMOON' | 'FAMILY' | 'FRIENDS' | 'SOLO' | 'CORPORATE' | 'PILGRIMAGE' | 'ADVENTURE' | 'GROUP' | 'PRIVATE' | 'OTHER';
 type Platform       = 'FACEBOOK' | 'INSTAGRAM' | 'GOOGLE' | 'YOUTUBE' | 'WEBSITE' | 'WHATSAPP';
 type DevicePlatform = 'MOBILE' | 'DESKTOP';
 
@@ -344,8 +344,16 @@ export default function ContactFormModal({ open, mode, initial, users, tags, onC
                   <select className={selectCls} style={borderStyle}
                     value={form.trip_type} onChange={e => update('trip_type', e.target.value as TripType | '')}>
                     <option value="">—</option>
+                    <option value="HONEYMOON">Honeymoon</option>
+                    <option value="FAMILY">Family</option>
+                    <option value="FRIENDS">Friends</option>
+                    <option value="SOLO">Solo</option>
                     <option value="GROUP">Group</option>
+                    <option value="CORPORATE">Corporate</option>
+                    <option value="PILGRIMAGE">Pilgrimage</option>
+                    <option value="ADVENTURE">Adventure</option>
                     <option value="PRIVATE">Private</option>
+                    <option value="OTHER">Other</option>
                   </select>
                 </SelectChevron>
               </Field>

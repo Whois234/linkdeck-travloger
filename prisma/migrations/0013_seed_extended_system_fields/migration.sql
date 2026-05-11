@@ -8,7 +8,7 @@ VALUES
   -- ── Travel intent fields ────────────────────────────────────────────────────
   (gen_random_uuid()::text, 'city',                 'City',                  'text',     false, NULL,                                                         'e.g. Mumbai',           55,  true, true, NOW(), NOW()),
   (gen_random_uuid()::text, 'destination_interest', 'Interested Destination','text',     false, NULL,                                                         'e.g. Goa, Manali',      60,  true, true, NOW(), NOW()),
-  (gen_random_uuid()::text, 'trip_type',            'Trip Type',             'select',   false, '["HONEYMOON","FAMILY","FRIENDS","SOLO","CORPORATE","PILGRIMAGE","ADVENTURE","OTHER"]'::jsonb, NULL, 70, true, true, NOW(), NOW()),
+  (gen_random_uuid()::text, 'trip_type',            'Trip Type',             'select',   false, '["HONEYMOON","FAMILY","FRIENDS","SOLO","CORPORATE","PILGRIMAGE","ADVENTURE","GROUP","PRIVATE","OTHER"]'::jsonb, NULL, 70, true, true, NOW(), NOW()),
   (gen_random_uuid()::text, 'travel_month',         'Travel Month',          'text',     false, NULL,                                                         'e.g. Dec 2025',         80,  true, true, NOW(), NOW()),
   (gen_random_uuid()::text, 'budget_min',           'Min Budget (₹)',        'number',   false, NULL,                                                         'e.g. 50000',            90,  true, true, NOW(), NOW()),
   (gen_random_uuid()::text, 'budget_max',           'Max Budget (₹)',        'number',   false, NULL,                                                         'e.g. 150000',           100, true, true, NOW(), NOW()),

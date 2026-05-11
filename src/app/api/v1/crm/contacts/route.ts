@@ -176,10 +176,13 @@ export async function GET(req: NextRequest) {
         leads: {
           select: {
             id: true,
+            name: true,
             status: true,
             created_at: true,
+            destination_interest: true,
             stage:    { select: { id: true, name: true, color: true } },
             pipeline: { select: { id: true, name: true } },
+            _count: { select: { call_logs: true, lead_notes: true } },
           },
           orderBy: { created_at: 'desc' },
           take: 5,
