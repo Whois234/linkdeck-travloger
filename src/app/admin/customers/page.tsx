@@ -145,56 +145,68 @@ export default function CustomersPage() {
     }
   }
 
-  // ── Duplicate cleanup: merge each duplicate's quotes into the kept record, then delete ─
+  // ── Duplicate cleanup: dedicated bulk endpoint that merges quotes + deletes ─
   async function cleanDuplicates(phone: string, group: Customer[]) {
     const keepId = keepMap[phone] ?? group[0].id;
     const toDelete = group.filter(c => c.id !== keepId);
     if (!confirm(`Delete ${toDelete.length} duplicate${toDelete.length > 1 ? 's' : ''} for phone ${phone}? Any quotes attached to them will be reassigned to the kept record.`)) return;
     setCleaningPhone(phone);
-    const results = await Promise.allSettled(
-      toDelete.map(async c => {
-        const r = await fetch(`/api/v1/customers/${c.id}?merge_into=${encodeURIComponent(keepId)}`, { method: 'DELETE' });
-        const d = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(d.error ?? 'Delete failed');
-        return c.id;
-      }),
-    );
-    setCleaningPhone(null);
-    const ok = results.filter(x => x.status === 'fulfilled').length;
-    const failed = results.length - ok;
-    if (failed === 0) toast.success(`${ok} duplicate${ok !== 1 ? 's' : ''} merged and removed`);
-    else if (ok === 0) {
-      const first = results.find(x => x.status === 'rejected') as PromiseRejectedResult | undefined;
-      toast.error(first?.reason?.message ?? 'Could not delete any duplicate');
-    } else toast.info(`${ok} merged, ${failed} failed`);
-    load();
+    try {
+      const res  = await fetch('/api/v1/customers/cleanup-duplicates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keep_id: keepId, delete_ids: toDelete.map(c => c.id) }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error ?? `Cleanup failed (HTTP ${res.status})`);
+      } else {
+        const { success, failed, results } = (data.data ?? {}) as { success: number; failed: number; results?: { ok: boolean; error?: string }[] };
+        if (failed === 0) toast.success(`${success} duplicate${success !== 1 ? 's' : ''} removed`);
+        else if (success === 0) {
+          const firstErr = results?.find(r => !r.ok)?.error ?? 'All deletes failed';
+          toast.error(firstErr);
+        } else toast.info(`${success} removed, ${failed} failed`);
+      }
+    } catch (e) {
+      toast.error(`Network error: ${e instanceof Error ? e.message : 'unknown'}`);
+    } finally {
+      setCleaningPhone(null);
+      load();
+    }
   }
 
   async function cleanAllDuplicates() {
-    const totalToDelete = duplicateGroups.reduce((n, { phone, group }) => {
+    const allDeletes: { keep_id: string; delete_ids: string[] }[] = duplicateGroups.map(({ phone, group }) => {
       const keepId = keepMap[phone] ?? group[0].id;
-      return n + group.filter(c => c.id !== keepId).length;
-    }, 0);
-    if (!confirm(`Remove all ${totalToDelete} duplicate records? Their quotes will be reassigned to the kept record in each group.`)) return;
+      return { keep_id: keepId, delete_ids: group.filter(c => c.id !== keepId).map(c => c.id) };
+    });
+    const total = allDeletes.reduce((n, g) => n + g.delete_ids.length, 0);
+    if (!confirm(`Remove all ${total} duplicate records? Their quotes will be reassigned to the kept record in each group.`)) return;
     setBulkDeleting(true);
-    const results = await Promise.allSettled(
-      duplicateGroups.flatMap(({ phone, group }) => {
-        const keepId = keepMap[phone] ?? group[0].id;
-        return group.filter(c => c.id !== keepId).map(async c => {
-          const r = await fetch(`/api/v1/customers/${c.id}?merge_into=${encodeURIComponent(keepId)}`, { method: 'DELETE' });
-          const d = await r.json().catch(() => ({}));
-          if (!r.ok) throw new Error(d.error ?? 'Delete failed');
-          return c.id;
+    let success = 0, failed = 0;
+    try {
+      for (const { keep_id, delete_ids } of allDeletes) {
+        if (delete_ids.length === 0) continue;
+        const res = await fetch('/api/v1/customers/cleanup-duplicates', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ keep_id, delete_ids }),
         });
-      })
-    );
-    setBulkDeleting(false);
-    const ok = results.filter(x => x.status === 'fulfilled').length;
-    const failed = results.length - ok;
-    if (failed === 0) toast.success(`${ok} duplicate${ok !== 1 ? 's' : ''} removed`);
-    else if (ok === 0) toast.error(`Could not remove duplicates — check console for details`);
-    else toast.info(`${ok} removed, ${failed} failed`);
-    load();
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { failed += delete_ids.length; continue; }
+        success += (data.data?.success as number) ?? 0;
+        failed  += (data.data?.failed  as number) ?? 0;
+      }
+      if (failed === 0) toast.success(`${success} duplicate${success !== 1 ? 's' : ''} removed`);
+      else if (success === 0) toast.error('Could not remove duplicates — check Vercel logs for details');
+      else toast.info(`${success} removed, ${failed} failed`);
+    } catch (e) {
+      toast.error(`Network error: ${e instanceof Error ? e.message : 'unknown'}`);
+    } finally {
+      setBulkDeleting(false);
+      load();
+    }
   }
 
   const filteredRows = useMemo(() =>
