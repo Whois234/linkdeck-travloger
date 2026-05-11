@@ -304,7 +304,7 @@ export default function ContactFormModal({ open, mode, initial, users, tags, onC
         </div>
 
         {/* Body — scrolls */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 space-y-6">
 
           {/* SECTION 1 — Basic Info */}
           <Section title="Basic Info">
