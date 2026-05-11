@@ -283,15 +283,13 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     group_trip_dates:      Array.isArray((groupCms as any)?.trip_dates) ? (groupCms as any).trip_dates : [],
     day_snapshots:         enrichedDaySnapshots,
-    // Whether to show destination cards on the itinerary page (template toggle)
-    show_destination_cards: (templateCmsData as any)?.show_destination_cards !== false,
-    // Destination cards from template CMS — resolved with name + hero fallback
+    // Destination cards from template CMS — resolved with name + hero fallback; hidden cards excluded
     destination_cards: (() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const raw = (templateCmsData as any)?.destination_cards;
       if (!Array.isArray(raw) || raw.length === 0) return null;
-      return (raw as Array<{ destination_id: string; custom_name?: string | null; description?: string; image_url?: string }>)
-        .filter(dc => dc.destination_id && destsMap[dc.destination_id])
+      return (raw as Array<{ destination_id: string; custom_name?: string | null; description?: string; image_url?: string; hidden?: boolean }>)
+        .filter(dc => dc.destination_id && destsMap[dc.destination_id] && !dc.hidden)
         .map(dc => ({
           destination_id: dc.destination_id,
           name:           dc.custom_name?.trim() || destsMap[dc.destination_id]?.name || '',

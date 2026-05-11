@@ -42,8 +42,7 @@ interface CmsData {
   hero_tags: string[];
   hero_images: string[];
   state_gallery_image: string;
-  show_destination_cards: boolean;
-  destination_cards: Array<{ destination_id: string; custom_name: string | null; description: string; image_url: string }>;
+  destination_cards: Array<{ destination_id: string; custom_name: string | null; description: string; image_url: string; hidden?: boolean }>;
   package_options: CmsOption[];
   why_choose: (string | WhyItem)[];
   inclusions?: string[];
@@ -87,7 +86,7 @@ interface Template {
 
 const DEFAULT_CMS: CmsData = {
   pax_count: 2, hero_heading: '', hero_subheading: '',
-  hero_tags: [], hero_images: [], state_gallery_image: '', show_destination_cards: true, destination_cards: [], package_options: [
+  hero_tags: [], hero_images: [], state_gallery_image: '', destination_cards: [], package_options: [
     { tier_name: 'Standard', display_order: 1, is_most_popular: false, inclusions: [] },
     { tier_name: 'Deluxe',   display_order: 2, is_most_popular: true,  inclusions: [] },
   ],
@@ -203,7 +202,6 @@ export default function TemplateEditPage() {
       }
       if (!Array.isArray(c.hero_images)) c.hero_images = [];
       if (typeof c.state_gallery_image !== 'string') c.state_gallery_image = '';
-      if (typeof c.show_destination_cards !== 'boolean') c.show_destination_cards = true;
       setCms(c);
       setDays(t.template_days.map(d => ({ ...d, description_override: d.description_override ?? null, image_override: d.image_override ?? null, gallery_images: (d as unknown as { gallery_images?: string[] | null }).gallery_images ?? null, day_plan_id: d.day_plan_id ?? null, meals: d.meals as Record<string,boolean> | null ?? null })));
       setTiers(t.template_hotel_tiers);
@@ -617,27 +615,7 @@ export default function TemplateEditPage() {
           {/* ═══ DESTINATION CARDS ═══ */}
           {activeSection === 'dests' && (
             <div className="bg-white rounded-2xl p-6" style={card}>
-              <div className="flex items-start justify-between gap-4 mb-4">
-                <SectionHeader title="Destination Cards" desc="One card per destination shown in the gallery grid." />
-                {/* Show/Hide toggle */}
-                <button
-                  type="button"
-                  onClick={() => updCms('show_destination_cards', !cms.show_destination_cards)}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold flex-shrink-0 transition-all"
-                  style={{
-                    borderColor: cms.show_destination_cards ? '#134956' : '#E2E8F0',
-                    backgroundColor: cms.show_destination_cards ? '#134956' : '#F8FAFC',
-                    color: cms.show_destination_cards ? '#fff' : '#94A3B8',
-                  }}
-                >
-                  {cms.show_destination_cards ? (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                  ) : (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                  )}
-                  {cms.show_destination_cards ? 'Visible on itinerary' : 'Hidden on itinerary'}
-                </button>
-              </div>
+              <SectionHeader title="Destination Cards" desc="One card per destination shown in the gallery grid. Toggle eye icon to hide a card from the itinerary." />
               <div className="flex flex-col gap-4">
                 {/* State card — always first in the gallery */}
                 <div className="rounded-xl p-4" style={{ border: '1px solid #C7D2FE', background: '#F5F3FF' }}>
@@ -659,25 +637,51 @@ export default function TemplateEditPage() {
                   .map((dc) => {
                   const dest = dests.find(d => d.id === dc.destination_id);
                   const i = cms.destination_cards.indexOf(dc);
+                  const isHidden = !!dc.hidden;
                   return (
-                    <div key={dc.destination_id} className="rounded-xl p-4" style={{ border: '1px solid #E2E8F0' }}>
-                      <p className="text-sm font-semibold text-[#0F172A] mb-3">{dest?.name ?? dc.destination_id}</p>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="col-span-2">
-                          <ImageUploader
-                            label="Destination Photo"
-                            folder="templates/destinations"
-                            value={dc.image_url || null}
-                            onChange={url => { const c = [...cms.destination_cards]; c[i] = { ...c[i], image_url: url ?? '' }; updCms('destination_cards', c); }}
-                            placeholder="Upload destination photo"
-                            sizeHint="800 × 600 px (4:3)"
-                          />
-                        </div>
-                        <div className="col-span-2">
-                          <label className={lbl}>Short Description</label>
-                          <textarea className={ta} style={inpSt} rows={2} value={dc.description}
-                            onChange={e => { const c = [...cms.destination_cards]; c[i] = { ...c[i], description: e.target.value }; updCms('destination_cards', c); }}
-                            placeholder="Venice of the East…" />
+                    <div key={dc.destination_id} className="rounded-xl overflow-hidden transition-all"
+                      style={{ border: `1px solid ${isHidden ? '#E2E8F0' : '#E2E8F0'}`, opacity: isHidden ? 0.55 : 1, background: isHidden ? '#F8FAFC' : '#fff' }}>
+                      {/* Card header with name + eye toggle */}
+                      <div className="flex items-center justify-between px-4 pt-4 pb-3">
+                        <p className="text-sm font-semibold" style={{ color: isHidden ? '#94A3B8' : '#0F172A' }}>
+                          {dest?.name ?? dc.destination_id}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => { const c = [...cms.destination_cards]; c[i] = { ...c[i], hidden: !isHidden }; updCms('destination_cards', c); }}
+                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-semibold transition-all flex-shrink-0"
+                          style={{
+                            borderColor: isHidden ? '#E2E8F0' : T,
+                            backgroundColor: isHidden ? '#F1F5F9' : `${T}12`,
+                            color: isHidden ? '#94A3B8' : T,
+                          }}
+                        >
+                          {isHidden ? (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                          ) : (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                          )}
+                          {isHidden ? 'Hidden' : 'Visible'}
+                        </button>
+                      </div>
+                      <div className="px-4 pb-4">
+                        <div className="grid grid-cols-2 gap-3" style={{ filter: isHidden ? 'grayscale(0.4)' : 'none' }}>
+                          <div className="col-span-2">
+                            <ImageUploader
+                              label="Destination Photo"
+                              folder="templates/destinations"
+                              value={dc.image_url || null}
+                              onChange={url => { const c = [...cms.destination_cards]; c[i] = { ...c[i], image_url: url ?? '' }; updCms('destination_cards', c); }}
+                              placeholder="Upload destination photo"
+                              sizeHint="800 × 600 px (4:3)"
+                            />
+                          </div>
+                          <div className="col-span-2">
+                            <label className={lbl}>Short Description</label>
+                            <textarea className={ta} style={inpSt} rows={2} value={dc.description}
+                              onChange={e => { const c = [...cms.destination_cards]; c[i] = { ...c[i], description: e.target.value }; updCms('destination_cards', c); }}
+                              placeholder="Venice of the East…" />
+                          </div>
                         </div>
                       </div>
                     </div>

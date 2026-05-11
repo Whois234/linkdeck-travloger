@@ -118,7 +118,6 @@ interface ItineraryData {
   group_trip_dates?: Array<{ start_date: string; end_date: string; label: string; availability?: 'available' | 'few_left' | 'filling_fast' | 'sold_out' }>;
   day_snapshots: DaySnapshot[];
   destination_cards?: Array<{ destination_id: string; name: string; description: string; image_url: string }> | null;
-  show_destination_cards?: boolean | null;
   why_choose?: Array<{ title: string; description: string; icon: string }> | null;
   inclusions: Array<{ id: string; text: string }>;
   exclusions: Array<{ id: string; text: string }>;
@@ -2815,7 +2814,7 @@ function BookingIntentModal({
 
 /* ─────────────────────────── Main Component ─────────────────────────── */
 export function ItineraryClient({ data, token }: Props) {
-  const { quote, customer, agent, state, quote_options, group_package_options, group_pricing_mode, group_trip_dates, day_snapshots, destination_cards, show_destination_cards, inclusions, exclusions, policies } = data;
+  const { quote, customer, agent, state, quote_options, group_package_options, group_pricing_mode, group_trip_dates, day_snapshots, destination_cards, inclusions, exclusions, policies } = data;
 
   const isGroup = quote.quote_type?.toUpperCase() === 'GROUP';
   // date_based = show batch date picker + fare summary (default for backwards compat)
@@ -3054,7 +3053,7 @@ export function ItineraryClient({ data, token }: Props) {
         )}
 
         <LogoMarquee />
-        <ItinerarySection days={day_snapshots} destinationCards={show_destination_cards !== false ? destination_cards : null} />
+        <ItinerarySection days={day_snapshots} destinationCards={destination_cards} />
 
         {/* ── GROUP: visual what's covered; regular: plain inc/exc ── */}
         {isGroup

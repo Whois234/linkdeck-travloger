@@ -40,12 +40,11 @@ const getItinerary = cache(async (token: string) => {
 
   const snapshotJson = quote.snapshots[0].snapshot_json as Record<string, unknown>;
 
-  // Always overlay destination_cards and show_destination_cards from the
-  // template's CURRENT cms_data so changes take effect without republishing.
+  // Always overlay destination_cards from the template's CURRENT cms_data
+  // so changes (add/hide/edit) take effect without republishing the quote.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const privateTemplateId = (quote as any).private_template_id as string | null ?? null;
   let liveDestCards = snapshotJson.destination_cards;
-  let liveShowDests = snapshotJson.show_destination_cards;
   if (privateTemplateId) {
     const tpl = await prisma.privateTemplate.findUnique({
       where: { id: privateTemplateId },
@@ -54,15 +53,17 @@ const getItinerary = cache(async (token: string) => {
     const templateCms = tpl?.cms_data as Record<string, unknown> | null ?? null;
     if (templateCms) {
       // Resolve raw CMS destination_cards → { destination_id, name, description, image_url }
-      const rawCards = templateCms.destination_cards as Array<{ destination_id: string; custom_name?: string | null; description?: string; image_url?: string }> | null;
+      // Cards with hidden=true are excluded
+      const rawCards = templateCms.destination_cards as Array<{ destination_id: string; custom_name?: string | null; description?: string; image_url?: string; hidden?: boolean }> | null;
       if (Array.isArray(rawCards) && rawCards.length > 0) {
-        const destIds = rawCards.map(c => c.destination_id).filter(Boolean);
+        const visibleRaw = rawCards.filter(dc => !dc.hidden);
+        const destIds = visibleRaw.map(c => c.destination_id).filter(Boolean);
         const dests = destIds.length > 0
           ? await prisma.destination.findMany({ where: { id: { in: destIds } }, select: { id: true, name: true, hero_image: true } })
           : [];
         const destsMap: Record<string, { name: string; hero_image: string | null }> = {};
         dests.forEach(d => { destsMap[d.id] = { name: d.name, hero_image: d.hero_image }; });
-        liveDestCards = rawCards
+        liveDestCards = visibleRaw
           .filter(dc => dc.destination_id && destsMap[dc.destination_id])
           .map(dc => ({
             destination_id: dc.destination_id,
@@ -71,15 +72,13 @@ const getItinerary = cache(async (token: string) => {
             image_url:      dc.image_url?.trim()   || destsMap[dc.destination_id]?.hero_image || '',
           }));
       }
-      if (typeof templateCms.show_destination_cards === 'boolean') liveShowDests = templateCms.show_destination_cards;
     }
   }
 
   return {
     ...snapshotJson,
-    destination_cards:      liveDestCards,
-    show_destination_cards: liveShowDests ?? true,
-    selected_option_id:     quote.selected_quote_option_id ?? null,
+    destination_cards:  liveDestCards,
+    selected_option_id: quote.selected_quote_option_id ?? null,
   } as Record<string, unknown> & { selected_option_id: string | null };
 });
 
