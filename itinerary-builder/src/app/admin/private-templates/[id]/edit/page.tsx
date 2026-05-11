@@ -884,71 +884,129 @@ export default function TemplateEditPage() {
               </div>
 
               {/* Hotel selections per option per destination */}
-              {cms.package_options.map((opt, oi) => (
+              {cms.package_options.map((opt, oi) => {
+                const totalPkgNights = Number(tplSettings.duration_nights) || 0;
+                const allocatedNights = destList.reduce((sum, did) => {
+                  const tier = tiersForOption(opt.tier_name).find(t => t.destination_id === did);
+                  return sum + (tier?.nights ?? 1);
+                }, 0);
+                const nightsOk = allocatedNights === totalPkgNights;
+                const nightsOver = allocatedNights > totalPkgNights;
+                return (
                 <div key={oi} className="bg-white rounded-2xl p-6" style={card}>
-                  <p className="text-sm font-bold text-[#0F172A] mb-4">{opt.tier_name} — Hotel Selections</p>
+                  {/* Header + allocation badge */}
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-sm font-bold text-[#0F172A]">{opt.tier_name} — Hotel Selections</p>
+                    <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full" style={{
+                      backgroundColor: nightsOk ? '#DCFCE7' : nightsOver ? '#FEF2F2' : '#FFF7ED',
+                      color: nightsOk ? '#15803D' : nightsOver ? '#DC2626' : '#C2410C',
+                    }}>
+                      {allocatedNights} / {totalPkgNights} nights allocated
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[#94A3B8] mb-4">
+                    Set nights per destination — guests can stay all nights in one place or split across locations.
+                  </p>
+
                   {destList.map(did => {
                     const dest = dests.find(d => d.id === did);
                     const tier = tiersForOption(opt.tier_name).find(t => t.destination_id === did) ?? { tier_name: opt.tier_name, destination_id: did, default_hotel_id: null, default_room_category_id: null, default_meal_plan_id: null, nights: 1, sort_order: 0 };
                     const destHotels = hotelsForDest(did);
                     const rooms = roomsForHotel(tier.default_hotel_id ?? '');
+                    const skipping = tier.nights === 0;
                     return (
                       <div key={did} className="mb-4 pb-4" style={{ borderBottom: '1px solid #F1F5F9' }}>
-                        <p className="text-xs font-semibold uppercase tracking-wider text-[#94A3B8] mb-2">{dest?.name}</p>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                          <div>
-                            <label className={lbl}>Hotel</label>
-                            <select className={sel} style={inpSt} value={tier.default_hotel_id ?? ''}
-                              onChange={e => {
-                                const newHotelId = e.target.value || null;
-                                if (newHotelId) fetchHotelRates(newHotelId);
-                                updTier(opt.tier_name, did, { default_hotel_id: newHotelId, default_room_category_id: null, default_meal_plan_id: null });
-                              }}>
-                              <option value="">Select…</option>
-                              {destHotels.map(h => <option key={h.id} value={h.id}>{h.hotel_name}</option>)}
-                            </select>
-                          </div>
-                          <div>
-                            <label className={lbl}>Room</label>
-                            <select className={sel} style={inpSt} value={tier.default_room_category_id ?? ''}
-                              onChange={e => updTier(opt.tier_name, did, { default_room_category_id: e.target.value || null, default_meal_plan_id: null })}
-                              disabled={!tier.default_hotel_id}>
-                              <option value="">Select…</option>
-                              {rooms.map(r => <option key={r.id} value={r.id}>{r.room_category_name}</option>)}
-                            </select>
-                          </div>
-                          <div>
-                            <label className={lbl}>
-                              Meal Plan
-                              {(() => { const cr = hotelRatesCache[tier.default_hotel_id ?? ''] ?? []; const ai = tier.default_room_category_id ? new Set(cr.filter(r => r.room_category_id === tier.default_room_category_id).map(r => r.meal_plan_id)) : null; return ai && ai.size === 0 && tier.default_room_category_id ? <span className="text-[10px] text-red-400 ml-1 normal-case">No rates</span> : null; })()}
-                            </label>
-                            {(() => {
-                              const cachedRates = hotelRatesCache[tier.default_hotel_id ?? ''] ?? [];
-                              const availMpIds = tier.default_room_category_id
-                                ? new Set(cachedRates.filter(r => r.room_category_id === tier.default_room_category_id).map(r => r.meal_plan_id))
-                                : null;
-                              const filteredMealPlans = availMpIds ? mealPlans.filter(m => availMpIds.has(m.id)) : mealPlans;
-                              return (
-                                <select className={sel} style={inpSt} value={tier.default_meal_plan_id ?? ''}
-                                  onChange={e => updTier(opt.tier_name, did, { default_meal_plan_id: e.target.value || null })}
-                                  disabled={!tier.default_hotel_id}>
-                                  <option value="">Select…</option>
-                                  {filteredMealPlans.map(m => <option key={m.id} value={m.id}>{m.code} — {m.name}</option>)}
-                                </select>
-                              );
-                            })()}
-                          </div>
-                          <div>
-                            <label className={lbl}>Nights</label>
-                            <input type="number" min="0" className={inp} style={inpSt} value={tier.nights}
-                              onChange={e => updTier(opt.tier_name, did, { nights: Number(e.target.value) })} />
+                        {/* Destination label + nights stepper */}
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: skipping ? '#CBD5E1' : '#94A3B8' }}>
+                            {dest?.name}
+                            {skipping && <span className="ml-2 normal-case font-medium text-[#CBD5E1]">· Not staying</span>}
+                          </p>
+                          {/* Nights stepper */}
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] font-semibold text-[#94A3B8] mr-1">Nights</span>
+                            <button
+                              onClick={() => updTier(opt.tier_name, did, { nights: Math.max(0, tier.nights - 1) })}
+                              className="w-6 h-6 rounded-md flex items-center justify-center text-sm font-bold transition-colors"
+                              style={{ backgroundColor: '#F1F5F9', color: '#64748B' }}>−</button>
+                            <span className="w-6 text-center text-sm font-bold" style={{ color: skipping ? '#CBD5E1' : '#0F172A' }}>{tier.nights}</span>
+                            <button
+                              onClick={() => updTier(opt.tier_name, did, { nights: tier.nights + 1 })}
+                              className="w-6 h-6 rounded-md flex items-center justify-center text-sm font-bold transition-colors"
+                              style={{ backgroundColor: '#F1F5F9', color: '#64748B' }}>+</button>
+                            {/* Quick: all nights here */}
+                            {!skipping && totalPkgNights > 0 && tier.nights !== totalPkgNights && (
+                              <button
+                                onClick={() => {
+                                  // Set this dest to all nights, others to 0
+                                  destList.forEach(d => updTier(opt.tier_name, d, { nights: d === did ? totalPkgNights : 0 }));
+                                }}
+                                className="ml-1 text-[10px] font-semibold px-2 py-0.5 rounded-md transition-colors"
+                                style={{ backgroundColor: `${T}15`, color: T }}
+                                title="Put all nights here">All here</button>
+                            )}
                           </div>
                         </div>
+
+                        {/* Hotel / Room / Meal Plan — collapsed when 0 nights */}
+                        {skipping ? (
+                          <div className="flex items-center gap-2 py-2 px-3 rounded-xl" style={{ backgroundColor: '#F8FAFC' }}>
+                            <span className="text-xs text-[#CBD5E1]">No hotel needed — 0 nights at this destination.</span>
+                            <button onClick={() => updTier(opt.tier_name, did, { nights: 1 })}
+                              className="text-[11px] font-semibold underline ml-auto" style={{ color: T }}>Add a night</button>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <div>
+                              <label className={lbl}>Hotel</label>
+                              <select className={sel} style={inpSt} value={tier.default_hotel_id ?? ''}
+                                onChange={e => {
+                                  const newHotelId = e.target.value || null;
+                                  if (newHotelId) fetchHotelRates(newHotelId);
+                                  updTier(opt.tier_name, did, { default_hotel_id: newHotelId, default_room_category_id: null, default_meal_plan_id: null });
+                                }}>
+                                <option value="">Select…</option>
+                                {destHotels.map(h => <option key={h.id} value={h.id}>{h.hotel_name}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <label className={lbl}>Room</label>
+                              <select className={sel} style={inpSt} value={tier.default_room_category_id ?? ''}
+                                onChange={e => updTier(opt.tier_name, did, { default_room_category_id: e.target.value || null, default_meal_plan_id: null })}
+                                disabled={!tier.default_hotel_id}>
+                                <option value="">Select…</option>
+                                {rooms.map(r => <option key={r.id} value={r.id}>{r.room_category_name}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <label className={lbl}>
+                                Meal Plan
+                                {(() => { const cr = hotelRatesCache[tier.default_hotel_id ?? ''] ?? []; const ai = tier.default_room_category_id ? new Set(cr.filter(r => r.room_category_id === tier.default_room_category_id).map(r => r.meal_plan_id)) : null; return ai && ai.size === 0 && tier.default_room_category_id ? <span className="text-[10px] text-red-400 ml-1 normal-case">No rates</span> : null; })()}
+                              </label>
+                              {(() => {
+                                const cachedRates = hotelRatesCache[tier.default_hotel_id ?? ''] ?? [];
+                                const availMpIds = tier.default_room_category_id
+                                  ? new Set(cachedRates.filter(r => r.room_category_id === tier.default_room_category_id).map(r => r.meal_plan_id))
+                                  : null;
+                                const filteredMealPlans = availMpIds ? mealPlans.filter(m => availMpIds.has(m.id)) : mealPlans;
+                                return (
+                                  <select className={sel} style={inpSt} value={tier.default_meal_plan_id ?? ''}
+                                    onChange={e => updTier(opt.tier_name, did, { default_meal_plan_id: e.target.value || null })}
+                                    disabled={!tier.default_hotel_id}>
+                                    <option value="">Select…</option>
+                                    {filteredMealPlans.map(m => <option key={m.id} value={m.id}>{m.code} — {m.name}</option>)}
+                                  </select>
+                                );
+                              })()}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
