@@ -67,6 +67,8 @@ interface Contact {
 
   // Lead source & CRM
   lead_source:    LeadSource | null;
+  platform:       string | null;
+  campaign_name:  string | null;
   lead_stage:     LeadStage;
   assigned_to_id: string | null;
   assigned_to:    Owner | null;
@@ -567,7 +569,7 @@ export default function ContactsPage() {
   const [destinationFilter, setDestinationFilter] = useState('');
   const [tripTypeFilter,    setTripTypeFilter]    = useState<TripType | ''>('');
 
-  const PER_PAGE = 20;
+  const [perPage, setPerPage] = useState<number | 'ALL'>(25);
   const datePickerRef = useRef<HTMLDivElement>(null);
   const tagFilterRef  = useRef<HTMLDivElement>(null);
   const qc = useQueryClient();
@@ -591,7 +593,7 @@ export default function ContactsPage() {
   }, [search]);
 
   // Reset to page 1 when filters change
-  useEffect(() => { setPage(1); }, [sortBy, dateRange, dateFrom, dateTo, tagFilter, stageFilter, sourceFilter, assignedFilter, destinationFilter, tripTypeFilter]);
+  useEffect(() => { setPage(1); }, [sortBy, dateRange, dateFrom, dateTo, tagFilter, stageFilter, sourceFilter, assignedFilter, destinationFilter, tripTypeFilter, perPage]);
 
   // Destinations seen in the loaded contact set — for the destination filter dropdown.
   // (For now this is a static list of common destinations + whatever appears in the current page.)
@@ -639,7 +641,7 @@ export default function ContactsPage() {
   if (destinationFilter)                  contactParams.set('interested_destination', destinationFilter);
   if (tripTypeFilter)                     contactParams.set('trip_type', tripTypeFilter);
   contactParams.set('page', String(page));
-  contactParams.set('limit', String(PER_PAGE));
+  contactParams.set('limit', perPage === 'ALL' ? '9999' : String(perPage));
 
   const { data: contactsResp, isFetching: loading } = useContacts(contactParams);
   const { data: usersData } = useUsers();
@@ -966,7 +968,7 @@ export default function ContactsPage() {
             {loading && contacts.length === 0 ? (
               <TableSkeleton rows={12} />
             ) : (
-              <div className="overflow-x-auto"><table className="w-full text-sm border-collapse min-w-[1280px]">
+              <div className="overflow-x-auto"><table className="w-full text-sm border-collapse min-w-[1800px]">
                 <thead>
                   <tr style={{ backgroundColor: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
                     <th className="w-10 px-4 py-3">
@@ -977,8 +979,9 @@ export default function ContactsPage() {
                       </button>
                     </th>
                     {[
-                      'Full Name', 'Phone', 'City', 'Destination', 'Budget',
-                      'Trip', 'Source', 'Stage', 'Assigned', 'Follow-up', 'Created', '',
+                      'Full Name', 'Phone', 'Email', 'City', 'Destination', 'Travellers',
+                      'Budget', 'Trip', 'Source', 'Platform', 'Campaign',
+                      'Stage', 'Assigned', 'Follow-up', 'DNC', 'Booking', 'Created', '',
                     ].map(h => (
                       <th key={h} className="text-left px-3 py-3 text-[11px] font-bold uppercase tracking-wider whitespace-nowrap" style={{ color: '#64748B' }}>{h}</th>
                     ))}
@@ -1036,16 +1039,16 @@ export default function ContactsPage() {
 
                         {/* Phone */}
                         <td className="px-3 py-3">
-                          <div>
-                            <span className="flex items-center gap-1 text-xs whitespace-nowrap" style={{ color: '#64748B' }}>
-                              <Phone className="w-3 h-3" />{c.phone}
-                            </span>
-                            {c.email && (
-                              <span className="flex items-center gap-1 text-[10px] mt-0.5 whitespace-nowrap" style={{ color: '#94A3B8' }}>
-                                <Mail className="w-2.5 h-2.5" />{c.email}
-                              </span>
-                            )}
-                          </div>
+                          <span className="flex items-center gap-1 text-xs whitespace-nowrap" style={{ color: '#64748B' }}>
+                            <Phone className="w-3 h-3" />{c.phone}
+                          </span>
+                        </td>
+
+                        {/* Email */}
+                        <td className="px-3 py-3 text-xs">
+                          {c.email
+                            ? <span className="flex items-center gap-1 whitespace-nowrap" style={{ color: '#64748B' }}><Mail className="w-3 h-3" />{c.email}</span>
+                            : <span style={{ color: '#CBD5E1' }}>—</span>}
                         </td>
 
                         {/* City */}
@@ -1063,18 +1066,20 @@ export default function ContactsPage() {
                           {(() => {
                             const dest = c.interested_destination ?? c.leads.find(l => l.destination_interest)?.destination_interest ?? null;
                             const month = c.leads.find(l => l.travel_month)?.travel_month ?? null;
-                            const travellers = c.number_of_travellers;
                             return dest ? (
                               <div>
                                 <span style={{ color: '#0F172A', fontWeight: 500 }}>{dest}</span>
-                                {(month || travellers) && (
-                                  <div className="text-[10px] mt-0.5" style={{ color: '#94A3B8' }}>
-                                    {[month, travellers ? `${travellers} pax` : null].filter(Boolean).join(' · ')}
-                                  </div>
-                                )}
+                                {month && <div className="text-[10px] mt-0.5" style={{ color: '#94A3B8' }}>{month}</div>}
                               </div>
                             ) : <span style={{ color: '#CBD5E1' }}>—</span>;
                           })()}
+                        </td>
+
+                        {/* Number of Travellers */}
+                        <td className="px-3 py-3 text-xs text-center">
+                          {c.number_of_travellers != null
+                            ? <span className="font-semibold" style={{ color: '#0F172A' }}>{c.number_of_travellers}</span>
+                            : <span style={{ color: '#CBD5E1' }}>—</span>}
                         </td>
 
                         {/* Budget Per Person */}
@@ -1108,6 +1113,20 @@ export default function ContactsPage() {
                               : <span className="text-xs" style={{ color: '#CBD5E1' }}>—</span>}
                         </td>
 
+                        {/* Platform */}
+                        <td className="px-3 py-3 text-xs" style={{ color: '#64748B' }}>
+                          {c.platform
+                            ? <span className="font-medium" style={{ color: '#0F172A' }}>{c.platform.replace(/_/g, ' ')}</span>
+                            : <span style={{ color: '#CBD5E1' }}>—</span>}
+                        </td>
+
+                        {/* Campaign */}
+                        <td className="px-3 py-3 text-xs" style={{ color: '#64748B' }}>
+                          {c.campaign_name
+                            ? <span className="truncate block max-w-[120px]" title={c.campaign_name}>{c.campaign_name}</span>
+                            : <span style={{ color: '#CBD5E1' }}>—</span>}
+                        </td>
+
                         {/* Lead Stage */}
                         <td className="px-3 py-3">
                           <Chip bg={stageStyle.bg} color={stageStyle.color}>{stageStyle.label}</Chip>
@@ -1129,6 +1148,20 @@ export default function ContactsPage() {
                         <td className="px-3 py-3 text-xs whitespace-nowrap"
                           style={{ color: followUpPast ? '#DC2626' : '#64748B', fontWeight: followUpPast ? 600 : 400 }}>
                           {c.follow_up_date ? fmtDate(c.follow_up_date) : '—'}
+                        </td>
+
+                        {/* Do Not Contact */}
+                        <td className="px-3 py-3 text-center">
+                          {c.do_not_contact
+                            ? <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold" style={{ backgroundColor: '#FEE2E2', color: '#DC2626' }}>DNC</span>
+                            : <span style={{ color: '#CBD5E1' }} className="text-xs">—</span>}
+                        </td>
+
+                        {/* Booking Value */}
+                        <td className="px-3 py-3 text-xs font-semibold whitespace-nowrap">
+                          {c.booking_value != null && c.booking_value !== ''
+                            ? <span style={{ color: '#15803D' }}>{fmtINR(c.booking_value)}</span>
+                            : <span style={{ color: '#CBD5E1' }}>—</span>}
                         </td>
 
                         {/* Created At */}
@@ -1160,7 +1193,7 @@ export default function ContactsPage() {
                   })}
                   {paginated.length === 0 && !loading && (
                     <tr>
-                      <td colSpan={13} className="text-center py-16">
+                      <td colSpan={19} className="text-center py-16">
                         <User className="w-8 h-8 mx-auto mb-2" style={{ color: '#CBD5E1' }} />
                         <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>No contacts found</p>
                         <p className="text-xs mt-1" style={{ color: '#94A3B8' }}>
@@ -1189,13 +1222,30 @@ export default function ContactsPage() {
             </div>
             {totalCount > 0 && (
               <div className="flex items-center gap-3">
+                {/* Rows per page */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs" style={{ color: '#94A3B8' }}>Rows:</span>
+                  <div className="flex gap-0.5">
+                    {([25, 50, 75, 100, 200, 300, 'ALL'] as const).map(n => (
+                      <button key={n} onClick={() => { setPerPage(n); setPage(1); }}
+                        className="px-2 py-1 rounded text-[11px] font-semibold transition-colors"
+                        style={{
+                          backgroundColor: perPage === n ? '#134956' : '#F1F5F9',
+                          color: perPage === n ? '#fff' : '#64748B',
+                        }}>
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <span className="text-[#CBD5E1]">·</span>
                 <span>
-                  Showing <span className="font-semibold" style={{ color: '#0F172A' }}>{(page - 1) * PER_PAGE + 1}</span> to{' '}
-                  <span className="font-semibold" style={{ color: '#0F172A' }}>{Math.min(page * PER_PAGE, totalCount)}</span> of{' '}
+                  Showing <span className="font-semibold" style={{ color: '#0F172A' }}>{(page - 1) * (perPage === 'ALL' ? totalCount : perPage) + 1}</span> to{' '}
+                  <span className="font-semibold" style={{ color: '#0F172A' }}>{Math.min(page * (perPage === 'ALL' ? totalCount : perPage), totalCount)}</span> of{' '}
                   <span className="font-semibold" style={{ color: '#0F172A' }}>{totalCount.toLocaleString()}</span> contacts
                   {loading && <span className="ml-2 opacity-50">…</span>}
                 </span>
-                {totalPages > 1 && (
+                {(perPage !== 'ALL' ? totalPages : 1) > 1 && (
                   <div className="flex items-center gap-1">
                     <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1 || loading}
                       className="flex items-center gap-1 px-2 h-7 rounded-lg text-xs font-semibold transition-colors hover:bg-[#F1F5F9] disabled:opacity-30"
