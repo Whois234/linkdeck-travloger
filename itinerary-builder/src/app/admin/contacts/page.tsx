@@ -207,15 +207,12 @@ function Chip({ children, bg, color }: { children: React.ReactNode; bg: string; 
 
 // ─── Contact Detail Panel ────────────────────────────────────────────────────
 function ContactPanel({
-  contact, users, allTags, onClose, onUpdated,
+  contact, users, allTags, onClose, onUpdated, onEditFull,
 }: {
-  contact: Contact; users: CrmUser[]; allTags: ContactTag[]; onClose: () => void; onUpdated: () => void;
+  contact: Contact; users: CrmUser[]; allTags: ContactTag[];
+  onClose: () => void; onUpdated: () => void; onEditFull: (c: Contact) => void;
 }) {
   const [detail, setDetail] = useState<Contact | null>(null);
-  const [editing, setEditing] = useState(false);
-  const [form, setForm]       = useState({ name: contact.name, phone: contact.phone, email: contact.email ?? '', source: contact.source ?? '', notes: contact.notes ?? '', owner_id: contact.owner_id });
-  const [saving, setSaving]       = useState(false);
-  const [error, setError]         = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting]   = useState(false);
   const [showTagPicker, setShowTagPicker] = useState(false);
@@ -250,15 +247,6 @@ function ContactPanel({
 
   const c = detail ?? contact;
 
-  async function save() {
-    setSaving(true); setError('');
-    const res  = await fetch(`/api/v1/crm/contacts/${contact.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
-    const data = await res.json();
-    setSaving(false);
-    if (data.success) { setEditing(false); onUpdated(); setDetail(prev => prev ? { ...prev, ...data.data } : prev); }
-    else setError(data.error ?? 'Failed to save');
-  }
-
   async function deleteContact() {
     setDeleting(true);
     await fetch(`/api/v1/crm/contacts/${contact.id}`, { method: 'DELETE' });
@@ -285,9 +273,9 @@ function ContactPanel({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {!editing && !confirmDelete && (
+            {!confirmDelete && (
               <>
-                <button onClick={() => setEditing(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors hover:bg-[#F8FAFC]" style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>
+                <button onClick={() => onEditFull(c)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors hover:bg-[#F8FAFC]" style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>
                   <Edit2 className="w-3.5 h-3.5" /> Edit
                 </button>
                 <button onClick={() => setConfirmDelete(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors hover:bg-[#FEF2F2]" style={{ border: '1px solid #FECACA', color: '#DC2626' }}>
@@ -374,48 +362,8 @@ function ContactPanel({
             )}
           </div>
 
-          {/* Edit form / read view */}
-          {editing ? (
-            <div className="px-6 py-4 space-y-4">
-              {[
-                { label: 'Name',   key: 'name',   type: 'text' },
-                { label: 'Phone',  key: 'phone',  type: 'tel' },
-                { label: 'Email',  key: 'email',  type: 'email' },
-                { label: 'Source', key: 'source', type: 'text' },
-              ].map(f => (
-                <div key={f.key}>
-                  <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>{f.label}</label>
-                  <input type={f.type} value={(form as Record<string,string>)[f.key]}
-                    onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
-                    className="w-full text-sm rounded-lg px-3 py-2.5 outline-none" style={{ border: '1px solid #D1D5DB' }} />
-                </div>
-              ))}
-              <div>
-                <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Contact Owner</label>
-                <div className="relative">
-                  <select value={form.owner_id} onChange={e => setForm(p => ({ ...p, owner_id: e.target.value }))}
-                    className="w-full text-sm rounded-lg px-3 py-2.5 outline-none appearance-none" style={{ border: '1px solid #D1D5DB' }}>
-                    {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
-                  </select>
-                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: '#94A3B8' }} />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Notes</label>
-                <textarea value={form.notes} rows={3} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
-                  className="w-full text-sm rounded-lg px-3 py-2.5 outline-none resize-none" style={{ border: '1px solid #D1D5DB' }} />
-              </div>
-              {error && <p className="text-xs text-red-600 font-medium">{error}</p>}
-              <div className="flex gap-3">
-                <button onClick={() => setEditing(false)} className="flex-1 py-2.5 rounded-lg text-sm font-semibold" style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>Cancel</button>
-                <button onClick={save} disabled={saving} className="flex-1 py-2.5 rounded-lg text-sm font-bold text-white flex items-center justify-center gap-2" style={{ backgroundColor: '#134956' }}>
-                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  {saving ? 'Saving...' : 'Save Changes'}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <>
+          {/* Read view — all sections */}
+          <>
               {/* ── BASIC INFO ─────────────────────────────────────────── */}
               <PanelSection title="Basic Info">
                 <div className="grid grid-cols-2 gap-x-6 gap-y-3">
@@ -489,7 +437,6 @@ function ContactPanel({
                 </div>
               </PanelSection>
             </>
-          )}
 
           {/* Quotes — previous quotes given to this contact with customer interaction events */}
           {(c.quotes && c.quotes.length > 0) && (
@@ -1413,9 +1360,19 @@ export default function ContactsPage() {
           qc.invalidateQueries({ queryKey: QK.contacts(contactParams.toString()) });
           setShowCreate(false);
           setEditing(null);
+          setSelected(null);
         }}
       />
-      {selected && <ContactPanel contact={selected} users={users} allTags={allTags} onClose={() => setSelected(null)} onUpdated={() => qc.invalidateQueries({ queryKey: QK.contacts(contactParams.toString()) })} />}
+      {selected && (
+        <ContactPanel
+          contact={selected}
+          users={users}
+          allTags={allTags}
+          onClose={() => setSelected(null)}
+          onUpdated={() => qc.invalidateQueries({ queryKey: QK.contacts(contactParams.toString()) })}
+          onEditFull={(c) => setEditing(c)}
+        />
+      )}
     </div>
   );
 }
