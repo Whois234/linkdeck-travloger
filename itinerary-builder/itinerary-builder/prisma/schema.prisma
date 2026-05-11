@@ -1146,8 +1146,16 @@ model ContactActivity {
 }
 
 enum TripType {
+  HONEYMOON
+  FAMILY
+  FRIENDS
+  SOLO
+  CORPORATE
+  PILGRIMAGE
+  ADVENTURE
   GROUP
   PRIVATE
+  OTHER
 }
 
 enum LeadSource {

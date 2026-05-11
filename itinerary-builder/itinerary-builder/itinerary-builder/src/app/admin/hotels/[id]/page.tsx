@@ -386,7 +386,7 @@ export default function HotelDetailPage() {
   const loadRates = useCallback(async () => {
     const r = await fetch(`/api/v1/hotels/${id}/rates`);
     const d = await r.json();
-    if (d.success) setRates(d.data);
+    if (d.success) setRates(Array.isArray(d.data) ? d.data : []);
   }, [id]);
 
   useEffect(() => { loadAll(); loadRates(); }, [loadAll, loadRates]);

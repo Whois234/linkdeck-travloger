@@ -1,0 +1,12 @@
+-- Migration: 0014_extend_trip_type_enum
+-- Adds HONEYMOON, FAMILY, FRIENDS, SOLO, CORPORATE, PILGRIMAGE, ADVENTURE, OTHER
+-- to the TripType enum. Each ALTER TYPE … ADD VALUE is idempotent via DO block.
+
+DO $$ BEGIN ALTER TYPE "TripType" ADD VALUE 'HONEYMOON';   EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TYPE "TripType" ADD VALUE 'FAMILY';      EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TYPE "TripType" ADD VALUE 'FRIENDS';     EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TYPE "TripType" ADD VALUE 'SOLO';        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TYPE "TripType" ADD VALUE 'CORPORATE';   EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TYPE "TripType" ADD VALUE 'PILGRIMAGE';  EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TYPE "TripType" ADD VALUE 'ADVENTURE';   EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TYPE "TripType" ADD VALUE 'OTHER';       EXCEPTION WHEN duplicate_object THEN NULL; END $$;

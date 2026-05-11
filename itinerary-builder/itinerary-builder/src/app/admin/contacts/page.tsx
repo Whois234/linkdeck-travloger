@@ -42,7 +42,7 @@ interface ContactTag { id: string; name: string; color: string }
 
 type LeadStage  = 'NEW' | 'CONTACTED' | 'FOLLOW_UP' | 'HOT' | 'CONVERTED' | 'LOST';
 type LeadSource = 'CTWA' | 'META_LEAD_FORM' | 'GOOGLE_ADS' | 'WEBSITE' | 'WALK_IN' | 'REFERRAL';
-type TripType   = 'GROUP' | 'PRIVATE';
+type TripType   = 'HONEYMOON' | 'FAMILY' | 'FRIENDS' | 'SOLO' | 'CORPORATE' | 'PILGRIMAGE' | 'ADVENTURE' | 'GROUP' | 'PRIVATE' | 'OTHER';
 
 interface Contact {
   id: string; name: string; phone: string; email: string | null;
@@ -167,8 +167,16 @@ const SOURCE_BADGE: Record<LeadSource, { bg: string; color: string; label: strin
 };
 
 const TRIP_TYPE_BADGE: Record<TripType, { bg: string; color: string; label: string }> = {
-  GROUP:   { bg: '#E0E7FF', color: '#4338CA', label: 'Group' },
-  PRIVATE: { bg: '#CFFAFE', color: '#0E7490', label: 'Private' },
+  HONEYMOON:  { bg: '#FCE7F3', color: '#BE185D', label: 'Honeymoon' },
+  FAMILY:     { bg: '#FEF3C7', color: '#B45309', label: 'Family' },
+  FRIENDS:    { bg: '#DCFCE7', color: '#15803D', label: 'Friends' },
+  SOLO:       { bg: '#DBEAFE', color: '#1D4ED8', label: 'Solo' },
+  CORPORATE:  { bg: '#F1F5F9', color: '#475569', label: 'Corporate' },
+  PILGRIMAGE: { bg: '#FEF9C3', color: '#A16207', label: 'Pilgrimage' },
+  ADVENTURE:  { bg: '#FEE2E2', color: '#DC2626', label: 'Adventure' },
+  GROUP:      { bg: '#E0E7FF', color: '#4338CA', label: 'Group' },
+  PRIVATE:    { bg: '#CFFAFE', color: '#0E7490', label: 'Private' },
+  OTHER:      { bg: '#F1F5F9', color: '#64748B', label: 'Other' },
 };
 
 const STAGES: LeadStage[]  = ['NEW', 'CONTACTED', 'FOLLOW_UP', 'HOT', 'CONVERTED', 'LOST'];
@@ -934,8 +942,9 @@ export default function ContactsPage() {
             className="text-xs font-medium rounded-lg px-2.5 py-1.5 outline-none cursor-pointer"
             style={{ border: `1px solid ${tripTypeFilter ? '#134956' : '#E2E8F0'}`, color: tripTypeFilter ? '#134956' : '#64748B', backgroundColor: tripTypeFilter ? '#F0F9FF' : '#fff' }}>
             <option value="">Any trip type</option>
-            <option value="GROUP">Group</option>
-            <option value="PRIVATE">Private</option>
+            {(Object.entries(TRIP_TYPE_BADGE) as [TripType, { label: string }][]).map(([v, b]) => (
+              <option key={v} value={v}>{b.label}</option>
+            ))}
           </select>
 
           {activeFilterCount > 0 && (

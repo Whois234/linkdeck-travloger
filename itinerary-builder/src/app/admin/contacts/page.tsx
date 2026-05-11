@@ -24,6 +24,8 @@ interface Pipeline { id: string; name: string }
 interface Lead     {
   id: string; name: string; status: string; created_at: string;
   destination_interest: string | null;
+  budget_range:         string | null;
+  travel_month:         string | null;
   stage: Stage | null; pipeline: Pipeline | null;
   _count?: { call_logs: number; lead_notes: number };
 }
@@ -1034,24 +1036,60 @@ export default function ContactsPage() {
 
                         {/* Phone */}
                         <td className="px-3 py-3">
-                          <span className="flex items-center gap-1 text-xs whitespace-nowrap" style={{ color: '#64748B' }}>
-                            <Phone className="w-3 h-3" />{c.phone}
-                          </span>
+                          <div>
+                            <span className="flex items-center gap-1 text-xs whitespace-nowrap" style={{ color: '#64748B' }}>
+                              <Phone className="w-3 h-3" />{c.phone}
+                            </span>
+                            {c.email && (
+                              <span className="flex items-center gap-1 text-[10px] mt-0.5 whitespace-nowrap" style={{ color: '#94A3B8' }}>
+                                <Mail className="w-2.5 h-2.5" />{c.email}
+                              </span>
+                            )}
+                          </div>
                         </td>
 
                         {/* City */}
-                        <td className="px-3 py-3 text-xs" style={{ color: '#64748B' }}>
-                          {c.city ?? c.last_known_city ?? '—'}
+                        <td className="px-3 py-3 text-xs">
+                          {(() => {
+                            const city = c.city ?? c.last_known_city ?? null;
+                            return city
+                              ? <span style={{ color: '#0F172A' }}>{city}</span>
+                              : <span style={{ color: '#CBD5E1' }}>—</span>;
+                          })()}
                         </td>
 
                         {/* Interested Destination */}
                         <td className="px-3 py-3 text-xs" style={{ color: '#64748B' }}>
-                          {c.interested_destination ?? c.leads.find(l => l.destination_interest)?.destination_interest ?? '—'}
+                          {(() => {
+                            const dest = c.interested_destination ?? c.leads.find(l => l.destination_interest)?.destination_interest ?? null;
+                            const month = c.leads.find(l => l.travel_month)?.travel_month ?? null;
+                            const travellers = c.number_of_travellers;
+                            return dest ? (
+                              <div>
+                                <span style={{ color: '#0F172A', fontWeight: 500 }}>{dest}</span>
+                                {(month || travellers) && (
+                                  <div className="text-[10px] mt-0.5" style={{ color: '#94A3B8' }}>
+                                    {[month, travellers ? `${travellers} pax` : null].filter(Boolean).join(' · ')}
+                                  </div>
+                                )}
+                              </div>
+                            ) : <span style={{ color: '#CBD5E1' }}>—</span>;
+                          })()}
                         </td>
 
                         {/* Budget Per Person */}
-                        <td className="px-3 py-3 text-xs font-semibold whitespace-nowrap" style={{ color: c.budget_per_person ? '#0F172A' : '#CBD5E1' }}>
-                          {fmtINR(c.budget_per_person)}
+                        <td className="px-3 py-3 text-xs font-semibold whitespace-nowrap">
+                          {(() => {
+                            const perPerson = c.budget_per_person;
+                            if (perPerson !== null && perPerson !== undefined && perPerson !== '') {
+                              return <span style={{ color: '#0F172A' }}>{fmtINR(perPerson)}</span>;
+                            }
+                            const leadBudget = c.leads.find(l => l.budget_range)?.budget_range ?? null;
+                            if (leadBudget) {
+                              return <span style={{ color: '#64748B' }}>{leadBudget}</span>;
+                            }
+                            return <span style={{ color: '#CBD5E1' }}>—</span>;
+                          })()}
                         </td>
 
                         {/* Trip Type */}
