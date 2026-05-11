@@ -65,10 +65,20 @@ interface Contact {
   special_requirements:   string | null;
   budget_per_person:      string | number | null; // Decimal serialises to string
 
-  // Lead source & CRM
-  lead_source:    LeadSource | null;
-  platform:       string | null;
-  campaign_name:  string | null;
+  // Lead source & Ad data
+  lead_source:         LeadSource | null;
+  platform:            string | null;
+  campaign_name:       string | null;
+  ad_set_name:         string | null;
+  ad_name:             string | null;
+  device_platform:     string | null;
+  gallabox_contact_id: string | null;
+  platform_lead_id:    string | null;
+  facebook_click_id:   string | null;
+  facebook_browser_id: string | null;
+  google_click_id:     string | null;
+  other_ad_details:    Record<string, string> | null;
+  // CRM
   lead_stage:     LeadStage;
   assigned_to_id: string | null;
   assigned_to:    Owner | null;
@@ -365,72 +375,121 @@ function ContactPanel({
           </div>
 
           {/* Edit form / read view */}
-          <div className="px-6 py-4 space-y-4">
-            {editing ? (
-              <>
-                {[
-                  { label: 'Name',   key: 'name',   type: 'text' },
-                  { label: 'Phone',  key: 'phone',  type: 'tel' },
-                  { label: 'Email',  key: 'email',  type: 'email' },
-                  { label: 'Source', key: 'source', type: 'text' },
-                ].map(f => (
-                  <div key={f.key}>
-                    <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>{f.label}</label>
-                    <input type={f.type} value={(form as Record<string,string>)[f.key]}
-                      onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
-                      className="w-full text-sm rounded-lg px-3 py-2.5 outline-none" style={{ border: '1px solid #D1D5DB' }} />
-                  </div>
-                ))}
-                <div>
-                  <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Contact Owner</label>
-                  <div className="relative">
-                    <select value={form.owner_id} onChange={e => setForm(p => ({ ...p, owner_id: e.target.value }))}
-                      className="w-full text-sm rounded-lg px-3 py-2.5 outline-none appearance-none" style={{ border: '1px solid #D1D5DB' }}>
-                      {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
-                    </select>
-                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: '#94A3B8' }} />
-                  </div>
+          {editing ? (
+            <div className="px-6 py-4 space-y-4">
+              {[
+                { label: 'Name',   key: 'name',   type: 'text' },
+                { label: 'Phone',  key: 'phone',  type: 'tel' },
+                { label: 'Email',  key: 'email',  type: 'email' },
+                { label: 'Source', key: 'source', type: 'text' },
+              ].map(f => (
+                <div key={f.key}>
+                  <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>{f.label}</label>
+                  <input type={f.type} value={(form as Record<string,string>)[f.key]}
+                    onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
+                    className="w-full text-sm rounded-lg px-3 py-2.5 outline-none" style={{ border: '1px solid #D1D5DB' }} />
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Notes</label>
-                  <textarea value={form.notes} rows={3} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
-                    className="w-full text-sm rounded-lg px-3 py-2.5 outline-none resize-none" style={{ border: '1px solid #D1D5DB' }} />
+              ))}
+              <div>
+                <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Contact Owner</label>
+                <div className="relative">
+                  <select value={form.owner_id} onChange={e => setForm(p => ({ ...p, owner_id: e.target.value }))}
+                    className="w-full text-sm rounded-lg px-3 py-2.5 outline-none appearance-none" style={{ border: '1px solid #D1D5DB' }}>
+                    {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: '#94A3B8' }} />
                 </div>
-                {error && <p className="text-xs text-red-600 font-medium">{error}</p>}
-                <div className="flex gap-3">
-                  <button onClick={() => setEditing(false)} className="flex-1 py-2.5 rounded-lg text-sm font-semibold" style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>Cancel</button>
-                  <button onClick={save} disabled={saving} className="flex-1 py-2.5 rounded-lg text-sm font-bold text-white flex items-center justify-center gap-2" style={{ backgroundColor: '#134956' }}>
-                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                    {saving ? 'Saving...' : 'Save Changes'}
-                  </button>
-                </div>
-              </>
-            ) : (
-              <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-                {[
-                  { label: 'Phone',   value: c.phone },
-                  { label: 'Email',   value: c.email ?? '—' },
-                  { label: 'Source',  value: c.source ?? '—' },
-                  { label: 'Owner',   value: c.owner?.name ?? '—' },
-                  { label: 'Created', value: fmtDateTime(c.created_at) },
-                  { label: 'Converted', value: c.converted_at ? fmtDateTime(c.converted_at) : '—' },
-                  { label: 'Last Known City', value: c.last_known_city ? `📍 ${c.last_known_city}` : '—' },
-                  { label: 'Last Seen', value: c.last_seen_at ? fmtDateTime(c.last_seen_at) : '—' },
-                ].map(f => (
-                  <div key={f.label}>
-                    <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: '#94A3B8' }}>{f.label}</p>
-                    <p className="text-sm" style={{ color: '#0F172A' }}>{f.value}</p>
-                  </div>
-                ))}
-                {c.notes && (
-                  <div className="col-span-2">
-                    <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: '#94A3B8' }}>Notes</p>
-                    <p className="text-sm" style={{ color: '#64748B' }}>{c.notes}</p>
-                  </div>
-                )}
               </div>
-            )}
-          </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Notes</label>
+                <textarea value={form.notes} rows={3} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
+                  className="w-full text-sm rounded-lg px-3 py-2.5 outline-none resize-none" style={{ border: '1px solid #D1D5DB' }} />
+              </div>
+              {error && <p className="text-xs text-red-600 font-medium">{error}</p>}
+              <div className="flex gap-3">
+                <button onClick={() => setEditing(false)} className="flex-1 py-2.5 rounded-lg text-sm font-semibold" style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>Cancel</button>
+                <button onClick={save} disabled={saving} className="flex-1 py-2.5 rounded-lg text-sm font-bold text-white flex items-center justify-center gap-2" style={{ backgroundColor: '#134956' }}>
+                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  {saving ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* ── BASIC INFO ─────────────────────────────────────────── */}
+              <PanelSection title="Basic Info">
+                <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+                  <PF label="Phone"   value={c.phone} />
+                  <PF label="Email"   value={c.email} />
+                  <PF label="City"    value={c.city ?? c.last_known_city} />
+                  <PF label="Owner"   value={c.owner?.name} />
+                  <PF label="Created" value={fmtDateTime(c.created_at)} />
+                  <PF label="Last Seen" value={c.last_seen_at ? fmtDateTime(c.last_seen_at) : null} />
+                  {c.source && <PF label="Source (legacy)" value={c.source} span={2} />}
+                  {c.notes  && <PF label="Notes" value={c.notes} span={2} />}
+                </div>
+              </PanelSection>
+
+              {/* ── TRAVEL INTEREST ────────────────────────────────────── */}
+              <PanelSection title="Travel Interest">
+                <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+                  <PF label="Destination"    value={c.interested_destination} />
+                  <PF label="Travellers"     value={c.number_of_travellers != null ? String(c.number_of_travellers) : null} />
+                  <PF label="Trip Type"      value={c.trip_type ? TRIP_TYPE_BADGE[c.trip_type].label : null} badge={c.trip_type ? TRIP_TYPE_BADGE[c.trip_type] : undefined} />
+                  <PF label="Budget / Person" value={fmtINR(c.budget_per_person)} />
+                  {c.special_requirements && <PF label="Special Requirements" value={c.special_requirements} span={2} />}
+                </div>
+              </PanelSection>
+
+              {/* ── LEAD SOURCE & AD DATA ──────────────────────────────── */}
+              <PanelSection title="Lead Source & Ad Data">
+                <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+                  <PF label="Lead Source"   value={c.lead_source ? SOURCE_BADGE[c.lead_source].label : null} badge={c.lead_source ? SOURCE_BADGE[c.lead_source] : undefined} />
+                  <PF label="Platform"      value={c.platform} />
+                  <PF label="Campaign Name" value={c.campaign_name} />
+                  <PF label="Ad Set Name"   value={c.ad_set_name} />
+                  <PF label="Ad Name"       value={c.ad_name} />
+                  <PF label="Device Platform" value={c.device_platform} />
+                  <PF label="Gallabox Contact ID" value={c.gallabox_contact_id} />
+                  <PF label="Platform Lead ID"    value={c.platform_lead_id} />
+                  <PF label="Facebook Click ID (fbclid)" value={c.facebook_click_id}   span={2} mono />
+                  <PF label="Facebook Browser ID (fbp)"  value={c.facebook_browser_id} span={2} mono />
+                  <PF label="Google Click ID (gclid)"    value={c.google_click_id}     span={2} mono />
+                </div>
+              </PanelSection>
+
+              {/* ── UTM & OTHER AD DETAILS ─────────────────────────────── */}
+              {(() => {
+                const o = c.other_ad_details ?? (c.custom_fields as Record<string, string> | null);
+                if (!o || Object.keys(o).length === 0) return null;
+                return (
+                  <PanelSection title="UTM & Other Ad Details">
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+                      <PF label="Keyword"      value={o.keyword} />
+                      <PF label="UTM Source"   value={o.utm_source} />
+                      <PF label="UTM Medium"   value={o.utm_medium} />
+                      <PF label="UTM Campaign" value={o.utm_campaign} />
+                      <PF label="UTM Term"     value={o.utm_term} />
+                      <PF label="UTM Content"  value={o.utm_content} />
+                      {o.landing_page && <PF label="Landing Page" value={o.landing_page} span={2} mono />}
+                    </div>
+                  </PanelSection>
+                );
+              })()}
+
+              {/* ── CRM ────────────────────────────────────────────────── */}
+              <PanelSection title="CRM">
+                <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+                  <PF label="Stage"       value={STAGE_BADGE[c.lead_stage].label} badge={STAGE_BADGE[c.lead_stage]} />
+                  <PF label="Assigned To" value={c.assigned_to?.name} />
+                  <PF label="Follow-up"   value={c.follow_up_date ? fmtDate(c.follow_up_date) : null} />
+                  <PF label="Booking Value" value={fmtINR(c.booking_value)} />
+                  <PF label="Do Not Contact" value={c.do_not_contact ? 'Yes — blocked' : 'No'} color={c.do_not_contact ? '#DC2626' : undefined} />
+                  <PF label="Converted" value={c.is_converted ? (c.closed_date ? fmtDateTime(c.closed_date) : 'Yes') : 'No'} />
+                </div>
+              </PanelSection>
+            </>
+          )}
 
           {/* Quotes — previous quotes given to this contact with customer interaction events */}
           {(c.quotes && c.quotes.length > 0) && (
@@ -1357,6 +1416,45 @@ export default function ContactsPage() {
         }}
       />
       {selected && <ContactPanel contact={selected} users={users} allTags={allTags} onClose={() => setSelected(null)} onUpdated={() => qc.invalidateQueries({ queryKey: QK.contacts(contactParams.toString()) })} />}
+    </div>
+  );
+}
+
+// ─── Panel helpers ────────────────────────────────────────────────────────────
+function PanelSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="px-6 py-4" style={{ borderTop: '1px solid #F1F5F9' }}>
+      <p className="text-[10px] font-bold uppercase tracking-widest mb-3" style={{ color: '#94A3B8' }}>{title}</p>
+      {children}
+    </div>
+  );
+}
+
+function PF({
+  label, value, span, mono, color, badge,
+}: {
+  label: string;
+  value: string | number | null | undefined;
+  span?: 1 | 2;
+  mono?: boolean;
+  color?: string;
+  badge?: { bg: string; color: string };
+}) {
+  const display = value !== null && value !== undefined && value !== '' ? String(value) : null;
+  return (
+    <div className={span === 2 ? 'col-span-2' : ''}>
+      <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: '#94A3B8' }}>{label}</p>
+      {display && badge ? (
+        <span className="inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-semibold"
+          style={{ backgroundColor: badge.bg, color: badge.color }}>
+          {display}
+        </span>
+      ) : (
+        <p className={`text-sm ${mono ? 'font-mono text-[11px] break-all' : ''}`}
+          style={{ color: display ? (color ?? '#0F172A') : '#CBD5E1' }}>
+          {display ?? '—'}
+        </p>
+      )}
     </div>
   );
 }
