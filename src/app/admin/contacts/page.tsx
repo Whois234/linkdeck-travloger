@@ -3,6 +3,7 @@ import { useEffect, useState, useRef, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useContacts, useUsers, QK } from '@/lib/query-hooks';
 import { TableSkeleton } from '@/components/Skeleton';
+import { toast } from '@/components/Toaster';
 import {
   Search, Phone, Mail, Plus, X, Calendar, ChevronDown, AlertTriangle,
   Loader2, Edit2, ChevronRight, CheckSquare, Square, ChevronLeft, ExternalLink,
@@ -74,11 +75,25 @@ function CreateContactModal({ onClose, onCreated }: { onClose: () => void; onCre
     e.preventDefault();
     if (!form.name.trim() || !form.phone.trim()) { setError('Name and phone are required'); return; }
     setSaving(true); setError('');
-    const res  = await fetch('/api/v1/crm/contacts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
-    const data = await res.json();
-    setSaving(false);
-    if (data.success) { onCreated(); onClose(); }
-    else setError(data.error ?? 'Failed to create contact');
+    try {
+      const res  = await fetch('/api/v1/crm/contacts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+      const data = await res.json();
+      if (data.success) {
+        toast.success(`Contact ${form.name.trim()} added`);
+        onCreated();
+        onClose();
+      } else {
+        const msg = data.error ?? 'Failed to create contact';
+        setError(msg);
+        toast.error(msg);
+      }
+    } catch {
+      const msg = 'Network error — please try again';
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -711,7 +726,7 @@ export default function ContactsPage() {
             {loading && contacts.length === 0 ? (
               <TableSkeleton rows={12} />
             ) : (
-              <table className="w-full text-sm border-collapse min-w-[900px]">
+              <div className="overflow-x-auto"><table className="w-full text-sm border-collapse min-w-[900px]">
                 <thead>
                   <tr style={{ backgroundColor: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
                     <th className="w-10 px-4 py-3">
@@ -811,7 +826,7 @@ export default function ContactsPage() {
                     </tr>
                   )}
                 </tbody>
-              </table>
+              </table></div>
             )}
           </div>
 
@@ -860,7 +875,7 @@ export default function ContactsPage() {
               <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>No duplicate attempts</p>
             </div>
           ) : (
-            <table className="w-full text-sm bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
+            <div className="overflow-x-auto"><table className="w-full text-sm bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
               <thead>
                 <tr style={{ backgroundColor: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
                   {['Attempted By', 'Phone', 'Existing Owner', 'Time'].map(h => (
@@ -878,7 +893,7 @@ export default function ContactsPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           )}
         </div>
       )}

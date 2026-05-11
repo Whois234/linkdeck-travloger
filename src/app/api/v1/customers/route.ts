@@ -7,14 +7,14 @@ import { ok, created, err, unauthorized, forbidden } from '@/lib/api-response';
 import { UserRole } from '@prisma/client';
 
 const Schema = z.object({
-  name: z.string().min(1),
-  phone: z.string().min(1),
-  whatsapp: z.string().optional().nullable(),
-  email: z.string().email().optional().nullable(),
-  city: z.string().optional().nullable(),
-  nationality: z.string().optional().nullable(),
+  name: z.string().trim().min(1, 'Name is required').max(120),
+  phone: z.string().trim().min(7).max(20).regex(/^[0-9+\-\s()]+$/, 'Phone has invalid characters'),
+  whatsapp: z.string().trim().max(20).regex(/^[0-9+\-\s()]*$/, 'Invalid WhatsApp number').nullable().optional(),
+  email: z.string().trim().email().toLowerCase().nullable().optional().or(z.literal('').transform(() => null)),
+  city: z.string().trim().max(80).nullable().optional(),
+  nationality: z.string().trim().max(60).nullable().optional(),
   lead_id: z.string().optional().nullable(),
-  notes: z.string().optional().nullable(),
+  notes: z.string().trim().max(2000).nullable().optional(),
 });
 
 const PRIVILEGED = [UserRole.ADMIN, UserRole.MANAGER, UserRole.FINANCE, UserRole.OPS] as UserRole[];

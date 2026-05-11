@@ -5,14 +5,25 @@ import { ok, created, err, unauthorized } from '@/lib/api-response';
 import { z } from 'zod';
 
 const createSchema = z.object({
-  name:          z.string().min(1),
-  phone:         z.string().min(1),
-  email:         z.string().email().optional().nullable(),
-  source:        z.string().optional().nullable(),
-  notes:         z.string().optional().nullable(),
-  tags:          z.array(z.string()).optional(),
+  name:          z.string().trim().min(1, 'Name is required').max(120).transform(stripTags),
+  phone:         z.string().trim().min(7, 'Phone is too short').max(20).regex(/^[0-9+\-\s()]+$/, 'Phone has invalid characters'),
+  email:         z.string().trim().email().toLowerCase().nullable().optional().or(z.literal('').transform(() => null)),
+  source:        z.string().trim().max(60).transform(stripTags).nullable().optional(),
+  notes:         z.string().trim().max(2000).transform(stripTags).nullable().optional(),
+  tags:          z.array(z.string().trim().min(1).max(40)).max(20).optional(),
   custom_fields: z.record(z.unknown()).optional().nullable(),
 });
+
+// Light-weight sanitisation. We don't render user-supplied content as HTML
+// anywhere in the admin, but we strip tags/<script> on the way in as defense
+// in depth so a future careless `dangerouslySetInnerHTML` can't be weaponised.
+function stripTags(v: string | null | undefined): string {
+  if (!v) return '';
+  return v
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<[^>]+>/g, '')
+    .trim();
+}
 
 function buildDateFilter(dateRange: string | null, from: string | null, to: string | null) {
   const now = new Date();

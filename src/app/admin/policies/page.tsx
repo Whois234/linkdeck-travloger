@@ -93,7 +93,7 @@ export default function PoliciesPage() {
         </div>
         {loading ? <div className="py-16 text-center"><div className="w-8 h-8 rounded-full border-2 border-[#134956] border-t-transparent animate-spin mx-auto" /></div>
           : filtered.length === 0 ? <div className="py-16 text-center"><p className="font-semibold text-sm" style={{ color: '#0F172A' }}>No policies found</p><p className="text-sm mt-1" style={{ color: '#64748B' }}>{search ? 'Try a different search' : 'Add your first policy'}</p></div>
-          : <table className="w-full text-sm">
+          : <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead><tr style={{ backgroundColor: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>{['Title', 'Type', 'Applies To', 'Preview', 'Status', ''].map(h => <th key={h} className="px-5 py-3.5 text-left text-[11px] font-semibold uppercase tracking-wider" style={{ color: '#64748B' }}>{h}</th>)}</tr></thead>
               <tbody>
                 {filtered.map(r => {
@@ -113,7 +113,7 @@ export default function PoliciesPage() {
                   );
                 })}
               </tbody>
-            </table>}
+            </table></div>}
       </div>
     </div>
   );

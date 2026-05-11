@@ -344,7 +344,7 @@ function GroupTemplatesPageInner() {
       ) : viewMode === 'list' ? (
         /* ── LIST VIEW ── */
         <div className="bg-white rounded-xl overflow-hidden" style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
               <tr style={{ borderBottom: '1px solid #F1F5F9', backgroundColor: '#F8FAFC' }}>
                 <th className="px-4 py-3 w-8">
@@ -397,7 +397,7 @@ function GroupTemplatesPageInner() {
                 );
               })}
             </tbody>
-          </table>
+          </table></div>
         </div>
       ) : (
         /* ── GRID VIEW ── */

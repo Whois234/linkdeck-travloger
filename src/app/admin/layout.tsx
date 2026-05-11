@@ -2,6 +2,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState, useEffect, useRef } from 'react';
+import { Toaster } from '@/components/Toaster';
 import {
   LayoutDashboard, MapPin, Map, Building2, Car, Activity, BookOpen,
   ScrollText, Users,
@@ -526,6 +527,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           {children}
         </main>
       </div>
+      <Toaster />
     </div>
   );
 }
