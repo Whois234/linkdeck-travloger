@@ -268,7 +268,8 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
       ...quote.state,
       hero_image:
         // If the template admin hid the state gallery card, exclude it from the gallery
-        (templateCmsData as Record<string,unknown>)?.state_gallery_hidden === true
+        (templateCmsData as Record<string,unknown>)?.state_gallery_hidden === true ||
+        (groupCms as Record<string,unknown>)?.state_gallery_hidden === true
           ? null
           : (((groupCms as Record<string,unknown>)?.state_gallery_image as string | undefined || null)
             ?? ((templateCmsData as Record<string,unknown>)?.state_gallery_image as string | undefined || null)
@@ -286,10 +287,10 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     group_trip_dates:      Array.isArray((groupCms as any)?.trip_dates) ? (groupCms as any).trip_dates : [],
     day_snapshots:         enrichedDaySnapshots,
-    // Destination cards from template CMS — resolved with name + hero fallback; hidden cards excluded
+    // Destination cards from template/group CMS — resolved with name + hero fallback; hidden cards excluded
     destination_cards: (() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const raw = (templateCmsData as any)?.destination_cards;
+      const raw = (templateCmsData as any)?.destination_cards ?? (groupCms as any)?.destination_cards;
       if (!Array.isArray(raw) || raw.length === 0) return null;
       return (raw as Array<{ destination_id: string; custom_name?: string | null; description?: string; image_url?: string; hidden?: boolean }>)
         .filter(dc => dc.destination_id && destsMap[dc.destination_id] && !dc.hidden)
