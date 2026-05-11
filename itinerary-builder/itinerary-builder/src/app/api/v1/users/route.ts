@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
 
 const CreateUserSchema = z.object({
   name: z.string().min(1),
-  email: z.string().email(),
+  email: z.string().email().transform(v => v.toLowerCase().trim()),
   password: z.string().min(8, 'Password must be at least 8 characters'),
   role: z.nativeEnum(UserRole),
   agent_id: z.string().optional().nullable(),

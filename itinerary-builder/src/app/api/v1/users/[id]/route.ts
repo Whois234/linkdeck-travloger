@@ -24,7 +24,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
 const UpdateUserSchema = z.object({
   name: z.string().min(1).optional(),
-  email: z.string().email().optional(),
+  email: z.string().email().transform(v => v.toLowerCase().trim()).optional(),
   role: z.nativeEnum(UserRole).optional(),
   agent_id: z.string().optional().nullable(),
   phone: z.string().optional().nullable(),

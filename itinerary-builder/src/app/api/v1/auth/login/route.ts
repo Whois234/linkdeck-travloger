@@ -6,7 +6,7 @@ import { signToken } from '@/lib/auth';
 import { err } from '@/lib/api-response';
 
 const LoginSchema = z.object({
-  email: z.string().email(),
+  email: z.string().email().transform(v => v.toLowerCase().trim()),
   password: z.string().min(1),
   remember: z.boolean().optional(),
 });
