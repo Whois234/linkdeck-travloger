@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { ImageUploader } from '@/components/admin/ImageUploader';
@@ -132,6 +132,9 @@ export default function TemplateEditPage() {
   const [states,   setStates]   = useState<StateItem[]>([]);
   const [cities,   setCities]   = useState<City[]>([]);
   const [hotelRatesCache, setHotelRatesCache] = useState<Record<string, { room_category_id: string; meal_plan_id: string }[]>>({});
+  // Ref mirrors the state so fetchHotelRates can check without being in its dep array
+  const hotelRatesCacheRef = useRef<typeof hotelRatesCache>({});
+  const [editingTitle, setEditingTitle] = useState(false);
   const [destDragIdx, setDestDragIdx] = useState<number | null>(null);
   const [destDragOver, setDestDragOver] = useState<number | null>(null);
   const [loading,  setLoading]  = useState(true);
@@ -149,21 +152,20 @@ export default function TemplateEditPage() {
   });
 
   const fetchHotelRates = useCallback(async (hotelId: string) => {
-    if (!hotelId || hotelRatesCache[hotelId]) return;
+    if (!hotelId || hotelRatesCacheRef.current[hotelId]) return;
     try {
       const res = await fetch(`/api/v1/hotels/${hotelId}/rates`);
       const d = await res.json();
       if (d.success) {
-        setHotelRatesCache(prev => ({
-          ...prev,
-          [hotelId]: (d.data as { room_category_id: string; meal_plan_id: string }[]).map(r => ({
-            room_category_id: r.room_category_id,
-            meal_plan_id: r.meal_plan_id,
-          })),
+        const rates = (d.data as { room_category_id: string; meal_plan_id: string }[]).map(r => ({
+          room_category_id: r.room_category_id,
+          meal_plan_id: r.meal_plan_id,
         }));
+        hotelRatesCacheRef.current = { ...hotelRatesCacheRef.current, [hotelId]: rates };
+        setHotelRatesCache(hotelRatesCacheRef.current);
       }
     } catch { /* silent */ }
-  }, [hotelRatesCache]);
+  }, []); // stable — uses ref for cache check, never recreated
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -354,25 +356,61 @@ export default function TemplateEditPage() {
 
   return (
     <div className="max-w-[1200px]">
-      <PageHeader
-        title={tpl.template_name}
-        subtitle={`${tpl.duration_nights}N/${tpl.duration_days}D · ${tpl.state.name}${tpl.theme ? ` · ${tpl.theme}` : ''}`}
-        crumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Private Templates', href: '/admin/private-templates' }, { label: 'Edit' }]}
-        action={
-          <div className="flex gap-2">
-            <button onClick={() => save(false)} disabled={saving}
-              className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold disabled:opacity-50 hover:opacity-90"
-              style={{ backgroundColor: saved ? '#22c55e' : T, color: 'white' }}>
-              {saved ? <><Check className="w-4 h-4" /> Saved!</> : saving ? 'Saving…' : <><Save className="w-4 h-4" /> Save Draft</>}
-            </button>
-            <button onClick={() => save(true)} disabled={saving}
-              className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white disabled:opacity-50 hover:opacity-90"
-              style={{ backgroundColor: '#16a34a' }}>
-              Publish
-            </button>
-          </div>
-        }
-      />
+      {/* ── Header with inline-editable title ── */}
+      <div className="flex items-start justify-between mb-7">
+        <div>
+          {/* Breadcrumbs */}
+          <nav className="flex items-center gap-1 mb-2">
+            {[{ label: 'Admin', href: '/admin' }, { label: 'Private Templates', href: '/admin/private-templates' }, { label: 'Edit' }].map((c, i, arr) => (
+              <span key={i} className="flex items-center gap-1">
+                {c.href ? (
+                  <a href={c.href} className="text-xs font-medium" style={{ color: '#94A3B8' }}>{c.label}</a>
+                ) : (
+                  <span className="text-xs font-semibold" style={{ color: '#64748B' }}>{c.label}</span>
+                )}
+                {i < arr.length - 1 && <ChevronRight className="w-3 h-3" style={{ color: '#CBD5E1' }} />}
+              </span>
+            ))}
+          </nav>
+          {/* Inline-editable title */}
+          {editingTitle ? (
+            <input
+              autoFocus
+              className="text-2xl font-bold tracking-tight bg-transparent border-b-2 outline-none w-full max-w-lg"
+              style={{ color: '#0F172A', borderColor: T }}
+              value={tplSettings.template_name}
+              onChange={e => setTplSettings(p => ({ ...p, template_name: e.target.value }))}
+              onBlur={() => setEditingTitle(false)}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') setEditingTitle(false); }}
+            />
+          ) : (
+            <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setEditingTitle(true)}>
+              <h1 className="text-2xl font-bold tracking-tight" style={{ color: '#0F172A' }}>
+                {tplSettings.template_name || tpl.template_name}
+              </h1>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="2" strokeLinecap="round" className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+                <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+              </svg>
+            </div>
+          )}
+          <p className="text-sm mt-1 font-medium" style={{ color: '#64748B' }}>
+            {tplSettings.duration_nights}N/{tplSettings.duration_days}D · {tpl.state.name}{tplSettings.theme ? ` · ${tplSettings.theme}` : ''}
+          </p>
+        </div>
+        <div className="flex gap-2 flex-shrink-0 ml-4">
+          <button onClick={() => save(false)} disabled={saving}
+            className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold disabled:opacity-50 hover:opacity-90"
+            style={{ backgroundColor: saved ? '#22c55e' : T, color: 'white' }}>
+            {saved ? <><Check className="w-4 h-4" /> Saved!</> : saving ? 'Saving…' : <><Save className="w-4 h-4" /> Save Draft</>}
+          </button>
+          <button onClick={() => save(true)} disabled={saving}
+            className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white disabled:opacity-50 hover:opacity-90"
+            style={{ backgroundColor: '#16a34a' }}>
+            Publish
+          </button>
+        </div>
+      </div>
 
       <div className="flex gap-6">
         {/* ── SIDEBAR nav ── */}
@@ -416,7 +454,27 @@ export default function TemplateEditPage() {
                   <label className={lbl}>Nights <span className="text-red-500">*</span></label>
                   <input type="number" min="0" className={inp} style={inpSt}
                     value={tplSettings.duration_nights}
-                    onChange={e => setTplSettings(p => ({ ...p, duration_nights: e.target.value, duration_days: String(Number(e.target.value) + 1) }))} />
+                    onChange={e => {
+                      const newNights = Math.max(0, Number(e.target.value) || 0);
+                      setTplSettings(p => ({ ...p, duration_nights: String(newNights), duration_days: String(newNights + 1) }));
+                      setDays(prevDays => {
+                        const target = newNights + 1;
+                        if (prevDays.length === target) return prevDays;
+                        if (target > prevDays.length) {
+                          const destIds = tplSettings.destination_ids;
+                          const lastDest = destIds[destIds.length - 1] ?? destIds[0] ?? '';
+                          const extra: TDay[] = Array.from({ length: target - prevDays.length }, (_, k) => ({
+                            day_number: prevDays.length + k + 1,
+                            destination_id: lastDest,
+                            title: `Day ${prevDays.length + k + 1}`,
+                            description_override: null, image_override: null, gallery_images: null,
+                            day_plan_id: null, meals: null, sort_order: prevDays.length + k + 1,
+                          }));
+                          return [...prevDays, ...extra];
+                        }
+                        return prevDays.slice(0, target);
+                      });
+                    }} />
                 </div>
                 <div>
                   <label className={lbl}>Days</label>
@@ -898,7 +956,7 @@ export default function TemplateEditPage() {
           {activeSection === 'days' && (
             <div className="flex flex-col gap-3">
               <div className="bg-white rounded-2xl p-5" style={card}>
-                <SectionHeader title="Day-wise Itinerary" desc={`${tpl.duration_nights + 1} days · Fill in titles, descriptions and images.`} />
+                <SectionHeader title="Day-wise Itinerary" desc={`${days.length} day${days.length !== 1 ? 's' : ''} · Fill in titles, descriptions and images.`} />
               </div>
               {days.map((day, i) => {
                 const isOpen = expandedDays.has(day.day_number);
