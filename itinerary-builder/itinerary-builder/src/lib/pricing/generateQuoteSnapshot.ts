@@ -267,9 +267,12 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
     state: {
       ...quote.state,
       hero_image:
-        ((groupCms as Record<string,unknown>)?.state_gallery_image as string | undefined || null)
-        ?? ((templateCmsData as Record<string,unknown>)?.state_gallery_image as string | undefined || null)
-        ?? groupTemplate?.hero_image ?? privateTemplateHero ?? quote.state.hero_image ?? firstDestHero ?? null,
+        // If the template admin hid the state gallery card, exclude it from the gallery
+        (templateCmsData as Record<string,unknown>)?.state_gallery_hidden === true
+          ? null
+          : (((groupCms as Record<string,unknown>)?.state_gallery_image as string | undefined || null)
+            ?? ((templateCmsData as Record<string,unknown>)?.state_gallery_image as string | undefined || null)
+            ?? groupTemplate?.hero_image ?? privateTemplateHero ?? quote.state.hero_image ?? firstDestHero ?? null),
       hero_images:
         (Array.isArray((templateCmsData as Record<string,unknown>)?.hero_images) && ((templateCmsData as Record<string,unknown>).hero_images as string[]).filter(Boolean).length > 1)
           ? ((templateCmsData as Record<string,unknown>).hero_images as string[]).filter(Boolean)

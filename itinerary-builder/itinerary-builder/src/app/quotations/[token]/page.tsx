@@ -45,6 +45,7 @@ const getItinerary = cache(async (token: string) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const privateTemplateId = (quote as any).private_template_id as string | null ?? null;
   let liveDestCards = snapshotJson.destination_cards;
+  let liveStateHeroImage = (snapshotJson.state as Record<string, unknown> | null)?.hero_image ?? null;
   if (privateTemplateId) {
     const tpl = await prisma.privateTemplate.findUnique({
       where: { id: privateTemplateId },
@@ -52,6 +53,11 @@ const getItinerary = cache(async (token: string) => {
     });
     const templateCms = tpl?.cms_data as Record<string, unknown> | null ?? null;
     if (templateCms) {
+      // Live-overlay state gallery visibility (no republish needed)
+      if (templateCms.state_gallery_hidden === true) {
+        liveStateHeroImage = null;
+      }
+
       // Resolve raw CMS destination_cards → { destination_id, name, description, image_url }
       // Cards with hidden=true are excluded
       const rawCards = templateCms.destination_cards as Array<{ destination_id: string; custom_name?: string | null; description?: string; image_url?: string; hidden?: boolean }> | null;
@@ -77,6 +83,10 @@ const getItinerary = cache(async (token: string) => {
 
   return {
     ...snapshotJson,
+    state: {
+      ...(snapshotJson.state as Record<string, unknown> | null),
+      hero_image: liveStateHeroImage,
+    },
     destination_cards:  liveDestCards,
     selected_option_id: quote.selected_quote_option_id ?? null,
   } as Record<string, unknown> & { selected_option_id: string | null };

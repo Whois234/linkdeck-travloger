@@ -42,6 +42,7 @@ interface CmsData {
   hero_tags: string[];
   hero_images: string[];
   state_gallery_image: string;
+  state_gallery_hidden?: boolean;
   destination_cards: Array<{ destination_id: string; custom_name: string | null; description: string; image_url: string; hidden?: boolean }>;
   package_options: CmsOption[];
   why_choose: (string | WhyItem)[];
@@ -620,20 +621,48 @@ export default function TemplateEditPage() {
               <SectionHeader title="Destination Cards" desc="One card per destination shown in the gallery grid. Toggle eye icon to hide a card from the itinerary." />
               <div className="flex flex-col gap-4">
                 {/* State card — always first in the gallery */}
-                <div className="rounded-xl p-4" style={{ border: '1px solid #C7D2FE', background: '#F5F3FF' }}>
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-sm font-semibold text-[#4338CA]">{tpl?.state?.name ?? 'State'}</span>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-600 font-medium">Gallery Cover Card</span>
-                  </div>
-                  <ImageUploader
-                    label="State Gallery Photo"
-                    folder="templates/destinations"
-                    value={cms.state_gallery_image || null}
-                    onChange={url => updCms('state_gallery_image', url ?? '')}
-                    placeholder="Upload photo for state gallery card"
-                    sizeHint="800 × 600 px (4:3)"
-                  />
-                </div>
+                {(() => {
+                  const stateHidden = !!cms.state_gallery_hidden;
+                  return (
+                    <div className="rounded-xl overflow-hidden transition-all" style={{
+                      border: `1px solid ${stateHidden ? '#E2E8F0' : '#C7D2FE'}`,
+                      background: stateHidden ? '#F8FAFC' : '#F5F3FF',
+                      opacity: stateHidden ? 0.55 : 1,
+                    }}>
+                      <div className="flex items-center gap-2 px-4 pt-4 pb-3">
+                        <span className="flex-1 text-sm font-semibold" style={{ color: stateHidden ? '#94A3B8' : '#4338CA' }}>{tpl?.state?.name ?? 'State'}</span>
+                        <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: stateHidden ? '#F1F5F9' : '#EEF2FF', color: stateHidden ? '#94A3B8' : '#6366F1' }}>Gallery Cover Card</span>
+                        <button
+                          type="button"
+                          onClick={() => updCms('state_gallery_hidden', !stateHidden)}
+                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-semibold transition-all flex-shrink-0"
+                          style={{
+                            borderColor: stateHidden ? '#E2E8F0' : T,
+                            backgroundColor: stateHidden ? '#F1F5F9' : `${T}12`,
+                            color: stateHidden ? '#94A3B8' : T,
+                          }}
+                        >
+                          {stateHidden ? (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                          ) : (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                          )}
+                          {stateHidden ? 'Hidden' : 'Visible'}
+                        </button>
+                      </div>
+                      <div className="px-4 pb-4" style={{ filter: stateHidden ? 'grayscale(0.4)' : 'none' }}>
+                        <ImageUploader
+                          label="State Gallery Photo"
+                          folder="templates/destinations"
+                          value={cms.state_gallery_image || null}
+                          onChange={url => updCms('state_gallery_image', url ?? '')}
+                          placeholder="Upload photo for state gallery card"
+                          sizeHint="800 × 600 px (4:3)"
+                        />
+                      </div>
+                    </div>
+                  );
+                })()}
                 {(() => {
                   // filtered list of cards (only those matching selected destinations)
                   const filteredCards = cms.destination_cards.filter(dc => tplSettings.destination_ids.includes(dc.destination_id));
