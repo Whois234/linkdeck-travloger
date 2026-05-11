@@ -362,7 +362,7 @@ export default function CustomersPage() {
               </div>
 
               {/* Rows in group */}
-              <div className="divide-y" style={{ divideColor: '#F1F5F9' }}>
+              <div className="divide-y divide-[#F1F5F9]">
                 {group.map(c => {
                   const isKeep = (keepMap[phone] ?? group[0].id) === c.id;
                   return (
