@@ -1047,17 +1047,24 @@ model Notification {
 // ─── CRM Contact (phone-unique, one owner) ────────────────────────────────────
 
 model CrmContact {
-  id           String    @id @default(cuid())
-  name         String
-  phone        String    @unique
-  email        String?
-  source       String?
-  owner_id     String
-  is_converted Boolean   @default(false)
-  converted_at DateTime?
-  notes        String?
-  created_at   DateTime  @default(now())
-  updated_at   DateTime  @updatedAt
+  id              String    @id @default(cuid())
+  name            String
+  phone           String    @unique
+  email           String?
+  source          String?
+  owner_id        String
+  is_converted    Boolean   @default(false)
+  converted_at    DateTime?
+  notes           String?
+  // Auto-populated from QuoteEvent geo-IP resolution when the customer opens a quote
+  last_known_city String?
+  last_seen_at    DateTime?
+  // User-defined fields configured in CRM Settings → Contact Fields
+  custom_fields   Json?
+  // Tag names (denormalized for fast filtering); validated against ContactTag
+  tags            String[]  @default([])
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
 
   owner        User      @relation(fields: [owner_id], references: [id])
   leads        Lead[]
@@ -1066,6 +1073,39 @@ model CrmContact {
   @@index([owner_id])
   @@index([is_converted])
   @@index([created_at])
+  @@index([tags])
+}
+
+// ─── Custom contact fields configured in CRM Settings ────────────────────────
+model ContactField {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  label       String
+  // text | email | phone | number | date | select | multiselect | textarea | url
+  type        String   @default("text")
+  required    Boolean  @default(false)
+  // Options for select / multiselect — JSON array of strings
+  options     Json?
+  placeholder String?
+  sort_order  Int      @default(0)
+  // System fields (name/phone/email) can be reordered/relabeled but not deleted
+  is_system   Boolean  @default(false)
+  status      Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  @@index([sort_order])
+}
+
+// ─── Contact tags ────────────────────────────────────────────────────────────
+model ContactTag {
+  id         String   @id @default(cuid())
+  name       String   @unique
+  // Hex color e.g. "#22C55E"
+  color      String   @default("#64748B")
+  status     Boolean  @default(true)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
 }
 
 // ─── CRM Pipeline Models ──────────────────────────────────────────────────────

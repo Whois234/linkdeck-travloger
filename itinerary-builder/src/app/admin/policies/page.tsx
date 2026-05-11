@@ -4,6 +4,7 @@ import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
 import { RichTextEditor } from '@/components/admin/RichTextEditor';
 import { Plus, Pencil, Trash2, Search } from 'lucide-react';
+import { stripHtml, policyTypeLabel, policyAppliesToLabel, POLICY_TYPE_LABELS, POLICY_APPLIES_TO_LABELS } from '@/lib/utils';
 
 const POLICY_TYPES = ['PAYMENT', 'CANCELLATION', 'TERMS', 'FAQ', 'IMPORTANT_NOTE'];
 const APPLIES_TO = ['GROUP', 'PRIVATE', 'BOTH'];
@@ -64,12 +65,12 @@ export default function PoliciesPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><label className={lbl} style={lblStyle}>Type <span style={{ color: '#EF4444' }}>*</span></label>
               <select className={sel} style={inpStyle} value={form.policy_type} onChange={e => setForm(p => ({ ...p, policy_type: e.target.value }))}>
-                {POLICY_TYPES.map(t => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
+                {POLICY_TYPES.map(t => <option key={t} value={t}>{POLICY_TYPE_LABELS[t] ?? t}</option>)}
               </select>
             </div>
             <div><label className={lbl} style={lblStyle}>Applies To <span style={{ color: '#EF4444' }}>*</span></label>
               <select className={sel} style={inpStyle} value={form.applies_to} onChange={e => setForm(p => ({ ...p, applies_to: e.target.value }))}>
-                {APPLIES_TO.map(a => <option key={a} value={a}>{a}</option>)}
+                {APPLIES_TO.map(a => <option key={a} value={a}>{POLICY_APPLIES_TO_LABELS[a] ?? a}</option>)}
               </select>
             </div>
             <div className="sm:col-span-2"><label className={lbl} style={lblStyle}>Title <span style={{ color: '#EF4444' }}>*</span></label><input className={inp} style={inpStyle} value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} placeholder="Standard Cancellation Policy" /></div>
@@ -100,9 +101,9 @@ export default function PoliciesPage() {
                   return (
                     <tr key={r.id} className="transition-colors hover:bg-[#F8FAFC]" style={{ borderBottom: '1px solid #F1F5F9', height: '56px' }}>
                       <td className="px-5 py-0 font-semibold" style={{ color: '#0F172A' }}>{r.title}</td>
-                      <td className="px-5 py-0"><span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold" style={{ backgroundColor: badge.bg, color: badge.text }}>{r.policy_type.replace('_', ' ')}</span></td>
-                      <td className="px-5 py-0"><span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold" style={{ backgroundColor: '#F1F5F9', color: '#475569' }}>{r.applies_to}</span></td>
-                      <td className="px-5 py-0 text-sm" style={{ color: '#64748B', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.content}</td>
+                      <td className="px-5 py-0"><span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold" style={{ backgroundColor: badge.bg, color: badge.text }}>{policyTypeLabel(r.policy_type)}</span></td>
+                      <td className="px-5 py-0"><span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold" style={{ backgroundColor: '#F1F5F9', color: '#475569' }}>{policyAppliesToLabel(r.applies_to)}</span></td>
+                      <td className="px-5 py-0 text-sm" style={{ color: '#64748B', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{stripHtml(r.content)}</td>
                       <td className="px-5 py-0"><span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold" style={r.status ? { backgroundColor: '#DCFCE7', color: '#15803D' } : { backgroundColor: '#F1F5F9', color: '#475569' }}>{r.status ? 'Active' : 'Inactive'}</span></td>
                       <td className="px-5 py-0"><div className="flex items-center justify-end gap-1">
                         <button onClick={() => openEdit(r)} className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors hover:bg-[#F1F5F9]" style={{ color: '#94A3B8' }} onMouseEnter={e => (e.currentTarget.style.color = '#134956')} onMouseLeave={e => (e.currentTarget.style.color = '#94A3B8')}><Pencil className="w-3.5 h-3.5" /></button>

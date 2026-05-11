@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
 import { Plus, Pencil, Trash2, Search, SlidersHorizontal, X, ChevronDown } from 'lucide-react';
+import ExcelIO from '@/components/ExcelIO';
 
 interface State { id: string; name: string; code: string }
 interface City  { id: string; name: string; state_id: string; state: { name: string; code: string }; status: boolean; created_at: string }
@@ -145,9 +146,27 @@ export default function CitiesPage() {
         subtitle="Manage pickup & drop cities used across routes and quotes"
         crumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Cities' }]}
         action={
-          <button onClick={openCreate} className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white transition-colors hover:opacity-90" style={{ backgroundColor: T }}>
-            <Plus className="w-4 h-4" /> Add City
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <ExcelIO
+              moduleName="Cities"
+              columns={[
+                { key: 'name', label: 'City Name *', example: 'Mysore' },
+                { key: 'state_code', label: 'State Code *', example: 'KAR' },
+              ]}
+              rows={rows}
+              rowMapper={r => ({ 'City Name *': r.name, 'State Code *': r.state.code })}
+              importMapper={r => {
+                const code = String(r['State Code *'] ?? '').trim().toUpperCase();
+                const st = states.find(s => s.code.toUpperCase() === code);
+                return { name: r['City Name *'], state_id: st?.id ?? '' };
+              }}
+              importUrl="/api/v1/cities"
+              onImportDone={load}
+            />
+            <button onClick={openCreate} className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white transition-colors hover:opacity-90" style={{ backgroundColor: T }}>
+              <Plus className="w-4 h-4" /> Add City
+            </button>
+          </div>
         }
       />
 

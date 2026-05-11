@@ -1,0 +1,81 @@
+import { cleanBody } from '@/lib/clean-body';
+import { NextRequest } from 'next/server';
+import { z } from 'zod';
+import { prisma } from '@/lib/prisma';
+import { getAuthUser, requireRole } from '@/lib/auth';
+import { ok, created, err, unauthorized, forbidden } from '@/lib/api-response';
+import { UserRole, HotelType, HotelCategory } from '@prisma/client';
+
+const HotelSchema = z.object({
+  destination_id: z.string(),
+  supplier_id: z.string().optional().nullable(),
+  hotel_name: z.string().min(1),
+  hotel_type: z.nativeEnum(HotelType),
+  star_rating: z.number().int().min(1).max(5).optional().nullable(),
+  category_label: z.nativeEnum(HotelCategory),
+  address: z.string().optional().nullable(),
+  map_link: z.string().optional().nullable(),
+  phone: z.string().optional().nullable(),
+  email: z.string().email().optional().nullable(),
+  website: z.string().optional().nullable(),
+  check_in_time: z.string().optional().nullable(),
+  check_out_time: z.string().optional().nullable(),
+  amenities: z.array(z.string()).optional().nullable(),
+  hotel_description: z.string().optional().nullable(),
+  images: z.array(z.string()).optional().nullable(),
+  internal_notes: z.string().optional().nullable(),
+  status: z.boolean().optional(),
+});
+
+export async function GET(req: NextRequest) {
+  const user = await getAuthUser(req);
+  if (!user) return unauthorized();
+
+  const { searchParams } = new URL(req.url);
+  const destination_id = searchParams.get('destination_id');
+  const state_id       = searchParams.get('state_id');
+  const state_ids_raw  = searchParams.get('state_ids'); // comma-separated
+  const state_ids      = state_ids_raw ? state_ids_raw.split(',').filter(Boolean) : null;
+  const category       = searchParams.get('category') as HotelCategory | null;
+
+  // Build state filter: state_ids (multi) takes priority over state_id (single)
+  const stateFilter = state_ids?.length
+    ? { destination: { state_id: { in: state_ids } } }
+    : state_id ? { destination: { state_id } } : {};
+
+  // Admin list: pass ?status=all to see every hotel; default = active only (for public quote builder)
+  const statusRaw = searchParams.get('status'); // 'active' | 'inactive' | 'all' | null
+  const statusFilter =
+    statusRaw === 'all'      ? {} :
+    statusRaw === 'inactive' ? { status: false } :
+                               { status: true }; // default: active only
+
+  const hotels = await prisma.hotel.findMany({
+    where: {
+      ...statusFilter,
+      ...(destination_id ? { destination_id } : {}),
+      ...stateFilter,
+      ...(category ? { category_label: category } : {}),
+    },
+    include: {
+      destination: { select: { name: true, state: { select: { id: true, name: true } } } },
+      room_categories: { where: { status: true } },
+    },
+    orderBy: { hotel_name: 'asc' },
+    take: 500,
+  });
+  return ok(hotels);
+}
+
+export async function POST(req: NextRequest) {
+  const user = await getAuthUser(req);
+  if (!user) return unauthorized();
+  if (!requireRole(user, UserRole.ADMIN, UserRole.OPS)) return forbidden();
+
+  const rawBody = await req.json(); const body = cleanBody(rawBody);
+  const parsed = HotelSchema.safeParse(body);
+  if (!parsed.success) return err('Validation failed', 400, parsed.error.flatten());
+
+  const hotel = await prisma.hotel.create({ data: parsed.data as Parameters<typeof prisma.hotel.create>[0]['data'] });
+  return created(hotel);
+}

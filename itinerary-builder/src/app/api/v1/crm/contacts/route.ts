@@ -5,11 +5,13 @@ import { ok, created, err, unauthorized } from '@/lib/api-response';
 import { z } from 'zod';
 
 const createSchema = z.object({
-  name:   z.string().min(1),
-  phone:  z.string().min(1),
-  email:  z.string().email().optional().nullable(),
-  source: z.string().optional().nullable(),
-  notes:  z.string().optional().nullable(),
+  name:          z.string().min(1),
+  phone:         z.string().min(1),
+  email:         z.string().email().optional().nullable(),
+  source:        z.string().optional().nullable(),
+  notes:         z.string().optional().nullable(),
+  tags:          z.array(z.string()).optional(),
+  custom_fields: z.record(z.unknown()).optional().nullable(),
 });
 
 function buildDateFilter(dateRange: string | null, from: string | null, to: string | null) {
@@ -51,11 +53,14 @@ export async function GET(req: NextRequest) {
   const dateRange = searchParams.get('date_range');
   const dateFrom  = searchParams.get('date_from');
   const dateTo    = searchParams.get('date_to');
+  const tagsParam = searchParams.get('tags'); // comma-separated tag names; contact must have ALL of them
   const sortBy    = searchParams.get('sort') ?? 'newest';
   const page      = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10));
   const limit     = Math.min(200, Math.max(1, parseInt(searchParams.get('limit') ?? String(PAGE_LIMIT), 10)));
 
   const dateFilter = buildDateFilter(dateRange, dateFrom, dateTo);
+
+  const tagList = tagsParam ? tagsParam.split(',').map(t => t.trim()).filter(Boolean) : [];
 
   const where = {
     ...(search ? {
@@ -68,6 +73,7 @@ export async function GET(req: NextRequest) {
     ...(converted === 'true'  ? { is_converted: true  } : {}),
     ...(converted === 'false' ? { is_converted: false } : {}),
     ...(dateFilter ? { created_at: dateFilter } : {}),
+    ...(tagList.length ? { tags: { hasEvery: tagList } } : {}),
   };
 
   const orderBy = sortBy === 'oldest' ? { created_at: 'asc' as const }
@@ -123,12 +129,14 @@ export async function POST(req: NextRequest) {
 
   const contact = await prisma.crmContact.create({
     data: {
-      name:     parsed.data.name,
-      phone:    normalizedPhone,
-      email:    parsed.data.email ?? null,
-      source:   parsed.data.source ?? null,
-      notes:    parsed.data.notes ?? null,
-      owner_id: user.sub,
+      name:          parsed.data.name,
+      phone:         normalizedPhone,
+      email:         parsed.data.email ?? null,
+      source:        parsed.data.source ?? null,
+      notes:         parsed.data.notes ?? null,
+      owner_id:      user.sub,
+      tags:          parsed.data.tags ?? [],
+      custom_fields: (parsed.data.custom_fields ?? undefined) as object | undefined,
     },
   });
 

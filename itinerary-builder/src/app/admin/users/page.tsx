@@ -29,6 +29,7 @@ const MODULE_GROUPS: { group: string; collapsedByDefault?: boolean; items: { key
       { key: 'contacts',             label: 'Contacts' },
       { key: 'converted-customers',  label: 'Converted Customers' },
       { key: 'crm-settings',         label: 'CRM Settings' },
+      { key: 'my-activities',        label: 'My Activities (Tasks · grant Edit to see all users\' tasks)' },
     ],
   },
   {

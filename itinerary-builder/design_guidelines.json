@@ -1,0 +1,75 @@
+{
+  "project_name": "PDF Link Tracker",
+  "theme": "LIGHT",
+  "archetype": "4 (Swiss & High-Contrast)",
+  "core_principles": [
+    "Authority, clarity, and function-first.",
+    "Mathematical grids for asymmetric, structured layouts.",
+    "High contrast via stark compositions, minimal colors, and white space."
+  ],
+  "colors": {
+    "primary": "#002FA7",
+    "primary_hover": "#002277",
+    "background_base": "#FFFFFF",
+    "background_surface": "#F4F4F5",
+    "text_primary": "#0A0A0A",
+    "text_secondary": "#52525B",
+    "border": "#E4E4E7",
+    "status_opened": "#00A86B",
+    "status_unopened": "#E63946"
+  },
+  "typography": {
+    "heading_font": "Cabinet Grotesk",
+    "body_font": "IBM Plex Sans",
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl tracking-tighter font-black",
+      "h2": "text-2xl sm:text-3xl tracking-tight font-bold",
+      "h3": "text-xl sm:text-2xl tracking-tight font-medium",
+      "body": "text-base leading-relaxed text-[#0A0A0A]",
+      "labels": "text-xs tracking-[0.2em] uppercase font-bold text-[#52525B]"
+    }
+  },
+  "spacing_and_layout": {
+    "strategy": "Control Room Grid",
+    "container_padding": "p-6 md:p-12",
+    "gap": "gap-6",
+    "borders": "Grid Borders technique: use border-collapse style layouts with strict 1px borders (border-[#E4E4E7])."
+  },
+  "components_strategy": {
+    "global": "Do NOT use default Shadcn rounded corners. Override all components to `rounded-none` or max `rounded-sm`. Avoid soft shadows.",
+    "buttons": "Flat, sharp edges, primary buttons in #002FA7, high contrast text.",
+    "tables": "Data-heavy focus. Left-align text, right-align numbers. Strict 1px borders between cells. No zebra striping. Add clear empty states.",
+    "inputs": "Flat surfaces with 1px border. Focus states must use a stark 2px ring of #002FA7.",
+    "modals_dialogs": "Solid background (no glassmorphism for this archetype), stark 1px border, high-contrast overlay (bg-black/60)."
+  },
+  "media": {
+    "brand_logo": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/2ec01445-077c-4296-a8e1-647e2982a65e/images/2592b7fe0b86f7390f86c4cadea9888f25bc5a728d72e829f28bf5718bda7aa8.png",
+      "description": "Minimalist geometric logo icon, black and white",
+      "usage": "Use in header navigation, auth screens, and dashboard top-bar."
+    },
+    "auth_background": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/2ec01445-077c-4296-a8e1-647e2982a65e/images/650060f37584b67d012252b858ded912abf6b5b1d9311a140e9099c1ad29bfb7.png",
+      "description": "Abstract geometric swiss style poster background, International Klein Blue and white",
+      "usage": "Use as a split-screen or background image on the login/register pages."
+    }
+  },
+  "iconography": {
+    "library": "@phosphor-icons/react",
+    "installation": "yarn add @phosphor-icons/react",
+    "style": "Regular or Bold weights to match the sharp UI."
+  },
+  "testing": {
+    "requirement": "All interactive and key informational elements MUST include a `data-testid` attribute (kebab-case, role-based)."
+  },
+  "instructions_to_main_agent": [
+    "Install 'Cabinet Grotesk' via fontshare/custom import and 'IBM Plex Sans' via Google Fonts.",
+    "Install Phosphor icons: yarn add @phosphor-icons/react",
+    "Set up Tailwind to use these fonts in tailwind.config.js.",
+    "Override default shadcn component styles to match the 'Swiss & High-Contrast' archetype: remove rounded corners (use rounded-none), remove soft box-shadows.",
+    "The Dashboard should use a sharp, grid-based layout. The PDF Tracking table is the core widget, make it prominent, scanable, and functional.",
+    "Viewer page (/view/{id}) must be minimal, loading quickly with a highly legible interface without auth.",
+    "Use Supabase or Firebase as requested by the problem statement for backend data.",
+    "Never use pure black or grey without tint. Text color is #0A0A0A. Borders are #E4E4E7."
+  ]
+}

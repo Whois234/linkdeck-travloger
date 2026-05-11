@@ -1,12 +1,12 @@
 'use client';
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useContacts, useUsers, QK } from '@/lib/query-hooks';
 import { TableSkeleton } from '@/components/Skeleton';
 import {
   Search, Phone, Mail, Plus, X, Calendar, ChevronDown, AlertTriangle,
   Loader2, Edit2, ChevronRight, CheckSquare, Square, ChevronLeft, ExternalLink,
-  Save, User, Trash2,
+  Save, User, Trash2, Tag as TagIcon, Check,
 } from 'lucide-react';
 
 interface Stage    { id: string; name: string; color: string }
@@ -19,11 +19,26 @@ interface Lead     {
 }
 interface Owner { id: string; name: string; email: string }
 
+interface QuoteEvent { id: string; event_type: string; metadata: Record<string, unknown> | null; created_at: string }
+interface ContactQuote {
+  id: string; quote_number: string; quote_type: string; status: string;
+  start_date: string; adults: number; public_token: string; created_at: string;
+  state: { name: string; code: string };
+  quote_options: Array<{ final_price: number | null; is_most_popular: boolean }>;
+  events: QuoteEvent[];
+}
+
+interface ContactTag { id: string; name: string; color: string }
+
 interface Contact {
   id: string; name: string; phone: string; email: string | null;
   source: string | null; notes: string | null;
   is_converted: boolean; converted_at: string | null; created_at: string;
+  last_known_city: string | null; last_seen_at: string | null;
+  tags: string[];
+  custom_fields: Record<string, unknown> | null;
   owner: Owner | null; owner_id: string; leads: Lead[];
+  quotes?: ContactQuote[];
 }
 
 interface DuplicateAttempt {
@@ -102,9 +117,9 @@ function CreateContactModal({ onClose, onCreated }: { onClose: () => void; onCre
 
 // ─── Contact Detail Panel ────────────────────────────────────────────────────
 function ContactPanel({
-  contact, users, onClose, onUpdated,
+  contact, users, allTags, onClose, onUpdated,
 }: {
-  contact: Contact; users: CrmUser[]; onClose: () => void; onUpdated: () => void;
+  contact: Contact; users: CrmUser[]; allTags: ContactTag[]; onClose: () => void; onUpdated: () => void;
 }) {
   const [detail, setDetail] = useState<Contact | null>(null);
   const [editing, setEditing] = useState(false);
@@ -113,10 +128,35 @@ function ContactPanel({
   const [error, setError]         = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting]   = useState(false);
+  const [showTagPicker, setShowTagPicker] = useState(false);
+  const tagPickerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetch(`/api/v1/crm/contacts/${contact.id}`).then(r => r.json()).then(d => { if (d.success) setDetail(d.data); });
   }, [contact.id]);
+
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (tagPickerRef.current && !tagPickerRef.current.contains(e.target as Node)) setShowTagPicker(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  async function toggleTag(name: string) {
+    const current = detail?.tags ?? contact.tags ?? [];
+    const next = current.includes(name) ? current.filter(t => t !== name) : [...current, name];
+    const res = await fetch(`/api/v1/crm/contacts/${contact.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tags: next }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      setDetail(prev => prev ? { ...prev, tags: next } : prev);
+      onUpdated();
+    }
+  }
 
   const c = detail ?? contact;
 
@@ -191,6 +231,59 @@ function ContactPanel({
             <span className="px-2.5 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: '#EFF6FF', color: '#2563EB' }}>{withPipeline} in pipeline</span>
           </div>
 
+          {/* Tags */}
+          <div className="px-6 py-3" style={{ borderBottom: '1px solid #F1F5F9' }}>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#94A3B8' }}>Tags</p>
+              <div className="relative" ref={tagPickerRef}>
+                <button onClick={() => setShowTagPicker(p => !p)}
+                  className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg hover:bg-[#F1F5F9]"
+                  style={{ color: '#134956' }}>
+                  <TagIcon className="w-3 h-3" /> Edit
+                </button>
+                {showTagPicker && (
+                  <div className="absolute top-7 right-0 bg-white rounded-xl shadow-xl z-20 overflow-hidden min-w-[220px] max-h-[300px] overflow-y-auto" style={{ border: '1px solid #E2E8F0' }}>
+                    {allTags.length === 0 ? (
+                      <p className="px-4 py-3 text-xs text-center" style={{ color: '#94A3B8' }}>No tags. Create them in CRM Settings.</p>
+                    ) : allTags.map(t => {
+                      const on = (c.tags ?? []).includes(t.name);
+                      return (
+                        <button key={t.id} onClick={() => toggleTag(t.name)}
+                          className="w-full text-left px-4 py-2 text-xs font-medium hover:bg-[#F8FAFC] flex items-center gap-2">
+                          <span className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0"
+                            style={{ backgroundColor: on ? t.color : '#fff', border: `1px solid ${on ? t.color : '#CBD5E1'}` }}>
+                            {on && <Check className="w-3 h-3 text-white" />}
+                          </span>
+                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: t.color }} />
+                          <span style={{ color: '#0F172A' }}>{t.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+            {(c.tags ?? []).length === 0 ? (
+              <p className="text-xs" style={{ color: '#94A3B8' }}>No tags assigned yet.</p>
+            ) : (
+              <div className="flex gap-1.5 flex-wrap">
+                {(c.tags ?? []).map(name => {
+                  const tag = allTags.find(t => t.name === name);
+                  const color = tag?.color ?? '#64748B';
+                  return (
+                    <span key={name} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold"
+                      style={{ backgroundColor: color + '20', color, border: `1px solid ${color}40` }}>
+                      {name}
+                      <button onClick={() => toggleTag(name)} className="hover:opacity-70">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           {/* Edit form / read view */}
           <div className="px-6 py-4 space-y-4">
             {editing ? (
@@ -241,6 +334,8 @@ function ContactPanel({
                   { label: 'Owner',   value: c.owner?.name ?? '—' },
                   { label: 'Created', value: fmtDateTime(c.created_at) },
                   { label: 'Converted', value: c.converted_at ? fmtDateTime(c.converted_at) : '—' },
+                  { label: 'Last Known City', value: c.last_known_city ? `📍 ${c.last_known_city}` : '—' },
+                  { label: 'Last Seen', value: c.last_seen_at ? fmtDateTime(c.last_seen_at) : '—' },
                 ].map(f => (
                   <div key={f.label}>
                     <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: '#94A3B8' }}>{f.label}</p>
@@ -256,6 +351,82 @@ function ContactPanel({
               </div>
             )}
           </div>
+
+          {/* Quotes — previous quotes given to this contact with customer interaction events */}
+          {(c.quotes && c.quotes.length > 0) && (
+            <div style={{ borderTop: '1px solid #F1F5F9' }}>
+              <div className="px-6 py-3">
+                <p className="text-[10px] font-bold uppercase tracking-widest mb-3" style={{ color: '#94A3B8' }}>Quotes ({c.quotes.length})</p>
+                <div className="space-y-3">
+                  {c.quotes.map(q => {
+                    const popular = q.quote_options.find(o => o.is_most_popular);
+                    const price   = popular?.final_price ?? q.quote_options[0]?.final_price ?? null;
+                    return (
+                      <div key={q.id} className="rounded-xl overflow-hidden" style={{ border: '1px solid #E2E8F0', backgroundColor: '#FAFBFC' }}>
+                        <div className="flex items-center gap-3 px-4 py-3" style={{ borderBottom: q.events.length > 0 ? '1px solid #F1F5F9' : undefined, backgroundColor: '#fff' }}>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <a href={`/admin/quotes/${q.id}`} className="text-xs font-mono font-bold hover:underline" style={{ color: '#134956' }}>{q.quote_number}</a>
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase" style={{ backgroundColor: '#F1F5F9', color: '#475569' }}>{q.quote_type}</span>
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold" style={{ backgroundColor: '#EDE9FE', color: '#6D28D9' }}>{q.status}</span>
+                            </div>
+                            <p className="text-[11px] mt-1" style={{ color: '#94A3B8' }}>
+                              {q.state.name} · {q.adults} pax · Created {fmtDateTime(q.created_at)}
+                            </p>
+                          </div>
+                          {price != null && (
+                            <div className="text-right flex-shrink-0">
+                              <p className="text-sm font-bold" style={{ color: '#134956' }}>₹{Math.round(price).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
+                            </div>
+                          )}
+                          <a href={`/quotations/${q.public_token}`} target="_blank" rel="noopener noreferrer"
+                            className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-[#F1F5F9] flex-shrink-0"
+                            style={{ color: '#94A3B8' }} title="Open public quote">
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        </div>
+                        {q.events.length > 0 && (
+                          <div className="px-4 py-2.5">
+                            <p className="text-[10px] font-semibold uppercase tracking-wider mb-2" style={{ color: '#94A3B8' }}>Customer Interactions</p>
+                            <div className="space-y-1.5">
+                              {q.events.map(ev => {
+                                const meta = (ev.metadata ?? {}) as Record<string, unknown>;
+                                const city    = typeof meta.city === 'string' ? meta.city : null;
+                                const device  = typeof meta.device === 'string' ? meta.device : null;
+                                const browser = typeof meta.browser === 'string' ? meta.browser : null;
+                                const labels: Record<string, string> = {
+                                  quote_viewed:     '👀 Viewed quote',
+                                  whatsapp_clicked: '💬 Clicked WhatsApp',
+                                  booking_intent:   '🎉 Booking intent',
+                                  rating_submitted: '⭐ Submitted rating',
+                                  batch_selected:   '📅 Selected departure',
+                                  package_selected: '📦 Selected package',
+                                };
+                                const label = labels[ev.event_type] ?? ev.event_type;
+                                const extras: string[] = [];
+                                if (city) extras.push(`📍 ${city}`);
+                                if (device) extras.push(device);
+                                if (browser) extras.push(browser);
+                                return (
+                                  <div key={ev.id} className="flex items-start gap-2 text-[11px]">
+                                    <span className="font-medium flex-shrink-0" style={{ color: '#0F172A' }}>{label}</span>
+                                    <span className="flex-1" style={{ color: '#64748B' }}>
+                                      {extras.length > 0 && <span className="mr-2">{extras.join(' · ')}</span>}
+                                    </span>
+                                    <span className="flex-shrink-0 whitespace-nowrap" style={{ color: '#94A3B8' }}>{fmtDateTime(ev.created_at)}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Deals */}
           {c.leads.length > 0 && (
@@ -306,9 +477,25 @@ export default function ContactsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [page, setPage]           = useState(1);
+  const [allTags, setAllTags]     = useState<ContactTag[]>([]);
+  const [tagFilter, setTagFilter] = useState<string[]>([]);
+  const [showTagFilter, setShowTagFilter] = useState(false);
   const PER_PAGE = 50;
   const datePickerRef = useRef<HTMLDivElement>(null);
+  const tagFilterRef  = useRef<HTMLDivElement>(null);
   const qc = useQueryClient();
+
+  useEffect(() => {
+    fetch('/api/v1/crm/contact-tags').then(r => r.json()).then(d => { if (d.success) setAllTags(d.data); });
+  }, []);
+
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (tagFilterRef.current && !tagFilterRef.current.contains(e.target as Node)) setShowTagFilter(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   // Debounce search so we don't fire a query on every keystroke
   useEffect(() => {
@@ -317,7 +504,13 @@ export default function ContactsPage() {
   }, [search]);
 
   // Reset to page 1 when filters change
-  useEffect(() => { setPage(1); }, [sortBy, dateRange, dateFrom, dateTo]);
+  useEffect(() => { setPage(1); }, [sortBy, dateRange, dateFrom, dateTo, tagFilter]);
+
+  const tagByName = useMemo(() => Object.fromEntries(allTags.map(t => [t.name, t])), [allTags]);
+
+  function toggleTagFilter(name: string) {
+    setTagFilter(prev => prev.includes(name) ? prev.filter(t => t !== name) : [...prev, name]);
+  }
 
   // Build query params (passed to useContacts so React Query key changes automatically)
   const contactParams = new URLSearchParams();
@@ -326,6 +519,7 @@ export default function ContactsPage() {
   if (dateRange)       contactParams.set('date_range', dateRange);
   if (dateRange === 'custom' && dateFrom) contactParams.set('date_from', dateFrom);
   if (dateRange === 'custom' && dateTo)   contactParams.set('date_to', dateTo);
+  if (tagFilter.length)                   contactParams.set('tags', tagFilter.join(','));
   contactParams.set('page', String(page));
   contactParams.set('limit', String(PER_PAGE));
 
@@ -450,6 +644,49 @@ export default function ContactsPage() {
               )}
             </div>
 
+            {/* Tag filter */}
+            <div className="relative" ref={tagFilterRef}>
+              <button onClick={() => setShowTagFilter(p => !p)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium"
+                style={{ border: `1px solid ${tagFilter.length ? '#134956' : '#E2E8F0'}`, backgroundColor: tagFilter.length ? '#F0F9FF' : '#fff', color: tagFilter.length ? '#134956' : '#64748B' }}>
+                <TagIcon className="w-3.5 h-3.5" />
+                {tagFilter.length > 0 ? `${tagFilter.length} tag${tagFilter.length > 1 ? 's' : ''}` : 'Tags'}
+                <ChevronDown className="w-3 h-3" />
+              </button>
+              {showTagFilter && (
+                <div className="absolute top-10 right-0 bg-white rounded-xl shadow-xl z-20 overflow-hidden min-w-[220px] max-h-[320px] overflow-y-auto" style={{ border: '1px solid #E2E8F0' }}>
+                  {allTags.length === 0 ? (
+                    <div className="px-4 py-3 text-xs text-center" style={{ color: '#94A3B8' }}>
+                      No tags yet. Create them in CRM Settings → Tags.
+                    </div>
+                  ) : (
+                    <>
+                      {allTags.map(t => {
+                        const checked = tagFilter.includes(t.name);
+                        return (
+                          <button key={t.id} onClick={() => toggleTagFilter(t.name)}
+                            className="w-full text-left px-4 py-2 text-xs font-medium transition-colors hover:bg-[#F8FAFC] flex items-center gap-2">
+                            <span className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0" style={{ backgroundColor: checked ? t.color : '#fff', border: `1px solid ${checked ? t.color : '#CBD5E1'}` }}>
+                              {checked && <Check className="w-3 h-3 text-white" />}
+                            </span>
+                            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: t.color }} />
+                            <span style={{ color: '#0F172A' }}>{t.name}</span>
+                          </button>
+                        );
+                      })}
+                      {tagFilter.length > 0 && (
+                        <button onClick={() => setTagFilter([])}
+                          className="w-full text-left px-4 py-2 text-xs font-semibold border-t hover:bg-[#F8FAFC]"
+                          style={{ color: '#DC2626', borderColor: '#F1F5F9' }}>
+                          Clear all
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
             {/* Sort */}
             <select value={sortBy} onChange={e => setSortBy(e.target.value)}
               className="text-xs font-medium rounded-lg px-3 py-2 outline-none" style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>
@@ -484,7 +721,7 @@ export default function ContactsPage() {
                           : <Square className="w-4 h-4" style={{ color: '#CBD5E1' }} />}
                       </button>
                     </th>
-                    {['Contact Name', 'Email', 'Contact Owner', 'Destination', 'Mobile', 'Lead Source', 'Created Time', ''].map(h => (
+                    {['Contact Name', 'Tags', 'Email', 'Contact Owner', 'Destination', 'Mobile', 'City', 'Lead Source', 'Created Time', ''].map(h => (
                       <th key={h} className="text-left px-3 py-3 text-[11px] font-bold uppercase tracking-wider whitespace-nowrap" style={{ color: '#64748B' }}>{h}</th>
                     ))}
                   </tr>
@@ -514,6 +751,23 @@ export default function ContactsPage() {
                           </div>
                         </div>
                       </td>
+                      <td className="px-3 py-3">
+                        {(c.tags ?? []).length === 0 ? <span className="text-xs" style={{ color: '#CBD5E1' }}>—</span> : (
+                          <div className="flex items-center gap-1 flex-wrap max-w-[180px]">
+                            {(c.tags ?? []).slice(0, 3).map(name => {
+                              const tag = tagByName[name];
+                              const color = tag?.color ?? '#64748B';
+                              return (
+                                <span key={name} className="px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
+                                  style={{ backgroundColor: color + '20', color }}>{name}</span>
+                              );
+                            })}
+                            {(c.tags ?? []).length > 3 && (
+                              <span className="text-[10px] font-semibold" style={{ color: '#94A3B8' }}>+{c.tags.length - 3}</span>
+                            )}
+                          </div>
+                        )}
+                      </td>
                       <td className="px-3 py-3 text-xs" style={{ color: '#64748B' }}>{c.email ? <span className="truncate max-w-[140px] block">{c.email}</span> : '—'}</td>
                       <td className="px-3 py-3">
                         {c.owner ? (
@@ -533,6 +787,13 @@ export default function ContactsPage() {
                           <Phone className="w-3 h-3" />{c.phone}
                         </span>
                       </td>
+                      <td className="px-3 py-3 text-xs" style={{ color: '#64748B' }}>
+                        {c.last_known_city ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-medium" style={{ backgroundColor: '#EFF6FF', color: '#1D4ED8' }} title={c.last_seen_at ? `Last seen: ${fmtDateTime(c.last_seen_at)}` : undefined}>
+                            📍 {c.last_known_city}
+                          </span>
+                        ) : '—'}
+                      </td>
                       <td className="px-3 py-3 text-xs" style={{ color: '#64748B' }}>{c.source ?? '—'}</td>
                       <td className="px-3 py-3 text-xs whitespace-nowrap" style={{ color: '#64748B' }}>{fmtDateTime(c.created_at)}</td>
                       <td className="px-3 py-3">
@@ -542,7 +803,7 @@ export default function ContactsPage() {
                   ))}
                   {paginated.length === 0 && (
                     <tr>
-                      <td colSpan={9} className="text-center py-16">
+                      <td colSpan={11} className="text-center py-16">
                         <User className="w-8 h-8 mx-auto mb-2" style={{ color: '#CBD5E1' }} />
                         <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>No contacts found</p>
                         <p className="text-xs mt-1" style={{ color: '#94A3B8' }}>Contacts are created automatically when a lead is added.</p>
@@ -664,7 +925,7 @@ export default function ContactsPage() {
 
       {/* Modals & panels */}
       {showCreate && <CreateContactModal onClose={() => setShowCreate(false)} onCreated={() => qc.invalidateQueries({ queryKey: QK.contacts(contactParams.toString()) })} />}
-      {selected && <ContactPanel contact={selected} users={users} onClose={() => setSelected(null)} onUpdated={() => qc.invalidateQueries({ queryKey: QK.contacts(contactParams.toString()) })} />}
+      {selected && <ContactPanel contact={selected} users={users} allTags={allTags} onClose={() => setSelected(null)} onUpdated={() => qc.invalidateQueries({ queryKey: QK.contacts(contactParams.toString()) })} />}
     </div>
   );
 }

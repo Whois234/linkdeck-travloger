@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+pymongo
+motor
+python-dotenv
+bcrypt
+python-jose
+passlib
+boto3
+requests
+python-multipart

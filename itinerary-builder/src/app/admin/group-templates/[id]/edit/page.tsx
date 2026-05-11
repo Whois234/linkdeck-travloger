@@ -382,7 +382,7 @@ export default function GroupTemplateEditPage() {
       <PageHeader
         title={tpl.group_template_name}
         subtitle={`${tpl.duration_nights}N/${tpl.duration_days}D · ${tpl.state.name}${tpl.theme ? ` · ${tpl.theme}` : ''} · Group Tour`}
-        crumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Group Templates', href: '/admin/group-templates' }, { label: 'Edit' }]}
+        crumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Group Templates', href: '/admin/group-templates' }, { label: tpl.group_template_name || 'Edit' }]}
         action={
           <div className="flex gap-2">
             <button onClick={() => save(false)} disabled={saving}
@@ -1055,15 +1055,15 @@ export default function GroupTemplateEditPage() {
                         <div className="grid grid-cols-3 gap-2 pt-3" style={{ borderTop: '1px solid #F1F5F9' }}>
                           <div>
                             <p className="text-[10px] text-[#94A3B8] uppercase tracking-wider mb-0.5">Adult</p>
-                            <p className="text-sm font-bold text-[#0F172A]">₹{Number(b.adult_price).toLocaleString('en-IN')}</p>
+                            <p className="text-sm font-bold text-[#0F172A]">₹{Number(Math.round(b.adult_price)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
                           </div>
                           <div>
                             <p className="text-[10px] text-[#94A3B8] uppercase tracking-wider mb-0.5">Child (5–12)</p>
-                            <p className="text-sm font-bold text-[#0F172A]">₹{Number(b.child_5_12_price).toLocaleString('en-IN')}</p>
+                            <p className="text-sm font-bold text-[#0F172A]">₹{Number(Math.round(b.child_5_12_price)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
                           </div>
                           <div>
                             <p className="text-[10px] text-[#94A3B8] uppercase tracking-wider mb-0.5">Child (&lt;5)</p>
-                            <p className="text-sm font-bold text-[#0F172A]">₹{Number(b.child_below_5_price).toLocaleString('en-IN')}</p>
+                            <p className="text-sm font-bold text-[#0F172A]">₹{Number(Math.round(b.child_below_5_price)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
                           </div>
                         </div>
                       </div>

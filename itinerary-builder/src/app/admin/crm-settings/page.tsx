@@ -2,7 +2,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   Plus, X, Loader2, Zap, Workflow, ToggleLeft, ToggleRight, Trash2, ChevronDown,
+  GripVertical, Tag as TagIcon, Pencil, Check, ListPlus,
 } from 'lucide-react';
+import { ContactFieldsTab, ContactTagsTab } from './ContactCustomization';
 
 interface PipelineStage { id: string; name: string; color: string }
 interface Pipeline      { id: string; name: string; stages: PipelineStage[] }
@@ -47,7 +49,7 @@ function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
 }
 
 export default function CrmSettingsPage() {
-  const [tab, setTab]               = useState<'automations' | 'workflows'>('automations');
+  const [tab, setTab]               = useState<'automations' | 'workflows' | 'contact-fields' | 'tags'>('automations');
   const [pipelines, setPipelines]   = useState<Pipeline[]>([]);
   const [agents, setAgents]         = useState<Agent[]>([]);
   const [automations, setAutomations] = useState<StageAutomation[]>([]);
@@ -172,8 +174,10 @@ export default function CrmSettingsPage() {
       {/* Tabs */}
       <div className="flex gap-1 p-1 rounded-xl w-fit" style={{ backgroundColor: '#F1F5F9' }}>
         {([
-          { key: 'automations', label: 'Stage Automations', icon: Zap },
-          { key: 'workflows',   label: 'Workflows',          icon: Workflow },
+          { key: 'automations',    label: 'Stage Automations', icon: Zap },
+          { key: 'workflows',      label: 'Workflows',          icon: Workflow },
+          { key: 'contact-fields', label: 'Contact Fields',     icon: ListPlus },
+          { key: 'tags',           label: 'Tags',               icon: TagIcon },
         ] as const).map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setTab(key)}
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all"
@@ -463,6 +467,9 @@ export default function CrmSettingsPage() {
           )}
         </div>
       )}
+
+      {tab === 'contact-fields' && <ContactFieldsTab />}
+      {tab === 'tags'           && <ContactTagsTab />}
     </div>
   );
 }
