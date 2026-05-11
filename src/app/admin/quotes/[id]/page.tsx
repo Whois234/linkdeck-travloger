@@ -699,7 +699,7 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
     if (eventsLoading) return;
     setEventsLoading(true);
     const res = await fetch(`/api/v1/quotes/${id}/events`).catch(() => null);
-    if (res?.ok) { const data = await res.json(); if (data.success) setEvents(data.data); }
+    if (res?.ok) { const data = await res.json(); if (data.success) setEvents(Array.isArray(data.data) ? data.data : []); }
     setEventsLoading(false);
   }
 

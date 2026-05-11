@@ -132,7 +132,7 @@ function ContactPanel({
   const tagPickerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    fetch(`/api/v1/crm/contacts/${contact.id}`).then(r => r.json()).then(d => { if (d.success) setDetail(d.data); });
+    fetch(`/api/v1/crm/contacts/${contact.id}`).then(r => r.json()).then(d => { if (d.success) setDetail(d.data); }).catch(() => {});
   }, [contact.id]);
 
   useEffect(() => {
@@ -486,7 +486,7 @@ export default function ContactsPage() {
   const qc = useQueryClient();
 
   useEffect(() => {
-    fetch('/api/v1/crm/contact-tags').then(r => r.json()).then(d => { if (d.success) setAllTags(d.data); });
+    fetch('/api/v1/crm/contact-tags').then(r => r.json()).then(d => { if (d.success) setAllTags(Array.isArray(d.data) ? d.data : []); }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -535,7 +535,7 @@ export default function ContactsPage() {
   async function loadDupes() {
     const res = await fetch('/api/v1/crm/duplicate-attempts');
     const d   = await res.json();
-    if (d.success) setDupes(d.data);
+    if (d.success) setDupes(Array.isArray(d.data) ? d.data : []);
   }
 
   useEffect(() => { if (tab === 'duplicates') loadDupes(); }, [tab]);

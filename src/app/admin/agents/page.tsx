@@ -29,7 +29,7 @@ export default function AgentsPage() {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
-  async function load() { setLoading(true); const r = await fetch('/api/v1/agents'); const d = await r.json(); if (d.success) setRows(d.data); setLoading(false); }
+  async function load() { setLoading(true); const r = await fetch('/api/v1/agents'); const d = await r.json(); if (d.success) setRows(Array.isArray(d.data) ? d.data : []); setLoading(false); }
   useEffect(() => { load(); }, []);
 
   function openCreate() { setEditing(null); setForm({ ...EMPTY }); setError(''); setShowForm(true); }

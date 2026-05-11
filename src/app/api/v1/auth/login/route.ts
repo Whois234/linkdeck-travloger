@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/prisma';
 import { signToken } from '@/lib/auth';
 import { err } from '@/lib/api-response';
+import { rateLimit, clientIp } from '@/lib/rate-limit';
 
 const LoginSchema = z.object({
   email: z.string().email().transform(v => v.toLowerCase().trim()),
@@ -12,7 +13,17 @@ const LoginSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
+  // 5 attempts per minute per IP. Counts every attempt, not just failures,
+  // so a credential-stuffing burst stops even when each guess is "right" for one account.
+  const ip = clientIp(req);
+  const rl = rateLimit({ key: `login:${ip}`, max: 5, windowMs: 60_000 });
+  if (!rl.ok) {
+    const res = err('Too many login attempts. Please wait a minute and try again.', 429);
+    res.headers.set('Retry-After', String(rl.retryAfter));
+    return res;
+  }
+
+  const body = await req.json().catch(() => ({}));
   const parsed = LoginSchema.safeParse(body);
   if (!parsed.success) return err('Invalid request', 400, parsed.error.flatten());
 

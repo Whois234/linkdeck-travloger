@@ -32,7 +32,7 @@ export default function LeadsPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
 
-  async function load() { setLoading(true); const r = await fetch('/api/v1/leads'); const d = await r.json(); if (d.success) setRows(d.data); setLoading(false); }
+  async function load() { setLoading(true); const r = await fetch('/api/v1/leads'); const d = await r.json(); if (d.success) setRows(Array.isArray(d.data) ? d.data : []); setLoading(false); }
   useEffect(() => { load(); }, []);
 
   function openCreate() { setEditing(null); setForm({ ...EMPTY }); setError(''); setShowForm(true); }

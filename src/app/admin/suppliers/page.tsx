@@ -71,13 +71,13 @@ export default function SuppliersPage() {
     setLoading(true);
     const r = await fetch('/api/v1/suppliers');
     const d = await r.json();
-    if (d.success) setRows(d.data);
+    if (d.success) setRows(Array.isArray(d.data) ? d.data : []);
     setLoading(false);
   }
   async function loadCities() {
     const r = await fetch('/api/v1/cities');
     const d = await r.json();
-    if (d.success) setCities(d.data);
+    if (d.success) setCities(Array.isArray(d.data) ? d.data : []);
   }
   useEffect(() => { load(); loadCities(); }, []);
 

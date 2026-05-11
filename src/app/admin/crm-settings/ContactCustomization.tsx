@@ -52,7 +52,7 @@ export function ContactFieldsTab() {
     setLoading(true);
     const r = await fetch('/api/v1/crm/contact-fields');
     const d = await r.json();
-    if (d.success) setFields(d.data);
+    if (d.success) setFields(Array.isArray(d.data) ? d.data : []);
     setLoading(false);
   }
 
@@ -202,6 +202,15 @@ export function ContactFieldsTab() {
             </div>
             <div className="px-6 py-5 space-y-3">
               {error && <p className="text-xs p-2.5 rounded-lg" style={{ backgroundColor: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>{error}</p>}
+
+              {/* System field notice */}
+              {editing?.is_system && (
+                <div className="flex items-start gap-2 p-3 rounded-lg text-xs" style={{ backgroundColor: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE' }}>
+                  <span className="font-bold mt-0.5">ℹ</span>
+                  <span>This is a system field. You can rename the label and change the placeholder, but the field type and key are fixed.</span>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Label *</label>
                 <input className={inp} style={inpStyle} value={form.label} onChange={e => setForm(p => ({ ...p, label: e.target.value }))} placeholder="Anniversary Date" autoFocus />
@@ -212,13 +221,26 @@ export function ContactFieldsTab() {
                   <input className={inp} style={inpStyle} value={form.key} onChange={e => setForm(p => ({ ...p, key: e.target.value.replace(/[^a-z0-9_]/gi, '_').toLowerCase() }))} placeholder="anniversary_date" />
                 </div>
               )}
+              {editing && (
+                <div>
+                  <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Key <span className="font-normal text-[10px]" style={{ color: '#94A3B8' }}>(immutable)</span></label>
+                  <div className="h-9 px-3 rounded-lg border flex items-center text-sm font-mono" style={{ borderColor: '#E2E8F0', backgroundColor: '#F8FAFC', color: '#64748B' }}>{editing.key}</div>
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Type</label>
-                <select className={inp} style={inpStyle} value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}>
-                  {FIELD_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                </select>
+                {editing?.is_system ? (
+                  <div className="h-9 px-3 rounded-lg border flex items-center text-sm" style={{ borderColor: '#E2E8F0', backgroundColor: '#F8FAFC', color: '#64748B' }}>
+                    {FIELD_TYPES.find(t => t.value === form.type)?.label ?? form.type}
+                    <span className="ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ backgroundColor: '#E0F2FE', color: '#0369A1' }}>LOCKED</span>
+                  </div>
+                ) : (
+                  <select className={inp} style={inpStyle} value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}>
+                    {FIELD_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  </select>
+                )}
               </div>
-              {(form.type === 'select' || form.type === 'multiselect') && (
+              {(form.type === 'select' || form.type === 'multiselect') && !editing?.is_system && (
                 <div>
                   <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Options <span className="font-normal text-[10px]" style={{ color: '#94A3B8' }}>(comma-separated)</span></label>
                   <input className={inp} style={inpStyle} value={form.options} onChange={e => setForm(p => ({ ...p, options: e.target.value }))} placeholder="Honeymoon, Family, Adventure" />
@@ -229,8 +251,13 @@ export function ContactFieldsTab() {
                 <input className={inp} style={inpStyle} value={form.placeholder} onChange={e => setForm(p => ({ ...p, placeholder: e.target.value }))} placeholder="e.g. dd-mm-yyyy" />
               </div>
               <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={form.required} onChange={e => setForm(p => ({ ...p, required: e.target.checked }))} style={{ accentColor: T }} />
+                <input type="checkbox" checked={form.required}
+                  disabled={editing?.is_system && (editing.key === 'name' || editing.key === 'phone')}
+                  onChange={e => setForm(p => ({ ...p, required: e.target.checked }))} style={{ accentColor: T }} />
                 <span className="text-sm" style={{ color: '#0F172A' }}>Required when creating a contact</span>
+                {editing?.is_system && (editing.key === 'name' || editing.key === 'phone') && (
+                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ backgroundColor: '#E0F2FE', color: '#0369A1' }}>always required</span>
+                )}
               </label>
             </div>
             <div className="px-6 py-4 flex gap-3" style={{ borderTop: '1px solid #F1F5F9' }}>
@@ -268,7 +295,7 @@ export function ContactTagsTab() {
     setLoading(true);
     const r = await fetch('/api/v1/crm/contact-tags');
     const d = await r.json();
-    if (d.success) setTags(d.data);
+    if (d.success) setTags(Array.isArray(d.data) ? d.data : []);
     setLoading(false);
   }
   useEffect(() => { load(); }, []);

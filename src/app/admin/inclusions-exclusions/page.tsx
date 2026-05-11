@@ -48,7 +48,7 @@ export default function InclusionsExclusionsPage() {
   const [filterDuplicates, setFilterDuplicates] = useState(false);
   const [showFilters,      setShowFilters]      = useState(true);
 
-  async function load() { setLoading(true); const r = await fetch('/api/v1/inclusions-exclusions'); const d = await r.json(); if (d.success) setRows(d.data); setLoading(false); }
+  async function load() { setLoading(true); const r = await fetch('/api/v1/inclusions-exclusions'); const d = await r.json(); if (d.success) setRows(Array.isArray(d.data) ? d.data : []); setLoading(false); }
   useEffect(() => { load(); }, []);
 
   function openCreate() { setEditing(null); setForm({ ...EMPTY }); setError(''); setShowForm(true); }

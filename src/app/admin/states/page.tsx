@@ -47,7 +47,7 @@ export default function StatesPage() {
   async function load() {
     setLoading(true);
     const r = await fetch('/api/v1/states'); const d = await r.json();
-    if (d.success) setRows(d.data);
+    if (d.success) setRows(Array.isArray(d.data) ? d.data : []);
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
