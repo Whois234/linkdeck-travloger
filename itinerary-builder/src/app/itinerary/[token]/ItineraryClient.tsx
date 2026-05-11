@@ -834,7 +834,112 @@ function DayGallery({ images, title }: { images: string[]; title: string }) {
 }
 
 /* ─────────────────────────── Day Cards ─────────────────────────── */
-function DayCard({ day, open, onToggle }: { day: DaySnapshot; open: boolean; onToggle: () => void }) {
+/* ─────────────────────────── Meal Plan Logic ─────────────────────────── */
+type MealType = 'breakfast' | 'lunch' | 'dinner';
+
+function getMealsForDay(day: DaySnapshot, optionHotels: OptionHotel[]): MealType[] {
+  const hotel = optionHotels.find(oh => oh.destination_id === day.destination_id);
+  if (!hotel || !hotel.meal_plan) return [];
+
+  const code   = hotel.meal_plan.code.toUpperCase().trim();
+  const dayD   = day.date;
+  const cin    = hotel.check_in_date;
+  const cout   = hotel.check_out_date;
+
+  // Day must be within hotel stay window
+  if (dayD < cin || dayD > cout) return [];
+
+  const isIn  = dayD === cin;
+  const isOut = dayD === cout;
+
+  // EP / RO — room only, no meals
+  if (code === 'EP' || code === 'RO') return [];
+
+  // CP / BB — breakfast only (not on check-in day since guest arrives post-breakfast)
+  if (code === 'CP' || code === 'BB' || code === 'B&B') {
+    return isIn ? [] : ['breakfast'];
+  }
+
+  // HB / MAP — half board: breakfast + dinner
+  if (code === 'HB' || code === 'MAP') {
+    if (isIn)  return ['dinner'];
+    if (isOut) return ['breakfast'];
+    return ['breakfast', 'dinner'];
+  }
+
+  // FB / AP / AI — full board / all-inclusive: all meals
+  if (code === 'FB' || code === 'AP' || code === 'AI' || code === 'ALL') {
+    if (isIn)  return ['dinner'];
+    if (isOut) return ['breakfast', 'lunch'];
+    return ['breakfast', 'lunch', 'dinner'];
+  }
+
+  return [];
+}
+
+/* ─────────────────────────── Meal Chips ─────────────────────────── */
+const MEAL_CFG: Record<MealType, { label: string; bg: string; border: string; color: string; icon: JSX.Element }> = {
+  breakfast: {
+    label: 'Breakfast', bg: '#FFFBEB', border: '#FDE68A', color: '#92400E',
+    icon: (
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="4"/>
+        <line x1="12" y1="2" x2="12" y2="4"/>
+        <line x1="12" y1="20" x2="12" y2="22"/>
+        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+        <line x1="2" y1="12" x2="4" y2="12"/>
+        <line x1="20" y1="12" x2="22" y2="12"/>
+        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+      </svg>
+    ),
+  },
+  lunch: {
+    label: 'Lunch', bg: '#F0FDF4', border: '#86EFAC', color: '#166534',
+    icon: (
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/>
+        <path d="M7 2v20"/>
+        <path d="M21 15V2a5 5 0 00-5 5v6c0 1.1.9 2 2 2h3zM16 22v-3"/>
+      </svg>
+    ),
+  },
+  dinner: {
+    label: 'Dinner', bg: '#EEF2FF', border: '#C7D2FE', color: '#3730A3',
+    icon: (
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+      </svg>
+    ),
+  },
+};
+
+function MealChips({ meals }: { meals: MealType[] }) {
+  if (meals.length === 0) return null;
+  return (
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: '10px 16px 12px' }}>
+      {meals.map(meal => {
+        const c = MEAL_CFG[meal];
+        return (
+          <span key={meal} style={{
+            display: 'inline-flex', alignItems: 'center', gap: 5,
+            background: c.bg, color: c.color,
+            border: `1px solid ${c.border}`,
+            padding: '4px 10px 4px 8px', borderRadius: 99,
+            fontSize: 11, fontWeight: 700, letterSpacing: '0.02em',
+            lineHeight: 1,
+          }}>
+            {c.icon}
+            {c.label}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function DayCard({ day, meals, open, onToggle }: { day: DaySnapshot; meals?: MealType[]; open: boolean; onToggle: () => void }) {
   return (
     <div className="tl-day-row">
       <div className="tl-day-spine">
@@ -854,6 +959,7 @@ function DayCard({ day, open, onToggle }: { day: DaySnapshot; open: boolean; onT
             <ChevronDown open={open} color={open ? 'white' : '#aaa'} />
           </button>
         </div>
+        {meals && meals.length > 0 && <MealChips meals={meals} />}
         {open && (
           <>
             {/* Day image / gallery slideshow */}
@@ -884,12 +990,12 @@ function DayCard({ day, open, onToggle }: { day: DaySnapshot; open: boolean; onT
 /* ─────────────────────────── Destination Cards Section ─────────────────────────── */
 type DestCard = { destination_id: string; name: string; description: string; image_url: string };
 
-function DestinationCardsSection({ cards, days }: { cards: DestCard[]; days: DaySnapshot[] }) {
+function DestinationCardsSection({ cards, days, optionHotels }: { cards: DestCard[]; days: DaySnapshot[]; optionHotels?: OptionHotel[] }) {
   const [openDay, setOpenDay] = useState<number>(0);
   const visibleCards = cards.filter(c => c.name);
   if (visibleCards.length === 0) {
     // fallback to day cards if no cards
-    return <ItineraryDaysOnly days={days} openDay={openDay} setOpenDay={setOpenDay} />;
+    return <ItineraryDaysOnly days={days} openDay={openDay} setOpenDay={setOpenDay} optionHotels={optionHotels} />;
   }
   return (
     <div className="tl-sec" data-section="itinerary">
@@ -919,7 +1025,7 @@ function DestinationCardsSection({ cards, days }: { cards: DestCard[]; days: Day
           <div className="tl-sec-eyebrow" style={{ marginTop: 32 }}>Day by Day</div>
           <div className="tl-day-list">
             {days.map((d, i) => (
-              <DayCard key={d.day_number} day={d} open={openDay === i} onToggle={() => setOpenDay(openDay === i ? -1 : i)} />
+              <DayCard key={d.day_number} day={d} meals={optionHotels ? getMealsForDay(d, optionHotels) : undefined} open={openDay === i} onToggle={() => setOpenDay(openDay === i ? -1 : i)} />
             ))}
           </div>
         </>
@@ -928,17 +1034,17 @@ function DestinationCardsSection({ cards, days }: { cards: DestCard[]; days: Day
   );
 }
 
-function ItineraryDaysOnly({ days, openDay, setOpenDay }: { days: DaySnapshot[]; openDay: number; setOpenDay: (n: number) => void }) {
+function ItineraryDaysOnly({ days, openDay, setOpenDay, optionHotels }: { days: DaySnapshot[]; openDay: number; setOpenDay: (n: number) => void; optionHotels?: OptionHotel[] }) {
   return (
     <div className="tl-day-list">
       {days.map((d, i) => (
-        <DayCard key={d.day_number} day={d} open={openDay === i} onToggle={() => setOpenDay(openDay === i ? -1 : i)} />
+        <DayCard key={d.day_number} day={d} meals={optionHotels ? getMealsForDay(d, optionHotels) : undefined} open={openDay === i} onToggle={() => setOpenDay(openDay === i ? -1 : i)} />
       ))}
     </div>
   );
 }
 
-function ItinerarySection({ days }: { days: DaySnapshot[] }) {
+function ItinerarySection({ days, optionHotels }: { days: DaySnapshot[]; optionHotels?: OptionHotel[] }) {
   const [openDay, setOpenDay] = useState<number>(0); // first day open by default
   if (days.length === 0) return null;
 
@@ -954,6 +1060,7 @@ function ItinerarySection({ days }: { days: DaySnapshot[] }) {
           <DayCard
             key={d.day_number}
             day={d}
+            meals={optionHotels ? getMealsForDay(d, optionHotels) : undefined}
             open={openDay === i}
             onToggle={() => setOpenDay(openDay === i ? -1 : i)}
           />
@@ -3062,7 +3169,7 @@ export function ItineraryClient({ data, token }: Props) {
         )}
 
         <LogoMarquee />
-        <ItinerarySection days={day_snapshots} />
+        <ItinerarySection days={day_snapshots} optionHotels={selectedOption?.option_hotels ?? []} />
 
         {/* ── GROUP: visual what's covered; regular: plain inc/exc ── */}
         {isGroup
