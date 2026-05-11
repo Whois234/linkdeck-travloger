@@ -52,7 +52,7 @@ export function ContactFieldsTab() {
     setLoading(true);
     const r = await fetch('/api/v1/crm/contact-fields');
     const d = await r.json();
-    if (d.success) setFields(d.data);
+    if (d.success) setFields(Array.isArray(d.data) ? d.data : []);
     setLoading(false);
   }
 
@@ -295,7 +295,7 @@ export function ContactTagsTab() {
     setLoading(true);
     const r = await fetch('/api/v1/crm/contact-tags');
     const d = await r.json();
-    if (d.success) setTags(d.data);
+    if (d.success) setTags(Array.isArray(d.data) ? d.data : []);
     setLoading(false);
   }
   useEffect(() => { load(); }, []);

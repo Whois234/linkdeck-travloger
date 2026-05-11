@@ -279,7 +279,7 @@ function QuotePopup({ quote, onClose }: { quote: QuoteRef; onClose: () => void }
                           <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>{opt.option_name}</p>
                           {opt.is_most_popular && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ backgroundColor: '#DCFCE7', color: '#15803D' }}>POPULAR</span>}
                         </div>
-                        <p className="text-sm font-bold" style={{ color: '#0F172A' }}>₹{opt.final_price.toLocaleString('en-IN')}</p>
+                        <p className="text-sm font-bold" style={{ color: '#0F172A' }}>₹{Math.round(opt.final_price).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
                       </div>
                     ))}
                   </div>
@@ -777,7 +777,7 @@ export default function LeadDrawer({
                               {q.duration_days > 0 && <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{q.duration_days}D</span>}
                               {minPrice !== null && (
                                 <span className="font-semibold" style={{ color: '#0F172A' }}>
-                                  ₹{minPrice.toLocaleString('en-IN')}{maxPrice !== minPrice ? ` – ₹${maxPrice!.toLocaleString('en-IN')}` : ''}
+                                  ₹{Math.round(minPrice).toLocaleString('en-IN', { maximumFractionDigits: 0 })}{maxPrice !== minPrice ? ` – ₹${Math.round(maxPrice!).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : ''}
                                 </span>
                               )}
                             </div>

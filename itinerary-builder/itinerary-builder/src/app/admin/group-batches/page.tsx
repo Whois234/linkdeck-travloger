@@ -2,7 +2,8 @@
 import { useState, useEffect } from 'react';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
-import { Plus, Pencil, Trash2, Search } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, X, Users, Calendar, IndianRupee } from 'lucide-react';
+import { batchStatusLabel, BATCH_STATUS_LABELS, formatNumber } from '@/lib/utils';
 
 interface GroupTemplate { id: string; group_template_name: string }
 interface Agent { id: string; name: string }
@@ -13,12 +14,13 @@ interface GroupBatch {
   booking_status: string; group_template_id: string; assigned_agent_id?: string | null;
   group_template: { group_template_name: string }; assigned_agent?: { name: string } | null; status: boolean;
 }
-const BATCH_STATUSES = ['OPEN', 'SOLD_OUT', 'CLOSED', 'CANCELLED'];
+const BATCH_STATUSES = ['OPEN', 'FILLING_FAST', 'SOLD_OUT', 'CLOSED', 'CANCELLED'];
 const BATCH_STATUS_BADGE: Record<string, { bg: string; text: string }> = {
   OPEN: { bg: '#DCFCE7', text: '#15803D' },
+  FILLING_FAST: { bg: '#FFEDD5', text: '#C2410C' },
   SOLD_OUT: { bg: '#FEE2E2', text: '#DC2626' },
   CLOSED: { bg: '#F1F5F9', text: '#475569' },
-  CANCELLED: { bg: '#FEE2E2', text: '#DC2626' },
+  CANCELLED: { bg: '#E2E8F0', text: '#334155' },
 };
 const EMPTY = { group_template_id: '', batch_name: '', start_date: '', end_date: '', total_seats: '20', available_seats: '20', adult_price: '', child_5_12_price: '0', child_below_5_price: '0', gst_percent: '5', booking_status: 'OPEN', assigned_agent_id: '' };
 const inp = 'w-full h-10 px-3 rounded-lg border text-sm placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white transition-colors';
@@ -41,6 +43,7 @@ export default function GroupBatchesPage() {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [detail, setDetail] = useState<GroupBatch | null>(null);
 
   async function load() {
     setLoading(true);
@@ -102,7 +105,7 @@ export default function GroupBatchesPage() {
             <div><label className={lbl} style={lblStyle}>GST % <span style={{ color: '#EF4444' }}>*</span></label><input type="number" min="0" max="100" step="0.5" className={inp} style={inpStyle} value={form.gst_percent} onChange={e => setForm(p => ({ ...p, gst_percent: e.target.value }))} /></div>
             <div><label className={lbl} style={lblStyle}>Booking Status</label>
               <select value={form.booking_status} onChange={e => setForm(p => ({ ...p, booking_status: e.target.value }))} className={sel} style={inpStyle}>
-                {BATCH_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                {BATCH_STATUSES.map(s => <option key={s} value={s}>{BATCH_STATUS_LABELS[s] ?? s}</option>)}
               </select>
             </div>
             <div><label className={lbl} style={lblStyle}>Assigned Agent</label>
@@ -123,7 +126,7 @@ export default function GroupBatchesPage() {
             <p className="text-sm font-semibold" style={{ color: '#64748B' }}>{loading ? 'Loading…' : `${filtered.length} batch${filtered.length !== 1 ? 'es' : ''}`}</p>
             <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="h-8 px-3 rounded-lg border text-xs font-semibold focus:outline-none appearance-none" style={{ borderColor: '#E2E8F0', color: '#64748B', backgroundColor: '#F8FAFC' }}>
               <option value="">All Statuses</option>
-              {BATCH_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+              {BATCH_STATUSES.map(s => <option key={s} value={s}>{BATCH_STATUS_LABELS[s] ?? s}</option>)}
             </select>
           </div>
           <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: '#94A3B8' }} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search batches…" className="w-60 h-9 pl-9 pr-3 rounded-lg border text-sm placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white" style={{ borderColor: '#E2E8F0' }} /></div>
@@ -136,7 +139,7 @@ export default function GroupBatchesPage() {
                 {filtered.map(r => {
                   const badge = BATCH_STATUS_BADGE[r.booking_status] ?? BATCH_STATUS_BADGE.OPEN;
                   return (
-                    <tr key={r.id} className="transition-colors hover:bg-[#F8FAFC]" style={{ borderBottom: '1px solid #F1F5F9', height: '56px' }}>
+                    <tr key={r.id} onClick={() => setDetail(r)} className="transition-colors hover:bg-[#F8FAFC] cursor-pointer" style={{ borderBottom: '1px solid #F1F5F9', height: '56px' }}>
                       <td className="px-5 py-0 font-semibold" style={{ color: '#0F172A' }}>{r.batch_name}</td>
                       <td className="px-5 py-0 text-xs" style={{ color: '#64748B' }}>{r.group_template.group_template_name}</td>
                       <td className="px-5 py-0 text-xs whitespace-nowrap" style={{ color: '#64748B' }}>
@@ -146,10 +149,10 @@ export default function GroupBatchesPage() {
                         <span className="font-semibold" style={{ color: '#0F172A' }}>{r.available_seats}</span>
                         <span style={{ color: '#94A3B8' }}> / {r.total_seats}</span>
                       </td>
-                      <td className="px-5 py-0 font-semibold" style={{ color: '#134956' }}>₹{r.adult_price.toLocaleString('en-IN')}</td>
-                      <td className="px-5 py-0"><span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold" style={{ backgroundColor: badge.bg, color: badge.text }}>{r.booking_status}</span></td>
+                      <td className="px-5 py-0 font-semibold" style={{ color: '#134956' }}>₹{formatNumber(r.adult_price)}</td>
+                      <td className="px-5 py-0"><span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold" style={{ backgroundColor: badge.bg, color: badge.text }}>{batchStatusLabel(r.booking_status)}</span></td>
                       <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>{r.assigned_agent?.name ?? '—'}</td>
-                      <td className="px-5 py-0"><div className="flex items-center justify-end gap-1">
+                      <td className="px-5 py-0" onClick={e => e.stopPropagation()}><div className="flex items-center justify-end gap-1">
                         <button onClick={() => openEdit(r)} className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors hover:bg-[#F1F5F9]" style={{ color: '#94A3B8' }} onMouseEnter={e => (e.currentTarget.style.color = '#134956')} onMouseLeave={e => (e.currentTarget.style.color = '#94A3B8')}><Pencil className="w-3.5 h-3.5" /></button>
                         <button onClick={() => handleDelete(r.id)} disabled={deleting === r.id} className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors hover:bg-[#FEF2F2] disabled:opacity-40" style={{ color: '#94A3B8' }} onMouseEnter={e => (e.currentTarget.style.color = '#DC2626')} onMouseLeave={e => (e.currentTarget.style.color = '#94A3B8')}><Trash2 className="w-3.5 h-3.5" /></button>
                       </div></td>
@@ -159,6 +162,56 @@ export default function GroupBatchesPage() {
               </tbody>
             </table>}
       </div>
+      {detail && (
+        <div className="fixed inset-0 z-50 flex" onClick={() => setDetail(null)}>
+          <div className="flex-1 bg-black/30" />
+          <div className="w-full max-w-md bg-white h-full overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: '#E2E8F0' }}>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#64748B' }}>Batch Details</p>
+                <h3 className="text-lg font-bold mt-0.5" style={{ color: '#0F172A' }}>{detail.batch_name}</h3>
+              </div>
+              <button onClick={() => setDetail(null)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#F1F5F9]"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="p-5 space-y-5">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold" style={{ backgroundColor: (BATCH_STATUS_BADGE[detail.booking_status] ?? BATCH_STATUS_BADGE.OPEN).bg, color: (BATCH_STATUS_BADGE[detail.booking_status] ?? BATCH_STATUS_BADGE.OPEN).text }}>{batchStatusLabel(detail.booking_status)}</span>
+                <span className="text-xs" style={{ color: '#64748B' }}>{detail.group_template.group_template_name}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-lg p-3" style={{ border: '1px solid #E2E8F0' }}>
+                  <div className="flex items-center gap-1.5 text-xs" style={{ color: '#64748B' }}><Calendar className="w-3.5 h-3.5" />Dates</div>
+                  <p className="text-sm font-semibold mt-1" style={{ color: '#0F172A' }}>
+                    {new Date(detail.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} – {new Date(detail.end_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </p>
+                </div>
+                <div className="rounded-lg p-3" style={{ border: '1px solid #E2E8F0' }}>
+                  <div className="flex items-center gap-1.5 text-xs" style={{ color: '#64748B' }}><Users className="w-3.5 h-3.5" />Seats</div>
+                  <p className="text-sm font-semibold mt-1" style={{ color: '#0F172A' }}>{detail.available_seats} <span className="text-xs" style={{ color: '#94A3B8' }}>available</span> / {detail.total_seats} <span className="text-xs" style={{ color: '#94A3B8' }}>total</span></p>
+                  <p className="text-xs mt-1" style={{ color: '#64748B' }}>{detail.total_seats - detail.available_seats} booked</p>
+                </div>
+              </div>
+              <div className="rounded-lg p-3" style={{ border: '1px solid #E2E8F0' }}>
+                <div className="flex items-center gap-1.5 text-xs mb-2" style={{ color: '#64748B' }}><IndianRupee className="w-3.5 h-3.5" />Pricing</div>
+                <div className="space-y-1 text-sm">
+                  <div className="flex justify-between"><span style={{ color: '#64748B' }}>Adult</span><span className="font-semibold" style={{ color: '#0F172A' }}>₹{formatNumber(detail.adult_price)}</span></div>
+                  <div className="flex justify-between"><span style={{ color: '#64748B' }}>Child 5–12</span><span className="font-semibold" style={{ color: '#0F172A' }}>₹{formatNumber(detail.child_5_12_price)}</span></div>
+                  <div className="flex justify-between"><span style={{ color: '#64748B' }}>Child &lt; 5</span><span className="font-semibold" style={{ color: '#0F172A' }}>₹{formatNumber(detail.child_below_5_price)}</span></div>
+                  <div className="flex justify-between pt-1 mt-1 border-t" style={{ borderColor: '#F1F5F9' }}><span style={{ color: '#64748B' }}>GST</span><span className="font-semibold" style={{ color: '#0F172A' }}>{detail.gst_percent}%</span></div>
+                </div>
+              </div>
+              <div className="rounded-lg p-3" style={{ border: '1px solid #E2E8F0' }}>
+                <p className="text-xs mb-1" style={{ color: '#64748B' }}>Assigned Agent</p>
+                <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>{detail.assigned_agent?.name ?? '—'}</p>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button onClick={() => { openEdit(detail); setDetail(null); }} className="flex-1 h-9 rounded-lg text-sm font-semibold text-white hover:opacity-90" style={{ backgroundColor: '#134956' }}>Edit Batch</button>
+                <button onClick={() => { handleDelete(detail.id); setDetail(null); }} className="h-9 px-4 rounded-lg text-sm font-semibold" style={{ border: '1px solid #FECACA', color: '#DC2626' }}>Delete</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

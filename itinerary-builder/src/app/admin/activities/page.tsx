@@ -303,7 +303,7 @@ export default function ActivitiesPage() {
         {loading ? <div className="py-16 text-center"><div className="w-8 h-8 rounded-full border-2 border-[#134956] border-t-transparent animate-spin mx-auto" /></div>
           : processed.length === 0 ? <div className="py-16 text-center"><p className="font-semibold text-sm" style={{ color: '#0F172A' }}>No activities found</p><p className="text-sm mt-1" style={{ color: '#64748B' }}>{activeFilterCount || search ? <button onClick={clearFilters} className="underline" style={{ color: '#134956' }}>Clear filters</button> : 'Add your first activity'}</p></div>
           : <>
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead><tr style={{ backgroundColor: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
                 <th className="px-5 py-3.5 w-10">
                   <input type="checkbox"
@@ -358,7 +358,7 @@ export default function ActivitiesPage() {
                   );
                 })}
               </tbody>
-            </table>
+            </table></div>
             {totalPages > 1 && (
               <div className="flex items-center justify-between px-5 py-3" style={{ borderTop: '1px solid #F1F5F9' }}>
                 <p className="text-xs" style={{ color: '#94A3B8' }}>

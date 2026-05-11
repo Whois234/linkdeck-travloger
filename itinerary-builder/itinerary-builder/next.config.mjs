@@ -6,6 +6,7 @@ const withBundleAnalyzer = bundleAnalyzer({
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  generateBuildId: () => `build-${Date.now()}`,
   compress: true,
 
   experimental: {

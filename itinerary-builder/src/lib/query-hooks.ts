@@ -89,8 +89,26 @@ export function useContacts(params: URLSearchParams) {
     queryFn:  () => apiFetch<{ items: unknown[]; total: number; page: number; limit: number; pages: number }>(
       `/api/v1/crm/contacts?${key}`
     ),
-    staleTime: LIVE_STALE,
+    // 60s per Part 9 spec — list data. gcTime inherits the 5min default.
+    staleTime: 60_000,
     placeholderData: (prev) => prev,  // keep previous page visible while fetching next
+  });
+}
+
+// Count of NEW unassigned contacts — used for the sidebar badge. Polls every
+// 30s so a new CTWA lead lights up the badge without a page reload.
+export function useUnassignedNewContactsCount() {
+  return useQuery({
+    queryKey: ['contacts-unassigned-new-count'],
+    queryFn: async () => {
+      const res = await fetch('/api/v1/crm/contacts?lead_stage=NEW&assigned_to_id=unassigned&limit=1&page=1');
+      const data = await res.json();
+      if (!data.success) return 0;
+      return (data.data?.totalCount ?? data.data?.total ?? 0) as number;
+    },
+    staleTime: 0,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   });
 }
 

@@ -5,6 +5,7 @@ import { Modal } from '@/components/admin/Modal';
 import { Plus, Pencil, Trash2, Search } from 'lucide-react';
 import { RichTextEditor } from '@/components/admin/RichTextEditor';
 import ExcelIO from '@/components/ExcelIO';
+import { stripHtml } from '@/lib/utils';
 
 interface Dest { id: string; name: string }
 interface DayPlan { id: string; title: string; duration_label?: string | null; description?: string | null; destination: { name: string }; destination_id: string; status: boolean; created_at: string }
@@ -34,6 +35,8 @@ export default function DayPlansPage() {
   const [pageSize, setPageSize] = useState(25);
   const [currentPage, setCurrentPage] = useState(1);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [destFilter, setDestFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
 
   async function load() {
     setLoading(true);
@@ -82,7 +85,11 @@ export default function DayPlansPage() {
     return arr;
   }, [rows, sortKey]);
 
-  const filtered = sorted.filter(r => !search || r.title.toLowerCase().includes(search.toLowerCase()) || r.destination.name.toLowerCase().includes(search.toLowerCase()));
+  const filtered = sorted.filter(r =>
+    (!search || r.title.toLowerCase().includes(search.toLowerCase()) || r.destination.name.toLowerCase().includes(search.toLowerCase()))
+    && (!destFilter || r.destination_id === destFilter)
+    && (!statusFilter || (statusFilter === 'active' ? r.status : !r.status))
+  );
   const totalPages = Math.ceil(filtered.length / pageSize);
   const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
@@ -156,6 +163,19 @@ export default function DayPlansPage() {
             )}
           </div>
           <div className="flex items-center gap-2">
+            <select value={destFilter} onChange={e => { setDestFilter(e.target.value); setCurrentPage(1); setSelected(new Set()); }}
+              className="h-9 px-3 rounded-lg border text-sm focus:outline-none bg-white appearance-none pr-8"
+              style={{ borderColor: '#E2E8F0', color: destFilter ? '#134956' : '#64748B' }}>
+              <option value="">All Destinations</option>
+              {dests.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+            <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setCurrentPage(1); setSelected(new Set()); }}
+              className="h-9 px-3 rounded-lg border text-sm focus:outline-none bg-white appearance-none pr-8"
+              style={{ borderColor: '#E2E8F0', color: statusFilter ? '#134956' : '#64748B' }}>
+              <option value="">All Status</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
             <select value={sortKey}
               onChange={e => { setSortKey(e.target.value as SortKey); setCurrentPage(1); setSelected(new Set()); }}
               className="h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white appearance-none pr-8"
@@ -211,7 +231,7 @@ export default function DayPlansPage() {
                     <td className="px-5 py-0 font-semibold" style={{ color: '#0F172A' }}>{r.title}</td>
                     <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>{r.destination.name}</td>
                     <td className="px-5 py-0"><span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold" style={{ backgroundColor: '#F1F5F9', color: '#475569' }}>{r.duration_label ?? '—'}</span></td>
-                    <td className="px-5 py-0 text-sm" style={{ color: '#64748B', maxWidth: '260px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.description ?? '—'}</td>
+                    <td className="px-5 py-0 text-sm" style={{ color: '#64748B', maxWidth: '260px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{stripHtml(r.description) || '—'}</td>
                     <td className="px-5 py-0"><span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold" style={r.status ? { backgroundColor: '#DCFCE7', color: '#15803D' } : { backgroundColor: '#F1F5F9', color: '#475569' }}>{r.status ? 'Active' : 'Inactive'}</span></td>
                     <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>Admin</td>
                     <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>

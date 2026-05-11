@@ -7,16 +7,16 @@ import { ok, created, err, unauthorized, forbidden } from '@/lib/api-response';
 import { UserRole, LeadStatus } from '@prisma/client';
 
 const Schema = z.object({
-  name: z.string().min(1),
-  phone: z.string().min(1),
-  email: z.string().email().optional().nullable(),
-  source: z.string().optional().nullable(),
-  destination_interest: z.string().optional().nullable(),
-  travel_month: z.string().optional().nullable(),
-  budget_range: z.string().optional().nullable(),
+  name: z.string().trim().min(1, 'Name is required').max(120),
+  phone: z.string().trim().min(7).max(20).regex(/^[0-9+\-\s()]+$/, 'Phone has invalid characters'),
+  email: z.string().trim().email().toLowerCase().nullable().optional().or(z.literal('').transform(() => null)),
+  source: z.string().trim().max(60).nullable().optional(),
+  destination_interest: z.string().trim().max(120).nullable().optional(),
+  travel_month: z.string().trim().max(20).nullable().optional(),
+  budget_range: z.string().trim().max(60).nullable().optional(),
   status: z.nativeEnum(LeadStatus).optional(),
   assigned_agent_id: z.string().optional().nullable(),
-  notes: z.string().optional().nullable(),
+  notes: z.string().trim().max(2000).nullable().optional(),
   pipeline_id: z.string().optional().nullable(),
   stage_id: z.string().optional().nullable(),
 });

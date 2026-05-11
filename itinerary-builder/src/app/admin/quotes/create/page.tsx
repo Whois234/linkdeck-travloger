@@ -204,9 +204,9 @@ export default function CreateQuotePage() {
     if (step !== 2 || !stateIds.length) return;
     const stateParam = stateIds.length === 1 ? `state_id=${stateIds[0]}` : `state_ids=${stateIds.join(',')}`;
     if (quoteType === 'PRIVATE') {
-      fetch(`/api/v1/private-templates?${stateParam}`).then(r => r.json()).then(d => { if (d.success) setPrivateTpls(d.data); });
+      fetch(`/api/v1/private-templates?${stateParam}`).then(r => r.json()).then(d => { if (d.success) setPrivateTpls(Array.isArray(d.data) ? d.data : []); });
     } else {
-      fetch(`/api/v1/group-templates?state_id=${stateId}`).then(r => r.json()).then(d => { if (d.success) setGroupTpls(d.data); });
+      fetch(`/api/v1/group-templates?state_id=${stateId}`).then(r => r.json()).then(d => { if (d.success) setGroupTpls(Array.isArray(d.data) ? d.data : []); });
     }
   }, [step, stateIds, quoteType]);
 

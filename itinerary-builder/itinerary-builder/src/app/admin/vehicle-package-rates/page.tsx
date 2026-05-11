@@ -632,7 +632,7 @@ export default function VehicleRatesPage() {
                           <td className="px-4 py-3 text-sm whitespace-nowrap" style={{ color: '#64748B' }}>{r.end_city}</td>
                           <td className="px-4 py-3 text-sm whitespace-nowrap" style={{ color: '#64748B' }}>{r.duration_days}D / {r.duration_nights}N</td>
                           <td className="px-4 py-3 text-sm" style={{ color: '#64748B', maxWidth: 140, whiteSpace: 'normal' }}>{r.supplier?.name ?? '—'}</td>
-                          <td className="px-4 py-3 font-semibold whitespace-nowrap" style={{ color: '#134956' }}>₹{r.base_cost.toLocaleString('en-IN')}</td>
+                          <td className="px-4 py-3 font-semibold whitespace-nowrap" style={{ color: '#134956' }}>₹{Math.round(r.base_cost).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
                           <td className="px-4 py-3 text-xs whitespace-nowrap" style={{ color: '#64748B' }}>{new Date(r.valid_from).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
                           <td className="px-4 py-3 text-xs whitespace-nowrap" style={{ color: '#64748B' }}>{new Date(r.valid_to).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
                           <td className="px-4 py-3">

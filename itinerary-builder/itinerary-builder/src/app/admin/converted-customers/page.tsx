@@ -35,10 +35,16 @@ export default function ConvertedCustomersPage() {
     setLoading(true);
     const params = new URLSearchParams({ converted: 'true' });
     if (search) params.set('search', search);
-    const res  = await fetch(`/api/v1/crm/contacts?${params}`);
-    const data = await res.json();
-    if (data.success) setContacts(data.data);
-    setLoading(false);
+    try {
+      const res  = await fetch(`/api/v1/crm/contacts?${params}`);
+      const data = await res.json();
+      const list = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
+      setContacts(list);
+    } catch {
+      setContacts([]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   function toggleExpand(id: string) {
@@ -49,7 +55,8 @@ export default function ConvertedCustomersPage() {
     });
   }
 
-  const totalDeals = contacts.reduce((sum, c) => sum + c.leads.length, 0);
+  const safeContacts = Array.isArray(contacts) ? contacts : [];
+  const totalDeals = safeContacts.reduce((sum, c) => sum + (Array.isArray(c.leads) ? c.leads.length : 0), 0);
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">

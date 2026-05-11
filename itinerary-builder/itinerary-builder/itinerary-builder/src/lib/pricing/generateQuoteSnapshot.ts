@@ -210,10 +210,12 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
     ...option,
     option_hotels: option.option_hotels.map(oh => ({
       ...oh,
-      hotel:         hotelsMap[oh.hotel_id]         ?? null,
-      room_category: roomsMap[oh.room_category_id]  ?? null,
-      meal_plan:     mealsMap[oh.meal_plan_id]       ?? null,
-      destination:   destsMap[oh.destination_id]    ? { name: destsMap[oh.destination_id].name } : null,
+      hotel:          hotelsMap[oh.hotel_id]         ?? null,
+      room_category:  roomsMap[oh.room_category_id]  ?? null,
+      meal_plan:      mealsMap[oh.meal_plan_id]       ?? null,
+      destination:    destsMap[oh.destination_id]    ? { name: destsMap[oh.destination_id].name } : null,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      meal_overrides: (oh.rooming_json as any)?.meal_overrides ?? null,
     })),
   }));
 

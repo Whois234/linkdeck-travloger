@@ -1023,7 +1023,9 @@ model User {
   updated_at    DateTime  @updatedAt
 
   notifications Notification[]
-  contacts      CrmContact[]
+  contacts            CrmContact[]      @relation("CrmContactOwner")
+  assigned_contacts   CrmContact[]      @relation("CrmContactAssignee")
+  contact_activities  ContactActivity[] @relation("ContactActivityActor")
 
   @@index([role])
   @@index([status])
@@ -1051,6 +1053,7 @@ model CrmContact {
   name            String
   phone           String    @unique
   email           String?
+  // Legacy free-text source (kept for backward compatibility). New code uses lead_source enum.
   source          String?
   owner_id        String
   is_converted    Boolean   @default(false)
@@ -1059,21 +1062,133 @@ model CrmContact {
   // Auto-populated from QuoteEvent geo-IP resolution when the customer opens a quote
   last_known_city String?
   last_seen_at    DateTime?
+  // User-editable city (distinct from last_known_city which is geo-IP derived)
+  city            String?
   // User-defined fields configured in CRM Settings → Contact Fields
   custom_fields   Json?
   // Tag names (denormalized for fast filtering); validated against ContactTag
   tags            String[]  @default([])
+
+  // ── Travel interest ────────────────────────────────────────────────────────
+  interested_destination String?
+  number_of_travellers   Int?
+  trip_type              TripType?
+  special_requirements   String?
+  budget_per_person      Decimal?  @db.Decimal(12, 2)
+
+  // ── Lead source & ad attribution ───────────────────────────────────────────
+  lead_source       LeadSource?
+  platform          Platform?
+  campaign_name     String?
+  ad_set_name       String?
+  ad_name           String?
+  // Stores: keyword, utm_source, utm_medium, utm_campaign, utm_term, utm_content, landing_page_url
+  other_ad_details  Json?
+  device_platform   DevicePlatform?
+  facebook_click_id   String?
+  facebook_browser_id String?
+  google_click_id     String?
+  platform_lead_id    String?
+  gallabox_contact_id String?
+
+  // ── CRM workflow ───────────────────────────────────────────────────────────
+  lead_stage        LeadStage @default(NEW)
+  assigned_to_id    String?
+  follow_up_date    DateTime?
+  // Auto-set when lead_stage transitions to CONVERTED; cleared on transition away
+  closed_date       DateTime?
+
+  // ── Conversion ─────────────────────────────────────────────────────────────
+  // is_converted is auto-managed with lead_stage transitions
+  booking_value     Decimal?  @db.Decimal(12, 2)
+
+  // ── Internal ───────────────────────────────────────────────────────────────
+  do_not_contact    Boolean   @default(false)
+  // Soft delete — every read filters on deleted_at IS NULL
+  deleted_at        DateTime?
+
   created_at      DateTime  @default(now())
   updated_at      DateTime  @updatedAt
 
-  owner        User      @relation(fields: [owner_id], references: [id])
+  owner        User      @relation("CrmContactOwner",     fields: [owner_id],       references: [id])
+  assigned_to  User?     @relation("CrmContactAssignee",  fields: [assigned_to_id], references: [id])
   leads        Lead[]
+  activities   ContactActivity[]
 
   @@index([phone])
   @@index([owner_id])
+  @@index([assigned_to_id])
   @@index([is_converted])
+  @@index([lead_stage])
+  @@index([lead_source])
+  @@index([interested_destination])
   @@index([created_at])
+  @@index([deleted_at])
   @@index([tags])
+}
+
+// ─── Contact activity log ────────────────────────────────────────────────────
+model ContactActivity {
+  id              String              @id @default(cuid())
+  contact_id      String
+  type            ContactActivityType
+  description     String
+  // Optional structured payload (e.g. { from: 'NEW', to: 'CONTACTED' } for stage changes)
+  metadata        Json?
+  performed_by_id String?
+  created_at      DateTime            @default(now())
+
+  contact      CrmContact @relation(fields: [contact_id], references: [id], onDelete: Cascade)
+  performed_by User?      @relation("ContactActivityActor", fields: [performed_by_id], references: [id])
+
+  @@index([contact_id, created_at])
+  @@index([type])
+}
+
+enum TripType {
+  GROUP
+  PRIVATE
+}
+
+enum LeadSource {
+  CTWA
+  META_LEAD_FORM
+  GOOGLE_ADS
+  WEBSITE
+  WALK_IN
+  REFERRAL
+}
+
+enum Platform {
+  FACEBOOK
+  INSTAGRAM
+  GOOGLE
+  YOUTUBE
+  WEBSITE
+  WHATSAPP
+}
+
+enum DevicePlatform {
+  MOBILE
+  DESKTOP
+}
+
+enum LeadStage {
+  NEW
+  CONTACTED
+  FOLLOW_UP
+  HOT
+  CONVERTED
+  LOST
+}
+
+enum ContactActivityType {
+  STAGE_CHANGE
+  ASSIGNMENT_CHANGE
+  WHATSAPP_SENT
+  LEAD_CREATED
+  FIELD_UPDATE
+  CONTACT_DELETED
 }
 
 // ─── Custom contact fields configured in CRM Settings ────────────────────────

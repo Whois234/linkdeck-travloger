@@ -343,7 +343,7 @@ export default function ActivitiesPage() {
                       <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>{r.destination.name}</td>
                       <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>{r.activity_type ?? '—'}</td>
                       <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>{r.duration ?? '—'}</td>
-                      <td className="px-5 py-0 font-semibold" style={{ color: '#0F172A' }}>₹{r.adult_cost.toLocaleString('en-IN')}</td>
+                      <td className="px-5 py-0 font-semibold" style={{ color: '#0F172A' }}>₹{Math.round(r.adult_cost).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
                       <td className="px-5 py-0"><span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold" style={{ backgroundColor: '#DBEAFE', color: '#1D4ED8' }}>{r.rate_type.replace('_', ' ')}</span></td>
                       <td className="px-5 py-0"><span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold" style={r.status ? { backgroundColor: '#DCFCE7', color: '#15803D' } : { backgroundColor: '#F1F5F9', color: '#475569' }}>{r.status ? 'Active' : 'Inactive'}</span></td>
                       <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>Admin</td>

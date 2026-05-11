@@ -64,6 +64,7 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
     where: { public_token: params.token },
     include: {
       assigned_agent: { select: { user_account_id: true, name: true } },
+      lead:           { select: { id: true, crm_contact_id: true } },
     },
   });
   if (!quote) return notFound('Itinerary');
@@ -105,6 +106,14 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
       metadata:   enrichedMeta as Prisma.NullableJsonNullValueInput | Prisma.InputJsonValue,
     },
   });
+
+  // Auto-update the CRM contact's last known city when a viewer event resolves a city
+  if (location?.city && quote.lead?.crm_contact_id) {
+    await prisma.crmContact.update({
+      where: { id: quote.lead.crm_contact_id },
+      data: { last_known_city: location.city, last_seen_at: new Date() },
+    }).catch(() => {});
+  }
 
   // Notification for assigned agent
   if (quote.assigned_agent?.user_account_id) {

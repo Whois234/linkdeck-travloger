@@ -21,7 +21,7 @@ const cardShadow = { boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,
 const lbl = 'block text-[11px] font-semibold uppercase tracking-wider mb-1';
 const lblStyle = { color: '#94A3B8' };
 
-function fmtINR(n: number) { return `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`; }
+function fmtINR(n: number) { return `₹${Math.round(Number(n) || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`; }
 
 interface RoomingJson {
   rooms: { type: string; count: number; adults: number; children_with_bed: number; children_without_bed: number }[];
@@ -1010,7 +1010,7 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
                                   )}
                                   {evt.event_type === 'booking_intent' && !!evt.metadata.total_price && (
                                     <span className="px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ backgroundColor: '#DCFCE7', color: '#15803D' }}>
-                                      ₹{Number(evt.metadata.total_price).toLocaleString('en-IN')}
+                                      ₹{Math.round(Number(evt.metadata.total_price) || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                                     </span>
                                   )}
                                   {/* rating_submitted chips */}
@@ -1035,7 +1035,7 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
                                   )}
                                   {evt.event_type === 'batch_selected' && !!evt.metadata.adult_price && (
                                     <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ backgroundColor: '#F0FDF4', color: '#15803D' }}>
-                                      ₹{Number(evt.metadata.adult_price).toLocaleString('en-IN')} / adult
+                                      ₹{Math.round(Number(evt.metadata.adult_price) || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })} / adult
                                     </span>
                                   )}
                                   {/* package_selected chips */}

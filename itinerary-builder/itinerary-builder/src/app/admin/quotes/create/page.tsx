@@ -917,7 +917,7 @@ export default function CreateQuotePage() {
                               <p className="text-xs text-[#64748B]">{start} → {end}</p>
                             </div>
                             <div className="text-right">
-                              <p className="text-sm font-bold text-[#0F172A]">₹{Number(b.adult_price).toLocaleString('en-IN')}/adult</p>
+                              <p className="text-sm font-bold text-[#0F172A]">₹{Number(Math.round(b.adult_price)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}/adult</p>
                               <p className="text-xs text-[#94A3B8]">{b.available_seats} seats left</p>
                             </div>
                           </div>
@@ -939,7 +939,7 @@ export default function CreateQuotePage() {
             <p className="text-sm font-bold text-[#0F172A] mb-1">Traveller Count</p>
             <p className="text-xs mb-4" style={{ color: '#94A3B8' }}>
               {selectedBatch
-                ? `₹${Number(selectedBatch.adult_price).toLocaleString('en-IN')}/adult · ${adults > 0 ? `Est. total: ₹${(Number(selectedBatch.adult_price) * adults).toLocaleString('en-IN')}` : 'enter count to see total'}`
+                ? `₹${Number(Math.round(selectedBatch.adult_price)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}/adult · ${adults > 0 ? `Est. total: ₹${(Number(selectedBatch.adult_price) * Math.round(adults)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : 'enter count to see total'}`
                 : 'Optional — enter the number of travellers for this booking'}
             </p>
             <div className="grid grid-cols-3 gap-3">
@@ -1021,7 +1021,7 @@ export default function CreateQuotePage() {
                         onChange={e => setOptions(prev => prev.map((o, i) => i === oi ? { ...o, name: e.target.value } : o))}
                         placeholder="Option name…"
                       />
-                      <p className="text-xs text-[#94A3B8]">{optionTotal > 0 ? `Hotel Total: ₹${optionTotal.toLocaleString('en-IN')}` : 'Select hotels to see price'}</p>
+                      <p className="text-xs text-[#94A3B8]">{optionTotal > 0 ? `Hotel Total: ₹${Math.round(optionTotal).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : 'Select hotels to see price'}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1103,10 +1103,10 @@ export default function CreateQuotePage() {
                               <span className="font-semibold">{h.rooms_config.length} rm · {totalPax} pax</span>
                               {h.fetching && <Loader2 className="w-3 h-3 animate-spin text-[#94A3B8]" />}
                               {!h.fetching && h.fetched_price !== null && (
-                                <span className="font-bold" style={{ color: T }}>₹{h.fetched_price.toLocaleString('en-IN')}</span>
+                                <span className="font-bold" style={{ color: T }}>₹{Math.round(h.fetched_price).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
                               )}
                               {!h.fetching && h.fetched_price === null && h.manual_cost !== null && (
-                                <span className="font-bold" style={{ color: '#F59E0B' }}>₹{h.manual_cost.toLocaleString('en-IN')} <span className="font-normal text-[#94A3B8]">(manual)</span></span>
+                                <span className="font-bold" style={{ color: '#F59E0B' }}>₹{Math.round(h.manual_cost).toLocaleString('en-IN', { maximumFractionDigits: 0 })} <span className="font-normal text-[#94A3B8]">(manual)</span></span>
                               )}
                               {!h.fetching && h.fetch_error && h.fetched_price === null && h.manual_cost === null && (
                                 <span className="text-[#EF4444] font-medium">No rate</span>
@@ -1423,7 +1423,7 @@ export default function CreateQuotePage() {
                     {optionTotal > 0 && (
                       <div className="mt-4 p-3 rounded-xl flex items-center justify-between" style={{ backgroundColor: '#F0F9FF', border: `1px solid ${T}30` }}>
                         <span className="text-xs font-bold text-[#64748B]">Hotel B2B Total ({opt.name})</span>
-                        <span className="text-sm font-bold" style={{ color: T }}>₹{optionTotal.toLocaleString('en-IN')}</span>
+                        <span className="text-sm font-bold" style={{ color: T }}>₹{Math.round(optionTotal).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
                   </div>
@@ -1486,7 +1486,7 @@ export default function CreateQuotePage() {
                       <button key={r.id} type="button" onClick={() => setVehicleCost(r.base_cost)}
                         className="text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors"
                         style={vehicleCost === r.base_cost ? { backgroundColor: `${T}15`, borderColor: T, color: T } : { backgroundColor: '#F8FAFC', borderColor: '#E2E8F0', color: '#64748B' }}>
-                        {r.route_name} · {r.duration_days}D · ₹{r.base_cost.toLocaleString('en-IN')}
+                        {r.route_name} · {r.duration_days}D · ₹{Math.round(r.base_cost).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                       </button>
                     ))}
                     {exactRates.length === 0 && <p className="text-xs text-[#94A3B8]">No rates for {durationDays}D — showing others below</p>}
@@ -1498,7 +1498,7 @@ export default function CreateQuotePage() {
                             <button key={r.id} type="button" onClick={() => setVehicleCost(r.base_cost)}
                               className="text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors"
                               style={{ backgroundColor: '#FFF7ED', borderColor: '#FED7AA', color: '#92400E' }}>
-                              {r.route_name} · {r.duration_days}D · ₹{r.base_cost.toLocaleString('en-IN')}
+                              {r.route_name} · {r.duration_days}D · ₹{Math.round(r.base_cost).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                             </button>
                           ))}
                         </div>
@@ -1519,7 +1519,7 @@ export default function CreateQuotePage() {
                     return (
                       <div key={oi} className="flex items-center justify-between text-xs p-2.5 rounded-lg" style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
                         <span className="font-semibold text-[#0F172A]">{opt.name}</span>
-                        <span className="text-[#64748B]">Hotel ₹{hotelTotal.toLocaleString('en-IN')} + Vehicle ₹{vehicleCost.toLocaleString('en-IN')} = <span className="font-bold text-[#0F172A]">₹{(hotelTotal + vehicleCost).toLocaleString('en-IN')}</span></span>
+                        <span className="text-[#64748B]">Hotel ₹{Math.round(hotelTotal).toLocaleString('en-IN', { maximumFractionDigits: 0 })} + Vehicle ₹{Math.round(vehicleCost).toLocaleString('en-IN', { maximumFractionDigits: 0 })} = <span className="font-bold text-[#0F172A]">₹{(hotelTotal + Math.round(vehicleCost)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span></span>
                       </div>
                     );
                   })}
@@ -1615,7 +1615,7 @@ export default function CreateQuotePage() {
             </div>
             {discountValue > 0 && (
               <p className="mt-2 text-xs font-medium" style={{ color: '#DC2626' }}>
-                🏷 {discountType === 'FLAT' ? `₹${discountValue.toLocaleString('en-IN')} off` : `${discountValue}% off`}
+                🏷 {discountType === 'FLAT' ? `₹${Math.round(discountValue).toLocaleString('en-IN', { maximumFractionDigits: 0 })} off` : `${discountValue}% off`}
                 {discountValidTill ? ` · Valid till ${new Date(discountValidTill).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}` : ''}
               </p>
             )}
@@ -1659,7 +1659,7 @@ export default function CreateQuotePage() {
                         return (
                           <td key={oi} className="px-4 py-2.5 text-right font-semibold"
                             style={{ color: (row as {large?: boolean; green?: boolean; red?: boolean}).large ? T : (row as {large?: boolean; green?: boolean; red?: boolean}).green ? '#16a34a' : (row as {large?: boolean; green?: boolean; red?: boolean}).red ? '#DC2626' : '#0F172A', fontSize: (row as {large?: boolean}).large ? 15 : 12, fontWeight: row.bold ? 700 : 500 }}>
-                            {isNeg ? '−' : ''}₹{Math.round(Math.abs(val)).toLocaleString('en-IN')}
+                            {isNeg ? '−' : ''}₹{Math.round(Math.abs(Math.round(val))).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                           </td>
                         );
                       })}
@@ -1680,7 +1680,7 @@ export default function CreateQuotePage() {
                   return (
                     <div key={oi} className="flex-1 p-3 rounded-xl text-center" style={{ backgroundColor: `${T}08`, border: `1px solid ${T}20` }}>
                       <p className="text-[10px] font-bold text-[#64748B]">{opt.name}</p>
-                      <p className="text-lg font-bold mt-1" style={{ color: T }}>₹{Math.round(c.total / adults).toLocaleString('en-IN')}</p>
+                      <p className="text-lg font-bold mt-1" style={{ color: T }}>₹{Math.round(c.total / Math.round(adults)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
                       <p className="text-[10px] text-[#94A3B8]">per adult</p>
                     </div>
                   );
@@ -1731,7 +1731,7 @@ export default function CreateQuotePage() {
                     return (
                       <div key={oi} className="flex-1 p-3 rounded-xl" style={{ backgroundColor: `${T}08`, border: `1px solid ${T}20` }}>
                         <p className="text-[10px] font-bold text-[#64748B]">{opt.name}</p>
-                        <p className="text-base font-bold mt-1" style={{ color: T }}>₹{Math.round(r.final_price).toLocaleString('en-IN')}</p>
+                        <p className="text-base font-bold mt-1" style={{ color: T }}>₹{Math.round(Math.round(r.final_price)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
                       </div>
                     );
                   })}
