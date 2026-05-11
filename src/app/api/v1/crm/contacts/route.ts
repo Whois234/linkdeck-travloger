@@ -3,16 +3,17 @@ import { prisma } from '@/lib/prisma';
 import { getAuthUser } from '@/lib/auth';
 import { ok, created, err, unauthorized } from '@/lib/api-response';
 import { z } from 'zod';
-
-const createSchema = z.object({
-  name:          z.string().trim().min(1, 'Name is required').max(120).transform(stripTags),
-  phone:         z.string().trim().min(7, 'Phone is too short').max(20).regex(/^[0-9+\-\s()]+$/, 'Phone has invalid characters'),
-  email:         z.string().trim().email().toLowerCase().nullable().optional().or(z.literal('').transform(() => null)),
-  source:        z.string().trim().max(60).transform(stripTags).nullable().optional(),
-  notes:         z.string().trim().max(2000).transform(stripTags).nullable().optional(),
-  tags:          z.array(z.string().trim().min(1).max(40)).max(20).optional(),
-  custom_fields: z.record(z.unknown()).optional().nullable(),
-});
+import {
+  createContact,
+  DuplicatePhoneError,
+} from '@/lib/contacts/service';
+import {
+  LeadStage,
+  LeadSource,
+  Platform,
+  TripType,
+  DevicePlatform,
+} from '@prisma/client';
 
 // Light-weight sanitisation. We don't render user-supplied content as HTML
 // anywhere in the admin, but we strip tags/<script> on the way in as defense
@@ -24,6 +25,51 @@ function stripTags(v: string | null | undefined): string {
     .replace(/<[^>]+>/g, '')
     .trim();
 }
+
+const optionalString = (max: number) =>
+  z.string().trim().max(max).transform(stripTags).nullable().optional().or(z.literal('').transform(() => null));
+
+const createSchema = z.object({
+  // Basic
+  name:          z.string().trim().min(1, 'Name is required').max(120).transform(stripTags),
+  phone:         z.string().trim().min(7, 'Phone is too short').max(20).regex(/^[0-9+\-\s()]+$/, 'Phone has invalid characters'),
+  email:         z.string().trim().email().toLowerCase().nullable().optional().or(z.literal('').transform(() => null)),
+  city:          optionalString(80),
+
+  // Travel interest
+  interested_destination: optionalString(120),
+  number_of_travellers:   z.number().int().min(1).max(999).nullable().optional(),
+  trip_type:              z.nativeEnum(TripType).nullable().optional(),
+  special_requirements:   optionalString(2000),
+  budget_per_person:      z.union([z.number(), z.string()]).nullable().optional(),
+
+  // Lead source & ad attribution
+  lead_source:         z.nativeEnum(LeadSource).nullable().optional(),
+  platform:            z.nativeEnum(Platform).nullable().optional(),
+  campaign_name:       optionalString(200),
+  ad_set_name:         optionalString(200),
+  ad_name:             optionalString(200),
+  other_ad_details:    z.record(z.unknown()).nullable().optional(),
+  device_platform:     z.nativeEnum(DevicePlatform).nullable().optional(),
+  facebook_click_id:   optionalString(200),
+  facebook_browser_id: optionalString(200),
+  google_click_id:     optionalString(200),
+  platform_lead_id:    optionalString(200),
+  gallabox_contact_id: optionalString(200),
+
+  // CRM
+  lead_stage:      z.nativeEnum(LeadStage).optional(),
+  assigned_to_id:  z.string().nullable().optional(),
+  follow_up_date:  z.union([z.string(), z.null()]).optional(),
+  booking_value:   z.union([z.number(), z.string()]).nullable().optional(),
+  tags:            z.array(z.string().trim().min(1).max(40)).max(20).optional(),
+  do_not_contact:  z.boolean().optional(),
+
+  // Legacy compat
+  source:        optionalString(60),
+  notes:         optionalString(2000),
+  custom_fields: z.record(z.unknown()).optional().nullable(),
+});
 
 function buildDateFilter(dateRange: string | null, from: string | null, to: string | null) {
   const now = new Date();
@@ -59,21 +105,35 @@ export async function GET(req: NextRequest) {
   if (!user) return unauthorized();
 
   const { searchParams } = new URL(req.url);
-  const search    = searchParams.get('search') ?? '';
-  const converted = searchParams.get('converted');
-  const dateRange = searchParams.get('date_range');
-  const dateFrom  = searchParams.get('date_from');
-  const dateTo    = searchParams.get('date_to');
-  const tagsParam = searchParams.get('tags'); // comma-separated tag names; contact must have ALL of them
-  const sortBy    = searchParams.get('sort') ?? 'newest';
-  const page      = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10));
-  const limit     = Math.min(200, Math.max(1, parseInt(searchParams.get('limit') ?? String(PAGE_LIMIT), 10)));
+  const search        = searchParams.get('search') ?? '';
+  const converted     = searchParams.get('converted');
+  const dateRange     = searchParams.get('date_range');
+  const dateFrom      = searchParams.get('date_from');
+  const dateTo        = searchParams.get('date_to');
+  const tagsParam     = searchParams.get('tags'); // comma-separated; contact must have ALL
+  const sortBy        = searchParams.get('sort') ?? 'newest';
+  const page          = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10));
+  const limit         = Math.min(200, Math.max(1, parseInt(searchParams.get('limit') ?? String(PAGE_LIMIT), 10)));
+
+  // New filters (Part 3 spec)
+  const leadStage     = searchParams.get('lead_stage');     // single value or comma-separated
+  const leadSource    = searchParams.get('lead_source');
+  const assignedToId  = searchParams.get('assigned_to_id'); // 'unassigned' = IS NULL
+  const destination   = searchParams.get('interested_destination');
+  const tripType      = searchParams.get('trip_type');
+  const doNotContact  = searchParams.get('do_not_contact'); // 'true' | 'false'
+  const includeDeleted = searchParams.get('include_deleted') === 'true';
 
   const dateFilter = buildDateFilter(dateRange, dateFrom, dateTo);
+  const tagList    = tagsParam ? tagsParam.split(',').map(t => t.trim()).filter(Boolean) : [];
 
-  const tagList = tagsParam ? tagsParam.split(',').map(t => t.trim()).filter(Boolean) : [];
+  const enumList = (v: string | null) => v ? v.split(',').map(s => s.trim()).filter(Boolean) : [];
+  const stageList  = enumList(leadStage);
+  const sourceList = enumList(leadSource);
+  const typeList   = enumList(tripType);
 
   const where = {
+    ...(includeDeleted ? {} : { deleted_at: null }),
     ...(search ? {
       OR: [
         { name:  { contains: search, mode: 'insensitive' as const } },
@@ -85,18 +145,34 @@ export async function GET(req: NextRequest) {
     ...(converted === 'false' ? { is_converted: false } : {}),
     ...(dateFilter ? { created_at: dateFilter } : {}),
     ...(tagList.length ? { tags: { hasEvery: tagList } } : {}),
+    ...(stageList.length  ? { lead_stage:  { in: stageList  as LeadStage[]  } } : {}),
+    ...(sourceList.length ? { lead_source: { in: sourceList as LeadSource[] } } : {}),
+    ...(typeList.length   ? { trip_type:   { in: typeList   as TripType[]   } } : {}),
+    ...(assignedToId === 'unassigned' ? { assigned_to_id: null }
+       : assignedToId                  ? { assigned_to_id: assignedToId }
+       : {}),
+    ...(destination ? { interested_destination: { contains: destination, mode: 'insensitive' as const } } : {}),
+    ...(doNotContact === 'true'  ? { do_not_contact: true  } : {}),
+    ...(doNotContact === 'false' ? { do_not_contact: false } : {}),
   };
 
-  const orderBy = sortBy === 'oldest' ? { created_at: 'asc' as const }
-                : sortBy === 'name'   ? { name: 'asc' as const }
-                :                       { created_at: 'desc' as const };
+  // Sort
+  const orderBy =
+    sortBy === 'oldest'           ? { created_at: 'asc'  as const } :
+    sortBy === 'name'             ? { name:       'asc'  as const } :
+    sortBy === 'follow_up_asc'    ? { follow_up_date: 'asc'  as const } :
+    sortBy === 'follow_up_desc'   ? { follow_up_date: 'desc' as const } :
+    sortBy === 'booking_value_desc' ? { booking_value: 'desc' as const } :
+    sortBy === 'booking_value_asc'  ? { booking_value: 'asc'  as const } :
+                                    { created_at: 'desc' as const };
 
   const [total, contacts] = await Promise.all([
     prisma.crmContact.count({ where }),
     prisma.crmContact.findMany({
       where,
       include: {
-        owner: { select: { id: true, name: true, email: true } },
+        owner:       { select: { id: true, name: true, email: true } },
+        assigned_to: { select: { id: true, name: true, email: true } },
         leads: {
           select: {
             id: true,
@@ -115,7 +191,17 @@ export async function GET(req: NextRequest) {
     }),
   ]);
 
-  return ok({ items: contacts, total, page, limit, pages: Math.ceil(total / limit) });
+  // Both naming conventions for backward + spec compat.
+  return ok({
+    items: contacts,
+    contacts,
+    total,
+    totalCount: total,
+    page,
+    limit,
+    pages: Math.ceil(total / limit),
+    totalPages: Math.ceil(total / limit),
+  });
 }
 
 export async function POST(req: NextRequest) {
@@ -128,6 +214,8 @@ export async function POST(req: NextRequest) {
 
   const normalizedPhone = parsed.data.phone.replace(/[\s\-\(\)]/g, '');
 
+  // Duplicate-phone pre-check so we can record the attempt (audit trail).
+  // The service ALSO checks, so this is just for the duplicate-attempts log.
   const existing = await prisma.crmContact.findUnique({ where: { phone: normalizedPhone } });
   if (existing) {
     const ownerUser = await prisma.user.findUnique({ where: { id: existing.owner_id }, select: { name: true } });
@@ -138,18 +226,20 @@ export async function POST(req: NextRequest) {
     return err(`This contact already exists and is owned by ${ownerName}.`, 409);
   }
 
-  const contact = await prisma.crmContact.create({
-    data: {
-      name:          parsed.data.name,
-      phone:         normalizedPhone,
-      email:         parsed.data.email ?? null,
-      source:        parsed.data.source ?? null,
-      notes:         parsed.data.notes ?? null,
-      owner_id:      user.sub,
-      tags:          parsed.data.tags ?? [],
-      custom_fields: (parsed.data.custom_fields ?? undefined) as object | undefined,
-    },
-  });
-
-  return created(contact);
+  try {
+    const contact = await createContact(
+      {
+        ...parsed.data,
+        phone:    normalizedPhone,
+        owner_id: user.sub,
+      },
+      user.sub,
+    );
+    return created(contact);
+  } catch (e) {
+    if (e instanceof DuplicatePhoneError) return err(e.message, 409);
+    console.error('[contacts/POST]', e);
+    const msg = e instanceof Error ? e.message : 'Create failed';
+    return err(`Could not create contact: ${msg}`, 500);
+  }
 }
