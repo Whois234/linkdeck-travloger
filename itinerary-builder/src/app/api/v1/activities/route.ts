@@ -35,6 +35,7 @@ export async function GET(req: NextRequest) {
     where: { status: true, ...(destination_id ? { destination_id } : {}) },
     include: { destination: { select: { name: true } } },
     orderBy: { activity_name: 'asc' },
+    take: 500,
   });
   return ok(activities);
 }

@@ -428,6 +428,7 @@ model VehiclePackageRate {
 
   @@index([state_id])
   @@index([vehicle_type_id])
+  @@index([supplier_id])
   @@index([status])
 }
 
@@ -481,6 +482,7 @@ model Activity {
   supplier       Supplier?        @relation(fields: [supplier_id], references: [id])
 
   @@index([destination_id])
+  @@index([supplier_id])
   @@index([status])
 }
 
@@ -752,6 +754,7 @@ model GroupBatch {
   assigned_agent      Agent?           @relation(fields: [assigned_agent_id], references: [id])
 
   @@index([group_template_id])
+  @@index([assigned_agent_id])
   @@index([booking_status])
   @@index([start_date])
   @@index([status])
@@ -868,6 +871,8 @@ model Quote {
   @@index([quote_type])
   @@index([status])
   @@index([customer_id])
+  @@index([lead_id])
+  @@index([state_id])
   @@index([assigned_agent_id])
   @@index([public_token])
   @@index([created_at])
@@ -908,6 +913,7 @@ model QuoteOption {
   option_hotels           QuoteOptionHotel[]
 
   @@index([quote_id])
+  @@index([vehicle_type_id])
   @@index([is_most_popular])
 }
 

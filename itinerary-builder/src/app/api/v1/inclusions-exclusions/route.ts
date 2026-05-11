@@ -29,6 +29,7 @@ export async function GET(req: NextRequest) {
       ...(destination_id ? { destination_id } : {}),
     },
     orderBy: [{ type: 'asc' }, { category: 'asc' }],
+    take: 500,
   });
   return ok(records);
 }

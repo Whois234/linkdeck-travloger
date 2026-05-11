@@ -34,6 +34,7 @@ export async function GET(req: NextRequest) {
   const suppliers = await prisma.supplier.findMany({
     where: { status: true, ...(type ? { supplier_type: type } : {}) },
     orderBy: { name: 'asc' },
+    take: 500,
   });
   return ok(suppliers);
 }

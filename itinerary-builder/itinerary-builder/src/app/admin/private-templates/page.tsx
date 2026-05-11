@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Image from 'next/image';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
 import MultiStateSelect from '@/components/MultiStateSelect';
@@ -487,8 +488,7 @@ function PrivateTemplatesPageInner() {
                 </div>
                 <div className="aspect-video bg-gradient-to-br from-[#134956]/10 to-[#134956]/20 relative overflow-hidden">
                   {r.hero_image ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={r.hero_image} alt={r.template_name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                    <Image src={r.hero_image} alt={r.template_name} fill className="object-cover group-hover:scale-105 transition-transform duration-300" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
                       <Map className="w-8 h-8" style={{ color: T, opacity: 0.3 }} />

@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
 import { Plus, Search, Star, ChevronRight, Building2, LayoutGrid, List, ArrowUpDown, Trash2, SlidersHorizontal, X, AlertTriangle, MapPin } from 'lucide-react';
@@ -664,8 +665,7 @@ function HotelGrid({
             <div className="cursor-pointer" onClick={()=>onSelect(h.id)}>
               <div className="aspect-video bg-[#F1F5F9] relative overflow-hidden">
                 {hero ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={hero} alt={h.hotel_name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                  <Image src={hero} alt={h.hotel_name} fill className="object-cover group-hover:scale-105 transition-transform duration-300" />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center"><Building2 className="w-8 h-8 text-[#CBD5E1]" /></div>
                 )}

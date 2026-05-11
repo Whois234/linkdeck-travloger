@@ -50,6 +50,7 @@ export async function GET(req: NextRequest) {
       template_hotel_tiers: { orderBy: [{ tier_name: 'asc' }, { sort_order: 'asc' }] },
     },
     orderBy: { created_at: 'desc' },
+    take: 200,
   });
   return ok(templates);
 }

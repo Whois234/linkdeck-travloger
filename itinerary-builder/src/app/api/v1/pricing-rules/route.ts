@@ -20,7 +20,7 @@ const Schema = z.object({
 export async function GET(req: NextRequest) {
   const user = await getAuthUser(req);
   if (!user) return unauthorized();
-  const rules = await prisma.pricingRule.findMany({ where: { status: true }, orderBy: { rule_name: 'asc' } });
+  const rules = await prisma.pricingRule.findMany({ where: { status: true }, orderBy: { rule_name: 'asc' }, take: 500 });
   return ok(rules);
 }
 

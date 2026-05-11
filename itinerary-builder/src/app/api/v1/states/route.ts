@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
 
   // Use cache for the common active-only case; fall back to direct query for status filters
   const states = status !== null
-    ? await prisma.state.findMany({ where: { status: status === 'true' }, orderBy: { name: 'asc' } })
+    ? await prisma.state.findMany({ where: { status: status === 'true' }, orderBy: { name: 'asc' }, take: 200 })
     : await getCachedStates();
   return ok(states);
 }

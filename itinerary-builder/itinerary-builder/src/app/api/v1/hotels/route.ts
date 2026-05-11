@@ -62,6 +62,7 @@ export async function GET(req: NextRequest) {
       room_categories: { where: { status: true } },
     },
     orderBy: { hotel_name: 'asc' },
+    take: 500,
   });
   return ok(hotels);
 }
