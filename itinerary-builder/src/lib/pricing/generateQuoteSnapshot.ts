@@ -283,6 +283,8 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     group_trip_dates:      Array.isArray((groupCms as any)?.trip_dates) ? (groupCms as any).trip_dates : [],
     day_snapshots:         enrichedDaySnapshots,
+    // Whether to show destination cards on the itinerary page (template toggle)
+    show_destination_cards: (templateCmsData as any)?.show_destination_cards !== false,
     // Destination cards from template CMS — resolved with name + hero fallback
     destination_cards: (() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
