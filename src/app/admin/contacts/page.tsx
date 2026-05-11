@@ -10,6 +10,14 @@ import {
   Save, User, Trash2, Tag as TagIcon, Check, Download, Filter as FilterIcon,
 } from 'lucide-react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
+import type { ContactFormValue } from './ContactFormModal';
+
+// Lazy-load the full Add/Edit modal — heavy form, not needed on first paint.
+const ContactFormModal = dynamic(() => import('./ContactFormModal'), {
+  ssr: false,
+  loading: () => null,
+});
 
 interface Stage    { id: string; name: string; color: string }
 interface Pipeline { id: string; name: string }
@@ -91,6 +99,44 @@ function fmtDateTime(d: string) {
 
 function fmtDate(d: string) {
   return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+// Translate a Contact (API row) into the modal's flat form value shape.
+function contactToFormValue(c: Contact): Partial<ContactFormValue> {
+  type OtherAd = {
+    keyword?: string; utm_source?: string; utm_medium?: string; utm_campaign?: string;
+    utm_term?: string; utm_content?: string; landing_page?: string;
+  };
+  const other = (c.custom_fields as unknown as OtherAd) ?? {};
+  return {
+    id:                     c.id,
+    name:                   c.name ?? '',
+    phone:                  c.phone ?? '',
+    email:                  c.email ?? '',
+    city:                   c.city ?? '',
+    interested_destination: c.interested_destination ?? '',
+    number_of_travellers:   c.number_of_travellers != null ? String(c.number_of_travellers) : '',
+    trip_type:              (c.trip_type ?? '') as ContactFormValue['trip_type'],
+    special_requirements:   c.special_requirements ?? '',
+    budget_per_person:      c.budget_per_person != null ? String(c.budget_per_person) : '',
+    lead_source:            (c.lead_source ?? '') as ContactFormValue['lead_source'],
+    lead_stage:             c.lead_stage,
+    assigned_to_id:         c.assigned_to_id ?? '',
+    follow_up_date:         c.follow_up_date ? c.follow_up_date.slice(0, 10) : '',
+    tags:                   c.tags ?? [],
+    do_not_contact:         c.do_not_contact ?? false,
+    booking_value:          c.booking_value != null ? String(c.booking_value) : '',
+    other_keyword:          other.keyword      ?? '',
+    other_utm_source:       other.utm_source   ?? '',
+    other_utm_medium:       other.utm_medium   ?? '',
+    other_utm_campaign:     other.utm_campaign ?? '',
+    other_utm_term:         other.utm_term     ?? '',
+    other_utm_content:      other.utm_content  ?? '',
+    other_landing_page:     other.landing_page ?? '',
+    created_at:             c.created_at,
+    closed_date:            c.closed_date,
+    is_converted:           c.is_converted,
+  };
 }
 
 function fmtINR(v: string | number | null | undefined): string {
@@ -562,6 +608,7 @@ export default function ContactsPage() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [selected, setSelected]   = useState<Contact | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [editing,    setEditing]    = useState<Contact | null>(null);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [page, setPage]           = useState(1);
   const [allTags, setAllTags]     = useState<ContactTag[]>([]);
@@ -1108,15 +1155,17 @@ export default function ContactsPage() {
                         {/* Actions */}
                         <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center gap-1">
-                            <Link href={`/admin/contacts/${c.id}`}
+                            <button onClick={() => setEditing(c)}
                               className="w-7 h-7 rounded-md flex items-center justify-center transition-colors hover:bg-[#F1F5F9]"
-                              style={{ color: '#64748B' }} title="View / Edit">
+                              style={{ color: '#64748B' }} title="Edit">
                               <Edit2 className="w-3.5 h-3.5" />
-                            </Link>
+                            </button>
                             <button onClick={async () => {
                               if (!confirm(`Delete contact "${c.name}"? This soft-deletes — can be restored from the database.`)) return;
-                              await fetch(`/api/v1/crm/contacts/${c.id}`, { method: 'DELETE' });
-                              qc.invalidateQueries({ queryKey: QK.contacts(contactParams.toString()) });
+                              const res = await fetch(`/api/v1/crm/contacts/${c.id}`, { method: 'DELETE' });
+                              if (res.ok) {
+                                qc.invalidateQueries({ queryKey: QK.contacts(contactParams.toString()) });
+                              }
                             }}
                               className="w-7 h-7 rounded-md flex items-center justify-center transition-colors hover:bg-[#FEF2F2]"
                               style={{ color: '#94A3B8' }} title="Delete">
@@ -1262,7 +1311,19 @@ export default function ContactsPage() {
       )}
 
       {/* Modals & panels */}
-      {showCreate && <CreateContactModal onClose={() => setShowCreate(false)} onCreated={() => qc.invalidateQueries({ queryKey: QK.contacts(contactParams.toString()) })} />}
+      <ContactFormModal
+        open={showCreate || !!editing}
+        mode={editing ? 'edit' : 'create'}
+        initial={editing ? contactToFormValue(editing) : undefined}
+        users={users}
+        tags={allTags}
+        onClose={() => { setShowCreate(false); setEditing(null); }}
+        onSaved={() => {
+          qc.invalidateQueries({ queryKey: QK.contacts(contactParams.toString()) });
+          setShowCreate(false);
+          setEditing(null);
+        }}
+      />
       {selected && <ContactPanel contact={selected} users={users} allTags={allTags} onClose={() => setSelected(null)} onUpdated={() => qc.invalidateQueries({ queryKey: QK.contacts(contactParams.toString()) })} />}
     </div>
   );
