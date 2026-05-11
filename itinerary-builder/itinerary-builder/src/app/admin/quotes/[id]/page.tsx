@@ -108,6 +108,44 @@ function OptionPricingCard({
   // Keep last non-zero GST % so toggling back restores it
   const lastGstRef = useState(() => opt.gst_percent > 0 ? opt.gst_percent : 5)[0];
 
+  /* ── Profit editor ── */
+  const [editingProfit, setEditingProfit]   = useState(false);
+  const [profitTypeInput, setProfitTypeInput] = useState<'PERCENTAGE' | 'FLAT'>(opt.profit_type as 'PERCENTAGE' | 'FLAT');
+  const [profitValueInput, setProfitValueInput] = useState(String(opt.profit_value));
+  const [savingProfit, setSavingProfit]     = useState(false);
+
+  // Live preview for profit editor
+  const pvProfitVal  = Math.max(0, Number(profitValueInput) || 0);
+  const pvProfitAmt  = profitTypeInput === 'PERCENTAGE' ? opt.base_cost * pvProfitVal / 100 : pvProfitVal;
+  const pvBGST       = Math.max(0, opt.base_cost + pvProfitAmt - opt.discount_amount);
+  const pvGST        = pvBGST * opt.gst_percent / 100;
+  const pvFinal      = pvBGST + pvGST;
+  const pvPerAdult   = adults > 0 ? pvFinal / adults : 0;
+
+  async function applyProfit() {
+    setSavingProfit(true); setSaveMsg(null);
+    try {
+      const res = await fetch(`/api/v1/quotes/${quoteId}/options/${opt.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profit_type: profitTypeInput, profit_value: pvProfitVal }),
+      });
+      if (res.ok) {
+        setSaveMsg({ ok: true, text: 'Profit updated & republished.' });
+        setEditingProfit(false);
+        onUpdated();
+      } else {
+        const d = await res.json();
+        setSaveMsg({ ok: false, text: d.error ?? 'Failed to update profit.' });
+      }
+    } catch {
+      setSaveMsg({ ok: false, text: 'Network error.' });
+    } finally {
+      setSavingProfit(false);
+      setTimeout(() => setSaveMsg(null), 4000);
+    }
+  }
+
   async function toggleGst() {
     setTogglingGst(true); setSaveMsg(null);
     const newGst = opt.gst_percent > 0 ? 0 : lastGstRef;
@@ -288,12 +326,90 @@ function OptionPricingCard({
                 <span className="text-xs font-semibold" style={{ color: '#475569' }}>B2B Total</span>
                 <span className="text-xs font-semibold" style={{ color: '#0F172A' }}>{fmtINR(opt.base_cost)}</span>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="flex items-center gap-1.5 text-xs" style={{ color: '#475569' }}>
-                  <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
-                  Profit ({opt.profit_type === 'PERCENTAGE' ? `${opt.profit_value}%` : 'flat'})
-                </span>
-                <span className="text-xs font-semibold" style={{ color: '#15803D' }}>+{fmtINR(opt.profit_amount)}</span>
+              {/* ── Profit row with inline editor ─────────────────── */}
+              <div className="rounded-lg p-2.5" style={{ backgroundColor: '#F0FDF4', border: '1px solid #86EFAC' }}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: '#15803D' }}>
+                    <TrendingUp className="w-3.5 h-3.5" />
+                    Profit
+                  </span>
+                  {!editingProfit ? (
+                    <button
+                      onClick={() => {
+                        setProfitTypeInput(opt.profit_type as 'PERCENTAGE' | 'FLAT');
+                        setProfitValueInput(String(opt.profit_value));
+                        setEditingProfit(true);
+                      }}
+                      className="text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors hover:bg-green-100"
+                      style={{ color: '#15803D', border: '1px solid #86EFAC' }}>
+                      Edit
+                    </button>
+                  ) : (
+                    <button onClick={() => setEditingProfit(false)} className="text-[10px]" style={{ color: '#94A3B8' }}>Cancel</button>
+                  )}
+                </div>
+
+                {editingProfit ? (
+                  <div className="space-y-2 mt-1">
+                    {/* Type toggle */}
+                    <div className="flex gap-1">
+                      {(['PERCENTAGE', 'FLAT'] as const).map(t => (
+                        <button key={t} type="button"
+                          onClick={() => setProfitTypeInput(t)}
+                          className="flex-1 h-7 rounded-lg text-[11px] font-bold transition-all"
+                          style={profitTypeInput === t
+                            ? { backgroundColor: '#15803D', color: 'white' }
+                            : { backgroundColor: '#F0FDF4', color: '#64748B', border: '1px solid #86EFAC' }}>
+                          {t === 'PERCENTAGE' ? '% Margin' : '₹ Flat'}
+                        </button>
+                      ))}
+                    </div>
+                    {/* Value input */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold" style={{ color: '#64748B' }}>
+                        {profitTypeInput === 'PERCENTAGE' ? '%' : '₹'}
+                      </span>
+                      <input
+                        type="number" min="0" step={profitTypeInput === 'PERCENTAGE' ? 1 : 100}
+                        value={profitValueInput}
+                        onChange={e => setProfitValueInput(e.target.value)}
+                        className="flex-1 text-sm font-bold rounded-lg px-2 py-1.5 outline-none"
+                        style={{ border: '1px solid #86EFAC', color: '#15803D', backgroundColor: 'white' }}
+                        placeholder="0"
+                      />
+                    </div>
+                    {/* Live preview */}
+                    <div className="text-[10px] space-y-0.5 px-1" style={{ color: '#64748B' }}>
+                      <div className="flex justify-between">
+                        <span>Profit amount</span>
+                        <span className="font-bold" style={{ color: '#15803D' }}>+{fmtINR(pvProfitAmt)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>New final price</span>
+                        <span className="font-bold" style={{ color: T }}>{fmtINR(pvFinal)}</span>
+                      </div>
+                      {adults > 0 && (
+                        <div className="flex justify-between">
+                          <span>Per adult</span>
+                          <span className="font-semibold">{fmtINR(pvPerAdult)}</span>
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={applyProfit} disabled={savingProfit}
+                      className="w-full py-1.5 rounded-lg text-xs font-bold text-white disabled:opacity-60 transition-opacity hover:opacity-90"
+                      style={{ backgroundColor: '#15803D' }}>
+                      {savingProfit ? 'Applying…' : 'Apply Profit & Republish'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs" style={{ color: '#15803D' }}>
+                      {opt.profit_type === 'PERCENTAGE' ? `${opt.profit_value}%` : `₹${opt.profit_value} flat`}
+                    </span>
+                    <span className="text-xs font-bold" style={{ color: '#15803D' }}>+{fmtINR(opt.profit_amount)}</span>
+                  </div>
+                )}
               </div>
 
               {/* ── Discount row with inline editor ───────────────── */}

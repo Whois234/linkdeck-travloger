@@ -17,6 +17,8 @@ const PatchSchema = z.object({
   discount_amount:     z.number().min(0).optional(),
   discount_expires_at: z.string().datetime().nullable().optional(),
   gst_percent:         z.number().min(0).max(100).optional(),
+  profit_type:         z.enum(['PERCENTAGE', 'FLAT']).optional(),
+  profit_value:        z.number().min(0).optional(),
 });
 
 export async function PATCH(
@@ -41,6 +43,8 @@ export async function PATCH(
     discount_amount     = option.discount_amount,
     discount_expires_at,
     gst_percent         = option.gst_percent,
+    profit_type         = option.profit_type,
+    profit_value        = option.profit_value,
   } = parsed.data;
 
   const pricing = calculateQuoteOption({
@@ -49,8 +53,8 @@ export async function PATCH(
     activity_cost: option.activity_cost,
     transfer_cost: option.transfer_cost,
     misc_cost:     option.misc_cost,
-    profit_type:   option.profit_type,
-    profit_value:  option.profit_value,
+    profit_type,
+    profit_value,
     discount_amount,
     gst_percent,
     rounding_rule: RoundingRule.NONE,
@@ -65,6 +69,9 @@ export async function PATCH(
   const updated = await prisma.quoteOption.update({
     where: { id: params.optionId },
     data: {
+      profit_type:          profit_type,
+      profit_value:         profit_value,
+      profit_amount:        pricing.profit_amount,
       gst_percent:          gst_percent,
       discount_amount:      pricing.discount_amount,
       discount_expires_at:  newExpiresAt,
