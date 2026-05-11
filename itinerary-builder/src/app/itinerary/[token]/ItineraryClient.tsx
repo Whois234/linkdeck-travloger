@@ -12,6 +12,7 @@ interface OptionHotel {
   check_in_date: string;
   check_out_date: string;
   nights: number;
+  meal_overrides?: Record<string, { breakfast?: boolean; lunch?: boolean; dinner?: boolean }> | null;
 }
 
 interface QuoteOption {
@@ -838,43 +839,52 @@ function DayGallery({ images, title }: { images: string[]; title: string }) {
 type MealType = 'breakfast' | 'lunch' | 'dinner';
 
 function getMealsForDay(day: DaySnapshot, optionHotels: OptionHotel[]): MealType[] {
-  const hotel = optionHotels.find(oh => oh.destination_id === day.destination_id);
-  if (!hotel || !hotel.meal_plan) return [];
+  // Normalize to YYYY-MM-DD for safe string comparison across all date formats
+  const dayDate = day.date.slice(0, 10);
+  const mealSet = new Set<MealType>();
 
-  const code   = hotel.meal_plan.code.toUpperCase().trim();
-  const dayD   = day.date;
-  const cin    = hotel.check_in_date;
-  const cout   = hotel.check_out_date;
+  for (const hotel of optionHotels) {
+    // Match by DATE RANGE (not destination_id) — a travel day may have a different
+    // destination_id than the hotel's destination but the guest still stays there.
+    const cin  = hotel.check_in_date.slice(0, 10);
+    const cout = hotel.check_out_date.slice(0, 10);
+    if (dayDate < cin || dayDate > cout) continue;
 
-  // Day must be within hotel stay window
-  if (dayD < cin || dayD > cout) return [];
+    // Manual overrides take full priority for this date
+    const override = hotel.meal_overrides?.[dayDate];
+    if (override !== undefined) {
+      if (override.breakfast) mealSet.add('breakfast');
+      if (override.lunch)     mealSet.add('lunch');
+      if (override.dinner)    mealSet.add('dinner');
+      continue; // skip auto-compute for this hotel
+    }
 
-  const isIn  = dayD === cin;
-  const isOut = dayD === cout;
+    const code  = hotel.meal_plan?.code?.toUpperCase().trim() ?? '';
+    if (!code || code === 'EP' || code === 'RO') continue;
 
-  // EP / RO — room only, no meals
-  if (code === 'EP' || code === 'RO') return [];
+    const isIn  = dayDate === cin;
+    const isOut = dayDate === cout;
 
-  // CP / BB — breakfast only (not on check-in day since guest arrives post-breakfast)
-  if (code === 'CP' || code === 'BB' || code === 'B&B') {
-    return isIn ? [] : ['breakfast'];
+    if (code === 'CP' || code === 'BB' || code === 'B&B') {
+      // Breakfast only; not on check-in day (guest arrives after breakfast)
+      if (!isIn) mealSet.add('breakfast');
+    } else if (code === 'HB' || code === 'MAP') {
+      if (isIn)       { mealSet.add('dinner'); }
+      else if (isOut) { mealSet.add('breakfast'); }
+      else            { mealSet.add('breakfast'); mealSet.add('dinner'); }
+    } else if (code === 'FB' || code === 'AP' || code === 'AI' || code === 'ALL') {
+      if (isIn)       { mealSet.add('dinner'); }
+      else if (isOut) { mealSet.add('breakfast'); mealSet.add('lunch'); }
+      else            { mealSet.add('breakfast'); mealSet.add('lunch'); mealSet.add('dinner'); }
+    }
   }
 
-  // HB / MAP — half board: breakfast + dinner
-  if (code === 'HB' || code === 'MAP') {
-    if (isIn)  return ['dinner'];
-    if (isOut) return ['breakfast'];
-    return ['breakfast', 'dinner'];
-  }
-
-  // FB / AP / AI — full board / all-inclusive: all meals
-  if (code === 'FB' || code === 'AP' || code === 'AI' || code === 'ALL') {
-    if (isIn)  return ['dinner'];
-    if (isOut) return ['breakfast', 'lunch'];
-    return ['breakfast', 'lunch', 'dinner'];
-  }
-
-  return [];
+  // Return in canonical order
+  const result: MealType[] = [];
+  if (mealSet.has('breakfast')) result.push('breakfast');
+  if (mealSet.has('lunch'))     result.push('lunch');
+  if (mealSet.has('dinner'))    result.push('dinner');
+  return result;
 }
 
 /* ─────────────────────────── Meal Chips ─────────────────────────── */

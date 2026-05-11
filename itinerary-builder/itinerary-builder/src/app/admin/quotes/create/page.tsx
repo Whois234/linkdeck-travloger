@@ -33,6 +33,8 @@ interface Dest         { id: string; name: string }
 
 interface RoomConfig { pax: number }
 
+interface MealOverrideDay { breakfast: boolean; lunch: boolean; dinner: boolean }
+
 interface HotelRow {
   destination_id: string;
   hotel_id: string;
@@ -50,6 +52,7 @@ interface HotelRow {
   fetching: boolean;
   fetch_error: string | null;   // error message from rate lookup
   manual_cost: number | null;   // agent-entered fallback when no rate exists
+  meal_overrides: Record<string, MealOverrideDay>; // date → B/L/D override; empty = auto
 }
 
 interface OptionDraft {
@@ -123,6 +126,9 @@ export default function CreateQuotePage() {
   /* ─── Step 3 drag state ─── */
   const dragRef = useRef<{ field: number; fromIndex: number } | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<{ field: number; index: number } | null>(null);
+
+  /* ─── Step 3 meal-override expand state (key = `${oi}-${hi}`) ─── */
+  const [expandedMealRows, setExpandedMealRows] = useState<Set<string>>(new Set());
 
   /* ─── Step 4 ─── */
   const [vehicleTypeId, setVehicleTypeId] = useState('');
@@ -255,6 +261,7 @@ export default function CreateQuotePage() {
           fetching: false,
           fetch_error: null,
           manual_cost: null,
+          meal_overrides: {},
         };
       });
 
@@ -295,6 +302,19 @@ export default function CreateQuotePage() {
     const closest = vehRates.filter(r => r.vehicle_type_id === vtId)
       .sort((a, b) => Math.abs(a.duration_days - durationDays) - Math.abs(b.duration_days - durationDays));
     setVehicleCost(closest[0]?.base_cost ?? 0);
+  }
+
+  /* ─── Helper: all dates in a hotel stay (check-in inclusive, check-out exclusive) ─── */
+  function getDatesInRange(checkIn: string, checkOut: string): string[] {
+    if (!checkIn || !checkOut) return [];
+    const dates: string[] = [];
+    let cur = new Date(checkIn).getTime();
+    const end = new Date(checkOut).getTime();
+    while (cur < end) {
+      dates.push(new Date(cur).toISOString().slice(0, 10));
+      cur += 86400000;
+    }
+    return dates;
   }
 
   /* ─── Fetch & cache hotel rates when a hotel is selected ─── */
@@ -468,7 +488,10 @@ export default function CreateQuotePage() {
             meal_plan_id: h.meal_plan_id,
             check_in_date: new Date(h.check_in_date).toISOString(),
             check_out_date: new Date(h.check_out_date).toISOString(),
-            rooming_json: { rooms: h.rooms_config.map((rc, ri) => ({ type: 'Double', count: 1, room_number: ri + 1, adults: rc.pax, children_with_bed: 0, children_without_bed: 0 })) },
+            rooming_json: {
+              rooms: h.rooms_config.map((rc, ri) => ({ type: 'Double', count: 1, room_number: ri + 1, adults: rc.pax, children_with_bed: 0, children_without_bed: 0 })),
+              ...(h.meal_overrides && Object.keys(h.meal_overrides).length > 0 ? { meal_overrides: h.meal_overrides } : {}),
+            },
             manual_cost_override: h.manual_cost ?? null,
             override_reason: h.manual_cost != null ? 'No rate configured for dates' : null,
           })),
@@ -948,7 +971,7 @@ export default function CreateQuotePage() {
                     const checkIn  = new Date(cursorMs).toISOString().slice(0, 10);
                     cursorMs += n * 86400000;
                     const defRooms = Math.max(1, Math.ceil(adults / 2));
-                    return { destination_id: did, hotel_id: '', room_category_id: '', meal_plan_id: '', check_in_date: checkIn, check_out_date: new Date(cursorMs).toISOString().slice(0, 10), nights: n, rooms: defRooms, rooms_config: Array.from({ length: defRooms }, () => ({ pax: 2 })), adults_per_room: 2, cwb: children512, cwob: childrenBelow5, fetched_price: null, fetching: false, fetch_error: null, manual_cost: null };
+                    return { destination_id: did, hotel_id: '', room_category_id: '', meal_plan_id: '', check_in_date: checkIn, check_out_date: new Date(cursorMs).toISOString().slice(0, 10), nights: n, rooms: defRooms, rooms_config: Array.from({ length: defRooms }, () => ({ pax: 2 })), adults_per_room: 2, cwb: children512, cwob: childrenBelow5, fetched_price: null, fetching: false, fetch_error: null, manual_cost: null, meal_overrides: {} };
                   }).filter(Boolean) as HotelRow[];
                   setOptions(p => [...p, { name: OPTION_NAMES[ni], is_most_popular: false, hotels }]);
                   setExpandedOpt(ni);
@@ -1199,6 +1222,159 @@ export default function CreateQuotePage() {
                               <Plus className="w-3 h-3" /> Add Room
                             </button>
                           </div>
+
+                          {/* ─── Meal Schedule Override ─── */}
+                          {(() => {
+                            const mealKey = `${oi}-${hi}`;
+                            const isOpen  = expandedMealRows.has(mealKey);
+                            const stayDates = getDatesInRange(h.check_in_date, h.check_out_date);
+                            const hasOverrides = Object.keys(h.meal_overrides ?? {}).length > 0;
+                            return (
+                              <div className="mt-3">
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedMealRows(prev => {
+                                    const next = new Set(prev);
+                                    if (next.has(mealKey)) next.delete(mealKey); else next.add(mealKey);
+                                    return next;
+                                  })}
+                                  className="flex items-center gap-2 text-xs font-semibold h-7 px-3 rounded-lg transition-colors"
+                                  style={{
+                                    border: `1px solid ${hasOverrides ? T : '#E2E8F0'}`,
+                                    color: hasOverrides ? T : '#94A3B8',
+                                    backgroundColor: hasOverrides ? `${T}08` : 'transparent',
+                                  }}
+                                >
+                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M18 8h1a4 4 0 010 8h-1M2 8h16v9a4 4 0 01-4 4H6a4 4 0 01-4-4V8zM6 1v3M10 1v3M14 1v3"/>
+                                  </svg>
+                                  {hasOverrides ? 'Meals customised' : 'Customize Meals'}
+                                  {isOpen
+                                    ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="18 15 12 9 6 15"/></svg>
+                                    : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                                  }
+                                </button>
+
+                                {isOpen && stayDates.length > 0 && (
+                                  <div className="mt-2 rounded-xl overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
+                                    {/* Header row */}
+                                    <div className="grid items-center px-3 py-2 text-[10px] font-bold uppercase tracking-wider" style={{ backgroundColor: '#F8FAFC', color: '#94A3B8', gridTemplateColumns: '1fr 56px 56px 56px 56px' }}>
+                                      <span>Date</span>
+                                      <span className="text-center">🌅 B</span>
+                                      <span className="text-center">☀️ L</span>
+                                      <span className="text-center">🌙 D</span>
+                                      <span className="text-center">Auto</span>
+                                    </div>
+                                    {stayDates.map((date, di) => {
+                                      const ov = h.meal_overrides?.[date];
+                                      const isAuto = ov === undefined;
+                                      const fmt = new Date(date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+                                      const isIn  = di === 0;
+                                      const isOut = di === stayDates.length - 1;
+
+                                      function toggleMeal(meal: 'breakfast' | 'lunch' | 'dinner') {
+                                        const current = ov ?? { breakfast: false, lunch: false, dinner: false };
+                                        const updated = { ...current, [meal]: !current[meal] };
+                                        // If all false, remove the override (revert to auto)
+                                        if (!updated.breakfast && !updated.lunch && !updated.dinner) {
+                                          const next = { ...h.meal_overrides };
+                                          delete next[date];
+                                          updHotel(oi, hi, { meal_overrides: next });
+                                        } else {
+                                          updHotel(oi, hi, { meal_overrides: { ...h.meal_overrides, [date]: updated } });
+                                        }
+                                      }
+
+                                      function setAuto() {
+                                        const next = { ...h.meal_overrides };
+                                        delete next[date];
+                                        updHotel(oi, hi, { meal_overrides: next });
+                                      }
+
+                                      function setManual() {
+                                        // Default manual: check-in=dinner only, check-out=breakfast+lunch, mid=all 3
+                                        const def = isIn
+                                          ? { breakfast: false, lunch: false, dinner: true }
+                                          : isOut
+                                            ? { breakfast: true, lunch: true, dinner: false }
+                                            : { breakfast: true, lunch: true, dinner: true };
+                                        updHotel(oi, hi, { meal_overrides: { ...h.meal_overrides, [date]: def } });
+                                      }
+
+                                      const MealBox = ({ meal, checked }: { meal: 'breakfast' | 'lunch' | 'dinner'; checked: boolean }) => (
+                                        <button
+                                          type="button"
+                                          onClick={() => { if (isAuto) setManual(); else toggleMeal(meal); }}
+                                          className="w-full flex items-center justify-center h-7 rounded-md transition-all text-xs font-bold"
+                                          style={{
+                                            backgroundColor: !isAuto && checked
+                                              ? meal === 'breakfast' ? '#FEF3C7' : meal === 'lunch' ? '#DCFCE7' : '#EEF2FF'
+                                              : '#F1F5F9',
+                                            color: !isAuto && checked
+                                              ? meal === 'breakfast' ? '#D97706' : meal === 'lunch' ? '#16A34A' : '#4338CA'
+                                              : '#CBD5E1',
+                                            border: !isAuto && checked
+                                              ? `1px solid ${meal === 'breakfast' ? '#FDE68A' : meal === 'lunch' ? '#86EFAC' : '#A5B4FC'}`
+                                              : '1px solid #E2E8F0',
+                                          }}
+                                        >
+                                          {!isAuto && checked ? '✓' : '–'}
+                                        </button>
+                                      );
+
+                                      return (
+                                        <div
+                                          key={date}
+                                          className="grid items-center px-3 py-1.5"
+                                          style={{
+                                            gridTemplateColumns: '1fr 56px 56px 56px 56px',
+                                            borderTop: di > 0 ? '1px solid #F1F5F9' : undefined,
+                                            backgroundColor: isAuto ? 'white' : `${T}04`,
+                                          }}
+                                        >
+                                          <div>
+                                            <span className="text-xs font-semibold" style={{ color: '#0F172A' }}>{fmt}</span>
+                                            {isIn && <span className="ml-1 text-[9px] font-bold px-1 py-0.5 rounded" style={{ backgroundColor: '#DBEAFE', color: '#1D4ED8' }}>IN</span>}
+                                            {isOut && <span className="ml-1 text-[9px] font-bold px-1 py-0.5 rounded" style={{ backgroundColor: '#FCE7F3', color: '#BE185D' }}>OUT</span>}
+                                          </div>
+                                          <div className="px-1"><MealBox meal="breakfast" checked={ov?.breakfast ?? false} /></div>
+                                          <div className="px-1"><MealBox meal="lunch"     checked={ov?.lunch     ?? false} /></div>
+                                          <div className="px-1"><MealBox meal="dinner"    checked={ov?.dinner    ?? false} /></div>
+                                          <div className="px-1">
+                                            <button
+                                              type="button"
+                                              onClick={() => isAuto ? setManual() : setAuto()}
+                                              className="w-full h-7 rounded-md text-[10px] font-bold transition-all"
+                                              style={{
+                                                backgroundColor: isAuto ? `${T}15` : '#F1F5F9',
+                                                color: isAuto ? T : '#CBD5E1',
+                                                border: `1px solid ${isAuto ? T + '40' : '#E2E8F0'}`,
+                                              }}
+                                            >
+                                              {isAuto ? 'Auto' : 'Auto'}
+                                            </button>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                    {/* Reset all button */}
+                                    {hasOverrides && (
+                                      <div className="px-3 py-2 flex justify-end" style={{ borderTop: '1px solid #F1F5F9' }}>
+                                        <button
+                                          type="button"
+                                          onClick={() => updHotel(oi, hi, { meal_overrides: {} })}
+                                          className="text-[10px] font-semibold px-2 py-1 rounded-md"
+                                          style={{ color: '#94A3B8', border: '1px solid #E2E8F0' }}
+                                        >
+                                          Reset all to Auto
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
 
                           {/* Manual cost fallback — shown when rate lookup fails */}
                           {h.fetch_error && h.fetched_price === null && h.hotel_id && h.room_category_id && h.meal_plan_id && (
