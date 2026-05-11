@@ -43,18 +43,26 @@ export async function GET(req: NextRequest) {
     ? { destination: { state_id: { in: state_ids } } }
     : state_id ? { destination: { state_id } } : {};
 
+  // Admin list: pass ?status=all to see every hotel; default = active only (for public quote builder)
+  const statusRaw = searchParams.get('status'); // 'active' | 'inactive' | 'all' | null
+  const statusFilter =
+    statusRaw === 'all'      ? {} :
+    statusRaw === 'inactive' ? { status: false } :
+                               { status: true }; // default: active only
+
   const hotels = await prisma.hotel.findMany({
     where: {
-      status: true,
+      ...statusFilter,
       ...(destination_id ? { destination_id } : {}),
       ...stateFilter,
       ...(category ? { category_label: category } : {}),
     },
     include: {
-      destination: { select: { name: true, state: { select: { name: true } } } },
+      destination: { select: { name: true, state: { select: { id: true, name: true } } } },
       room_categories: { where: { status: true } },
     },
     orderBy: { hotel_name: 'asc' },
+    take: 500,
   });
   return ok(hotels);
 }

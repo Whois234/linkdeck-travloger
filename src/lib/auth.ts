@@ -2,6 +2,12 @@ import { SignJWT, jwtVerify } from 'jose';
 import { NextRequest } from 'next/server';
 import { UserRole } from '@prisma/client';
 
+if (!process.env.JWT_SECRET && process.env.NODE_ENV === 'production') {
+  throw new Error('JWT_SECRET environment variable is not set. This is a critical security error.');
+}
+if (!process.env.JWT_SECRET) {
+  console.warn('[auth] WARNING: JWT_SECRET is not set. Using insecure fallback. Set JWT_SECRET in .env for production.');
+}
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET ?? 'fallback-dev-secret-change-in-production'
 );
@@ -17,11 +23,11 @@ export interface JWTPayload {
   exp?: number;
 }
 
-export async function signToken(payload: Omit<JWTPayload, 'iat' | 'exp'>): Promise<string> {
+export async function signToken(payload: Omit<JWTPayload, 'iat' | 'exp'>, expiresIn: string = '8h'): Promise<string> {
   return new SignJWT({ ...payload })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
-    .setExpirationTime('8h')
+    .setExpirationTime(expiresIn)
     .sign(JWT_SECRET);
 }
 

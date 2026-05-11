@@ -62,8 +62,18 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   const user = await getAuthUser(req);
   if (!user) return unauthorized();
   if (!requireRole(user, UserRole.ADMIN)) return forbidden();
+
   const hotel = await prisma.hotel.findUnique({ where: { id: params.id } });
   if (!hotel) return notFound('Hotel');
-  await prisma.hotel.update({ where: { id: params.id }, data: { status: false } });
-  return ok({ message: 'Hotel deactivated' });
+
+  // Check if hotel is referenced in any quote — if so, only soft-delete
+  const quoteUsageCount = await prisma.quoteOptionHotel.count({ where: { hotel_id: params.id } });
+  if (quoteUsageCount > 0) {
+    await prisma.hotel.update({ where: { id: params.id }, data: { status: false } });
+    return ok({ message: 'Hotel is used in quotes — deactivated instead of deleted', soft: true });
+  }
+
+  // Safe to hard-delete: RoomCategory + HotelRate cascade automatically
+  await prisma.hotel.delete({ where: { id: params.id } });
+  return ok({ message: 'Hotel deleted' });
 }

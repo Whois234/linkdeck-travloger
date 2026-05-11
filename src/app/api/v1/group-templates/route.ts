@@ -35,6 +35,7 @@ export async function GET(req: NextRequest) {
       group_batches: { where: { status: true }, orderBy: { start_date: 'asc' } },
     },
     orderBy: { group_template_name: 'asc' },
+    take: 200,
   });
   return ok(templates);
 }

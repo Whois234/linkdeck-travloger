@@ -44,6 +44,7 @@ export async function GET(req: NextRequest) {
       assigned_agent: { select: { name: true } },
     },
     orderBy: { start_date: 'asc' },
+    take: 200,
   });
   return ok(batches);
 }

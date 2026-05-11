@@ -5,10 +5,10 @@ import { getAuthUser, canEditRates } from '@/lib/auth';
 import { ok, err, unauthorized, forbidden, notFound } from '@/lib/api-response';
 
 const UpdateSchema = z.object({
-  single_occupancy_cost: z.number().positive().optional(),
-  double_occupancy_cost: z.number().positive().optional(),
-  triple_occupancy_cost: z.number().positive().optional().nullable(),
-  quad_occupancy_cost: z.number().positive().optional().nullable(),
+  single_occupancy_cost: z.number().min(0).optional(),
+  double_occupancy_cost: z.number().min(0).optional(),
+  triple_occupancy_cost: z.number().min(0).optional().nullable(),
+  quad_occupancy_cost: z.number().min(0).optional().nullable(),
   extra_adult_cost: z.number().min(0).optional().nullable(),
   child_with_bed_cost: z.number().min(0).optional().nullable(),
   child_without_bed_cost: z.number().min(0).optional().nullable(),

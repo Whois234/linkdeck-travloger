@@ -187,7 +187,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
           {totalRevenue > 0 && (
             <div className="bg-white rounded-xl border p-4" style={{ borderColor: '#E2E8F0', ...cardShadow }}>
               <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: '#94A3B8' }}>Total Revenue (Confirmed)</p>
-              <p className="text-2xl font-bold mt-1" style={{ color: T }}>₹{totalRevenue.toLocaleString('en-IN')}</p>
+              <p className="text-2xl font-bold mt-1" style={{ color: T }}>₹{Math.round(totalRevenue).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
             </div>
           )}
         </div>
@@ -247,7 +247,7 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
                           <td className="px-4 py-0 text-sm text-center" style={{ color: '#64748B' }}>{q.duration_nights}N</td>
                           <td className="px-4 py-0 text-sm text-center" style={{ color: '#64748B' }}>{q.adults}</td>
                           <td className="px-4 py-0 font-semibold text-sm" style={{ color: T }}>
-                            {price ? `₹${price.toLocaleString('en-IN')}` : '—'}
+                            {price ? `₹${Math.round(price).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '—'}
                           </td>
                           <td className="px-4 py-0">
                             <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold"

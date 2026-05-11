@@ -43,6 +43,7 @@ export async function GET(req: NextRequest) {
     where: { status: true, ...stateFilter },
     include: { vehicle_type: true, state: { select: { name: true } }, supplier: { select: { name: true } } },
     orderBy: { route_name: 'asc' },
+    take: 500,
   });
   return ok(rates);
 }

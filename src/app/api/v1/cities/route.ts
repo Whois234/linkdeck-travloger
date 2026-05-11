@@ -29,6 +29,7 @@ export async function GET(req: NextRequest) {
     where: { status: true, ...stateFilter },
     include: { state: { select: { name: true, code: true } } },
     orderBy: [{ state: { name: 'asc' } }, { name: 'asc' }],
+    take: 500,
   });
   return ok(cities);
 }

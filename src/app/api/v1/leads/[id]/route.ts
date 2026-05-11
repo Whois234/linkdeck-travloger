@@ -25,7 +25,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
           events: { select: { id: true, event_type: true, metadata: true, created_at: true }, orderBy: { created_at: 'desc' }, take: 50 },
           _count: { select: { events: true } },
         },
-        orderBy: { created_at: 'desc' },
+        orderBy: { created_at: 'asc' },  // oldest first → Quote 1 is always the first quote sent
       },
     },
   });

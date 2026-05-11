@@ -1,12 +1,13 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { ImageUploader } from '@/components/admin/ImageUploader';
+import { RichTextEditor } from '@/components/admin/RichTextEditor';
 import {
   ChevronDown, ChevronRight, Plus, Trash2, Check,
   Save, Star, Image as ImgIcon, FileText, LayoutList,
-  MapPin, Shield, HelpCircle, BookOpen,
+  MapPin, Shield, HelpCircle, BookOpen, ListPlus, Settings,
 } from 'lucide-react';
 
 /* ── Shared style tokens ── */
@@ -19,11 +20,13 @@ const T     = '#134956';
 const card  = { border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' };
 
 /* ── Types ── */
-interface Dest   { id: string; name: string }
+interface Dest   { id: string; name: string; state_id: string }
 interface Hotel  { id: string; hotel_name: string; destination_id: string; room_categories: { id: string; room_category_name: string }[] }
 interface MealPlan { id: string; code: string; name: string }
 interface DayPlan  { id: string; title: string; destination_id: string; description?: string | null }
 interface Policy   { id: string; title: string; policy_type: string; content: string }
+interface StateItem { id: string; name: string }
+interface City { id: string; name: string; state_id: string }
 
 interface CmsOption {
   tier_name: string;
@@ -31,7 +34,7 @@ interface CmsOption {
   is_most_popular: boolean;
   inclusions: string[];
 }
-interface WhyItem { title: string; description: string }
+interface WhyItem { title: string; description: string; icon?: string }
 interface CmsData {
   pax_count: number;
   hero_heading: string;
@@ -39,17 +42,29 @@ interface CmsData {
   hero_tags: string[];
   hero_images: string[];
   state_gallery_image: string;
-  destination_cards: Array<{ destination_id: string; custom_name: string | null; description: string; image_url: string }>;
+  state_gallery_hidden?: boolean;
+  destination_cards: Array<{ destination_id: string; custom_name: string | null; description: string; image_url: string; hidden?: boolean }>;
   package_options: CmsOption[];
   why_choose: (string | WhyItem)[];
+  inclusions?: string[];
+  exclusions?: string[];
   faqs_enabled: boolean;
   custom_faqs: Array<{ question: string; answer: string }>;
 }
 
 // Normalise legacy string[] entries to WhyItem objects
 function normaliseWhy(items: (string | WhyItem)[]): WhyItem[] {
-  return items.map(i => typeof i === 'string' ? { title: i, description: '' } : i);
+  return items.map(i => typeof i === 'string' ? { title: i, description: '', icon: 'star' } : { icon: 'star', ...i });
 }
+
+const ICON_OPTS = [
+  { key: 'star',   label: '★' },
+  { key: 'dollar', label: '$' },
+  { key: 'shield', label: '✓' },
+  { key: 'clock',  label: '⏱' },
+  { key: 'heart',  label: '♥' },
+  { key: 'pin',    label: '📍' },
+] as const;
 interface TDay {
   id?: string; day_number: number; destination_id: string; title: string;
   description_override: string | null; image_override: string | null;
@@ -77,21 +92,24 @@ const DEFAULT_CMS: CmsData = {
     { tier_name: 'Deluxe',   display_order: 2, is_most_popular: true,  inclusions: [] },
   ],
   why_choose: [
-    { title: 'Ranked Professionals',    description: 'Expert travel consultants with years of on-ground experience.' },
-    { title: 'Best Prices Guaranteed',  description: 'Competitive rates with no hidden charges — ever.' },
-    { title: 'Top-tier Standards',      description: 'Carefully vetted hotels, vehicles and activity partners.' },
-    { title: '24×7 Monitoring',         description: 'Round-the-clock support throughout your journey.' },
-    { title: 'On-ground Support',       description: 'Local guides and coordinators at every destination.' },
+    { title: 'Ranked Professionals',    description: 'Expert travel consultants with years of on-ground experience.',  icon: 'star'   },
+    { title: 'Best Prices Guaranteed',  description: 'Competitive rates with no hidden charges — ever.',                icon: 'dollar' },
+    { title: 'Top-tier Standards',      description: 'Carefully vetted hotels, vehicles and activity partners.',        icon: 'shield' },
+    { title: '24×7 Monitoring',         description: 'Round-the-clock support throughout your journey.',               icon: 'clock'  },
+    { title: 'On-ground Support',       description: 'Local guides and coordinators at every destination.',             icon: 'pin'    },
   ],
+  inclusions: [], exclusions: [],
   faqs_enabled: false, custom_faqs: [],
 };
 
 const SECTIONS = [
+  { id: 'settings', label: 'Settings',         icon: Settings    },
   { id: 'hero',    label: 'Hero',              icon: ImgIcon     },
   { id: 'dests',   label: 'Destination Cards', icon: MapPin      },
   { id: 'options', label: 'Package Options',   icon: LayoutList  },
   { id: 'days',    label: 'Day Itinerary',      icon: FileText    },
-  { id: 'why',     label: 'Why Choose',        icon: Star        },
+  { id: 'why',      label: 'Why Choose',        icon: Star        },
+  { id: 'incl_excl', label: 'Incl / Excl',    icon: ListPlus    },
   { id: 'policy',  label: 'Policies',          icon: Shield      },
   { id: 'faq',     label: 'FAQs',              icon: HelpCircle  },
   { id: 'terms',   label: 'Terms',             icon: BookOpen    },
@@ -111,27 +129,72 @@ export default function TemplateEditPage() {
   const [mealPlans,setMealPlans] = useState<MealPlan[]>([]);
   const [dayPlans, setDayPlans]  = useState<DayPlan[]>([]);
   const [policies, setPolicies]  = useState<Policy[]>([]);
+  const [states,   setStates]   = useState<StateItem[]>([]);
+  const [cities,   setCities]   = useState<City[]>([]);
+  const [hotelRatesCache, setHotelRatesCache] = useState<Record<string, { room_category_id: string; meal_plan_id: string }[]>>({});
+  // Ref mirrors the state so fetchHotelRates can check without being in its dep array
+  const hotelRatesCacheRef = useRef<typeof hotelRatesCache>({});
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [destDragIdx, setDestDragIdx] = useState<number | null>(null);
+  const [destDragOver, setDestDragOver] = useState<number | null>(null);
   const [loading,  setLoading]  = useState(true);
   const [saving,   setSaving]   = useState(false);
   const [saved,    setSaved]    = useState(false);
-  const [activeSection, setActiveSection] = useState('hero');
+  const [activeSection, setActiveSection] = useState('settings');
   const [expandedDays, setExpandedDays]   = useState<Set<number>>(new Set([1]));
   const [selectedPolicies, setSelectedPolicies] = useState<string[]>([]);
 
+  // ── Editable template settings (mirrors the create-modal fields) ──
+  const [tplSettings, setTplSettings] = useState({
+    template_name: '', duration_nights: '4', duration_days: '5',
+    theme: '', start_city: '', end_city: '', state_id: '',
+    destination_ids: [] as string[],
+  });
+
+  const fetchHotelRates = useCallback(async (hotelId: string) => {
+    if (!hotelId || hotelRatesCacheRef.current[hotelId]) return;
+    try {
+      const res = await fetch(`/api/v1/hotels/${hotelId}/rates`);
+      const d = await res.json();
+      if (d.success) {
+        const rates = (d.data as { room_category_id: string; meal_plan_id: string }[]).map(r => ({
+          room_category_id: r.room_category_id,
+          meal_plan_id: r.meal_plan_id,
+        }));
+        hotelRatesCacheRef.current = { ...hotelRatesCacheRef.current, [hotelId]: rates };
+        setHotelRatesCache(hotelRatesCacheRef.current);
+      }
+    } catch { /* silent */ }
+  }, []); // stable — uses ref for cache check, never recreated
+
   const load = useCallback(async () => {
     setLoading(true);
-    const [tr, dr, hr, mr, dpr, pr] = await Promise.all([
+    const [tr, dr, hr, mr, dpr, pr, sr, cr] = await Promise.all([
       fetch(`/api/v1/private-templates/${id}`),
       fetch('/api/v1/destinations'),
       fetch('/api/v1/hotels'),
       fetch('/api/v1/meal-plans'),
       fetch('/api/v1/day-plans'),
       fetch('/api/v1/policies'),
+      fetch('/api/v1/states'),
+      fetch('/api/v1/cities'),
     ]);
-    const [td, dd, hd, md, dpd, pd] = await Promise.all([tr.json(), dr.json(), hr.json(), mr.json(), dpr.json(), pr.json()]);
+    const [td, dd, hd, md, dpd, pd, sd, cd] = await Promise.all([tr.json(), dr.json(), hr.json(), mr.json(), dpr.json(), pr.json(), sr.json(), cr.json()]);
+    if (sd.success) setStates(sd.data);
+    if (cd.success) setCities(cd.data);
     if (td.success) {
       const t: Template = td.data;
       setTpl(t);
+      setTplSettings({
+        template_name: t.template_name,
+        duration_nights: String(t.duration_nights),
+        duration_days: String(t.duration_days),
+        theme: t.theme ?? '',
+        start_city: t.start_city ?? '',
+        end_city: t.end_city ?? '',
+        state_id: t.state_id,
+        destination_ids: (t.destinations as string[]) ?? [],
+      });
       const c: CmsData = t.cms_data ?? { ...DEFAULT_CMS };
       // Backfill any destinations missing from destination_cards
       const existingCardIds = new Set(c.destination_cards.map((dc: { destination_id: string }) => dc.destination_id));
@@ -147,6 +210,8 @@ export default function TemplateEditPage() {
       setCms(c);
       setDays(t.template_days.map(d => ({ ...d, description_override: d.description_override ?? null, image_override: d.image_override ?? null, gallery_images: (d as unknown as { gallery_images?: string[] | null }).gallery_images ?? null, day_plan_id: d.day_plan_id ?? null, meals: d.meals as Record<string,boolean> | null ?? null })));
       setTiers(t.template_hotel_tiers);
+      // Pre-fetch rates for already-selected hotels
+      t.template_hotel_tiers.forEach(tier => { if (tier.default_hotel_id) fetchHotelRates(tier.default_hotel_id); });
       setSelectedPolicies((t as unknown as { default_policy_ids?: string[] }).default_policy_ids ?? []);
     }
     if (dd.success) setDests(dd.data);
@@ -155,7 +220,7 @@ export default function TemplateEditPage() {
     if (dpd.success) setDayPlans(dpd.data);
     if (pd.success) setPolicies(pd.data);
     setLoading(false);
-  }, [id]);
+  }, [id, fetchHotelRates]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -202,7 +267,22 @@ export default function TemplateEditPage() {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            cms_data: cms,
+            template_name:    tplSettings.template_name || undefined,
+            duration_nights:  Number(tplSettings.duration_nights) || undefined,
+            duration_days:    Number(tplSettings.duration_days) || undefined,
+            theme:            tplSettings.theme || null,
+            start_city:       tplSettings.start_city || null,
+            end_city:         tplSettings.end_city || null,
+            state_id:         tplSettings.state_id || undefined,
+            destinations:     tplSettings.destination_ids,
+            cms_data: {
+              ...cms,
+              pax_count: cms.pax_count,
+              // Only keep destination_cards for currently-selected destinations
+              destination_cards: cms.destination_cards.filter(dc =>
+                tplSettings.destination_ids.includes(dc.destination_id)
+              ),
+            },
             hero_image: cms.hero_tags[0] ?? null,
             default_policy_ids: selectedPolicies,
             status: publish ? true : undefined,
@@ -229,7 +309,7 @@ export default function TemplateEditPage() {
     } finally {
       setSaving(false);
     }
-  }, [id, cms, days, tiers, selectedPolicies, router]);
+  }, [id, cms, days, tiers, selectedPolicies, tplSettings, router]);
 
   /* ── Helpers ── */
   function updCms<K extends keyof CmsData>(key: K, val: CmsData[K]) {
@@ -276,25 +356,61 @@ export default function TemplateEditPage() {
 
   return (
     <div className="max-w-[1200px]">
-      <PageHeader
-        title={tpl.template_name}
-        subtitle={`${tpl.duration_nights}N/${tpl.duration_days}D · ${tpl.state.name}${tpl.theme ? ` · ${tpl.theme}` : ''}`}
-        crumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Private Templates', href: '/admin/private-templates' }, { label: 'Edit' }]}
-        action={
-          <div className="flex gap-2">
-            <button onClick={() => save(false)} disabled={saving}
-              className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold disabled:opacity-50 hover:opacity-90"
-              style={{ backgroundColor: saved ? '#22c55e' : T, color: 'white' }}>
-              {saved ? <><Check className="w-4 h-4" /> Saved!</> : saving ? 'Saving…' : <><Save className="w-4 h-4" /> Save Draft</>}
-            </button>
-            <button onClick={() => save(true)} disabled={saving}
-              className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white disabled:opacity-50 hover:opacity-90"
-              style={{ backgroundColor: '#16a34a' }}>
-              Publish
-            </button>
-          </div>
-        }
-      />
+      {/* ── Header with inline-editable title ── */}
+      <div className="flex items-start justify-between mb-7">
+        <div>
+          {/* Breadcrumbs */}
+          <nav className="flex items-center gap-1 mb-2">
+            {[{ label: 'Admin', href: '/admin' }, { label: 'Private Templates', href: '/admin/private-templates' }, { label: tplSettings.template_name || tpl.template_name || 'Edit' }].map((c, i, arr) => (
+              <span key={i} className="flex items-center gap-1">
+                {c.href ? (
+                  <a href={c.href} className="text-xs font-medium" style={{ color: '#94A3B8' }}>{c.label}</a>
+                ) : (
+                  <span className="text-xs font-semibold" style={{ color: '#64748B' }}>{c.label}</span>
+                )}
+                {i < arr.length - 1 && <ChevronRight className="w-3 h-3" style={{ color: '#CBD5E1' }} />}
+              </span>
+            ))}
+          </nav>
+          {/* Inline-editable title */}
+          {editingTitle ? (
+            <input
+              autoFocus
+              className="text-2xl font-bold tracking-tight bg-transparent border-b-2 outline-none w-full max-w-lg"
+              style={{ color: '#0F172A', borderColor: T }}
+              value={tplSettings.template_name}
+              onChange={e => setTplSettings(p => ({ ...p, template_name: e.target.value }))}
+              onBlur={() => setEditingTitle(false)}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') setEditingTitle(false); }}
+            />
+          ) : (
+            <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setEditingTitle(true)}>
+              <h1 className="text-2xl font-bold tracking-tight" style={{ color: '#0F172A' }}>
+                {tplSettings.template_name || tpl.template_name}
+              </h1>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="2" strokeLinecap="round" className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+                <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+              </svg>
+            </div>
+          )}
+          <p className="text-sm mt-1 font-medium" style={{ color: '#64748B' }}>
+            {tplSettings.duration_nights}N/{tplSettings.duration_days}D · {tpl.state.name}{tplSettings.theme ? ` · ${tplSettings.theme}` : ''}
+          </p>
+        </div>
+        <div className="flex gap-2 flex-shrink-0 ml-4">
+          <button onClick={() => save(false)} disabled={saving}
+            className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold disabled:opacity-50 hover:opacity-90"
+            style={{ backgroundColor: saved ? '#22c55e' : T, color: 'white' }}>
+            {saved ? <><Check className="w-4 h-4" /> Saved!</> : saving ? 'Saving…' : <><Save className="w-4 h-4" /> Save Draft</>}
+          </button>
+          <button onClick={() => save(true)} disabled={saving}
+            className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white disabled:opacity-50 hover:opacity-90"
+            style={{ backgroundColor: '#16a34a' }}>
+            Publish
+          </button>
+        </div>
+      </div>
 
       <div className="flex gap-6">
         {/* ── SIDEBAR nav ── */}
@@ -318,6 +434,141 @@ export default function TemplateEditPage() {
 
         {/* ── MAIN content ── */}
         <div className="flex-1 min-w-0">
+
+          {/* ═══ SETTINGS ═══ */}
+          {activeSection === 'settings' && (
+            <div className="bg-white rounded-2xl p-6" style={card}>
+              <SectionHeader title="Template Settings" desc="Edit the basic details you set when creating this template." />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Template Name */}
+                <div className="sm:col-span-2">
+                  <label className={lbl}>Template Name <span className="text-red-500">*</span></label>
+                  <input className={inp} style={inpSt}
+                    value={tplSettings.template_name}
+                    onChange={e => setTplSettings(p => ({ ...p, template_name: e.target.value }))}
+                    placeholder="Kerala Backwaters 5D/4N" />
+                </div>
+
+                {/* Nights / Days */}
+                <div>
+                  <label className={lbl}>Nights <span className="text-red-500">*</span></label>
+                  <input type="number" min="0" className={inp} style={inpSt}
+                    value={tplSettings.duration_nights}
+                    onChange={e => {
+                      const newNights = Math.max(0, Number(e.target.value) || 0);
+                      setTplSettings(p => ({ ...p, duration_nights: String(newNights), duration_days: String(newNights + 1) }));
+                      setDays(prevDays => {
+                        const target = newNights + 1;
+                        if (prevDays.length === target) return prevDays;
+                        if (target > prevDays.length) {
+                          const destIds = tplSettings.destination_ids;
+                          const lastDest = destIds[destIds.length - 1] ?? destIds[0] ?? '';
+                          const extra: TDay[] = Array.from({ length: target - prevDays.length }, (_, k) => ({
+                            day_number: prevDays.length + k + 1,
+                            destination_id: lastDest,
+                            title: `Day ${prevDays.length + k + 1}`,
+                            description_override: null, image_override: null, gallery_images: null,
+                            day_plan_id: null, meals: null, sort_order: prevDays.length + k + 1,
+                          }));
+                          return [...prevDays, ...extra];
+                        }
+                        return prevDays.slice(0, target);
+                      });
+                    }} />
+                </div>
+                <div>
+                  <label className={lbl}>Days</label>
+                  <input type="number" min="1" className={inp} style={inpSt}
+                    value={tplSettings.duration_days}
+                    onChange={e => setTplSettings(p => ({ ...p, duration_days: e.target.value }))} />
+                </div>
+
+                {/* Default Pax */}
+                <div>
+                  <label className={lbl}>Default Pax</label>
+                  <input type="number" min="1" className={inp} style={inpSt}
+                    value={cms.pax_count}
+                    onChange={e => updCms('pax_count', Number(e.target.value) || 2)} />
+                </div>
+
+                {/* Theme */}
+                <div>
+                  <label className={lbl}>Theme</label>
+                  <input className={inp} style={inpSt}
+                    value={tplSettings.theme}
+                    onChange={e => setTplSettings(p => ({ ...p, theme: e.target.value }))}
+                    placeholder="Backwaters, Hill Station…" />
+                </div>
+
+                {/* Start City */}
+                <div>
+                  <label className={lbl}>Start City</label>
+                  <select className={sel} style={inpSt}
+                    value={tplSettings.start_city}
+                    onChange={e => setTplSettings(p => ({ ...p, start_city: e.target.value }))}>
+                    <option value="">Select city…</option>
+                    {cities.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                  </select>
+                </div>
+
+                {/* End City */}
+                <div>
+                  <label className={lbl}>End City</label>
+                  <select className={sel} style={inpSt}
+                    value={tplSettings.end_city}
+                    onChange={e => setTplSettings(p => ({ ...p, end_city: e.target.value }))}>
+                    <option value="">Select city…</option>
+                    {cities.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                  </select>
+                </div>
+
+                {/* State */}
+                <div className="sm:col-span-2">
+                  <label className={lbl}>State / Region <span className="text-red-500">*</span></label>
+                  <select className={sel} style={inpSt}
+                    value={tplSettings.state_id}
+                    onChange={e => setTplSettings(p => ({ ...p, state_id: e.target.value, destination_ids: [] }))}>
+                    <option value="">Select state…</option>
+                    {states.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+
+                {/* Destinations */}
+                {tplSettings.state_id && (
+                  <div className="sm:col-span-2">
+                    <label className={lbl}>Destinations <span className="text-[#94A3B8] font-normal normal-case text-[10px]">(select all that apply)</span></label>
+                    <div className="flex flex-wrap gap-2">
+                      {dests.filter(d => d.state_id === tplSettings.state_id).map(d => {
+                        const active = tplSettings.destination_ids.includes(d.id);
+                        return (
+                          <button key={d.id} type="button"
+                            onClick={() => setTplSettings(p => ({
+                              ...p,
+                              destination_ids: active
+                                ? p.destination_ids.filter(x => x !== d.id)
+                                : [...p.destination_ids, d.id],
+                            }))}
+                            className="h-8 px-3 rounded-lg text-xs font-semibold transition-colors"
+                            style={active
+                              ? { backgroundColor: T, color: 'white', border: `1px solid ${T}` }
+                              : { backgroundColor: '#F8FAFC', color: '#64748B', border: '1px solid #E2E8F0' }}>
+                            {d.name}
+                          </button>
+                        );
+                      })}
+                      {dests.filter(d => d.state_id === tplSettings.state_id).length === 0 && (
+                        <p className="text-xs text-[#94A3B8]">No destinations for this state</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <p className="mt-5 text-xs text-[#94A3B8]">
+                Click <strong>Save Draft</strong> at the top to apply these changes.
+              </p>
+            </div>
+          )}
 
           {/* ═══ HERO ═══ */}
           {activeSection === 'hero' && (
@@ -425,49 +676,148 @@ export default function TemplateEditPage() {
           {/* ═══ DESTINATION CARDS ═══ */}
           {activeSection === 'dests' && (
             <div className="bg-white rounded-2xl p-6" style={card}>
-              <SectionHeader title="Destination Cards" desc="One card per destination shown in the gallery grid." />
+              <SectionHeader title="Destination Cards" desc="One card per destination shown in the gallery grid. Toggle eye icon to hide a card from the itinerary." />
               <div className="flex flex-col gap-4">
                 {/* State card — always first in the gallery */}
-                <div className="rounded-xl p-4" style={{ border: '1px solid #C7D2FE', background: '#F5F3FF' }}>
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-sm font-semibold text-[#4338CA]">{tpl?.state?.name ?? 'State'}</span>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-600 font-medium">Gallery Cover Card</span>
-                  </div>
-                  <ImageUploader
-                    label="State Gallery Photo"
-                    folder="templates/destinations"
-                    value={cms.state_gallery_image || null}
-                    onChange={url => updCms('state_gallery_image', url ?? '')}
-                    placeholder="Upload photo for state gallery card"
-                    sizeHint="800 × 600 px (4:3)"
-                  />
-                </div>
-                {cms.destination_cards.map((dc, i) => {
-                  const dest = dests.find(d => d.id === dc.destination_id);
+                {(() => {
+                  const stateHidden = !!cms.state_gallery_hidden;
                   return (
-                    <div key={i} className="rounded-xl p-4" style={{ border: '1px solid #E2E8F0' }}>
-                      <p className="text-sm font-semibold text-[#0F172A] mb-3">{dest?.name ?? dc.destination_id}</p>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="col-span-2">
-                          <ImageUploader
-                            label="Destination Photo"
-                            folder="templates/destinations"
-                            value={dc.image_url || null}
-                            onChange={url => { const c = [...cms.destination_cards]; c[i] = { ...c[i], image_url: url ?? '' }; updCms('destination_cards', c); }}
-                            placeholder="Upload destination photo"
-                            sizeHint="800 × 600 px (4:3)"
-                          />
+                    <div className="rounded-xl overflow-hidden transition-all" style={{
+                      border: `1px solid ${stateHidden ? '#E2E8F0' : '#C7D2FE'}`,
+                      background: stateHidden ? '#F8FAFC' : '#F5F3FF',
+                      opacity: stateHidden ? 0.55 : 1,
+                    }}>
+                      <div className="flex items-center gap-2 px-4 pt-4 pb-3">
+                        <span className="flex-1 text-sm font-semibold" style={{ color: stateHidden ? '#94A3B8' : '#4338CA' }}>{tpl?.state?.name ?? 'State'}</span>
+                        <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: stateHidden ? '#F1F5F9' : '#EEF2FF', color: stateHidden ? '#94A3B8' : '#6366F1' }}>Gallery Cover Card</span>
+                        <button
+                          type="button"
+                          onClick={() => updCms('state_gallery_hidden', !stateHidden)}
+                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-semibold transition-all flex-shrink-0"
+                          style={{
+                            borderColor: stateHidden ? '#E2E8F0' : T,
+                            backgroundColor: stateHidden ? '#F1F5F9' : `${T}12`,
+                            color: stateHidden ? '#94A3B8' : T,
+                          }}
+                        >
+                          {stateHidden ? (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                          ) : (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                          )}
+                          {stateHidden ? 'Hidden' : 'Visible'}
+                        </button>
+                      </div>
+                      <div className="px-4 pb-4" style={{ filter: stateHidden ? 'grayscale(0.4)' : 'none' }}>
+                        <ImageUploader
+                          label="State Gallery Photo"
+                          folder="templates/destinations"
+                          value={cms.state_gallery_image || null}
+                          onChange={url => updCms('state_gallery_image', url ?? '')}
+                          placeholder="Upload photo for state gallery card"
+                          sizeHint="800 × 600 px (4:3)"
+                        />
+                      </div>
+                    </div>
+                  );
+                })()}
+                {(() => {
+                  // filtered list of cards (only those matching selected destinations)
+                  const filteredCards = cms.destination_cards.filter(dc => tplSettings.destination_ids.includes(dc.destination_id));
+                  return filteredCards.map((dc) => {
+                    const dest = dests.find(d => d.id === dc.destination_id);
+                    const i = cms.destination_cards.indexOf(dc);
+                    // index within the filtered list (for drag tracking)
+                    const fi = filteredCards.indexOf(dc);
+                    const isHidden = !!dc.hidden;
+                    const isDragging = destDragIdx === fi;
+                    const isDragTarget = destDragOver === fi && destDragIdx !== fi;
+
+                    return (
+                      <div
+                        key={dc.destination_id}
+                        draggable
+                        onDragStart={() => setDestDragIdx(fi)}
+                        onDragEnd={() => { setDestDragIdx(null); setDestDragOver(null); }}
+                        onDragOver={e => { e.preventDefault(); setDestDragOver(fi); }}
+                        onDrop={() => {
+                          if (destDragIdx === null || destDragIdx === fi) return;
+                          // reorder inside cms.destination_cards
+                          const fromId = filteredCards[destDragIdx].destination_id;
+                          const toId   = filteredCards[fi].destination_id;
+                          const fromFull = cms.destination_cards.findIndex(x => x.destination_id === fromId);
+                          const toFull   = cms.destination_cards.findIndex(x => x.destination_id === toId);
+                          const reordered = [...cms.destination_cards];
+                          const [moved] = reordered.splice(fromFull, 1);
+                          reordered.splice(toFull, 0, moved);
+                          updCms('destination_cards', reordered);
+                          setDestDragIdx(null);
+                          setDestDragOver(null);
+                        }}
+                        className="rounded-xl overflow-hidden transition-all"
+                        style={{
+                          border: `1px solid ${isDragTarget ? T : '#E2E8F0'}`,
+                          opacity: isDragging ? 0.4 : isHidden ? 0.55 : 1,
+                          background: isDragTarget ? `${T}08` : isHidden ? '#F8FAFC' : '#fff',
+                          cursor: 'grab',
+                          transform: isDragTarget ? 'scale(1.01)' : 'none',
+                          boxShadow: isDragging ? '0 4px 16px rgba(0,0,0,0.12)' : 'none',
+                        }}
+                      >
+                        {/* Card header: drag handle + name + eye toggle */}
+                        <div className="flex items-center gap-2 px-4 pt-4 pb-3">
+                          {/* Drag handle */}
+                          <div className="flex-shrink-0 cursor-grab text-[#CBD5E1] hover:text-[#94A3B8]" title="Drag to reorder">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                              <circle cx="5" cy="3" r="1.3"/><circle cx="11" cy="3" r="1.3"/>
+                              <circle cx="5" cy="8" r="1.3"/><circle cx="11" cy="8" r="1.3"/>
+                              <circle cx="5" cy="13" r="1.3"/><circle cx="11" cy="13" r="1.3"/>
+                            </svg>
+                          </div>
+                          <p className="flex-1 text-sm font-semibold" style={{ color: isHidden ? '#94A3B8' : '#0F172A' }}>
+                            {dest?.name ?? dc.destination_id}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => { const c = [...cms.destination_cards]; c[i] = { ...c[i], hidden: !isHidden }; updCms('destination_cards', c); }}
+                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-semibold transition-all flex-shrink-0"
+                            style={{
+                              borderColor: isHidden ? '#E2E8F0' : T,
+                              backgroundColor: isHidden ? '#F1F5F9' : `${T}12`,
+                              color: isHidden ? '#94A3B8' : T,
+                            }}
+                          >
+                            {isHidden ? (
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                            ) : (
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                            )}
+                            {isHidden ? 'Hidden' : 'Visible'}
+                          </button>
                         </div>
-                        <div className="col-span-2">
-                          <label className={lbl}>Short Description</label>
-                          <textarea className={ta} style={inpSt} rows={2} value={dc.description}
-                            onChange={e => { const c = [...cms.destination_cards]; c[i] = { ...c[i], description: e.target.value }; updCms('destination_cards', c); }}
-                            placeholder="Venice of the East…" />
+                        <div className="px-4 pb-4">
+                          <div className="grid grid-cols-2 gap-3" style={{ filter: isHidden ? 'grayscale(0.4)' : 'none' }}>
+                            <div className="col-span-2">
+                              <ImageUploader
+                                label="Destination Photo"
+                                folder="templates/destinations"
+                                value={dc.image_url || null}
+                                onChange={url => { const c = [...cms.destination_cards]; c[i] = { ...c[i], image_url: url ?? '' }; updCms('destination_cards', c); }}
+                                placeholder="Upload destination photo"
+                                sizeHint="800 × 600 px (4:3)"
+                              />
+                          </div>
+                          <div className="col-span-2">
+                            <label className={lbl}>Short Description</label>
+                            <textarea className={ta} style={inpSt} rows={2} value={dc.description}
+                              onChange={e => { const c = [...cms.destination_cards]; c[i] = { ...c[i], description: e.target.value }; updCms('destination_cards', c); }}
+                              placeholder="Venice of the East…" />
+                          </div>
                         </div>
                       </div>
                     </div>
                   );
-                })}
+                }); })()}
                 {destList.length > 0 && cms.destination_cards.length === 0 && (
                   <button onClick={() => updCms('destination_cards', destList.map(did => ({ destination_id: did, custom_name: null, description: '', image_url: '' })))}
                     className="h-9 px-4 rounded-lg text-sm font-semibold text-white hover:opacity-90" style={{ backgroundColor: T }}>
@@ -534,54 +884,129 @@ export default function TemplateEditPage() {
               </div>
 
               {/* Hotel selections per option per destination */}
-              {cms.package_options.map((opt, oi) => (
+              {cms.package_options.map((opt, oi) => {
+                const totalPkgNights = Number(tplSettings.duration_nights) || 0;
+                const allocatedNights = destList.reduce((sum, did) => {
+                  const tier = tiersForOption(opt.tier_name).find(t => t.destination_id === did);
+                  return sum + (tier?.nights ?? 1);
+                }, 0);
+                const nightsOk = allocatedNights === totalPkgNights;
+                const nightsOver = allocatedNights > totalPkgNights;
+                return (
                 <div key={oi} className="bg-white rounded-2xl p-6" style={card}>
-                  <p className="text-sm font-bold text-[#0F172A] mb-4">{opt.tier_name} — Hotel Selections</p>
+                  {/* Header + allocation badge */}
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-sm font-bold text-[#0F172A]">{opt.tier_name} — Hotel Selections</p>
+                    <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full" style={{
+                      backgroundColor: nightsOk ? '#DCFCE7' : nightsOver ? '#FEF2F2' : '#FFF7ED',
+                      color: nightsOk ? '#15803D' : nightsOver ? '#DC2626' : '#C2410C',
+                    }}>
+                      {allocatedNights} / {totalPkgNights} nights allocated
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[#94A3B8] mb-4">
+                    Set nights per destination — guests can stay all nights in one place or split across locations.
+                  </p>
+
                   {destList.map(did => {
                     const dest = dests.find(d => d.id === did);
                     const tier = tiersForOption(opt.tier_name).find(t => t.destination_id === did) ?? { tier_name: opt.tier_name, destination_id: did, default_hotel_id: null, default_room_category_id: null, default_meal_plan_id: null, nights: 1, sort_order: 0 };
                     const destHotels = hotelsForDest(did);
                     const rooms = roomsForHotel(tier.default_hotel_id ?? '');
+                    const skipping = tier.nights === 0;
                     return (
                       <div key={did} className="mb-4 pb-4" style={{ borderBottom: '1px solid #F1F5F9' }}>
-                        <p className="text-xs font-semibold uppercase tracking-wider text-[#94A3B8] mb-2">{dest?.name}</p>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                          <div>
-                            <label className={lbl}>Hotel</label>
-                            <select className={sel} style={inpSt} value={tier.default_hotel_id ?? ''}
-                              onChange={e => updTier(opt.tier_name, did, { default_hotel_id: e.target.value || null, default_room_category_id: null })}>
-                              <option value="">Select…</option>
-                              {destHotels.map(h => <option key={h.id} value={h.id}>{h.hotel_name}</option>)}
-                            </select>
-                          </div>
-                          <div>
-                            <label className={lbl}>Room</label>
-                            <select className={sel} style={inpSt} value={tier.default_room_category_id ?? ''}
-                              onChange={e => updTier(opt.tier_name, did, { default_room_category_id: e.target.value || null })}
-                              disabled={!tier.default_hotel_id}>
-                              <option value="">Select…</option>
-                              {rooms.map(r => <option key={r.id} value={r.id}>{r.room_category_name}</option>)}
-                            </select>
-                          </div>
-                          <div>
-                            <label className={lbl}>Meal Plan</label>
-                            <select className={sel} style={inpSt} value={tier.default_meal_plan_id ?? ''}
-                              onChange={e => updTier(opt.tier_name, did, { default_meal_plan_id: e.target.value || null })}>
-                              <option value="">Select…</option>
-                              {mealPlans.map(m => <option key={m.id} value={m.id}>{m.code} — {m.name}</option>)}
-                            </select>
-                          </div>
-                          <div>
-                            <label className={lbl}>Nights</label>
-                            <input type="number" min="0" className={inp} style={inpSt} value={tier.nights}
-                              onChange={e => updTier(opt.tier_name, did, { nights: Number(e.target.value) })} />
+                        {/* Destination label + nights stepper */}
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: skipping ? '#CBD5E1' : '#94A3B8' }}>
+                            {dest?.name}
+                            {skipping && <span className="ml-2 normal-case font-medium text-[#CBD5E1]">· Not staying</span>}
+                          </p>
+                          {/* Nights stepper */}
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] font-semibold text-[#94A3B8] mr-1">Nights</span>
+                            <button
+                              onClick={() => updTier(opt.tier_name, did, { nights: Math.max(0, tier.nights - 1) })}
+                              className="w-6 h-6 rounded-md flex items-center justify-center text-sm font-bold transition-colors"
+                              style={{ backgroundColor: '#F1F5F9', color: '#64748B' }}>−</button>
+                            <span className="w-6 text-center text-sm font-bold" style={{ color: skipping ? '#CBD5E1' : '#0F172A' }}>{tier.nights}</span>
+                            <button
+                              onClick={() => updTier(opt.tier_name, did, { nights: tier.nights + 1 })}
+                              className="w-6 h-6 rounded-md flex items-center justify-center text-sm font-bold transition-colors"
+                              style={{ backgroundColor: '#F1F5F9', color: '#64748B' }}>+</button>
+                            {/* Quick: all nights here */}
+                            {!skipping && totalPkgNights > 0 && tier.nights !== totalPkgNights && (
+                              <button
+                                onClick={() => {
+                                  // Set this dest to all nights, others to 0
+                                  destList.forEach(d => updTier(opt.tier_name, d, { nights: d === did ? totalPkgNights : 0 }));
+                                }}
+                                className="ml-1 text-[10px] font-semibold px-2 py-0.5 rounded-md transition-colors"
+                                style={{ backgroundColor: `${T}15`, color: T }}
+                                title="Put all nights here">All here</button>
+                            )}
                           </div>
                         </div>
+
+                        {/* Hotel / Room / Meal Plan — collapsed when 0 nights */}
+                        {skipping ? (
+                          <div className="flex items-center gap-2 py-2 px-3 rounded-xl" style={{ backgroundColor: '#F8FAFC' }}>
+                            <span className="text-xs text-[#CBD5E1]">No hotel needed — 0 nights at this destination.</span>
+                            <button onClick={() => updTier(opt.tier_name, did, { nights: 1 })}
+                              className="text-[11px] font-semibold underline ml-auto" style={{ color: T }}>Add a night</button>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <div>
+                              <label className={lbl}>Hotel</label>
+                              <select className={sel} style={inpSt} value={tier.default_hotel_id ?? ''}
+                                onChange={e => {
+                                  const newHotelId = e.target.value || null;
+                                  if (newHotelId) fetchHotelRates(newHotelId);
+                                  updTier(opt.tier_name, did, { default_hotel_id: newHotelId, default_room_category_id: null, default_meal_plan_id: null });
+                                }}>
+                                <option value="">Select…</option>
+                                {destHotels.map(h => <option key={h.id} value={h.id}>{h.hotel_name}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <label className={lbl}>Room</label>
+                              <select className={sel} style={inpSt} value={tier.default_room_category_id ?? ''}
+                                onChange={e => updTier(opt.tier_name, did, { default_room_category_id: e.target.value || null, default_meal_plan_id: null })}
+                                disabled={!tier.default_hotel_id}>
+                                <option value="">Select…</option>
+                                {rooms.map(r => <option key={r.id} value={r.id}>{r.room_category_name}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <label className={lbl}>
+                                Meal Plan
+                                {(() => { const cr = hotelRatesCache[tier.default_hotel_id ?? ''] ?? []; const ai = tier.default_room_category_id ? new Set(cr.filter(r => r.room_category_id === tier.default_room_category_id).map(r => r.meal_plan_id)) : null; return ai && ai.size === 0 && tier.default_room_category_id ? <span className="text-[10px] text-red-400 ml-1 normal-case">No rates</span> : null; })()}
+                              </label>
+                              {(() => {
+                                const cachedRates = hotelRatesCache[tier.default_hotel_id ?? ''] ?? [];
+                                const availMpIds = tier.default_room_category_id
+                                  ? new Set(cachedRates.filter(r => r.room_category_id === tier.default_room_category_id).map(r => r.meal_plan_id))
+                                  : null;
+                                const filteredMealPlans = availMpIds ? mealPlans.filter(m => availMpIds.has(m.id)) : mealPlans;
+                                return (
+                                  <select className={sel} style={inpSt} value={tier.default_meal_plan_id ?? ''}
+                                    onChange={e => updTier(opt.tier_name, did, { default_meal_plan_id: e.target.value || null })}
+                                    disabled={!tier.default_hotel_id}>
+                                    <option value="">Select…</option>
+                                    {filteredMealPlans.map(m => <option key={m.id} value={m.id}>{m.code} — {m.name}</option>)}
+                                  </select>
+                                );
+                              })()}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
@@ -589,7 +1014,7 @@ export default function TemplateEditPage() {
           {activeSection === 'days' && (
             <div className="flex flex-col gap-3">
               <div className="bg-white rounded-2xl p-5" style={card}>
-                <SectionHeader title="Day-wise Itinerary" desc={`${tpl.duration_nights + 1} days · Fill in titles, descriptions and images.`} />
+                <SectionHeader title="Day-wise Itinerary" desc={`${days.length} day${days.length !== 1 ? 's' : ''} · Fill in titles, descriptions and images.`} />
               </div>
               {days.map((day, i) => {
                 const isOpen = expandedDays.has(day.day_number);
@@ -635,9 +1060,12 @@ export default function TemplateEditPage() {
                           </div>
                           <div className="col-span-2">
                             <label className={lbl}>Description</label>
-                            <textarea className={ta} style={inpSt} rows={4} value={day.description_override ?? ''}
-                              onChange={e => updDay(i, { description_override: e.target.value || null })}
-                              placeholder="Describe the day's activities and experiences…" />
+                            <RichTextEditor
+                              value={day.description_override}
+                              onChange={html => updDay(i, { description_override: html || null })}
+                              placeholder="Describe the day's activities and experiences…"
+                              minHeight={130}
+                            />
                           </div>
                           <div className="col-span-2">
                             <ImageUploader
@@ -724,6 +1152,29 @@ export default function TemplateEditPage() {
               <div className="flex flex-col gap-3">
                 {normaliseWhy(cms.why_choose).map((item, i) => (
                   <div key={i} className="p-4 rounded-xl" style={{ border: '1px solid #E2E8F0', backgroundColor: '#F8FAFC' }}>
+                    {/* Icon picker */}
+                    <div className="flex items-center gap-1 mb-2">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-[#94A3B8] mr-1">Icon</span>
+                      {ICON_OPTS.map(opt => (
+                        <button key={opt.key} type="button"
+                          onClick={() => {
+                            const w = normaliseWhy(cms.why_choose);
+                            w[i] = { ...w[i], icon: opt.key };
+                            updCms('why_choose', w);
+                          }}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-sm border transition-all"
+                          style={{
+                            borderColor: item.icon === opt.key ? T : '#E2E8F0',
+                            backgroundColor: item.icon === opt.key ? `${T}18` : 'white',
+                            color: item.icon === opt.key ? T : '#64748B',
+                            fontWeight: item.icon === opt.key ? 700 : 400,
+                          }}
+                          title={opt.key}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
                     <div className="flex items-center gap-2 mb-2">
                       <div className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center text-white text-[10px] font-bold" style={{ backgroundColor: T }}>{i + 1}</div>
                       <input
@@ -757,6 +1208,69 @@ export default function TemplateEditPage() {
             </div>
           )}
 
+          {/* ═══ INCLUSIONS / EXCLUSIONS ═══ */}
+          {activeSection === 'incl_excl' && (
+            <div className="bg-white rounded-2xl p-6" style={card}>
+              <SectionHeader title="Inclusions & Exclusions" desc="List what is included and excluded in this package." />
+              <div className="grid grid-cols-2 gap-6">
+                {/* Inclusions */}
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#15803D' }}>✓ Inclusions</p>
+                  <div className="flex flex-col gap-2">
+                    {(cms.inclusions ?? []).map((item, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <span className="text-green-500 flex-shrink-0">•</span>
+                        <input
+                          className="flex-1 h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white"
+                          style={{ borderColor: '#E2E8F0' }}
+                          value={item}
+                          placeholder="e.g. Accommodation on twin sharing"
+                          onChange={e => {
+                            const arr = [...(cms.inclusions ?? [])];
+                            arr[i] = e.target.value;
+                            updCms('inclusions', arr);
+                          }} />
+                        <button onClick={() => updCms('inclusions', (cms.inclusions ?? []).filter((_, j) => j !== i))}
+                          className="text-[#94A3B8] hover:text-red-500 flex-shrink-0"><Trash2 className="w-4 h-4" /></button>
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={() => updCms('inclusions', [...(cms.inclusions ?? []), ''])}
+                    className="flex items-center gap-2 text-sm font-semibold mt-3" style={{ color: '#15803D' }}>
+                    <Plus className="w-4 h-4" /> Add Inclusion
+                  </button>
+                </div>
+                {/* Exclusions */}
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#DC2626' }}>✕ Exclusions</p>
+                  <div className="flex flex-col gap-2">
+                    {(cms.exclusions ?? []).map((item, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <span className="text-red-500 flex-shrink-0">•</span>
+                        <input
+                          className="flex-1 h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white"
+                          style={{ borderColor: '#E2E8F0' }}
+                          value={item}
+                          placeholder="e.g. Airfare / train tickets"
+                          onChange={e => {
+                            const arr = [...(cms.exclusions ?? [])];
+                            arr[i] = e.target.value;
+                            updCms('exclusions', arr);
+                          }} />
+                        <button onClick={() => updCms('exclusions', (cms.exclusions ?? []).filter((_, j) => j !== i))}
+                          className="text-[#94A3B8] hover:text-red-500 flex-shrink-0"><Trash2 className="w-4 h-4" /></button>
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={() => updCms('exclusions', [...(cms.exclusions ?? []), ''])}
+                    className="flex items-center gap-2 text-sm font-semibold mt-3" style={{ color: '#DC2626' }}>
+                    <Plus className="w-4 h-4" /> Add Exclusion
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* ═══ POLICIES ═══ */}
           {activeSection === 'policy' && (
             <div className="bg-white rounded-2xl p-6" style={card}>
@@ -773,7 +1287,7 @@ export default function TemplateEditPage() {
                           <input type="checkbox" checked={selectedPolicies.includes(p.id)} onChange={() => togglePolicy(p.id)} className="mt-0.5" />
                           <div>
                             <p className="text-sm font-semibold text-[#0F172A]">{p.title}</p>
-                            <p className="text-xs text-[#94A3B8] mt-0.5 line-clamp-1">{p.content.slice(0, 80)}…</p>
+                            <p className="text-xs text-[#94A3B8] mt-0.5 line-clamp-1">{p.content.replace(/<[^>]+>/g, ' ').slice(0, 80)}…</p>
                           </div>
                         </label>
                       ))}
@@ -834,7 +1348,7 @@ export default function TemplateEditPage() {
                     <input type="checkbox" checked={selectedPolicies.includes(p.id)} onChange={() => togglePolicy(p.id)} className="mt-0.5" />
                     <div>
                       <p className="text-sm font-semibold text-[#0F172A]">{p.title}</p>
-                      <p className="text-xs text-[#94A3B8] mt-0.5 line-clamp-2">{p.content.slice(0, 100)}…</p>
+                      <p className="text-xs text-[#94A3B8] mt-0.5 line-clamp-2">{p.content.replace(/<[^>]+>/g, ' ').slice(0, 100)}…</p>
                     </div>
                   </label>
                 ))}

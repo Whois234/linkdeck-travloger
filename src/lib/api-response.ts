@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server';
 
-export function ok<T>(data: T, status = 200) {
-  return NextResponse.json({ success: true, data }, { status });
+export type PaginationMeta = { total: number; page: number; limit: number; totalPages: number };
+
+export function ok<T>(data: T, statusOrMeta: number | PaginationMeta = 200) {
+  if (typeof statusOrMeta === 'number') {
+    return NextResponse.json({ success: true, data }, { status: statusOrMeta });
+  }
+  return NextResponse.json({ success: true, data, pagination: statusOrMeta });
 }
 
 export function created<T>(data: T) {

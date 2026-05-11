@@ -24,7 +24,7 @@ const Schema = z.object({
 export async function GET(req: NextRequest) {
   const user = await getAuthUser(req);
   if (!user) return unauthorized();
-  const agents = await prisma.agent.findMany({ where: { status: true }, orderBy: { name: 'asc' } });
+  const agents = await prisma.agent.findMany({ where: { status: true }, orderBy: { name: 'asc' }, take: 200 });
   return ok(agents);
 }
 

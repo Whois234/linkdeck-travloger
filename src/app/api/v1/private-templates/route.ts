@@ -38,14 +38,19 @@ export async function GET(req: NextRequest) {
     ? { state_id: { in: state_ids } }
     : state_id ? { state_id } : {};
 
+  // Admin list returns ALL templates (live + draft); public-facing routes filter by status separately
+  const statusRaw = searchParams.get('status'); // 'live' | 'draft' | null = all
+  const statusFilter = statusRaw === 'live' ? { status: true } : statusRaw === 'draft' ? { status: false } : {};
+
   const templates = await prisma.privateTemplate.findMany({
-    where: { status: true, ...stateFilter },
+    where: { ...statusFilter, ...stateFilter },
     include: {
       state: { select: { name: true } },
       template_days: { orderBy: { sort_order: 'asc' } },
       template_hotel_tiers: { orderBy: [{ tier_name: 'asc' }, { sort_order: 'asc' }] },
     },
-    orderBy: { template_name: 'asc' },
+    orderBy: { created_at: 'desc' },
+    take: 200,
   });
   return ok(templates);
 }
@@ -62,7 +67,12 @@ export async function POST(req: NextRequest) {
   const state_ids = parsed.data.state_ids?.length ? parsed.data.state_ids : [parsed.data.state_id];
   const { state_ids: _si, ...templateData } = parsed.data;
   const record = await prisma.privateTemplate.create({
-    data: { ...templateData, state_id: state_ids[0], state_ids } as Parameters<typeof prisma.privateTemplate.create>[0]['data'],
+    data: {
+      ...templateData,
+      state_id: state_ids[0],
+      state_ids,
+      created_by: user.name ?? user.email,
+    } as Parameters<typeof prisma.privateTemplate.create>[0]['data'],
   });
   return created(record);
 }

@@ -210,10 +210,12 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
     ...option,
     option_hotels: option.option_hotels.map(oh => ({
       ...oh,
-      hotel:         hotelsMap[oh.hotel_id]         ?? null,
-      room_category: roomsMap[oh.room_category_id]  ?? null,
-      meal_plan:     mealsMap[oh.meal_plan_id]       ?? null,
-      destination:   destsMap[oh.destination_id]    ? { name: destsMap[oh.destination_id].name } : null,
+      hotel:          hotelsMap[oh.hotel_id]         ?? null,
+      room_category:  roomsMap[oh.room_category_id]  ?? null,
+      meal_plan:      mealsMap[oh.meal_plan_id]       ?? null,
+      destination:    destsMap[oh.destination_id]    ? { name: destsMap[oh.destination_id].name } : null,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      meal_overrides: (oh.rooming_json as any)?.meal_overrides ?? null,
     })),
   }));
 
@@ -267,9 +269,13 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
     state: {
       ...quote.state,
       hero_image:
-        ((groupCms as Record<string,unknown>)?.state_gallery_image as string | undefined || null)
-        ?? ((templateCmsData as Record<string,unknown>)?.state_gallery_image as string | undefined || null)
-        ?? groupTemplate?.hero_image ?? privateTemplateHero ?? quote.state.hero_image ?? firstDestHero ?? null,
+        // If the template admin hid the state gallery card, exclude it from the gallery
+        (templateCmsData as Record<string,unknown>)?.state_gallery_hidden === true ||
+        (groupCms as Record<string,unknown>)?.state_gallery_hidden === true
+          ? null
+          : (((groupCms as Record<string,unknown>)?.state_gallery_image as string | undefined || null)
+            ?? ((templateCmsData as Record<string,unknown>)?.state_gallery_image as string | undefined || null)
+            ?? groupTemplate?.hero_image ?? privateTemplateHero ?? quote.state.hero_image ?? firstDestHero ?? null),
       hero_images:
         (Array.isArray((templateCmsData as Record<string,unknown>)?.hero_images) && ((templateCmsData as Record<string,unknown>).hero_images as string[]).filter(Boolean).length > 1)
           ? ((templateCmsData as Record<string,unknown>).hero_images as string[]).filter(Boolean)
@@ -283,6 +289,33 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     group_trip_dates:      Array.isArray((groupCms as any)?.trip_dates) ? (groupCms as any).trip_dates : [],
     day_snapshots:         enrichedDaySnapshots,
+    // Destination cards from template/group CMS — resolved with name + hero fallback; hidden cards excluded
+    destination_cards: (() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = (templateCmsData as any)?.destination_cards ?? (groupCms as any)?.destination_cards;
+      if (!Array.isArray(raw) || raw.length === 0) return null;
+      return (raw as Array<{ destination_id: string; custom_name?: string | null; description?: string; image_url?: string; hidden?: boolean }>)
+        .filter(dc => dc.destination_id && destsMap[dc.destination_id] && !dc.hidden)
+        .map(dc => ({
+          destination_id: dc.destination_id,
+          name:           dc.custom_name?.trim() || destsMap[dc.destination_id]?.name || '',
+          description:    dc.description?.trim() || '',
+          image_url:      dc.image_url?.trim()   || destsMap[dc.destination_id]?.hero_image || '',
+        }));
+    })(),
+    // Why Choose items from template CMS — with icon keys
+    why_choose: (() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = (templateCmsData as any)?.why_choose;
+      if (!Array.isArray(raw) || raw.length === 0) return null;
+      return (raw as Array<{ title?: string; description?: string; icon?: string }>)
+        .filter(w => w.title?.trim())
+        .map(w => ({
+          title:       w.title?.trim() ?? '',
+          description: w.description?.trim() ?? '',
+          icon:        w.icon ?? 'star',
+        }));
+    })(),
     inclusions, exclusions, policies,
   };
 

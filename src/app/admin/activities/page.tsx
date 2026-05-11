@@ -100,14 +100,20 @@ export default function ActivitiesPage() {
   // ── duplicate detection ──
   const duplicateIds = useMemo(() => {
     const dupKey = (r: Activity) => `${r.activity_name.trim().toLowerCase()}||${r.destination_id}`;
-    const groups = new Map<string, string[]>();
+    const groups = new Map<string, { id: string; created_at: string }[]>();
     rows.forEach(r => {
       const k = dupKey(r);
       if (!groups.has(k)) groups.set(k, []);
-      groups.get(k)!.push(r.id);
+      groups.get(k)!.push({ id: r.id, created_at: r.created_at });
     });
     const ids = new Set<string>();
-    groups.forEach(arr => { if (arr.length > 1) arr.forEach(id => ids.add(id)); });
+    groups.forEach(arr => {
+      if (arr.length > 1) {
+        // Sort oldest → newest; protect the oldest, flag the rest
+        const sorted = [...arr].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+        sorted.slice(1).forEach(({ id }) => ids.add(id));
+      }
+    });
     return ids;
   }, [rows]);
 
@@ -337,7 +343,7 @@ export default function ActivitiesPage() {
                       <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>{r.destination.name}</td>
                       <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>{r.activity_type ?? '—'}</td>
                       <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>{r.duration ?? '—'}</td>
-                      <td className="px-5 py-0 font-semibold" style={{ color: '#0F172A' }}>₹{r.adult_cost.toLocaleString('en-IN')}</td>
+                      <td className="px-5 py-0 font-semibold" style={{ color: '#0F172A' }}>₹{Math.round(r.adult_cost).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</td>
                       <td className="px-5 py-0"><span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold" style={{ backgroundColor: '#DBEAFE', color: '#1D4ED8' }}>{r.rate_type.replace('_', ' ')}</span></td>
                       <td className="px-5 py-0"><span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold" style={r.status ? { backgroundColor: '#DCFCE7', color: '#15803D' } : { backgroundColor: '#F1F5F9', color: '#475569' }}>{r.status ? 'Active' : 'Inactive'}</span></td>
                       <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>Admin</td>

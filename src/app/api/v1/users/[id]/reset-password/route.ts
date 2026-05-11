@@ -22,6 +22,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const target = await prisma.user.findUnique({ where: { id: params.id } });
   if (!target) return notFound('User not found');
 
+  // Prevent an admin from resetting another admin's password (lateral privilege abuse)
+  if (target.role === UserRole.ADMIN && params.id !== user.sub) {
+    return forbidden();
+  }
+
   const hashed = await bcrypt.hash(parsed.data.password, 12);
   await prisma.user.update({ where: { id: params.id }, data: { password: hashed } });
 

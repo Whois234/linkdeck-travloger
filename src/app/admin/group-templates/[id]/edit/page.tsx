@@ -4,11 +4,12 @@ import { useParams, useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
 import { ImageUploader } from '@/components/admin/ImageUploader';
+import { RichTextEditor } from '@/components/admin/RichTextEditor';
 import {
   ChevronDown, ChevronRight, Plus, Trash2, Check,
   Save, Star, Image as ImgIcon, FileText, LayoutList,
   MapPin, Shield, HelpCircle, BookOpen, Calendar,
-  Users, X, GripVertical,
+  Users, X, GripVertical, ListPlus,
 } from 'lucide-react';
 
 /* ── Style tokens ── */
@@ -50,7 +51,8 @@ interface CmsData {
   hero_tags: string[];
   hero_images: string[];
   state_gallery_image: string;
-  destination_cards: Array<{ destination_id: string; custom_name: string | null; description: string; image_url: string }>;
+  state_gallery_hidden?: boolean;
+  destination_cards: Array<{ destination_id: string; custom_name: string | null; description: string; image_url: string; hidden?: boolean }>;
   pricing_mode: 'date_based' | 'package_based';
   trip_dates: Array<{ start_date: string; end_date: string; label: string; availability: 'available' | 'few_left' | 'filling_fast' | 'sold_out' }>;
   package_options: CmsOption[];
@@ -129,7 +131,8 @@ const SECTIONS = [
   { id: 'days',    label: 'Day Itinerary',     icon: FileText   },
   { id: 'batches', label: 'Batches',           icon: Calendar   },
   { id: 'covered', label: "What's Covered",    icon: Check      },
-  { id: 'why',     label: 'Why Choose',        icon: Star       },
+  { id: 'why',      label: 'Why Choose',        icon: Star       },
+  { id: 'incl_excl', label: 'Incl / Excl',    icon: ListPlus   },
   { id: 'policy',  label: 'Policies',          icon: Shield     },
   { id: 'faq',     label: 'FAQs',              icon: HelpCircle },
   { id: 'terms',   label: 'Terms',             icon: BookOpen   },
@@ -379,7 +382,7 @@ export default function GroupTemplateEditPage() {
       <PageHeader
         title={tpl.group_template_name}
         subtitle={`${tpl.duration_nights}N/${tpl.duration_days}D · ${tpl.state.name}${tpl.theme ? ` · ${tpl.theme}` : ''} · Group Tour`}
-        crumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Group Templates', href: '/admin/group-templates' }, { label: 'Edit' }]}
+        crumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Group Templates', href: '/admin/group-templates' }, { label: tpl.group_template_name || 'Edit' }]}
         action={
           <div className="flex gap-2">
             <button onClick={() => save(false)} disabled={saving}
@@ -536,44 +539,122 @@ export default function GroupTemplateEditPage() {
           {/* ═══ DESTINATION CARDS ═══ */}
           {activeSection === 'dests' && (
             <div className="bg-white rounded-2xl p-6" style={card}>
-              <SectionHeader title="Destination Cards" desc="One card per destination shown in the gallery grid." />
+              <SectionHeader title="Destination Cards" desc="One card per destination shown in the gallery grid. Toggle eye icon to hide a card. Drag ⠿ to reorder." />
               <div className="flex flex-col gap-4">
                 {/* State card — always first in the gallery */}
-                <div className="rounded-xl p-4" style={{ border: '1px solid #C7D2FE', background: '#F5F3FF' }}>
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-sm font-semibold text-[#4338CA]">{tpl?.state?.name ?? 'State'}</span>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-600 font-medium">Gallery Cover Card</span>
-                  </div>
-                  <ImageUploader
-                    label="State Gallery Photo"
-                    folder="templates/destinations"
-                    value={cms.state_gallery_image || null}
-                    onChange={url => updCms('state_gallery_image', url ?? '')}
-                    placeholder="Upload photo for state gallery card"
-                    sizeHint="800 × 600 px (4:3)"
-                  />
-                </div>
+                {(() => {
+                  const stateHidden = !!cms.state_gallery_hidden;
+                  return (
+                    <div className="rounded-xl overflow-hidden transition-all" style={{
+                      border: `1px solid ${stateHidden ? '#E2E8F0' : '#C7D2FE'}`,
+                      background: stateHidden ? '#F8FAFC' : '#F5F3FF',
+                      opacity: stateHidden ? 0.55 : 1,
+                    }}>
+                      <div className="flex items-center gap-2 px-4 pt-4 pb-3">
+                        <span className="flex-1 text-sm font-semibold" style={{ color: stateHidden ? '#94A3B8' : '#4338CA' }}>{tpl?.state?.name ?? 'State'}</span>
+                        <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: stateHidden ? '#F1F5F9' : '#EEF2FF', color: stateHidden ? '#94A3B8' : '#6366F1' }}>Gallery Cover Card</span>
+                        <button
+                          type="button"
+                          onClick={() => updCms('state_gallery_hidden', !stateHidden)}
+                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-semibold transition-all flex-shrink-0"
+                          style={{
+                            borderColor: stateHidden ? '#E2E8F0' : T,
+                            backgroundColor: stateHidden ? '#F1F5F9' : `${T}12`,
+                            color: stateHidden ? '#94A3B8' : T,
+                          }}
+                        >
+                          {stateHidden ? (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                          ) : (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                          )}
+                          {stateHidden ? 'Hidden' : 'Visible'}
+                        </button>
+                      </div>
+                      <div className="px-4 pb-4" style={{ filter: stateHidden ? 'grayscale(0.4)' : 'none' }}>
+                        <ImageUploader
+                          label="State Gallery Photo"
+                          folder="templates/destinations"
+                          value={cms.state_gallery_image || null}
+                          onChange={url => updCms('state_gallery_image', url ?? '')}
+                          placeholder="Upload photo for state gallery card"
+                          sizeHint="800 × 600 px (4:3)"
+                        />
+                      </div>
+                    </div>
+                  );
+                })()}
                 {cms.destination_cards.map((dc, i) => {
                   const dest = dests.find(d => d.id === dc.destination_id);
+                  const isHidden = !!dc.hidden;
+                  const isDragging = dragRef.current?.field === 'destination_cards' && dragRef.current?.from === i;
+                  const isDragTarget = dragOver?.field === 'destination_cards' && dragOver?.idx === i && !isDragging;
                   return (
-                    <div key={i} className="rounded-xl p-4" style={{ border: '1px solid #E2E8F0' }}>
-                      <p className="text-sm font-semibold text-[#0F172A] mb-3">{dest?.name ?? dc.destination_id}</p>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="col-span-2">
-                          <ImageUploader
-                            label="Destination Photo"
-                            folder="templates/destinations"
-                            value={dc.image_url || null}
-                            onChange={url => { const c = [...cms.destination_cards]; c[i] = { ...c[i], image_url: url ?? '' }; updCms('destination_cards', c); }}
-                            placeholder="Upload destination photo"
-                            sizeHint="800 × 600 px (4:3)"
-                          />
+                    <div
+                      key={dc.destination_id}
+                      draggable
+                      onDragStart={() => { dragRef.current = { field: 'destination_cards', from: i }; }}
+                      onDragEnd={() => { setDragOver(null); dragRef.current = null; }}
+                      onDragOver={e => { e.preventDefault(); setDragOver({ field: 'destination_cards', idx: i }); }}
+                      onDrop={() => { setDragOver(null); if (dragRef.current?.field === 'destination_cards') dndReorder('destination_cards', dragRef.current.from, i); dragRef.current = null; }}
+                      className="rounded-xl overflow-hidden transition-all"
+                      style={{
+                        border: `1px solid ${isDragTarget ? T : '#E2E8F0'}`,
+                        opacity: isDragging ? 0.4 : isHidden ? 0.55 : 1,
+                        background: isDragTarget ? `${T}08` : isHidden ? '#F8FAFC' : '#fff',
+                        cursor: 'grab',
+                        transform: isDragTarget ? 'scale(1.01)' : 'none',
+                        boxShadow: isDragging ? '0 4px 16px rgba(0,0,0,0.12)' : 'none',
+                      }}
+                    >
+                      {/* Card header: drag handle + name + eye toggle */}
+                      <div className="flex items-center gap-2 px-4 pt-4 pb-3">
+                        <div className="flex-shrink-0 cursor-grab text-[#CBD5E1] hover:text-[#94A3B8]" title="Drag to reorder">
+                          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                            <circle cx="5" cy="3" r="1.3"/><circle cx="11" cy="3" r="1.3"/>
+                            <circle cx="5" cy="8" r="1.3"/><circle cx="11" cy="8" r="1.3"/>
+                            <circle cx="5" cy="13" r="1.3"/><circle cx="11" cy="13" r="1.3"/>
+                          </svg>
                         </div>
-                        <div className="col-span-2">
-                          <label className={lbl}>Short Description</label>
-                          <textarea className={ta} style={inpSt} rows={2} value={dc.description}
-                            onChange={e => { const c = [...cms.destination_cards]; c[i] = { ...c[i], description: e.target.value }; updCms('destination_cards', c); }}
-                            placeholder="Venice of the East…" />
+                        <p className="flex-1 text-sm font-semibold" style={{ color: isHidden ? '#94A3B8' : '#0F172A' }}>
+                          {dest?.name ?? dc.destination_id}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => { const c = [...cms.destination_cards]; c[i] = { ...c[i], hidden: !isHidden }; updCms('destination_cards', c); }}
+                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-semibold transition-all flex-shrink-0"
+                          style={{
+                            borderColor: isHidden ? '#E2E8F0' : T,
+                            backgroundColor: isHidden ? '#F1F5F9' : `${T}12`,
+                            color: isHidden ? '#94A3B8' : T,
+                          }}
+                        >
+                          {isHidden ? (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                          ) : (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                          )}
+                          {isHidden ? 'Hidden' : 'Visible'}
+                        </button>
+                      </div>
+                      <div className="px-4 pb-4">
+                        <div className="grid grid-cols-2 gap-3" style={{ filter: isHidden ? 'grayscale(0.4)' : 'none' }}>
+                          <div className="col-span-2">
+                            <ImageUploader
+                              label="Destination Photo"
+                              folder="templates/destinations"
+                              value={dc.image_url || null}
+                              onChange={url => { const c = [...cms.destination_cards]; c[i] = { ...c[i], image_url: url ?? '' }; updCms('destination_cards', c); }}
+                              placeholder="Upload destination photo"
+                              sizeHint="800 × 600 px (4:3)"
+                            />
+                          </div>
+                          <div className="col-span-2">
+                            <label className={lbl}>Short Description</label>
+                            <textarea className={ta} style={inpSt} rows={2} value={dc.description}
+                              onChange={e => { const c = [...cms.destination_cards]; c[i] = { ...c[i], description: e.target.value }; updCms('destination_cards', c); }}
+                              placeholder="Venice of the East…" />
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -819,9 +900,12 @@ export default function GroupTemplateEditPage() {
                           </div>
                           <div className="col-span-2">
                             <label className={lbl}>Description</label>
-                            <textarea className={ta} style={inpSt} rows={4} value={day.description_override ?? ''}
-                              onChange={e => updDay(i, { description_override: e.target.value || null })}
-                              placeholder="Describe the day's activities…" />
+                            <RichTextEditor
+                              value={day.description_override}
+                              onChange={html => updDay(i, { description_override: html || null })}
+                              placeholder="Describe the day's activities…"
+                              minHeight={130}
+                            />
                           </div>
                           <div className="col-span-2">
                             <ImageUploader
@@ -971,15 +1055,15 @@ export default function GroupTemplateEditPage() {
                         <div className="grid grid-cols-3 gap-2 pt-3" style={{ borderTop: '1px solid #F1F5F9' }}>
                           <div>
                             <p className="text-[10px] text-[#94A3B8] uppercase tracking-wider mb-0.5">Adult</p>
-                            <p className="text-sm font-bold text-[#0F172A]">₹{Number(b.adult_price).toLocaleString('en-IN')}</p>
+                            <p className="text-sm font-bold text-[#0F172A]">₹{Number(Math.round(b.adult_price)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
                           </div>
                           <div>
                             <p className="text-[10px] text-[#94A3B8] uppercase tracking-wider mb-0.5">Child (5–12)</p>
-                            <p className="text-sm font-bold text-[#0F172A]">₹{Number(b.child_5_12_price).toLocaleString('en-IN')}</p>
+                            <p className="text-sm font-bold text-[#0F172A]">₹{Number(Math.round(b.child_5_12_price)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
                           </div>
                           <div>
                             <p className="text-[10px] text-[#94A3B8] uppercase tracking-wider mb-0.5">Child (&lt;5)</p>
-                            <p className="text-sm font-bold text-[#0F172A]">₹{Number(b.child_below_5_price).toLocaleString('en-IN')}</p>
+                            <p className="text-sm font-bold text-[#0F172A]">₹{Number(Math.round(b.child_below_5_price)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
                           </div>
                         </div>
                       </div>
@@ -1146,6 +1230,69 @@ export default function GroupTemplateEditPage() {
             </div>
           )}
 
+          {/* ═══ INCLUSIONS / EXCLUSIONS ═══ */}
+          {activeSection === 'incl_excl' && (
+            <div className="bg-white rounded-2xl p-6" style={card}>
+              <SectionHeader title="Inclusions & Exclusions" desc="List what is included and excluded in this package." />
+              <div className="grid grid-cols-2 gap-6">
+                {/* Inclusions */}
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#15803D' }}>✓ Inclusions</p>
+                  <div className="flex flex-col gap-2">
+                    {(cms.inclusions ?? []).map((item, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <span className="text-green-500 flex-shrink-0">•</span>
+                        <input
+                          className="flex-1 h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white"
+                          style={{ borderColor: '#E2E8F0' }}
+                          value={item}
+                          placeholder="e.g. Accommodation on twin sharing"
+                          onChange={e => {
+                            const arr = [...(cms.inclusions ?? [])];
+                            arr[i] = e.target.value;
+                            updCms('inclusions', arr);
+                          }} />
+                        <button onClick={() => updCms('inclusions', (cms.inclusions ?? []).filter((_, j) => j !== i))}
+                          className="text-[#94A3B8] hover:text-red-500 flex-shrink-0"><Trash2 className="w-4 h-4" /></button>
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={() => updCms('inclusions', [...(cms.inclusions ?? []), ''])}
+                    className="flex items-center gap-2 text-sm font-semibold mt-3" style={{ color: '#15803D' }}>
+                    <Plus className="w-4 h-4" /> Add Inclusion
+                  </button>
+                </div>
+                {/* Exclusions */}
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#DC2626' }}>✕ Exclusions</p>
+                  <div className="flex flex-col gap-2">
+                    {(cms.exclusions ?? []).map((item, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <span className="text-red-500 flex-shrink-0">•</span>
+                        <input
+                          className="flex-1 h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white"
+                          style={{ borderColor: '#E2E8F0' }}
+                          value={item}
+                          placeholder="e.g. Airfare / train tickets"
+                          onChange={e => {
+                            const arr = [...(cms.exclusions ?? [])];
+                            arr[i] = e.target.value;
+                            updCms('exclusions', arr);
+                          }} />
+                        <button onClick={() => updCms('exclusions', (cms.exclusions ?? []).filter((_, j) => j !== i))}
+                          className="text-[#94A3B8] hover:text-red-500 flex-shrink-0"><Trash2 className="w-4 h-4" /></button>
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={() => updCms('exclusions', [...(cms.exclusions ?? []), ''])}
+                    className="flex items-center gap-2 text-sm font-semibold mt-3" style={{ color: '#DC2626' }}>
+                    <Plus className="w-4 h-4" /> Add Exclusion
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* ═══ POLICIES ═══ */}
           {activeSection === 'policy' && (
             <div className="bg-white rounded-2xl p-6" style={card}>
@@ -1162,7 +1309,7 @@ export default function GroupTemplateEditPage() {
                           <input type="checkbox" checked={selectedPolicies.includes(p.id)} onChange={() => togglePolicy(p.id)} className="mt-0.5" />
                           <div>
                             <p className="text-sm font-semibold text-[#0F172A]">{p.title}</p>
-                            <p className="text-xs text-[#94A3B8] mt-0.5 line-clamp-1">{p.content.slice(0, 80)}…</p>
+                            <p className="text-xs text-[#94A3B8] mt-0.5 line-clamp-1">{p.content.replace(/<[^>]+>/g, ' ').slice(0, 80)}…</p>
                           </div>
                         </label>
                       ))}
@@ -1236,7 +1383,7 @@ export default function GroupTemplateEditPage() {
                     <input type="checkbox" checked={selectedPolicies.includes(p.id)} onChange={() => togglePolicy(p.id)} className="mt-0.5" />
                     <div>
                       <p className="text-sm font-semibold text-[#0F172A]">{p.title}</p>
-                      <p className="text-xs text-[#94A3B8] mt-0.5 line-clamp-2">{p.content.slice(0, 100)}…</p>
+                      <p className="text-xs text-[#94A3B8] mt-0.5 line-clamp-2">{p.content.replace(/<[^>]+>/g, ' ').slice(0, 100)}…</p>
                     </div>
                   </label>
                 ))}

@@ -29,24 +29,34 @@ export async function GET(req: NextRequest) {
   const status      = searchParams.get('status') as LeadStatus | null;
   const agent_id    = searchParams.get('agent_id');
   const pipeline_id = searchParams.get('pipeline_id');
+  const page        = Math.max(1, parseInt(searchParams.get('page') ?? '1'));
+  const limit       = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') ?? '50')));
+  const skip        = (page - 1) * limit;
 
   const isLimitedSales = requireRole(user, UserRole.SALES);
   const agentFilter = isLimitedSales
     ? { assigned_agent_id: user.agent_id ?? undefined }
     : agent_id ? { assigned_agent_id: agent_id } : {};
 
-  const leads = await prisma.lead.findMany({
-    where: {
-      ...agentFilter,
-      ...(status ? { status } : {}),
-      ...(pipeline_id ? { pipeline_id } : {}),
-    },
-    include: {
-      stage: { select: { id: true, name: true, color: true, order: true } },
-    },
-    orderBy: { created_at: 'desc' },
-  });
-  return ok(leads);
+  const where = {
+    ...agentFilter,
+    ...(status ? { status } : {}),
+    ...(pipeline_id ? { pipeline_id } : {}),
+  };
+
+  const [leads, total] = await Promise.all([
+    prisma.lead.findMany({
+      where,
+      include: {
+        stage: { select: { id: true, name: true, color: true, order: true } },
+      },
+      orderBy: { created_at: 'desc' },
+      take: limit,
+      skip,
+    }),
+    prisma.lead.count({ where }),
+  ]);
+  return ok(leads, { total, page, limit, totalPages: Math.ceil(total / limit) });
 }
 
 export async function POST(req: NextRequest) {

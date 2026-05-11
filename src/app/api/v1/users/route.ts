@@ -13,8 +13,10 @@ export async function GET(req: NextRequest) {
   if (!requireRole(user, UserRole.ADMIN)) return forbidden();
 
   const { searchParams } = new URL(req.url);
-  const page = Math.max(1, parseInt(searchParams.get('page') ?? '1'));
-  const limit = Math.min(100, parseInt(searchParams.get('limit') ?? '20'));
+  const rawPage = parseInt(searchParams.get('page') ?? '1', 10);
+  const page = isNaN(rawPage) ? 1 : Math.max(1, rawPage);
+  const rawLimit = parseInt(searchParams.get('limit') ?? '20', 10);
+  const limit = isNaN(rawLimit) ? 20 : Math.min(100, Math.max(1, rawLimit));
   const search = searchParams.get('search') ?? '';
   const role = searchParams.get('role') ?? '';
 
@@ -62,12 +64,12 @@ export async function GET(req: NextRequest) {
 
 const CreateUserSchema = z.object({
   name: z.string().min(1),
-  email: z.string().email(),
+  email: z.string().email().transform(v => v.toLowerCase().trim()),
   password: z.string().min(8, 'Password must be at least 8 characters'),
   role: z.nativeEnum(UserRole),
   agent_id: z.string().optional().nullable(),
   phone: z.string().optional().nullable(),
-  gender: z.string().optional().nullable(),
+  gender: z.enum(['Male', 'Female', 'Other']).optional().nullable(),
   status: z.boolean().optional().default(true),
 });
 

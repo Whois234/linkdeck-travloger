@@ -6,7 +6,7 @@ import MultiStateSelect from '@/components/MultiStateSelect';
 import {
   Users, MapPin, LayoutList, DollarSign, FileText, Link2,
   Check, Copy, ExternalLink, ChevronRight, Plus, Minus,
-  Star, Car, ChevronDown, ChevronUp, Loader2,
+  Star, Car, ChevronDown, ChevronUp, Loader2, GripVertical,
 } from 'lucide-react';
 
 /* ─── Style tokens ─── */
@@ -30,6 +30,11 @@ interface HTier        { tier_name: string; destination_id: string; default_hote
 interface TDay         { day_number: number; destination_id: string; title: string }
 interface CMSData      { package_options?: Array<{ tier_name: string; is_most_popular: boolean }> }
 interface Dest         { id: string; name: string }
+interface City         { id: string; name: string; state_id: string }
+
+interface RoomConfig { pax: number }
+
+interface MealOverrideDay { breakfast: boolean; lunch: boolean; dinner: boolean }
 
 interface HotelRow {
   destination_id: string;
@@ -39,7 +44,8 @@ interface HotelRow {
   check_in_date: string;
   check_out_date: string;
   nights: number;
-  rooms: number;
+  rooms: number;           // kept for API compat — equals rooms_config.length
+  rooms_config: RoomConfig[]; // per-room pax split
   adults_per_room: number;
   cwb: number;
   cwob: number;
@@ -47,6 +53,7 @@ interface HotelRow {
   fetching: boolean;
   fetch_error: string | null;   // error message from rate lookup
   manual_cost: number | null;   // agent-entered fallback when no rate exists
+  meal_overrides: Record<string, MealOverrideDay>; // date → B/L/D override; empty = auto
 }
 
 interface OptionDraft {
@@ -55,7 +62,7 @@ interface OptionDraft {
   hotels: HotelRow[];
 }
 
-const STAR_OPTIONS = [3, 4, 5] as const;
+const STAR_OPTIONS = [1, 2, 3, 4, 5] as const;
 type StarRating = typeof STAR_OPTIONS[number];
 
 const PRIVATE_STEPS = [
@@ -109,9 +116,20 @@ export default function CreateQuotePage() {
   const [selectedGT,  setSelectedGT]  = useState<GT | null>(null);
   const [selectedBatch, setSelectedBatch] = useState<GBatch | null>(null);
 
+  /* ─── Step 1 extra — pickup/drop ─── */
+  const [pickupLocation, setPickupLocation] = useState('');
+  const [dropLocation, setDropLocation]     = useState('');
+
   /* ─── Step 3 ─── */
   const [options, setOptions]         = useState<OptionDraft[]>([]);
   const [expandedOpt, setExpandedOpt] = useState<number>(0);
+
+  /* ─── Step 3 drag state ─── */
+  const dragRef = useRef<{ field: number; fromIndex: number } | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<{ field: number; index: number } | null>(null);
+
+  /* ─── Step 3 meal-override expand state (key = `${oi}-${hi}`) ─── */
+  const [expandedMealRows, setExpandedMealRows] = useState<Set<string>>(new Set());
 
   /* ─── Step 4 ─── */
   const [vehicleTypeId, setVehicleTypeId] = useState('');
@@ -121,8 +139,16 @@ export default function CreateQuotePage() {
   const [profitType, setProfitType]   = useState<'PERCENTAGE' | 'FLAT'>('PERCENTAGE');
   const [profitValue, setProfitValue] = useState(30);
   const [gstPercent, setGstPercent]   = useState(5);
+  const [includeGst, setIncludeGst]   = useState(true);
+  const [discountType, setDiscountType]   = useState<'FLAT' | 'PERCENTAGE'>('FLAT');
+  const [discountValue, setDiscountValue] = useState(0);
+  const [discountValidTill, setDiscountValidTill] = useState('');
+  const [discountNote, setDiscountNote]   = useState('');
   const [calcResults, setCalcResults] = useState<Record<string, { final_price: number; hotel_cost: number; base_cost: number; profit_amount: number; gst_amount: number; selling_before_gst: number }>>({});
   const [calculating, setCalculating] = useState(false);
+
+  /* ─── Hotel rates cache: hotel_id → { room_category_id, meal_plan_id }[] ─── */
+  const [hotelRatesCache, setHotelRatesCache] = useState<Record<string, { room_category_id: string; meal_plan_id: string }[]>>({});
 
   /* ─── Reference data ─── */
   const [states,    setStates]    = useState<State[]>([]);
@@ -131,6 +157,7 @@ export default function CreateQuotePage() {
   const [mealPlans, setMealPlans] = useState<MealPlan[]>([]);
   const [vehTypes,  setVehTypes]  = useState<VehicleType[]>([]);
   const [vehRates,  setVehRates]  = useState<VehRate[]>([]);
+  const [cities,    setCities]    = useState<City[]>([]);
 
   const steps     = quoteType === 'PRIVATE' ? PRIVATE_STEPS : GROUP_STEPS;
   const totalSteps = steps.length;
@@ -157,16 +184,18 @@ export default function CreateQuotePage() {
     });
   }, []);
 
-  /* ─── Load hotels + veh rates when state(s) change ─── */
+  /* ─── Load hotels + veh rates + cities when state(s) change ─── */
   useEffect(() => {
     if (!stateIds.length) return;
     const stateParam = stateIds.length === 1 ? `state_id=${stateIds[0]}` : `state_ids=${stateIds.join(',')}`;
     Promise.all([
       fetch(`/api/v1/hotels?${stateParam}`).then(r => r.json()),
       fetch(`/api/v1/vehicle-package-rates?${stateParam}`).then(r => r.json()),
-    ]).then(([hd, vd]) => {
+      fetch(`/api/v1/cities?${stateParam}`).then(r => r.json()),
+    ]).then(([hd, vd, cd]) => {
       if (hd.success) setHotels(hd.data);
       if (vd.success) setVehRates(vd.data);
+      if (cd.success) setCities(cd.data);
     });
   }, [stateIds]);
 
@@ -187,21 +216,38 @@ export default function CreateQuotePage() {
       { tier_name: 'Standard', is_most_popular: false },
       { tier_name: 'Deluxe',   is_most_popular: true  },
     ];
-    const destList = tpl.destinations as string[];
+
+    // Sort destinations by their first appearance in template_days (preserves intended itinerary order)
+    const rawDests = tpl.destinations as string[];
+    const dayOrderMap = new Map<string, number>();
+    (tpl.template_days ?? []).forEach(d => {
+      if (!dayOrderMap.has(d.destination_id)) dayOrderMap.set(d.destination_id, d.day_number);
+    });
+    const destList = [...rawDests].sort((a, b) => (dayOrderMap.get(a) ?? 99) - (dayOrderMap.get(b) ?? 99));
+
     const nightsTotal = tpl.duration_nights || durationNights;
 
     const newOpts: OptionDraft[] = pkgOptions.slice(0, 3).map((pkg, oi) => {
       let cursorMs = startDate ? new Date(startDate).getTime() : Date.now();
-      const hotels: HotelRow[] = destList.map(did => {
+
+      // Build rows with tier-defined nights
+      const rows: ({ did: string; n: number; tier: typeof tpl.template_hotel_tiers[0] | undefined })[] = destList.map(did => {
         const tier = tpl.template_hotel_tiers?.find(t => t.tier_name === pkg.tier_name && t.destination_id === did);
-        const n    = tier?.nights ?? Math.max(1, Math.floor(nightsTotal / Math.max(1, destList.length)));
+        const n = tier?.nights ?? Math.max(1, Math.floor(nightsTotal / Math.max(1, destList.length)));
+        return { did, n, tier };
+      }).filter(r => r.n > 0);
 
-        // Skip destinations with 0 nights (transit stops / no accommodation needed)
-        if (n === 0) return null;
+      // Fix total night count: if tier nights don't sum to nightsTotal, add remainder to last destination
+      const allocatedNights = rows.reduce((s, r) => s + r.n, 0);
+      if (allocatedNights < nightsTotal && rows.length > 0) {
+        rows[rows.length - 1].n += nightsTotal - allocatedNights;
+      }
 
+      const hotels: HotelRow[] = rows.map(({ did, n, tier }) => {
         const checkIn  = new Date(cursorMs).toISOString().slice(0, 10);
         cursorMs += n * 86400000;
         const checkOut = new Date(cursorMs).toISOString().slice(0, 10);
+        const defaultRooms = Math.max(1, Math.ceil(adults / 2));
         return {
           destination_id: did,
           hotel_id: tier?.default_hotel_id ?? '',
@@ -210,7 +256,8 @@ export default function CreateQuotePage() {
           check_in_date: checkIn,
           check_out_date: checkOut,
           nights: n,
-          rooms: Math.max(1, Math.ceil(adults / 2)),
+          rooms: defaultRooms,
+          rooms_config: Array.from({ length: defaultRooms }, () => ({ pax: 2 })),
           adults_per_room: 2,
           cwb: children512,
           cwob: childrenBelow5,
@@ -218,12 +265,18 @@ export default function CreateQuotePage() {
           fetching: false,
           fetch_error: null,
           manual_cost: null,
+          meal_overrides: {},
         };
-      }).filter(Boolean) as HotelRow[];
+      });
+
+      // Pre-fetch rates for any pre-filled hotels
+      hotels.forEach(h => { if (h.hotel_id) fetchHotelRates(h.hotel_id); });
+
       return { name: OPTION_NAMES[oi] ?? `Option ${oi + 1}`, is_most_popular: pkg.is_most_popular, hotels };
     });
     setOptions(newOpts);
     setExpandedOpt(0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startDate, adults, children512, childrenBelow5, durationNights]);
 
   useEffect(() => {
@@ -241,7 +294,7 @@ export default function CreateQuotePage() {
       });
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [options.map(o => o.hotels.map(h => `${h.hotel_id}|${h.room_category_id}|${h.meal_plan_id}|${h.check_in_date}|${h.check_out_date}|${h.rooms}`).join(',')).join(';')]);
+  }, [options.map(o => o.hotels.map(h => `${h.hotel_id}|${h.room_category_id}|${h.meal_plan_id}|${h.check_in_date}|${h.check_out_date}|${h.rooms_config.length}`).join(',')).join(';')]);
 
   /* ─── Auto-fill vehicle cost — prefer exact duration match ─── */
   function autoFillVehicle(vtId: string) {
@@ -253,6 +306,37 @@ export default function CreateQuotePage() {
     const closest = vehRates.filter(r => r.vehicle_type_id === vtId)
       .sort((a, b) => Math.abs(a.duration_days - durationDays) - Math.abs(b.duration_days - durationDays));
     setVehicleCost(closest[0]?.base_cost ?? 0);
+  }
+
+  /* ─── Helper: all dates in a hotel stay (check-in inclusive, check-out exclusive) ─── */
+  function getDatesInRange(checkIn: string, checkOut: string): string[] {
+    if (!checkIn || !checkOut) return [];
+    const dates: string[] = [];
+    let cur = new Date(checkIn).getTime();
+    const end = new Date(checkOut).getTime();
+    while (cur < end) {
+      dates.push(new Date(cur).toISOString().slice(0, 10));
+      cur += 86400000;
+    }
+    return dates;
+  }
+
+  /* ─── Fetch & cache hotel rates when a hotel is selected ─── */
+  async function fetchHotelRates(hotelId: string) {
+    if (!hotelId || hotelRatesCache[hotelId]) return;
+    try {
+      const res = await fetch(`/api/v1/hotels/${hotelId}/rates`);
+      const d   = await res.json();
+      if (d.success) {
+        setHotelRatesCache(prev => ({
+          ...prev,
+          [hotelId]: (d.data as { room_category_id: string; meal_plan_id: string }[]).map(r => ({
+            room_category_id: r.room_category_id,
+            meal_plan_id: r.meal_plan_id,
+          })),
+        }));
+      }
+    } catch { /* silent */ }
   }
 
   /* ─── Hotel row updater ─── */
@@ -284,7 +368,7 @@ export default function CreateQuotePage() {
             hotel_id: row.hotel_id, room_category_id: row.room_category_id, meal_plan_id: row.meal_plan_id,
             check_in_date: new Date(row.check_in_date).toISOString(),
             check_out_date: new Date(row.check_out_date).toISOString(),
-            rooms: row.rooms, adults_per_room: row.adults_per_room, cwb: row.cwb, cwob: row.cwob,
+            rooms: row.rooms_config.length, adults_per_room: row.adults_per_room, cwb: row.cwb, cwob: row.cwob,
           }),
         });
         const d = await res.json();
@@ -319,12 +403,17 @@ export default function CreateQuotePage() {
 
   /* ─── Live comparison calc ─── */
   function liveCalc(opt: OptionDraft) {
-    const hotelTotal = opt.hotels.reduce((s, h) => s + effectivePrice(h), 0);
-    const baseCost   = hotelTotal + vehicleCost;
-    const profitAmt  = profitType === 'PERCENTAGE' ? baseCost * profitValue / 100 : profitValue;
-    const beforeGst  = Math.max(0, baseCost + profitAmt);
-    const gstAmt     = beforeGst * gstPercent / 100;
-    return { hotelTotal, baseCost, profitAmt, beforeGst, gstAmt, total: beforeGst + gstAmt };
+    const hotelTotal  = opt.hotels.reduce((s, h) => s + effectivePrice(h), 0);
+    const baseCost    = hotelTotal + vehicleCost;
+    const profitAmt   = profitType === 'PERCENTAGE' ? baseCost * profitValue / 100 : profitValue;
+    const beforeGst   = Math.max(0, baseCost + profitAmt);
+    const discountAmt = discountValue > 0
+      ? (discountType === 'PERCENTAGE' ? beforeGst * discountValue / 100 : discountValue)
+      : 0;
+    const afterDiscount = Math.max(0, beforeGst - discountAmt);
+    const effectiveGstPct = includeGst ? gstPercent : 0;
+    const gstAmt      = afterDiscount * effectiveGstPct / 100;
+    return { hotelTotal, baseCost, profitAmt, beforeGst, discountAmt, afterDiscount, gstAmt, total: afterDiscount + gstAmt };
   }
 
   /* ─── Create/ensure customer ─── */
@@ -368,6 +457,8 @@ export default function CreateQuotePage() {
         private_template_id: selectedPT?.id ?? null,
         group_template_id: selectedGT?.id ?? null,
         group_batch_id: selectedBatch?.id ?? null,
+        pickup_point: pickupLocation || null,
+        drop_point: dropLocation || null,
       };
       const qRes = await fetch('/api/v1/quotes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const qData = await qRes.json();
@@ -385,8 +476,12 @@ export default function CreateQuotePage() {
           activity_cost: 0, transfer_cost: 0, misc_cost: 0,
           profit_type: profitType,
           profit_value: profitValue,
-          discount_amount: 0,
-          gst_percent: gstPercent,
+          discount_type: discountType,
+          discount_amount: discountValue,
+          discount_valid_till: discountValidTill ? new Date(discountValidTill).toISOString() : null,
+          discount_expires_at: discountValidTill ? new Date(discountValidTill).toISOString() : null,
+          discount_note: discountNote || null,
+          gst_percent: includeGst ? gstPercent : 0,
           rounding_rule: 'NONE',
           internal_notes: null,
           customer_visible_notes: null,
@@ -397,7 +492,10 @@ export default function CreateQuotePage() {
             meal_plan_id: h.meal_plan_id,
             check_in_date: new Date(h.check_in_date).toISOString(),
             check_out_date: new Date(h.check_out_date).toISOString(),
-            rooming_json: { rooms: [{ type: 'Double', count: h.rooms, adults: h.adults_per_room, children_with_bed: h.cwb, children_without_bed: h.cwob }] },
+            rooming_json: {
+              rooms: h.rooms_config.map((rc, ri) => ({ type: 'Double', count: 1, room_number: ri + 1, adults: rc.pax, children_with_bed: 0, children_without_bed: 0 })),
+              ...(h.meal_overrides && Object.keys(h.meal_overrides).length > 0 ? { meal_overrides: h.meal_overrides } : {}),
+            },
             manual_cost_override: h.manual_cost ?? null,
             override_reason: h.manual_cost != null ? 'No rate configured for dates' : null,
           })),
@@ -637,6 +735,28 @@ export default function CreateQuotePage() {
                       </p>
                     </div>
                   )}
+                  <div>
+                    <label className={lbl}>Pickup City</label>
+                    {cities.length > 0 ? (
+                      <select className={sel} style={inpSt} value={pickupLocation} onChange={e => setPickupLocation(e.target.value)}>
+                        <option value="">Select pickup city…</option>
+                        {cities.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                      </select>
+                    ) : (
+                      <input className={inp} style={inpSt} value={pickupLocation} onChange={e => setPickupLocation(e.target.value)} placeholder="e.g. Bangalore Airport" />
+                    )}
+                  </div>
+                  <div>
+                    <label className={lbl}>Drop City</label>
+                    {cities.length > 0 ? (
+                      <select className={sel} style={inpSt} value={dropLocation} onChange={e => setDropLocation(e.target.value)}>
+                        <option value="">Select drop city (if different)…</option>
+                        {cities.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                      </select>
+                    ) : (
+                      <input className={inp} style={inpSt} value={dropLocation} onChange={e => setDropLocation(e.target.value)} placeholder="e.g. Bangalore Airport" />
+                    )}
+                  </div>
                 </>
               )}
 
@@ -797,7 +917,7 @@ export default function CreateQuotePage() {
                               <p className="text-xs text-[#64748B]">{start} → {end}</p>
                             </div>
                             <div className="text-right">
-                              <p className="text-sm font-bold text-[#0F172A]">₹{Number(b.adult_price).toLocaleString('en-IN')}/adult</p>
+                              <p className="text-sm font-bold text-[#0F172A]">₹{Number(Math.round(b.adult_price)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}/adult</p>
                               <p className="text-xs text-[#94A3B8]">{b.available_seats} seats left</p>
                             </div>
                           </div>
@@ -819,7 +939,7 @@ export default function CreateQuotePage() {
             <p className="text-sm font-bold text-[#0F172A] mb-1">Traveller Count</p>
             <p className="text-xs mb-4" style={{ color: '#94A3B8' }}>
               {selectedBatch
-                ? `₹${Number(selectedBatch.adult_price).toLocaleString('en-IN')}/adult · ${adults > 0 ? `Est. total: ₹${(Number(selectedBatch.adult_price) * adults).toLocaleString('en-IN')}` : 'enter count to see total'}`
+                ? `₹${Number(Math.round(selectedBatch.adult_price)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}/adult · ${adults > 0 ? `Est. total: ₹${(Number(selectedBatch.adult_price) * Math.round(adults)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : 'enter count to see total'}`
                 : 'Optional — enter the number of travellers for this booking'}
             </p>
             <div className="grid grid-cols-3 gap-3">
@@ -868,7 +988,8 @@ export default function CreateQuotePage() {
                     if (n === 0) return null;
                     const checkIn  = new Date(cursorMs).toISOString().slice(0, 10);
                     cursorMs += n * 86400000;
-                    return { destination_id: did, hotel_id: '', room_category_id: '', meal_plan_id: '', check_in_date: checkIn, check_out_date: new Date(cursorMs).toISOString().slice(0, 10), nights: n, rooms: Math.max(1, Math.ceil(adults / 2)), adults_per_room: 2, cwb: children512, cwob: childrenBelow5, fetched_price: null, fetching: false, fetch_error: null, manual_cost: null };
+                    const defRooms = Math.max(1, Math.ceil(adults / 2));
+                    return { destination_id: did, hotel_id: '', room_category_id: '', meal_plan_id: '', check_in_date: checkIn, check_out_date: new Date(cursorMs).toISOString().slice(0, 10), nights: n, rooms: defRooms, rooms_config: Array.from({ length: defRooms }, () => ({ pax: 2 })), adults_per_room: 2, cwb: children512, cwob: childrenBelow5, fetched_price: null, fetching: false, fetch_error: null, manual_cost: null, meal_overrides: {} };
                   }).filter(Boolean) as HotelRow[];
                   setOptions(p => [...p, { name: OPTION_NAMES[ni], is_most_popular: false, hotels }]);
                   setExpandedOpt(ni);
@@ -900,7 +1021,7 @@ export default function CreateQuotePage() {
                         onChange={e => setOptions(prev => prev.map((o, i) => i === oi ? { ...o, name: e.target.value } : o))}
                         placeholder="Option name…"
                       />
-                      <p className="text-xs text-[#94A3B8]">{optionTotal > 0 ? `Hotel Total: ₹${optionTotal.toLocaleString('en-IN')}` : 'Select hotels to see price'}</p>
+                      <p className="text-xs text-[#94A3B8]">{optionTotal > 0 ? `Hotel Total: ₹${Math.round(optionTotal).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : 'Select hotels to see price'}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -925,62 +1046,124 @@ export default function CreateQuotePage() {
                 {isOpen && (
                   <div className="border-t px-4 pb-4" style={{ borderColor: '#F1F5F9' }}>
                     {opt.hotels.map((h, hi) => {
-                      const dest       = dests.find(d => d.id === h.destination_id);
-                      const destHotels = hotels.filter(ht => ht.destination_id === h.destination_id);
-                      const roomCats   = hotels.find(ht => ht.id === h.hotel_id)?.room_categories ?? [];
-                      const pax        = adults + children512 + childrenBelow5;
+                      const dest     = dests.find(d => d.id === h.destination_id);
+                      const roomCats = hotels.find(ht => ht.id === h.hotel_id)?.room_categories ?? [];
+                      const totalPax = h.rooms_config.reduce((s, r) => s + r.pax, 0);
+                      // Star-rating filter
+                      const allDestHotels    = hotels.filter(ht => ht.destination_id === h.destination_id);
+                      const starFiltered     = allDestHotels.filter(ht => ht.star_rating === hotelCategory);
+                      const hotelList        = starFiltered.length > 0 ? starFiltered : allDestHotels;
+                      const otherStarHotels  = starFiltered.length > 0 ? allDestHotels.filter(ht => ht.star_rating !== hotelCategory) : [];
+                      // Meal-plan filter by room-category rates
+                      const cachedRates      = hotelRatesCache[h.hotel_id] ?? [];
+                      const availMpIds       = h.room_category_id
+                        ? new Set(cachedRates.filter(r => r.room_category_id === h.room_category_id).map(r => r.meal_plan_id))
+                        : null;
+                      const filteredMealPlans = availMpIds ? mealPlans.filter(m => availMpIds.has(m.id)) : mealPlans;
+                      const isDragOver = dragOverIndex?.field === oi && dragOverIndex?.index === hi;
                       return (
-                        <div key={hi} className="pt-4" style={{ borderTop: hi > 0 ? '1px dashed #E2E8F0' : 'none', marginTop: hi > 0 ? 16 : 8 }}>
+                        <div
+                          key={hi}
+                          draggable
+                          onDragStart={() => { dragRef.current = { field: oi, fromIndex: hi }; }}
+                          onDragEnd={() => { dragRef.current = null; setDragOverIndex(null); }}
+                          onDragOver={e => { e.preventDefault(); setDragOverIndex({ field: oi, index: hi }); }}
+                          onDrop={e => {
+                            e.preventDefault();
+                            if (!dragRef.current || dragRef.current.field !== oi) return;
+                            const from = dragRef.current.fromIndex;
+                            if (from === hi) return;
+                            setOptions(prev => prev.map((o, i) => {
+                              if (i !== oi) return o;
+                              const next = [...o.hotels];
+                              const [moved] = next.splice(from, 1);
+                              next.splice(hi, 0, moved);
+                              return { ...o, hotels: next };
+                            }));
+                            setDragOverIndex(null);
+                          }}
+                          className="pt-4 transition-all"
+                          style={{
+                            borderTop: hi > 0 ? '1px dashed #E2E8F0' : 'none',
+                            marginTop: hi > 0 ? 16 : 8,
+                            opacity: dragRef.current?.field === oi && dragRef.current?.fromIndex === hi ? 0.4 : 1,
+                            border: isDragOver ? `2px solid ${T}` : undefined,
+                            borderRadius: isDragOver ? 12 : undefined,
+                            transform: isDragOver ? 'scale(1.01)' : undefined,
+                            padding: isDragOver ? '12px 8px' : undefined,
+                          }}>
                           <div className="flex items-center justify-between mb-3">
-                            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: T }}>{dest?.name ?? h.destination_id}</p>
+                            <div className="flex items-center gap-2">
+                              <GripVertical className="w-4 h-4 text-[#CBD5E1] cursor-grab active:cursor-grabbing flex-shrink-0" />
+                              <p className="text-xs font-bold uppercase tracking-wider" style={{ color: T }}>{dest?.name ?? h.destination_id}</p>
+                            </div>
                             <div className="flex items-center gap-2 text-xs text-[#64748B]">
                               <span>{h.nights}N</span>
                               <span>·</span>
-                              <span>{h.rooms} rm</span>
-                              <span>·</span>
-                              <span>{pax} pax</span>
+                              <span className="font-semibold">{h.rooms_config.length} rm · {totalPax} pax</span>
                               {h.fetching && <Loader2 className="w-3 h-3 animate-spin text-[#94A3B8]" />}
                               {!h.fetching && h.fetched_price !== null && (
-                                <span className="font-bold" style={{ color: T }}>₹{h.fetched_price.toLocaleString('en-IN')}</span>
+                                <span className="font-bold" style={{ color: T }}>₹{Math.round(h.fetched_price).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
                               )}
                               {!h.fetching && h.fetched_price === null && h.manual_cost !== null && (
-                                <span className="font-bold" style={{ color: '#F59E0B' }}>₹{h.manual_cost.toLocaleString('en-IN')} <span className="font-normal text-[#94A3B8]">(manual)</span></span>
+                                <span className="font-bold" style={{ color: '#F59E0B' }}>₹{Math.round(h.manual_cost).toLocaleString('en-IN', { maximumFractionDigits: 0 })} <span className="font-normal text-[#94A3B8]">(manual)</span></span>
                               )}
                               {!h.fetching && h.fetch_error && h.fetched_price === null && h.manual_cost === null && (
                                 <span className="text-[#EF4444] font-medium">No rate</span>
                               )}
                             </div>
                           </div>
+                          {/* ─── All 5 fields + room config ─── */}
                           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                            {/* Hotel */}
                             <div className="col-span-2 sm:col-span-1">
-                              <label className={lbl}>Hotel</label>
+                              <label className={lbl}>
+                                Hotel {starFiltered.length > 0 && <span className="text-[10px] font-normal text-[#22c55e]">{starFiltered.length} {hotelCategory}★ match{starFiltered.length !== 1 ? 'es' : ''}</span>}
+                              </label>
                               <select className={sel} style={inpSt} value={h.hotel_id}
-                                onChange={e => updHotelAndFetch(oi, hi, { hotel_id: e.target.value, room_category_id: '', fetched_price: null })}>
-                                <option value="">{destHotels.length === 0 ? '⚠ No hotels for this destination' : 'Select hotel…'}</option>
-                                {destHotels.map(ht => <option key={ht.id} value={ht.id}>{ht.hotel_name}{ht.star_rating ? ` (${ht.star_rating}★)` : ''}</option>)}
+                                onChange={e => {
+                                  const newId = e.target.value;
+                                  updHotelAndFetch(oi, hi, { hotel_id: newId, room_category_id: '', meal_plan_id: '', fetched_price: null });
+                                  if (newId) fetchHotelRates(newId);
+                                }}>
+                                <option value="">{hotelList.length === 0 ? '⚠ No hotels for this destination' : 'Select hotel…'}</option>
+                                {hotelList.map(ht => <option key={ht.id} value={ht.id}>{ht.hotel_name}{ht.star_rating ? ` (${ht.star_rating}★)` : ''}</option>)}
+                                {otherStarHotels.length > 0 && <option disabled>── Other star ratings ──</option>}
+                                {otherStarHotels.map(ht => <option key={`o-${ht.id}`} value={ht.id}>{ht.hotel_name}{ht.star_rating ? ` (${ht.star_rating}★)` : ''}</option>)}
                               </select>
-                              {destHotels.length === 0 && (
+                              {hotelList.length === 0 && (
                                 <p className="text-[11px] mt-1" style={{ color: '#F59E0B' }}>
                                   Add hotels for <strong>{dest?.name}</strong> in Hotels module first.
                                 </p>
                               )}
                             </div>
+                            {/* Room Type */}
                             <div>
                               <label className={lbl}>Room Type</label>
                               <select className={sel} style={inpSt} value={h.room_category_id} disabled={!h.hotel_id}
-                                onChange={e => updHotelAndFetch(oi, hi, { room_category_id: e.target.value })}>
+                                onChange={e => updHotelAndFetch(oi, hi, { room_category_id: e.target.value, meal_plan_id: '' })}>
                                 <option value="">Select…</option>
                                 {roomCats.map(r => <option key={r.id} value={r.id}>{r.room_category_name}</option>)}
                               </select>
                             </div>
+                            {/* Meal Plan */}
                             <div>
-                              <label className={lbl}>Meal Plan</label>
-                              <select className={sel} style={inpSt} value={h.meal_plan_id}
+                              <label className={lbl}>
+                                Meal Plan {availMpIds && availMpIds.size === 0 && h.room_category_id && <span className="text-[10px] text-red-400">No rates</span>}
+                              </label>
+                              <select className={sel} style={inpSt} value={h.meal_plan_id} disabled={!h.room_category_id}
                                 onChange={e => updHotelAndFetch(oi, hi, { meal_plan_id: e.target.value })}>
                                 <option value="">Select…</option>
-                                {mealPlans.map(m => <option key={m.id} value={m.id}>{m.code} — {m.name}</option>)}
+                                {filteredMealPlans.map(m => <option key={m.id} value={m.id}>{m.code} — {m.name}</option>)}
+                                {availMpIds && availMpIds.size === 0 && h.room_category_id && (
+                                  <option disabled>No rates configured for this room</option>
+                                )}
                               </select>
+                              {availMpIds && availMpIds.size === 0 && h.room_category_id && (
+                                <p className="text-[11px] mt-1 text-red-400">Add rates in Hotels → Rates tab first.</p>
+                              )}
                             </div>
+                            {/* Check-in */}
                             <div>
                               <label className={lbl}>Check-in</label>
                               <input type="date" className={inp} style={inpSt} value={h.check_in_date}
@@ -990,6 +1173,7 @@ export default function CreateQuotePage() {
                                   updHotelAndFetch(oi, hi, { check_in_date: newIn, check_out_date: newOut });
                                 }} />
                             </div>
+                            {/* Check-out */}
                             <div>
                               <label className={lbl}>Check-out</label>
                               <input type="date" className={inp} style={inpSt} value={h.check_out_date}
@@ -998,12 +1182,217 @@ export default function CreateQuotePage() {
                                   updHotelAndFetch(oi, hi, { check_out_date: e.target.value, nights });
                                 }} />
                             </div>
-                            <div>
-                              <label className={lbl}>Rooms</label>
-                              <input type="number" min="1" className={inp} style={inpSt} value={h.rooms}
-                                onChange={e => updHotelAndFetch(oi, hi, { rooms: Number(e.target.value) })} />
-                            </div>
                           </div>
+
+                          {/* ─── Per-room pax config ─── */}
+                          <div className="mt-3">
+                            <div className="flex items-center justify-between mb-2">
+                              <label className={lbl} style={{ marginBottom: 0 }}>
+                                Rooms · {h.rooms_config.length} room{h.rooms_config.length !== 1 ? 's' : ''} · {totalPax} pax total
+                              </label>
+                            </div>
+                            <div className="flex flex-col gap-1.5">
+                              {h.rooms_config.map((rc, ri) => (
+                                <div key={ri} className="flex items-center gap-2 px-3 py-1.5 rounded-lg" style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                                  <span className="text-xs text-[#64748B] w-16 flex-shrink-0">Room {ri + 1}</span>
+                                  <button type="button"
+                                    className="w-6 h-6 rounded flex items-center justify-center flex-shrink-0"
+                                    style={{ backgroundColor: '#E2E8F0', color: '#64748B' }}
+                                    onClick={() => {
+                                      const next = [...h.rooms_config];
+                                      next[ri] = { pax: Math.max(1, rc.pax - 1) };
+                                      updHotelAndFetch(oi, hi, { rooms_config: next, rooms: next.length });
+                                    }}>
+                                    <Minus className="w-3 h-3" />
+                                  </button>
+                                  <span className="text-xs font-bold w-8 text-center" style={{ color: T }}>{rc.pax} pax</span>
+                                  <button type="button"
+                                    className="w-6 h-6 rounded flex items-center justify-center flex-shrink-0"
+                                    style={{ backgroundColor: '#E2E8F0', color: '#64748B' }}
+                                    onClick={() => {
+                                      const next = [...h.rooms_config];
+                                      next[ri] = { pax: rc.pax + 1 };
+                                      updHotelAndFetch(oi, hi, { rooms_config: next, rooms: next.length });
+                                    }}>
+                                    <Plus className="w-3 h-3" />
+                                  </button>
+                                  {h.rooms_config.length > 1 && (
+                                    <button type="button"
+                                      className="ml-auto w-5 h-5 rounded-full flex items-center justify-center"
+                                      style={{ backgroundColor: '#FEF2F2', color: '#DC2626' }}
+                                      onClick={() => {
+                                        const next = h.rooms_config.filter((_, i) => i !== ri);
+                                        updHotelAndFetch(oi, hi, { rooms_config: next, rooms: next.length });
+                                      }}>
+                                      <Minus className="w-2.5 h-2.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                            <button type="button"
+                              className="mt-2 flex items-center gap-1.5 text-xs font-semibold h-7 px-3 rounded-lg"
+                              style={{ border: `1px dashed ${T}`, color: T }}
+                              onClick={() => {
+                                const next = [...h.rooms_config, { pax: 1 }];
+                                updHotelAndFetch(oi, hi, { rooms_config: next, rooms: next.length });
+                              }}>
+                              <Plus className="w-3 h-3" /> Add Room
+                            </button>
+                          </div>
+
+                          {/* ─── Meal Schedule Override ─── */}
+                          {(() => {
+                            const mealKey = `${oi}-${hi}`;
+                            const isOpen  = expandedMealRows.has(mealKey);
+                            const stayDates = getDatesInRange(h.check_in_date, h.check_out_date);
+                            const hasOverrides = Object.keys(h.meal_overrides ?? {}).length > 0;
+                            return (
+                              <div className="mt-3">
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedMealRows(prev => {
+                                    const next = new Set(prev);
+                                    if (next.has(mealKey)) next.delete(mealKey); else next.add(mealKey);
+                                    return next;
+                                  })}
+                                  className="flex items-center gap-2 text-xs font-semibold h-7 px-3 rounded-lg transition-colors"
+                                  style={{
+                                    border: `1px solid ${hasOverrides ? T : '#E2E8F0'}`,
+                                    color: hasOverrides ? T : '#94A3B8',
+                                    backgroundColor: hasOverrides ? `${T}08` : 'transparent',
+                                  }}
+                                >
+                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M18 8h1a4 4 0 010 8h-1M2 8h16v9a4 4 0 01-4 4H6a4 4 0 01-4-4V8zM6 1v3M10 1v3M14 1v3"/>
+                                  </svg>
+                                  {hasOverrides ? 'Meals customised' : 'Customize Meals'}
+                                  {isOpen
+                                    ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="18 15 12 9 6 15"/></svg>
+                                    : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                                  }
+                                </button>
+
+                                {isOpen && stayDates.length > 0 && (
+                                  <div className="mt-2 rounded-xl overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
+                                    {/* Header row */}
+                                    <div className="grid items-center px-3 py-2 text-[10px] font-bold uppercase tracking-wider" style={{ backgroundColor: '#F8FAFC', color: '#94A3B8', gridTemplateColumns: '1fr 56px 56px 56px 56px' }}>
+                                      <span>Date</span>
+                                      <span className="text-center">🌅 B</span>
+                                      <span className="text-center">☀️ L</span>
+                                      <span className="text-center">🌙 D</span>
+                                      <span className="text-center">Auto</span>
+                                    </div>
+                                    {stayDates.map((date, di) => {
+                                      const ov = h.meal_overrides?.[date];
+                                      const isAuto = ov === undefined;
+                                      const fmt = new Date(date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+                                      const isIn  = di === 0;
+                                      const isOut = di === stayDates.length - 1;
+
+                                      function toggleMeal(meal: 'breakfast' | 'lunch' | 'dinner') {
+                                        const current = ov ?? { breakfast: false, lunch: false, dinner: false };
+                                        const updated = { ...current, [meal]: !current[meal] };
+                                        // If all false, remove the override (revert to auto)
+                                        if (!updated.breakfast && !updated.lunch && !updated.dinner) {
+                                          const next = { ...h.meal_overrides };
+                                          delete next[date];
+                                          updHotel(oi, hi, { meal_overrides: next });
+                                        } else {
+                                          updHotel(oi, hi, { meal_overrides: { ...h.meal_overrides, [date]: updated } });
+                                        }
+                                      }
+
+                                      function setAuto() {
+                                        const next = { ...h.meal_overrides };
+                                        delete next[date];
+                                        updHotel(oi, hi, { meal_overrides: next });
+                                      }
+
+                                      function setManual() {
+                                        // Default manual: check-in=dinner only, check-out=breakfast+lunch, mid=all 3
+                                        const def = isIn
+                                          ? { breakfast: false, lunch: false, dinner: true }
+                                          : isOut
+                                            ? { breakfast: true, lunch: true, dinner: false }
+                                            : { breakfast: true, lunch: true, dinner: true };
+                                        updHotel(oi, hi, { meal_overrides: { ...h.meal_overrides, [date]: def } });
+                                      }
+
+                                      const MealBox = ({ meal, checked }: { meal: 'breakfast' | 'lunch' | 'dinner'; checked: boolean }) => (
+                                        <button
+                                          type="button"
+                                          onClick={() => { if (isAuto) setManual(); else toggleMeal(meal); }}
+                                          className="w-full flex items-center justify-center h-7 rounded-md transition-all text-xs font-bold"
+                                          style={{
+                                            backgroundColor: !isAuto && checked
+                                              ? meal === 'breakfast' ? '#FEF3C7' : meal === 'lunch' ? '#DCFCE7' : '#EEF2FF'
+                                              : '#F1F5F9',
+                                            color: !isAuto && checked
+                                              ? meal === 'breakfast' ? '#D97706' : meal === 'lunch' ? '#16A34A' : '#4338CA'
+                                              : '#CBD5E1',
+                                            border: !isAuto && checked
+                                              ? `1px solid ${meal === 'breakfast' ? '#FDE68A' : meal === 'lunch' ? '#86EFAC' : '#A5B4FC'}`
+                                              : '1px solid #E2E8F0',
+                                          }}
+                                        >
+                                          {!isAuto && checked ? '✓' : '–'}
+                                        </button>
+                                      );
+
+                                      return (
+                                        <div
+                                          key={date}
+                                          className="grid items-center px-3 py-1.5"
+                                          style={{
+                                            gridTemplateColumns: '1fr 56px 56px 56px 56px',
+                                            borderTop: di > 0 ? '1px solid #F1F5F9' : undefined,
+                                            backgroundColor: isAuto ? 'white' : `${T}04`,
+                                          }}
+                                        >
+                                          <div>
+                                            <span className="text-xs font-semibold" style={{ color: '#0F172A' }}>{fmt}</span>
+                                            {isIn && <span className="ml-1 text-[9px] font-bold px-1 py-0.5 rounded" style={{ backgroundColor: '#DBEAFE', color: '#1D4ED8' }}>IN</span>}
+                                            {isOut && <span className="ml-1 text-[9px] font-bold px-1 py-0.5 rounded" style={{ backgroundColor: '#FCE7F3', color: '#BE185D' }}>OUT</span>}
+                                          </div>
+                                          <div className="px-1"><MealBox meal="breakfast" checked={ov?.breakfast ?? false} /></div>
+                                          <div className="px-1"><MealBox meal="lunch"     checked={ov?.lunch     ?? false} /></div>
+                                          <div className="px-1"><MealBox meal="dinner"    checked={ov?.dinner    ?? false} /></div>
+                                          <div className="px-1">
+                                            <button
+                                              type="button"
+                                              onClick={() => isAuto ? setManual() : setAuto()}
+                                              className="w-full h-7 rounded-md text-[10px] font-bold transition-all"
+                                              style={{
+                                                backgroundColor: isAuto ? `${T}15` : '#F1F5F9',
+                                                color: isAuto ? T : '#CBD5E1',
+                                                border: `1px solid ${isAuto ? T + '40' : '#E2E8F0'}`,
+                                              }}
+                                            >
+                                              {isAuto ? 'Auto' : 'Auto'}
+                                            </button>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                    {/* Reset all button */}
+                                    {hasOverrides && (
+                                      <div className="px-3 py-2 flex justify-end" style={{ borderTop: '1px solid #F1F5F9' }}>
+                                        <button
+                                          type="button"
+                                          onClick={() => updHotel(oi, hi, { meal_overrides: {} })}
+                                          className="text-[10px] font-semibold px-2 py-1 rounded-md"
+                                          style={{ color: '#94A3B8', border: '1px solid #E2E8F0' }}
+                                        >
+                                          Reset all to Auto
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
 
                           {/* Manual cost fallback — shown when rate lookup fails */}
                           {h.fetch_error && h.fetched_price === null && h.hotel_id && h.room_category_id && h.meal_plan_id && (
@@ -1034,7 +1423,7 @@ export default function CreateQuotePage() {
                     {optionTotal > 0 && (
                       <div className="mt-4 p-3 rounded-xl flex items-center justify-between" style={{ backgroundColor: '#F0F9FF', border: `1px solid ${T}30` }}>
                         <span className="text-xs font-bold text-[#64748B]">Hotel B2B Total ({opt.name})</span>
-                        <span className="text-sm font-bold" style={{ color: T }}>₹{optionTotal.toLocaleString('en-IN')}</span>
+                        <span className="text-sm font-bold" style={{ color: T }}>₹{Math.round(optionTotal).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
                       </div>
                     )}
                   </div>
@@ -1053,6 +1442,16 @@ export default function CreateQuotePage() {
           <div className="bg-white rounded-2xl p-5" style={card}>
             <p className="text-sm font-bold text-[#0F172A] mb-1">Vehicle Selection</p>
             <p className="text-xs text-[#94A3B8]">One vehicle applies to all package options · {durationDays}D trip</p>
+            {(pickupLocation || dropLocation) && (
+              <div className="mt-2 flex items-center gap-3 text-xs" style={{ color: '#64748B' }}>
+                <MapPin className="w-3.5 h-3.5 flex-shrink-0" style={{ color: T }} />
+                <span>
+                  {pickupLocation && <><span className="font-semibold">Pickup:</span> {pickupLocation}</>}
+                  {pickupLocation && dropLocation && ' → '}
+                  {dropLocation && <><span className="font-semibold">Drop:</span> {dropLocation}</>}
+                </span>
+              </div>
+            )}
           </div>
           <div className="bg-white rounded-2xl p-5" style={card}>
             <div className="grid grid-cols-2 gap-4">
@@ -1069,10 +1468,15 @@ export default function CreateQuotePage() {
               </div>
             </div>
 
-            {/* Rate chips — only show rates matching the trip duration */}
+            {/* Rate chips — filtered to relevant routes for current state/destinations */}
             {vehicleTypeId && (() => {
-              const exactRates  = vehRates.filter(r => r.vehicle_type_id === vehicleTypeId && r.duration_days === durationDays);
-              const otherRates  = vehRates.filter(r => r.vehicle_type_id === vehicleTypeId && r.duration_days !== durationDays);
+              // Filter to rates for selected states; further filter by duration for primary vs other
+              const stateFilteredRates = vehRates.filter(r =>
+                r.vehicle_type_id === vehicleTypeId &&
+                (stateIds.length === 0 || stateIds.includes(r.state_id))
+              );
+              const exactRates  = stateFilteredRates.filter(r => r.duration_days === durationDays);
+              const otherRates  = stateFilteredRates.filter(r => r.duration_days !== durationDays);
               if (exactRates.length === 0 && otherRates.length === 0) return null;
               return (
                 <div className="mt-4">
@@ -1082,7 +1486,7 @@ export default function CreateQuotePage() {
                       <button key={r.id} type="button" onClick={() => setVehicleCost(r.base_cost)}
                         className="text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors"
                         style={vehicleCost === r.base_cost ? { backgroundColor: `${T}15`, borderColor: T, color: T } : { backgroundColor: '#F8FAFC', borderColor: '#E2E8F0', color: '#64748B' }}>
-                        {r.route_name} · {r.duration_days}D · ₹{r.base_cost.toLocaleString('en-IN')}
+                        {r.route_name} · {r.duration_days}D · ₹{Math.round(r.base_cost).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                       </button>
                     ))}
                     {exactRates.length === 0 && <p className="text-xs text-[#94A3B8]">No rates for {durationDays}D — showing others below</p>}
@@ -1094,7 +1498,7 @@ export default function CreateQuotePage() {
                             <button key={r.id} type="button" onClick={() => setVehicleCost(r.base_cost)}
                               className="text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors"
                               style={{ backgroundColor: '#FFF7ED', borderColor: '#FED7AA', color: '#92400E' }}>
-                              {r.route_name} · {r.duration_days}D · ₹{r.base_cost.toLocaleString('en-IN')}
+                              {r.route_name} · {r.duration_days}D · ₹{Math.round(r.base_cost).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                             </button>
                           ))}
                         </div>
@@ -1115,7 +1519,7 @@ export default function CreateQuotePage() {
                     return (
                       <div key={oi} className="flex items-center justify-between text-xs p-2.5 rounded-lg" style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
                         <span className="font-semibold text-[#0F172A]">{opt.name}</span>
-                        <span className="text-[#64748B]">Hotel ₹{hotelTotal.toLocaleString('en-IN')} + Vehicle ₹{vehicleCost.toLocaleString('en-IN')} = <span className="font-bold text-[#0F172A]">₹{(hotelTotal + vehicleCost).toLocaleString('en-IN')}</span></span>
+                        <span className="text-[#64748B]">Hotel ₹{Math.round(hotelTotal).toLocaleString('en-IN', { maximumFractionDigits: 0 })} + Vehicle ₹{Math.round(vehicleCost).toLocaleString('en-IN', { maximumFractionDigits: 0 })} = <span className="font-bold text-[#0F172A]">₹{(hotelTotal + Math.round(vehicleCost)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span></span>
                       </div>
                     );
                   })}
@@ -1156,18 +1560,65 @@ export default function CreateQuotePage() {
                 <input type="number" min="0" className={inp} style={inpSt} value={profitValue} onChange={e => setProfitValue(Number(e.target.value))} />
               </div>
               <div>
-                <label className={lbl}>GST (%)</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className={lbl} style={{ marginBottom: 0 }}>GST (%)</label>
+                  <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                    <input type="checkbox" checked={includeGst} onChange={e => setIncludeGst(e.target.checked)} className="w-3.5 h-3.5 accent-[#134956]" />
+                    <span className="text-[11px] font-semibold" style={{ color: includeGst ? T : '#94A3B8' }}>Include GST</span>
+                  </label>
+                </div>
                 <div className="flex gap-2">
                   {[0, 5, 12].map(g => (
-                    <button key={g} type="button" onClick={() => setGstPercent(g)}
-                      className="flex-1 h-9 rounded-lg text-xs font-bold border-2 transition-all"
-                      style={gstPercent === g ? { backgroundColor: T, borderColor: T, color: 'white' } : { borderColor: '#E2E8F0', color: '#64748B' }}>
+                    <button key={g} type="button" onClick={() => { setGstPercent(g); if (g > 0) setIncludeGst(true); }}
+                      disabled={!includeGst}
+                      className="flex-1 h-9 rounded-lg text-xs font-bold border-2 transition-all disabled:opacity-40"
+                      style={includeGst && gstPercent === g ? { backgroundColor: T, borderColor: T, color: 'white' } : { borderColor: '#E2E8F0', color: '#64748B' }}>
                       {g}%
                     </button>
                   ))}
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* Discount */}
+          <div className="bg-white rounded-2xl p-5" style={card}>
+            <p className="text-sm font-bold text-[#0F172A] mb-4">Discount <span className="text-xs font-normal text-[#94A3B8]">(optional)</span></p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div>
+                <label className={lbl}>Discount Type</label>
+                <div className="flex gap-2">
+                  {(['FLAT', 'PERCENTAGE'] as const).map(t => (
+                    <button key={t} type="button" onClick={() => { setDiscountType(t); setDiscountValue(0); }}
+                      className="flex-1 h-9 rounded-lg text-xs font-bold border-2 transition-all"
+                      style={discountType === t ? { backgroundColor: '#DC2626', borderColor: '#DC2626', color: 'white' } : { borderColor: '#E2E8F0', color: '#64748B' }}>
+                      {t === 'FLAT' ? '₹ Flat' : '% Off'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className={lbl}>Discount {discountType === 'FLAT' ? '(₹)' : '(%)'}</label>
+                <input type="number" min="0" className={inp} style={inpSt} value={discountValue || ''}
+                  onChange={e => setDiscountValue(Number(e.target.value))} placeholder="0" />
+              </div>
+              <div>
+                <label className={lbl}>Valid Till (date &amp; time)</label>
+                <input type="datetime-local" className={inp} style={inpSt} value={discountValidTill}
+                  onChange={e => setDiscountValidTill(e.target.value)} />
+              </div>
+              <div>
+                <label className={lbl}>Discount Note</label>
+                <input className={inp} style={inpSt} value={discountNote}
+                  onChange={e => setDiscountNote(e.target.value)} placeholder="e.g. Early bird offer" />
+              </div>
+            </div>
+            {discountValue > 0 && (
+              <p className="mt-2 text-xs font-medium" style={{ color: '#DC2626' }}>
+                🏷 {discountType === 'FLAT' ? `₹${Math.round(discountValue).toLocaleString('en-IN', { maximumFractionDigits: 0 })} off` : `${discountValue}% off`}
+                {discountValidTill ? ` · Valid till ${new Date(discountValidTill).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}` : ''}
+              </p>
+            )}
           </div>
 
           {/* Comparison table */}
@@ -1189,30 +1640,26 @@ export default function CreateQuotePage() {
                 </thead>
                 <tbody>
                   {[
-                    { label: 'Hotel B2B', key: 'hotelTotal' as const },
-                    { label: `Vehicle`, key: 'baseCost' as const, isVehicle: true },
-                    { label: 'B2B Subtotal', key: 'baseCost' as const, bold: true },
-                    { label: `Profit ${profitType === 'PERCENTAGE' ? `(${profitValue}%)` : '(flat)'}`, key: 'profitAmt' as const, green: true },
-                    { label: 'Before GST', key: 'beforeGst' as const },
-                    { label: `GST (${gstPercent}%)`, key: 'gstAmt' as const },
-                    { label: 'NET TOTAL', key: 'total' as const, bold: true, large: true },
+                    { label: 'Hotel B2B',   fn: (c: ReturnType<typeof liveCalc>) => c.hotelTotal },
+                    { label: 'Vehicle',     fn: () => vehicleCost },
+                    { label: 'B2B Subtotal',fn: (c: ReturnType<typeof liveCalc>) => c.baseCost,   bold: true },
+                    { label: `Profit ${profitType === 'PERCENTAGE' ? `(${profitValue}%)` : '(flat)'}`, fn: (c: ReturnType<typeof liveCalc>) => c.profitAmt, green: true },
+                    { label: 'Before Discount', fn: (c: ReturnType<typeof liveCalc>) => c.beforeGst },
+                    ...(discountValue > 0 ? [{ label: `Discount ${discountType === 'FLAT' ? `(₹${discountValue})` : `(${discountValue}%)`}`, fn: (c: ReturnType<typeof liveCalc>) => -c.discountAmt, red: true }] : []),
+                    { label: 'After Discount', fn: (c: ReturnType<typeof liveCalc>) => c.afterDiscount, bold: discountValue > 0 },
+                    ...(includeGst ? [{ label: `GST (${gstPercent}%)`, fn: (c: ReturnType<typeof liveCalc>) => c.gstAmt }] : []),
+                    { label: 'NET TOTAL',  fn: (c: ReturnType<typeof liveCalc>) => c.total, bold: true, large: true },
                   ].map((row, ri) => (
                     <tr key={ri} style={{ borderTop: '1px solid #F1F5F9', backgroundColor: row.bold ? '#F8FAFC' : 'white' }}>
                       <td className="px-4 py-2.5 text-xs text-[#64748B]" style={{ fontWeight: row.bold ? 700 : 400 }}>{row.label}</td>
                       {options.map((opt, oi) => {
-                        const c = liveCalc(opt);
-                        let val = 0;
-                        if (row.isVehicle) val = vehicleCost;
-                        else if (row.key === 'hotelTotal') val = c.hotelTotal;
-                        else if (row.key === 'baseCost') val = row.isVehicle ? vehicleCost : c.baseCost;
-                        else if (row.key === 'profitAmt') val = c.profitAmt;
-                        else if (row.key === 'beforeGst') val = c.beforeGst;
-                        else if (row.key === 'gstAmt') val = c.gstAmt;
-                        else if (row.key === 'total') val = c.total;
+                        const c   = liveCalc(opt);
+                        const val = row.fn(c);
+                        const isNeg = val < 0;
                         return (
                           <td key={oi} className="px-4 py-2.5 text-right font-semibold"
-                            style={{ color: row.large ? T : row.green ? '#16a34a' : '#0F172A', fontSize: row.large ? 15 : 12, fontWeight: row.bold ? 700 : 500 }}>
-                            ₹{Math.round(val).toLocaleString('en-IN')}
+                            style={{ color: (row as {large?: boolean; green?: boolean; red?: boolean}).large ? T : (row as {large?: boolean; green?: boolean; red?: boolean}).green ? '#16a34a' : (row as {large?: boolean; green?: boolean; red?: boolean}).red ? '#DC2626' : '#0F172A', fontSize: (row as {large?: boolean}).large ? 15 : 12, fontWeight: row.bold ? 700 : 500 }}>
+                            {isNeg ? '−' : ''}₹{Math.round(Math.abs(Math.round(val))).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                           </td>
                         );
                       })}
@@ -1233,7 +1680,7 @@ export default function CreateQuotePage() {
                   return (
                     <div key={oi} className="flex-1 p-3 rounded-xl text-center" style={{ backgroundColor: `${T}08`, border: `1px solid ${T}20` }}>
                       <p className="text-[10px] font-bold text-[#64748B]">{opt.name}</p>
-                      <p className="text-lg font-bold mt-1" style={{ color: T }}>₹{Math.round(c.total / adults).toLocaleString('en-IN')}</p>
+                      <p className="text-lg font-bold mt-1" style={{ color: T }}>₹{Math.round(c.total / Math.round(adults)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
                       <p className="text-[10px] text-[#94A3B8]">per adult</p>
                     </div>
                   );
@@ -1284,7 +1731,7 @@ export default function CreateQuotePage() {
                     return (
                       <div key={oi} className="flex-1 p-3 rounded-xl" style={{ backgroundColor: `${T}08`, border: `1px solid ${T}20` }}>
                         <p className="text-[10px] font-bold text-[#64748B]">{opt.name}</p>
-                        <p className="text-base font-bold mt-1" style={{ color: T }}>₹{Math.round(r.final_price).toLocaleString('en-IN')}</p>
+                        <p className="text-base font-bold mt-1" style={{ color: T }}>₹{Math.round(Math.round(r.final_price)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
                       </div>
                     );
                   })}

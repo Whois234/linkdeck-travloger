@@ -36,6 +36,13 @@ export default async function QuotesPage({
     },
   });
 
+  // Manually fetch group_batches since the relation isn't defined on Quote in Prisma
+  const batchIds = Array.from(new Set(raw.map(q => q.group_batch_id).filter((v): v is string => !!v)));
+  const batches = batchIds.length
+    ? await prisma.groupBatch.findMany({ where: { id: { in: batchIds } }, select: { id: true, adult_price: true, child_5_12_price: true } })
+    : [];
+  const batchById = Object.fromEntries(batches.map(b => [b.id, b]));
+
   // For privileged users, fetch creator names
   let creatorNames: Record<string, string> = {};
   if (isPrivileged && raw.length > 0) {
@@ -53,7 +60,8 @@ export default async function QuotesPage({
     start_date:      q.start_date instanceof Date  ? q.start_date.toISOString()  : String(q.start_date),
     created_at:      q.created_at instanceof Date  ? q.created_at.toISOString()  : String(q.created_at),
     created_by_name: creatorNames[q.created_by] ?? null,
-  }));
+    group_batch:     q.group_batch_id ? batchById[q.group_batch_id] ?? null : null,
+  })) as unknown as QuoteRow[];
 
   return <QuotesTable quotes={quotes} statusFilter={statusFilter} isPrivileged={!!isPrivileged} />;
 }

@@ -6,7 +6,7 @@ import { signToken } from '@/lib/auth';
 import { err } from '@/lib/api-response';
 
 const LoginSchema = z.object({
-  email: z.string().email(),
+  email: z.string().email().transform(v => v.toLowerCase().trim()),
   password: z.string().min(1),
   remember: z.boolean().optional(),
 });
@@ -27,6 +27,7 @@ export async function POST(req: NextRequest) {
   // Update last_login timestamp
   await prisma.user.update({ where: { id: user.id }, data: { last_login: new Date() } });
 
+  const tokenExpiry = remember ? '30d' : '8h';
   const token = await signToken({
     sub: user.id,
     email: user.email,
@@ -34,7 +35,7 @@ export async function POST(req: NextRequest) {
     role: user.role,
     agent_id: user.agent_id ?? undefined,
     module_access: user.module_access ? (JSON.parse(user.module_access) as Array<{ key: string; perm: 'view' | 'edit' }>) : null,
-  });
+  }, tokenExpiry);
 
   const maxAge = remember ? 60 * 60 * 24 * 30 : 60 * 60 * 8; // 30 days or 8 hours
 

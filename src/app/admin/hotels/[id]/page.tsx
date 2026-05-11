@@ -7,7 +7,7 @@ import { ImageUploader } from '@/components/admin/ImageUploader';
 import {
   Plus, Pencil, Trash2, ChevronDown, ChevronRight,
   Image as ImageIcon, X, Bed, Calendar, CheckCircle2,
-  Download, Upload, FileSpreadsheet,
+  Download, Upload, FileSpreadsheet, Save,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -62,7 +62,7 @@ const EMPTY_RATE = {
   weekend_surcharge: '', tax_included: false, notes: '',
 };
 
-function fmt(n: number) { return '₹' + n.toLocaleString('en-IN'); }
+function fmt(n: number) { return '₹' + Math.round(n).toLocaleString('en-IN', { maximumFractionDigits: 0 }); }
 function fmtDate(d: string) { return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }); }
 
 /* ─── Hotel Room + Rate Excel Import/Export ──────────────────────────────── */
@@ -231,16 +231,21 @@ function HotelExcelIO({
       const mpCode = (row['Meal Plan Code * (EP/CP/MAP/AP/FAP)'] ?? '').trim().toUpperCase();
       const validFrom = (row['Valid From (YYYY-MM-DD) *'] ?? '').trim();
       const validTo   = (row['Valid To (YYYY-MM-DD) *'] ?? '').trim();
-      const singleCost = row['Single Occupancy Cost (₹) *'];
-      const doubleCost = row['Double Occupancy Cost (₹) *'];
+      const singleCostRaw = row['Single Occupancy Cost (₹) *'];
+      const doubleCostRaw = row['Double Occupancy Cost (₹) *'];
 
-      if (!mpCode || !validFrom || !validTo || !singleCost || !doubleCost) {
+      // Skip rate only when meal plan / dates are missing — single cost can be 0/empty
+      if (!mpCode || !validFrom || !validTo) {
         ok++; // room created/found — rate row skipped (no rate data)
         continue;
       }
 
       const mp = mealPlans.find(m => m.code.toUpperCase() === mpCode);
       if (!mp) { failed++; continue; }
+
+      // Treat empty/null cost cells as 0 (e.g. hotel doesn't offer single occupancy)
+      const toNum = (v: string | number | null | undefined) =>
+        (v === '' || v == null) ? 0 : Number(v);
 
       try {
         const res = await fetch(`/api/v1/hotels/${hotelId}/rates`, {
@@ -252,8 +257,8 @@ function HotelExcelIO({
             season_name: row['Season Name'] || null,
             valid_from: new Date(validFrom).toISOString(),
             valid_to:   new Date(validTo).toISOString(),
-            single_occupancy_cost: Number(singleCost),
-            double_occupancy_cost: Number(doubleCost),
+            single_occupancy_cost: toNum(singleCostRaw),
+            double_occupancy_cost: toNum(doubleCostRaw),
             triple_occupancy_cost: row['Triple Occupancy Cost (₹)'] ? Number(row['Triple Occupancy Cost (₹)']) : null,
             quad_occupancy_cost:   row['Quad Occupancy Cost (₹)'] ? Number(row['Quad Occupancy Cost (₹)']) : null,
             extra_adult_cost:      row['Extra Adult Cost (₹)'] ? Number(row['Extra Adult Cost (₹)']) : null,
@@ -343,6 +348,7 @@ export default function HotelDetailPage() {
   }
 
   /* ── Loaders ── */
+  // Full load — only called on mount. Resets overview form from server.
   const loadAll = useCallback(async () => {
     setLoading(true);
     const [hr, rr, mr] = await Promise.all([
@@ -364,6 +370,17 @@ export default function HotelDetailPage() {
     if (rd.success) setRooms(rd.data);
     if (md.success) setMealPlans(md.data);
     setLoading(false);
+  }, [id]);
+
+  // Rooms-only reload — used after room/rate CRUD so we never wipe unsaved overview edits
+  const loadRoomsOnly = useCallback(async () => {
+    const [rr, mr] = await Promise.all([
+      fetch(`/api/v1/hotels/${id}/room-categories`),
+      fetch('/api/v1/meal-plans'),
+    ]);
+    const [rd, md] = await Promise.all([rr.json(), mr.json()]);
+    if (rd.success) setRooms(rd.data);
+    if (md.success) setMealPlans(md.data);
   }, [id]);
 
   const loadRates = useCallback(async () => {
@@ -405,13 +422,13 @@ export default function HotelDetailPage() {
     const url = editRoom ? `/api/v1/hotels/${id}/room-categories/${editRoom.id}` : `/api/v1/hotels/${id}/room-categories`;
     const res = await fetch(url, { method: editRoom ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     const d = await res.json();
-    if (!res.ok) { setRoomErr(d.error ?? 'Save failed'); } else { setShowRoomForm(false); loadAll(); showToast(editRoom ? 'Room category updated!' : 'Room category added!'); }
+    if (!res.ok) { setRoomErr(d.error ?? 'Save failed'); } else { setShowRoomForm(false); loadRoomsOnly(); showToast(editRoom ? 'Room category updated!' : 'Room category added!'); }
     setRoomSaving(false);
   }
   async function deleteRoom(roomId: string) {
     if (!confirm('Deactivate this room category?')) return;
     await fetch(`/api/v1/hotels/${id}/room-categories/${roomId}`, { method: 'DELETE' });
-    loadAll();
+    loadRoomsOnly();
   }
 
   /* ── Rate CRUD ── */
@@ -439,29 +456,36 @@ export default function HotelDetailPage() {
   }
   async function saveRate() {
     setRateSaving(true); setRateErr('');
-    const n = (v: string) => v === '' ? null : Number(v);
-    const payload: Record<string, unknown> = {
-      room_category_id: rateForRoom,
-      meal_plan_id: rateForm.meal_plan_id,
-      season_name: rateForm.season_name || null,
-      valid_from: new Date(rateForm.valid_from).toISOString(),
-      valid_to: new Date(rateForm.valid_to).toISOString(),
-      single_occupancy_cost: Number(rateForm.single_occupancy_cost),
-      double_occupancy_cost: Number(rateForm.double_occupancy_cost),
-      triple_occupancy_cost: n(rateForm.triple_occupancy_cost),
-      quad_occupancy_cost: n(rateForm.quad_occupancy_cost),
-      extra_adult_cost: n(rateForm.extra_adult_cost),
-      child_with_bed_cost: n(rateForm.child_with_bed_cost),
-      child_without_bed_cost: n(rateForm.child_without_bed_cost),
-      weekend_surcharge: n(rateForm.weekend_surcharge),
-      tax_included: rateForm.tax_included,
-      notes: rateForm.notes || null,
-    };
-    const url = editRate ? `/api/v1/hotels/${id}/rates/${editRate.id}` : `/api/v1/hotels/${id}/rates`;
-    const res = await fetch(url, { method: editRate ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    const d = await res.json();
-    if (!res.ok) { setRateErr(d.error ?? 'Save failed'); } else { setShowRateForm(false); loadRates(); showToast(editRate ? 'Rate updated!' : 'Rate added!'); }
-    setRateSaving(false);
+    // n: parse optional number fields — empty string → null
+    const n = (v: string) => v === '' ? null : Math.max(0, Number(v));
+    try {
+      const payload: Record<string, unknown> = {
+        room_category_id: rateForRoom,
+        meal_plan_id: rateForm.meal_plan_id,
+        season_name: rateForm.season_name || null,
+        valid_from: new Date(rateForm.valid_from).toISOString(),
+        valid_to: new Date(rateForm.valid_to).toISOString(),
+        single_occupancy_cost: Math.max(0, Number(rateForm.single_occupancy_cost)),
+        double_occupancy_cost: Math.max(0, Number(rateForm.double_occupancy_cost)),
+        triple_occupancy_cost: n(rateForm.triple_occupancy_cost),
+        quad_occupancy_cost: n(rateForm.quad_occupancy_cost),
+        extra_adult_cost: n(rateForm.extra_adult_cost),
+        child_with_bed_cost: n(rateForm.child_with_bed_cost),
+        child_without_bed_cost: n(rateForm.child_without_bed_cost),
+        weekend_surcharge: n(rateForm.weekend_surcharge),
+        tax_included: rateForm.tax_included,
+        notes: rateForm.notes || null,
+      };
+      const url = editRate ? `/api/v1/hotels/${id}/rates/${editRate.id}` : `/api/v1/hotels/${id}/rates`;
+      const res = await fetch(url, { method: editRate ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const d = await res.json();
+      if (!res.ok) { setRateErr(d.error ?? 'Save failed'); } else { setShowRateForm(false); loadRates(); showToast(editRate ? 'Rate updated!' : 'Rate added!'); }
+    } catch (e) {
+      setRateErr('Network error — please try again.');
+      console.error('saveRate error:', e);
+    } finally {
+      setRateSaving(false);
+    }
   }
   async function deleteRate(rateId: string) {
     if (!confirm('Remove this rate?')) return;
@@ -523,6 +547,14 @@ export default function HotelDetailPage() {
         title={hotel.hotel_name}
         subtitle={`${hotel.hotel_type} · ${hotel.destination.name}`}
         crumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Hotels', href: '/admin/hotels' }, { label: hotel.hotel_name }]}
+        action={
+          <button onClick={saveOverview} disabled={ovSaving}
+            className="flex items-center gap-2 h-9 px-5 rounded-lg text-sm font-semibold text-white disabled:opacity-50 hover:opacity-90 transition-opacity"
+            style={{ backgroundColor: T }}>
+            <Save className="w-4 h-4" />
+            {ovSaving ? 'Saving…' : 'Save Changes'}
+          </button>
+        }
       />
 
       {/* Tabs */}
@@ -605,7 +637,7 @@ export default function HotelDetailPage() {
                 rooms={rooms}
                 rates={rates}
                 mealPlans={mealPlans}
-                onDone={loadRates}
+                onDone={() => { loadRoomsOnly(); loadRates(); }}
               />
               <button onClick={openAddRoom} className="flex items-center gap-2 h-8 px-4 rounded-lg text-sm font-semibold text-white hover:opacity-90" style={{ backgroundColor: T }}>
                 <Plus className="w-4 h-4" /> Add Room Category

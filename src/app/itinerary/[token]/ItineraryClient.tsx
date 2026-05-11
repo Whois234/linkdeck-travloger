@@ -12,6 +12,7 @@ interface OptionHotel {
   check_in_date: string;
   check_out_date: string;
   nights: number;
+  meal_overrides?: Record<string, { breakfast?: boolean; lunch?: boolean; dinner?: boolean }> | null;
 }
 
 interface QuoteOption {
@@ -117,6 +118,8 @@ interface ItineraryData {
   group_pricing_mode?: 'date_based' | 'package_based';
   group_trip_dates?: Array<{ start_date: string; end_date: string; label: string; availability?: 'available' | 'few_left' | 'filling_fast' | 'sold_out' }>;
   day_snapshots: DaySnapshot[];
+  destination_cards?: Array<{ destination_id: string; name: string; description: string; image_url: string }> | null;
+  why_choose?: Array<{ title: string; description: string; icon: string }> | null;
   inclusions: Array<{ id: string; text: string }>;
   exclusions: Array<{ id: string; text: string }>;
   policies: PolicyRecord[];
@@ -278,11 +281,23 @@ function Hero({ data }: { data: ItineraryData }) {
           </div>
         )}
 
-        {/* Departure city */}
-        {quote.pickup_point && (
-          <div className="tl-hero-from">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-            Departing from {quote.pickup_point}
+        {/* Departure / Arrival city glass chip */}
+        {(quote.pickup_point || quote.drop_point) && (
+          <div style={{ marginBottom: 18 }}>
+            <span className="tl-hero-chip" style={{ fontSize: 12, gap: 8, padding: '8px 14px' }}>
+              {/* map pin icon */}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+              </svg>
+              {quote.pickup_point && <span>{quote.pickup_point}</span>}
+              {quote.pickup_point && quote.drop_point && quote.drop_point !== quote.pickup_point && (
+                <>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                  <span>{quote.drop_point}</span>
+                </>
+              )}
+              {!quote.pickup_point && quote.drop_point && <span>{quote.drop_point}</span>}
+            </span>
           </div>
         )}
 
@@ -335,21 +350,35 @@ function Strip({ quote }: { quote: ItineraryData['quote'] }) {
 }
 
 /* ─────────────────────────── Gallery ─────────────────────────── */
-function Gallery({ state, day_snapshots }: { state: ItineraryData['state']; day_snapshots: DaySnapshot[] }) {
-  // Build gallery from day snapshot images + state hero
+function Gallery({ state, day_snapshots, destination_cards }: {
+  state: ItineraryData['state'];
+  day_snapshots: DaySnapshot[];
+  destination_cards?: ItineraryData['destination_cards'];
+}) {
   const imgs: Array<{ url: string; label: string }> = [];
 
+  // State hero always first
   if (state.hero_image) {
     imgs.push({ url: state.hero_image, label: state.name });
   }
 
-  day_snapshots.forEach((d) => {
-    if (d.image_url && imgs.length < 8) {
-      imgs.push({ url: d.image_url, label: `Day ${d.day_number}` });
-    }
-  });
+  if (destination_cards && destination_cards.length > 0) {
+    // Use destination card images (with destination name labels) when available
+    destination_cards.forEach((dc) => {
+      if (dc.image_url && imgs.length < 8) {
+        imgs.push({ url: dc.image_url, label: dc.name });
+      }
+    });
+  } else {
+    // Fallback: day snapshot images
+    day_snapshots.forEach((d) => {
+      if (d.image_url && imgs.length < 8) {
+        imgs.push({ url: d.image_url, label: `Day ${d.day_number}` });
+      }
+    });
+  }
 
-  // Fallback images if none provided
+  // Last resort fallback
   if (imgs.length === 0) {
     [
       { url: 'https://images.unsplash.com/photo-1582510003544-4d00b7f74220?w=600&auto=format&fit=crop&q=80', label: 'Destination' },
@@ -363,6 +392,7 @@ function Gallery({ state, day_snapshots }: { state: ItineraryData['state']; day_
       <div className="tl-gal-scroll">
         {imgs.map((img, i) => (
           <div key={i} className="tl-gal-item">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={img.url} alt={img.label} loading="lazy" />
             <div className="tl-gal-label">{img.label}</div>
           </div>
@@ -711,10 +741,24 @@ function LogoMarquee() {
 
 /* ─────────────────────────── Day Description Renderer ─────────────────────────── */
 /**
- * Smart renderer: if description has lines starting with "- " or "• ", render as a
- * bulleted list. Otherwise render as a paragraph (preserving line breaks).
+ * Smart renderer:
+ * - If text contains HTML tags (from the rich-text editor) → render as HTML
+ * - If lines start with "- " or "• " → render as bulleted list (legacy plain text)
+ * - Otherwise → render as plain paragraph
  */
 function DayDescription({ text }: { text: string }) {
+  // Rich-text HTML path (new editor output)
+  if (/<[a-z][\s\S]*>/i.test(text)) {
+    return (
+      <div
+        className="tl-day-desc-html"
+        style={{ fontSize: 'inherit', lineHeight: 'inherit', color: 'inherit' }}
+        dangerouslySetInnerHTML={{ __html: text }}
+      />
+    );
+  }
+
+  // Legacy plain-text path
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   const isBullet = lines.every(l => /^[-•*]\s/.test(l));
 
@@ -730,7 +774,6 @@ function DayDescription({ text }: { text: string }) {
     );
   }
 
-  // Mixed: some lines are bullets, others are prose — render line-by-line
   const hasSomeBullets = lines.some(l => /^[-•*]\s/.test(l));
   if (hasSomeBullets) {
     return (
@@ -804,7 +847,121 @@ function DayGallery({ images, title }: { images: string[]; title: string }) {
 }
 
 /* ─────────────────────────── Day Cards ─────────────────────────── */
-function DayCard({ day, open, onToggle }: { day: DaySnapshot; open: boolean; onToggle: () => void }) {
+/* ─────────────────────────── Meal Plan Logic ─────────────────────────── */
+type MealType = 'breakfast' | 'lunch' | 'dinner';
+
+function getMealsForDay(day: DaySnapshot, optionHotels: OptionHotel[]): MealType[] {
+  // Normalize to YYYY-MM-DD for safe string comparison across all date formats
+  const dayDate = day.date.slice(0, 10);
+  const mealSet = new Set<MealType>();
+
+  for (const hotel of optionHotels) {
+    // Match by DATE RANGE (not destination_id) — a travel day may have a different
+    // destination_id than the hotel's destination but the guest still stays there.
+    const cin  = hotel.check_in_date.slice(0, 10);
+    const cout = hotel.check_out_date.slice(0, 10);
+    if (dayDate < cin || dayDate > cout) continue;
+
+    // Manual overrides take full priority for this date
+    const override = hotel.meal_overrides?.[dayDate];
+    if (override !== undefined) {
+      if (override.breakfast) mealSet.add('breakfast');
+      if (override.lunch)     mealSet.add('lunch');
+      if (override.dinner)    mealSet.add('dinner');
+      continue; // skip auto-compute for this hotel
+    }
+
+    const code  = hotel.meal_plan?.code?.toUpperCase().trim() ?? '';
+    if (!code || code === 'EP' || code === 'RO') continue;
+
+    const isIn  = dayDate === cin;
+    const isOut = dayDate === cout;
+
+    if (code === 'CP' || code === 'BB' || code === 'B&B') {
+      // Breakfast only; not on check-in day (guest arrives after breakfast)
+      if (!isIn) mealSet.add('breakfast');
+    } else if (code === 'HB' || code === 'MAP') {
+      if (isIn)       { mealSet.add('dinner'); }
+      else if (isOut) { mealSet.add('breakfast'); }
+      else            { mealSet.add('breakfast'); mealSet.add('dinner'); }
+    } else if (code === 'FB' || code === 'AP' || code === 'AI' || code === 'ALL') {
+      if (isIn)       { mealSet.add('dinner'); }
+      else if (isOut) { mealSet.add('breakfast'); mealSet.add('lunch'); }
+      else            { mealSet.add('breakfast'); mealSet.add('lunch'); mealSet.add('dinner'); }
+    }
+  }
+
+  // Return in canonical order
+  const result: MealType[] = [];
+  if (mealSet.has('breakfast')) result.push('breakfast');
+  if (mealSet.has('lunch'))     result.push('lunch');
+  if (mealSet.has('dinner'))    result.push('dinner');
+  return result;
+}
+
+/* ─────────────────────────── Meal Chips ─────────────────────────── */
+const MEAL_CFG: Record<MealType, { label: string; bg: string; border: string; color: string; icon: JSX.Element }> = {
+  breakfast: {
+    label: 'Breakfast', bg: '#FFFBEB', border: '#FDE68A', color: '#92400E',
+    icon: (
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="4"/>
+        <line x1="12" y1="2" x2="12" y2="4"/>
+        <line x1="12" y1="20" x2="12" y2="22"/>
+        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+        <line x1="2" y1="12" x2="4" y2="12"/>
+        <line x1="20" y1="12" x2="22" y2="12"/>
+        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+      </svg>
+    ),
+  },
+  lunch: {
+    label: 'Lunch', bg: '#F0FDF4', border: '#86EFAC', color: '#166534',
+    icon: (
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/>
+        <path d="M7 2v20"/>
+        <path d="M21 15V2a5 5 0 00-5 5v6c0 1.1.9 2 2 2h3zM16 22v-3"/>
+      </svg>
+    ),
+  },
+  dinner: {
+    label: 'Dinner', bg: '#EEF2FF', border: '#C7D2FE', color: '#3730A3',
+    icon: (
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+      </svg>
+    ),
+  },
+};
+
+function MealChips({ meals }: { meals: MealType[] }) {
+  if (meals.length === 0) return null;
+  return (
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: '10px 16px 12px' }}>
+      {meals.map(meal => {
+        const c = MEAL_CFG[meal];
+        return (
+          <span key={meal} style={{
+            display: 'inline-flex', alignItems: 'center', gap: 5,
+            background: c.bg, color: c.color,
+            border: `1px solid ${c.border}`,
+            padding: '4px 10px 4px 8px', borderRadius: 99,
+            fontSize: 11, fontWeight: 700, letterSpacing: '0.02em',
+            lineHeight: 1,
+          }}>
+            {c.icon}
+            {c.label}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function DayCard({ day, meals, open, onToggle }: { day: DaySnapshot; meals?: MealType[]; open: boolean; onToggle: () => void }) {
   return (
     <div className="tl-day-row">
       <div className="tl-day-spine">
@@ -824,6 +981,7 @@ function DayCard({ day, open, onToggle }: { day: DaySnapshot; open: boolean; onT
             <ChevronDown open={open} color={open ? 'white' : '#aaa'} />
           </button>
         </div>
+        {meals && meals.length > 0 && <MealChips meals={meals} />}
         {open && (
           <>
             {/* Day image / gallery slideshow */}
@@ -851,9 +1009,67 @@ function DayCard({ day, open, onToggle }: { day: DaySnapshot; open: boolean; onT
   );
 }
 
-function ItinerarySection({ days }: { days: DaySnapshot[] }) {
+/* ─────────────────────────── Destination Cards Section ─────────────────────────── */
+type DestCard = { destination_id: string; name: string; description: string; image_url: string };
+
+function DestinationCardsSection({ cards, days, optionHotels }: { cards: DestCard[]; days: DaySnapshot[]; optionHotels?: OptionHotel[] }) {
+  const [openDay, setOpenDay] = useState<number>(0);
+  const visibleCards = cards.filter(c => c.name);
+  if (visibleCards.length === 0) {
+    // fallback to day cards if no cards
+    return <ItineraryDaysOnly days={days} openDay={openDay} setOpenDay={setOpenDay} optionHotels={optionHotels} />;
+  }
+  return (
+    <div className="tl-sec" data-section="itinerary">
+      <div className="tl-sec-eyebrow">Your Journey</div>
+      <div className="tl-sec-h">Destinations</div>
+      <div className="tl-sec-sub">{visibleCards.length} destination{visibleCards.length !== 1 ? 's' : ''} · crafted just for you.</div>
+      <div className="tl-dest-list">
+        {visibleCards.map((card, idx) => (
+          <div key={card.destination_id} className="tl-dest-card">
+            {card.image_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={card.image_url} alt={card.name} className="tl-dest-img" loading="lazy" />
+            ) : (
+              <div className="tl-dest-img tl-dest-img-placeholder" />
+            )}
+            <div className="tl-dest-body">
+              <div className="tl-dest-index">{String(idx + 1).padStart(2, '0')}</div>
+              <div className="tl-dest-name">{card.name}</div>
+              {card.description && <p className="tl-dest-desc">{card.description}</p>}
+            </div>
+          </div>
+        ))}
+      </div>
+      {/* Day-wise breakdown still shown below */}
+      {days.length > 0 && (
+        <>
+          <div className="tl-sec-eyebrow" style={{ marginTop: 32 }}>Day by Day</div>
+          <div className="tl-day-list">
+            {days.map((d, i) => (
+              <DayCard key={d.day_number} day={d} meals={optionHotels ? getMealsForDay(d, optionHotels) : undefined} open={openDay === i} onToggle={() => setOpenDay(openDay === i ? -1 : i)} />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ItineraryDaysOnly({ days, openDay, setOpenDay, optionHotels }: { days: DaySnapshot[]; openDay: number; setOpenDay: (n: number) => void; optionHotels?: OptionHotel[] }) {
+  return (
+    <div className="tl-day-list">
+      {days.map((d, i) => (
+        <DayCard key={d.day_number} day={d} meals={optionHotels ? getMealsForDay(d, optionHotels) : undefined} open={openDay === i} onToggle={() => setOpenDay(openDay === i ? -1 : i)} />
+      ))}
+    </div>
+  );
+}
+
+function ItinerarySection({ days, optionHotels }: { days: DaySnapshot[]; optionHotels?: OptionHotel[] }) {
   const [openDay, setOpenDay] = useState<number>(0); // first day open by default
   if (days.length === 0) return null;
+
   return (
     <div className="tl-sec" data-section="itinerary">
       <div className="tl-sec-eyebrow">Day by Day</div>
@@ -866,6 +1082,7 @@ function ItinerarySection({ days }: { days: DaySnapshot[] }) {
           <DayCard
             key={d.day_number}
             day={d}
+            meals={optionHotels ? getMealsForDay(d, optionHotels) : undefined}
             open={openDay === i}
             onToggle={() => setOpenDay(openDay === i ? -1 : i)}
           />
@@ -915,6 +1132,15 @@ function IncExc({ inclusions, exclusions }: { inclusions: ItineraryData['inclusi
 }
 
 /* ─────────────────────────── Why Choose ─────────────────────────── */
+const ICON_SVG_MAP: Record<string, JSX.Element> = {
+  star:   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="1.8"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" strokeLinecap="round" strokeLinejoin="round" /></svg>,
+  dollar: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="1.8"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" strokeLinecap="round" /></svg>,
+  shield: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="1.8"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" strokeLinecap="round" strokeLinejoin="round" /></svg>,
+  clock:  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="1.8"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" strokeLinecap="round" /></svg>,
+  heart:  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="1.8"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" strokeLinecap="round" /></svg>,
+  pin:    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="1.8"><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" strokeLinecap="round" /><path d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" strokeLinecap="round" /></svg>,
+};
+
 const WHY_ITEMS = [
   { title: 'Expert Professionals', desc: 'Years of on-ground destination expertise — not call-centre agents.', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="1.8"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" strokeLinecap="round" strokeLinejoin="round" /></svg> },
   { title: 'Best Prices', desc: 'High volume lets us negotiate deals individual travellers simply can\'t.', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="1.8"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" strokeLinecap="round" /></svg> },
@@ -924,7 +1150,11 @@ const WHY_ITEMS = [
   { title: 'On-ground Support', desc: 'A dedicated local coordinator at every destination — zero stress.', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T} strokeWidth="1.8"><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" strokeLinecap="round" /><path d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" strokeLinecap="round" /></svg> },
 ];
 
-function WhyChoose() {
+function WhyChoose({ whyItems }: { whyItems?: Array<{ title: string; description: string; icon: string }> | null }) {
+  const items = whyItems && whyItems.length > 0
+    ? whyItems.map(w => ({ title: w.title, desc: w.description, icon: ICON_SVG_MAP[w.icon] ?? ICON_SVG_MAP.star }))
+    : WHY_ITEMS;
+
   return (
     <div className="tl-why-wrap">
       <div className="tl-sec">
@@ -932,7 +1162,7 @@ function WhyChoose() {
         <div className="tl-sec-h">Why Choose Travloger?</div>
         <div className="tl-sec-sub">Here&apos;s what makes us different from every other travel company.</div>
         <div className="tl-why-grid">
-          {WHY_ITEMS.map((item, i) => (
+          {items.map((item, i) => (
             <div key={i} className="tl-why-card">
               <div className="tl-why-icon-wrap">{item.icon}</div>
               <div className="tl-why-title">{item.title}</div>
@@ -1075,8 +1305,16 @@ function FareSummary({ option, adults }: { option: QuoteOption | undefined; adul
 }
 
 /* ─────────────────────────── Policies ─────────────────────────── */
+/** Detect if content contains HTML tags */
+function isHtmlContent(content: string): boolean {
+  return /<[a-z][\s\S]*>/i.test(content);
+}
+
 /** Parse "Label: Value" lines into KV pairs; plain lines become label-only rows */
 function PolicyKVTable({ content }: { content: string }) {
+  if (isHtmlContent(content)) {
+    return <div className="tl-pol-html" dangerouslySetInnerHTML={{ __html: content }} />;
+  }
   const lines = content.split('\n').map(l => l.replace(/^[•\-]\s*/, '').trim()).filter(Boolean);
   return (
     <div className="tl-pol-kv-table">
@@ -1103,6 +1341,9 @@ function PolicyKVTable({ content }: { content: string }) {
 }
 
 function PolicyBullets({ content }: { content: string }) {
+  if (isHtmlContent(content)) {
+    return <div className="tl-pol-html" dangerouslySetInnerHTML={{ __html: content }} />;
+  }
   const lines = content.split('\n').map(l => l.replace(/^•\s*/, '').trim()).filter(Boolean);
   return (
     <ul className="tl-pol-bullets">
@@ -1120,7 +1361,11 @@ function FaqItem({ faq }: { faq: PolicyRecord }) {
         <span>{faq.title}</span>
         <ChevronDown open={open} color={T} />
       </div>
-      {open && <div className="tl-faq-body">{faq.content}</div>}
+      {open && (
+        isHtmlContent(faq.content)
+          ? <div className="tl-faq-body tl-pol-html" dangerouslySetInnerHTML={{ __html: faq.content }} />
+          : <div className="tl-faq-body">{faq.content}</div>
+      )}
     </div>
   );
 }
@@ -1213,12 +1458,14 @@ function Policies({ policies }: { policies: PolicyRecord[] }) {
           {termsOpen && (
             <div className="tl-terms-body">
               {terms.map((t) =>
-                t.content.split('\n')
-                  .map(l => l.replace(/^[•\-*]\s*/, '').trim())
-                  .filter(Boolean)
-                  .map((line, i) => (
-                    <div key={`${t.id}-${i}`} className="tl-terms-li">{line}</div>
-                  ))
+                isHtmlContent(t.content)
+                  ? <div key={t.id} className="tl-pol-html" dangerouslySetInnerHTML={{ __html: t.content }} />
+                  : t.content.split('\n')
+                      .map(l => l.replace(/^[•\-*]\s*/, '').trim())
+                      .filter(Boolean)
+                      .map((line, i) => (
+                        <div key={`${t.id}-${i}`} className="tl-terms-li">{line}</div>
+                      ))
               )}
             </div>
           )}
@@ -2705,7 +2952,7 @@ function BookingIntentModal({
 
 /* ─────────────────────────── Main Component ─────────────────────────── */
 export function ItineraryClient({ data, token }: Props) {
-  const { quote, customer, agent, state, quote_options, group_package_options, group_pricing_mode, group_trip_dates, day_snapshots, inclusions, exclusions, policies } = data;
+  const { quote, customer, agent, state, quote_options, group_package_options, group_pricing_mode, group_trip_dates, day_snapshots, destination_cards, inclusions, exclusions, policies } = data;
 
   const isGroup = quote.quote_type?.toUpperCase() === 'GROUP';
   // date_based = show batch date picker + fare summary (default for backwards compat)
@@ -2913,7 +3160,7 @@ export function ItineraryClient({ data, token }: Props) {
       <div style={{ marginTop: 58 }}>
         <Strip quote={quote} />
         <Hero data={data} />
-        <Gallery state={state} day_snapshots={day_snapshots} />
+        <Gallery state={state} day_snapshots={day_snapshots} destination_cards={destination_cards} />
 
         {/* Package options — PRIVATE only (GROUP has its own tier selector below) */}
         {!isGroup && <Packages options={quote_options} selectedId={selectedId} onSelect={handleSelectOption} adults={quote.adults} />}
@@ -2944,7 +3191,7 @@ export function ItineraryClient({ data, token }: Props) {
         )}
 
         <LogoMarquee />
-        <ItinerarySection days={day_snapshots} />
+        <ItinerarySection days={day_snapshots} optionHotels={selectedOption?.option_hotels ?? []} />
 
         {/* ── GROUP: visual what's covered; regular: plain inc/exc ── */}
         {isGroup
@@ -2980,7 +3227,7 @@ export function ItineraryClient({ data, token }: Props) {
           />
         )}
 
-        <WhyChoose />
+        <WhyChoose whyItems={data.why_choose} />
         <Stats />
 
         {/* Regular fare summary for non-GROUP quotes */}

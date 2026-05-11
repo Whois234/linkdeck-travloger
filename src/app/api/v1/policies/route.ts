@@ -31,6 +31,7 @@ export async function GET(req: NextRequest) {
       ...(applies_to ? { applies_to } : {}),
     },
     orderBy: [{ policy_type: 'asc' }],
+    take: 200,
   });
   return ok(records);
 }

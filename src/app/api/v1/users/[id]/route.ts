@@ -1,3 +1,4 @@
+import { cleanBody } from '@/lib/clean-body';
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
@@ -23,11 +24,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
 const UpdateUserSchema = z.object({
   name: z.string().min(1).optional(),
-  email: z.string().email().optional(),
+  email: z.string().email().transform(v => v.toLowerCase().trim()).optional(),
   role: z.nativeEnum(UserRole).optional(),
   agent_id: z.string().optional().nullable(),
   phone: z.string().optional().nullable(),
-  gender: z.string().optional().nullable(),
+  gender: z.enum(['Male', 'Female', 'Other']).optional().nullable(),
   status: z.boolean().optional(),
   module_access: z.array(z.object({ key: z.string(), perm: z.enum(['view', 'edit']) })).nullable().optional(),
 });
@@ -37,7 +38,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   if (!user) return unauthorized();
   if (!requireRole(user, UserRole.ADMIN)) return forbidden();
 
-  const body = await req.json();
+  const rawBody = await req.json(); const body = cleanBody(rawBody);
   const parsed = UpdateUserSchema.safeParse(body);
   if (!parsed.success) return err('Invalid request', 400, parsed.error.flatten());
 
@@ -87,7 +88,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     data,
     select: {
       id: true, name: true, email: true, role: true,
-      agent_id: true, status: true, last_login: true, created_at: true,
+      agent_id: true, phone: true, gender: true, status: true,
+      module_access: true, last_login: true, created_at: true,
     },
   });
 

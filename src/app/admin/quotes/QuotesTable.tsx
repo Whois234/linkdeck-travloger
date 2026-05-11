@@ -38,6 +38,8 @@ export interface QuoteRow {
   assigned_agent?: { name: string } | null;
   state: { name: string; code: string };
   quote_options: Array<{ final_price: number | null; is_most_popular: boolean }>;
+  group_batch?: { adult_price: number | null; child_5_12_price?: number | null } | null;
+  children?: number | null;
   created_by_name?: string | null;
 }
 
@@ -194,7 +196,12 @@ export function QuotesTable({ quotes, statusFilter, isPrivileged }: { quotes: Qu
             <tbody>
               {filtered.map(q => {
                 const popular    = q.quote_options.find(o => o.is_most_popular);
-                const price      = popular?.final_price ?? q.quote_options[0]?.final_price;
+                let price: number | null | undefined = popular?.final_price ?? q.quote_options[0]?.final_price;
+                if ((price == null) && q.group_batch?.adult_price) {
+                  const adults = q.adults || 0;
+                  const kids = (q as { children?: number }).children ?? 0;
+                  price = (q.group_batch.adult_price * adults) + ((q.group_batch.child_5_12_price ?? 0) * kids);
+                }
                 const badge      = STATUS_BADGE[q.status] ?? STATUS_BADGE.DRAFT;
                 const leftBorder = STATUS_LEFT_BORDER[q.status] ?? '#CBD5E1';
                 const isSelected = selected.has(q.id);
@@ -227,7 +234,7 @@ export function QuotesTable({ quotes, statusFilter, isPrivileged }: { quotes: Qu
                       {new Date(q.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                     </td>
                     <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>{q.adults}</td>
-                    <td className="px-5 py-0 font-semibold" style={{ color: T }}>{price ? `₹${price.toLocaleString('en-IN')}` : '—'}</td>
+                    <td className="px-5 py-0 font-semibold" style={{ color: T }}>{price ? `₹${Math.round(price).toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '—'}</td>
                     <td className="px-5 py-0">
                       <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold"
                         style={{ backgroundColor: badge.bg, color: badge.text }}>

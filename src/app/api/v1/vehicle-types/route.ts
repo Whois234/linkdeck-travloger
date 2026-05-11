@@ -33,6 +33,17 @@ export async function POST(req: NextRequest) {
   const parsed = Schema.safeParse(body);
   if (!parsed.success) return err('Validation failed', 400, parsed.error.flatten());
 
+  // Duplicate check: same type code OR same display name (active or inactive)
+  const duplicate = await prisma.vehicleType.findFirst({
+    where: {
+      OR: [
+        { vehicle_type: { equals: parsed.data.vehicle_type, mode: 'insensitive' } },
+        { display_name: { equals: parsed.data.display_name, mode: 'insensitive' } },
+      ],
+    },
+  });
+  if (duplicate) return err(`Duplicate vehicle type "${parsed.data.display_name}" — a vehicle type with this code or name already exists.`, 409);
+
   const record = await prisma.vehicleType.create({ data: parsed.data as Parameters<typeof prisma.vehicleType.create>[0]['data'] });
   return created(record);
 }

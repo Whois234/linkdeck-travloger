@@ -25,6 +25,20 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 
   if (Object.keys(data).length === 0) return err('No valid fields to update', 400);
 
+  // Duplicate check on update
+  const merged = { ...record, ...data };
+  const duplicate = await prisma.vehicleType.findFirst({
+    where: {
+      id:     { not: params.id },
+      status: true,
+      OR: [
+        { vehicle_type: { equals: String(merged.vehicle_type), mode: 'insensitive' } },
+        { display_name: { equals: String(merged.display_name), mode: 'insensitive' } },
+      ],
+    },
+  });
+  if (duplicate) return err('Duplicate value — a vehicle type with this code or display name already exists.', 409);
+
   const updated = await prisma.vehicleType.update({ where: { id: params.id }, data });
   return ok(updated);
 }
