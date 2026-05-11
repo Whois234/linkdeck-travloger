@@ -4,6 +4,7 @@ import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
 import Link from 'next/link';
 import { Plus, Pencil, Trash2, Search, CheckSquare, Square, AlertTriangle, ShieldCheck, Loader2 } from 'lucide-react';
+import { toast } from '@/components/Toaster';
 
 interface Customer {
   id: string; name: string; phone: string; email?: string | null;
@@ -91,8 +92,18 @@ export default function CustomersPage() {
 
   async function handleDelete(id: string) {
     if (!confirm('Delete this customer?')) return;
-    await fetch(`/api/v1/customers/${id}`, { method: 'DELETE' });
-    load();
+    try {
+      const res = await fetch(`/api/v1/customers/${id}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error ?? 'Could not delete customer');
+        return;
+      }
+      toast.success('Customer deleted');
+      load();
+    } catch {
+      toast.error('Network error — please try again');
+    }
   }
 
   // ── Bulk delete ──────────────────────────────────────────────────────────────
@@ -100,9 +111,21 @@ export default function CustomersPage() {
     if (selected.size === 0) return;
     if (!confirm(`Delete ${selected.size} selected customer${selected.size > 1 ? 's' : ''}? This cannot be undone.`)) return;
     setBulkDeleting(true);
-    await Promise.all(Array.from(selected).map(id => fetch(`/api/v1/customers/${id}`, { method: 'DELETE' })));
+    const results = await Promise.allSettled(
+      Array.from(selected).map(async id => {
+        const r = await fetch(`/api/v1/customers/${id}`, { method: 'DELETE' });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.error ?? 'Delete failed');
+        return id;
+      }),
+    );
+    const ok = results.filter(x => x.status === 'fulfilled').length;
+    const failed = results.length - ok;
     setSelected(new Set());
     setBulkDeleting(false);
+    if (failed === 0) toast.success(`${ok} customer${ok !== 1 ? 's' : ''} deleted`);
+    else if (ok === 0) toast.error(`Could not delete any of the ${failed} customers (likely have quotes attached)`);
+    else toast.info(`${ok} deleted, ${failed} skipped (likely have quotes attached)`);
     load();
   }
 
@@ -122,14 +145,28 @@ export default function CustomersPage() {
     }
   }
 
-  // ── Duplicate cleanup: delete all except the kept one ───────────────────────
+  // ── Duplicate cleanup: merge each duplicate's quotes into the kept record, then delete ─
   async function cleanDuplicates(phone: string, group: Customer[]) {
     const keepId = keepMap[phone] ?? group[0].id;
     const toDelete = group.filter(c => c.id !== keepId);
-    if (!confirm(`Delete ${toDelete.length} duplicate${toDelete.length > 1 ? 's' : ''} for phone ${phone}? The selected record will be kept.`)) return;
+    if (!confirm(`Delete ${toDelete.length} duplicate${toDelete.length > 1 ? 's' : ''} for phone ${phone}? Any quotes attached to them will be reassigned to the kept record.`)) return;
     setCleaningPhone(phone);
-    await Promise.all(toDelete.map(c => fetch(`/api/v1/customers/${c.id}`, { method: 'DELETE' })));
+    const results = await Promise.allSettled(
+      toDelete.map(async c => {
+        const r = await fetch(`/api/v1/customers/${c.id}?merge_into=${encodeURIComponent(keepId)}`, { method: 'DELETE' });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.error ?? 'Delete failed');
+        return c.id;
+      }),
+    );
     setCleaningPhone(null);
+    const ok = results.filter(x => x.status === 'fulfilled').length;
+    const failed = results.length - ok;
+    if (failed === 0) toast.success(`${ok} duplicate${ok !== 1 ? 's' : ''} merged and removed`);
+    else if (ok === 0) {
+      const first = results.find(x => x.status === 'rejected') as PromiseRejectedResult | undefined;
+      toast.error(first?.reason?.message ?? 'Could not delete any duplicate');
+    } else toast.info(`${ok} merged, ${failed} failed`);
     load();
   }
 
@@ -138,15 +175,25 @@ export default function CustomersPage() {
       const keepId = keepMap[phone] ?? group[0].id;
       return n + group.filter(c => c.id !== keepId).length;
     }, 0);
-    if (!confirm(`Remove all ${totalToDelete} duplicate records? The selected "keep" record in each group will be preserved.`)) return;
+    if (!confirm(`Remove all ${totalToDelete} duplicate records? Their quotes will be reassigned to the kept record in each group.`)) return;
     setBulkDeleting(true);
-    await Promise.all(
+    const results = await Promise.allSettled(
       duplicateGroups.flatMap(({ phone, group }) => {
         const keepId = keepMap[phone] ?? group[0].id;
-        return group.filter(c => c.id !== keepId).map(c => fetch(`/api/v1/customers/${c.id}`, { method: 'DELETE' }));
+        return group.filter(c => c.id !== keepId).map(async c => {
+          const r = await fetch(`/api/v1/customers/${c.id}?merge_into=${encodeURIComponent(keepId)}`, { method: 'DELETE' });
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(d.error ?? 'Delete failed');
+          return c.id;
+        });
       })
     );
     setBulkDeleting(false);
+    const ok = results.filter(x => x.status === 'fulfilled').length;
+    const failed = results.length - ok;
+    if (failed === 0) toast.success(`${ok} duplicate${ok !== 1 ? 's' : ''} removed`);
+    else if (ok === 0) toast.error(`Could not remove duplicates — check console for details`);
+    else toast.info(`${ok} removed, ${failed} failed`);
     load();
   }
 

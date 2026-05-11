@@ -61,11 +61,48 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   const user = await getAuthUser(req);
   if (!user) return unauthorized();
-  if (!requireRole(user, UserRole.ADMIN)) return forbidden();
+  if (!requireRole(user, UserRole.ADMIN, UserRole.MANAGER)) return forbidden();
 
   const record = await prisma.customer.findUnique({ where: { id: params.id } });
   if (!record) return notFound('Customer');
 
-  await prisma.customer.delete({ where: { id: params.id } });
+  // Duplicate-cleanup flow: ?merge_into=<keepId> reassigns this customer's
+  // quotes to the kept record before deleting. Without it, the delete fails
+  // hard if quotes exist (Prisma FK restrict on Quote.customer_id).
+  const { searchParams } = new URL(req.url);
+  const mergeInto = searchParams.get('merge_into');
+
+  if (mergeInto) {
+    if (mergeInto === params.id) return err('Cannot merge a customer into itself', 400);
+    const target = await prisma.customer.findUnique({ where: { id: mergeInto } });
+    if (!target) return notFound('Target customer for merge');
+
+    try {
+      await prisma.$transaction([
+        prisma.quote.updateMany({ where: { customer_id: params.id }, data: { customer_id: mergeInto } }),
+        prisma.customer.delete({ where: { id: params.id } }),
+      ]);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Merge failed';
+      return err(`Could not merge customer: ${msg}`, 500);
+    }
+    return ok({ message: 'Customer merged and deleted' });
+  }
+
+  // Plain delete: check for blocking relations and return a useful error
+  const quoteCount = await prisma.quote.count({ where: { customer_id: params.id } });
+  if (quoteCount > 0) {
+    return err(
+      `This customer has ${quoteCount} quote${quoteCount > 1 ? 's' : ''} attached. Use the Duplicate Cleanup tab to merge them into another customer, or delete the quotes first.`,
+      409,
+    );
+  }
+
+  try {
+    await prisma.customer.delete({ where: { id: params.id } });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Delete failed';
+    return err(`Could not delete customer: ${msg}`, 500);
+  }
   return ok({ message: 'Customer deleted' });
 }
