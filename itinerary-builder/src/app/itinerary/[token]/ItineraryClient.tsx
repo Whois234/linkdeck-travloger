@@ -281,11 +281,23 @@ function Hero({ data }: { data: ItineraryData }) {
           </div>
         )}
 
-        {/* Departure city */}
-        {quote.pickup_point && (
-          <div className="tl-hero-from">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-            Departing from {quote.pickup_point}
+        {/* Departure / Arrival city glass chip */}
+        {(quote.pickup_point || quote.drop_point) && (
+          <div style={{ marginBottom: 18 }}>
+            <span className="tl-hero-chip" style={{ fontSize: 12, gap: 8, padding: '8px 14px' }}>
+              {/* map pin icon */}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+              </svg>
+              {quote.pickup_point && <span>{quote.pickup_point}</span>}
+              {quote.pickup_point && quote.drop_point && quote.drop_point !== quote.pickup_point && (
+                <>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                  <span>{quote.drop_point}</span>
+                </>
+              )}
+              {!quote.pickup_point && quote.drop_point && <span>{quote.drop_point}</span>}
+            </span>
           </div>
         )}
 

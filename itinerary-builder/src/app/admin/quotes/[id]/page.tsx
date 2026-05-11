@@ -104,6 +104,33 @@ function OptionPricingCard({
   });
   const [saving, setSaving]           = useState(false);
   const [saveMsg, setSaveMsg]         = useState<{ ok: boolean; text: string } | null>(null);
+  const [togglingGst, setTogglingGst] = useState(false);
+  // Keep last non-zero GST % so toggling back restores it
+  const lastGstRef = useState(() => opt.gst_percent > 0 ? opt.gst_percent : 5)[0];
+
+  async function toggleGst() {
+    setTogglingGst(true); setSaveMsg(null);
+    const newGst = opt.gst_percent > 0 ? 0 : lastGstRef;
+    try {
+      const res = await fetch(`/api/v1/quotes/${quoteId}/options/${opt.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gst_percent: newGst }),
+      });
+      if (res.ok) {
+        setSaveMsg({ ok: true, text: newGst === 0 ? 'GST removed & republished.' : `GST ${newGst}% applied & republished.` });
+        onUpdated();
+      } else {
+        const d = await res.json();
+        setSaveMsg({ ok: false, text: d.error ?? 'Failed to update GST.' });
+      }
+    } catch {
+      setSaveMsg({ ok: false, text: 'Network error.' });
+    } finally {
+      setTogglingGst(false);
+      setTimeout(() => setSaveMsg(null), 4000);
+    }
+  }
 
   // Check if existing discount is expired
   const discountExpired = opt.discount_amount > 0 && !!opt.discount_expires_at && new Date(opt.discount_expires_at).getTime() <= Date.now();
@@ -374,8 +401,22 @@ function OptionPricingCard({
                 <span className="text-xs font-semibold" style={{ color: '#0F172A' }}>{fmtINR(discountExpired ? origSellBGST : opt.selling_before_gst)}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-xs" style={{ color: '#475569' }}>GST ({opt.gst_percent}%)</span>
-                <span className="text-xs font-semibold" style={{ color: '#0F172A' }}>+{fmtINR(discountExpired ? origGST : opt.gst_amount)}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs" style={{ color: '#475569' }}>GST ({opt.gst_percent}%)</span>
+                  <button
+                    onClick={toggleGst}
+                    disabled={togglingGst}
+                    className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full transition-all disabled:opacity-50"
+                    style={opt.gst_percent > 0
+                      ? { backgroundColor: '#DCFCE7', color: '#15803D', border: '1px solid #86EFAC' }
+                      : { backgroundColor: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}
+                  >
+                    {togglingGst ? '…' : opt.gst_percent > 0 ? '✓ Remove GST' : '+ Add GST'}
+                  </button>
+                </div>
+                <span className="text-xs font-semibold" style={{ color: '#0F172A' }}>
+                  {opt.gst_percent > 0 ? `+${fmtINR(discountExpired ? origGST : opt.gst_amount)}` : '—'}
+                </span>
               </div>
               {!discountExpired && opt.rounding_adjustment !== 0 && (
                 <div className="flex items-center justify-between">

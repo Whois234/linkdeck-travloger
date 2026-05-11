@@ -30,6 +30,7 @@ interface HTier        { tier_name: string; destination_id: string; default_hote
 interface TDay         { day_number: number; destination_id: string; title: string }
 interface CMSData      { package_options?: Array<{ tier_name: string; is_most_popular: boolean }> }
 interface Dest         { id: string; name: string }
+interface City         { id: string; name: string; state_id: string }
 
 interface RoomConfig { pax: number }
 
@@ -156,6 +157,7 @@ export default function CreateQuotePage() {
   const [mealPlans, setMealPlans] = useState<MealPlan[]>([]);
   const [vehTypes,  setVehTypes]  = useState<VehicleType[]>([]);
   const [vehRates,  setVehRates]  = useState<VehRate[]>([]);
+  const [cities,    setCities]    = useState<City[]>([]);
 
   const steps     = quoteType === 'PRIVATE' ? PRIVATE_STEPS : GROUP_STEPS;
   const totalSteps = steps.length;
@@ -182,16 +184,18 @@ export default function CreateQuotePage() {
     });
   }, []);
 
-  /* ─── Load hotels + veh rates when state(s) change ─── */
+  /* ─── Load hotels + veh rates + cities when state(s) change ─── */
   useEffect(() => {
     if (!stateIds.length) return;
     const stateParam = stateIds.length === 1 ? `state_id=${stateIds[0]}` : `state_ids=${stateIds.join(',')}`;
     Promise.all([
       fetch(`/api/v1/hotels?${stateParam}`).then(r => r.json()),
       fetch(`/api/v1/vehicle-package-rates?${stateParam}`).then(r => r.json()),
-    ]).then(([hd, vd]) => {
+      fetch(`/api/v1/cities?${stateParam}`).then(r => r.json()),
+    ]).then(([hd, vd, cd]) => {
       if (hd.success) setHotels(hd.data);
       if (vd.success) setVehRates(vd.data);
+      if (cd.success) setCities(cd.data);
     });
   }, [stateIds]);
 
@@ -732,12 +736,26 @@ export default function CreateQuotePage() {
                     </div>
                   )}
                   <div>
-                    <label className={lbl}>Pickup Location</label>
-                    <input className={inp} style={inpSt} value={pickupLocation} onChange={e => setPickupLocation(e.target.value)} placeholder="e.g. Bangalore Airport" />
+                    <label className={lbl}>Pickup City</label>
+                    {cities.length > 0 ? (
+                      <select className={sel} style={inpSt} value={pickupLocation} onChange={e => setPickupLocation(e.target.value)}>
+                        <option value="">Select pickup city…</option>
+                        {cities.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                      </select>
+                    ) : (
+                      <input className={inp} style={inpSt} value={pickupLocation} onChange={e => setPickupLocation(e.target.value)} placeholder="e.g. Bangalore Airport" />
+                    )}
                   </div>
                   <div>
-                    <label className={lbl}>Drop Location</label>
-                    <input className={inp} style={inpSt} value={dropLocation} onChange={e => setDropLocation(e.target.value)} placeholder="e.g. Bangalore Airport" />
+                    <label className={lbl}>Drop City</label>
+                    {cities.length > 0 ? (
+                      <select className={sel} style={inpSt} value={dropLocation} onChange={e => setDropLocation(e.target.value)}>
+                        <option value="">Select drop city (if different)…</option>
+                        {cities.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                      </select>
+                    ) : (
+                      <input className={inp} style={inpSt} value={dropLocation} onChange={e => setDropLocation(e.target.value)} placeholder="e.g. Bangalore Airport" />
+                    )}
                   </div>
                 </>
               )}
