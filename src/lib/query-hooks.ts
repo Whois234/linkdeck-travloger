@@ -94,6 +94,23 @@ export function useContacts(params: URLSearchParams) {
   });
 }
 
+// Count of NEW unassigned contacts — used for the sidebar badge. Polls every
+// 30s so a new CTWA lead lights up the badge without a page reload.
+export function useUnassignedNewContactsCount() {
+  return useQuery({
+    queryKey: ['contacts-unassigned-new-count'],
+    queryFn: async () => {
+      const res = await fetch('/api/v1/crm/contacts?lead_stage=NEW&assigned_to_id=unassigned&limit=1&page=1');
+      const data = await res.json();
+      if (!data.success) return 0;
+      return (data.data?.totalCount ?? data.data?.total ?? 0) as number;
+    },
+    staleTime: 0,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+  });
+}
+
 export function useNotifications() {
   return useQuery({
     queryKey: QK.notifications,

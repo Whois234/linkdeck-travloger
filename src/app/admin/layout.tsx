@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState, useEffect, useRef } from 'react';
 import { Toaster } from '@/components/Toaster';
+import { useUnassignedNewContactsCount } from '@/lib/query-hooks';
 import {
   LayoutDashboard, MapPin, Map, Building2, Car, Activity, BookOpen,
   ScrollText, Users,
@@ -244,6 +245,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const initials = user?.name?.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2) ?? 'AU';
   const visibleNav = filterNav(user?.role ?? 'SALES', user?.module_access);
+
+  // Live count of NEW unassigned contacts — drives the sidebar badge.
+  const { data: unassignedNewCount = 0 } = useUnassignedNewContactsCount();
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set(['MASTERS']));
 
   function toggleGroup(group: string) {
@@ -305,6 +309,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 <div className="space-y-0.5">
                   {items.map(({ label, href, icon: Icon }) => {
                     const active = pathname === href || pathname.startsWith(href + '/');
+                    // Per-item live badge — only Contacts shows a count for now.
+                    const badge = href === '/admin/contacts' && unassignedNewCount > 0 ? unassignedNewCount : null;
                     return (
                       <Link
                         key={href}
@@ -317,7 +323,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                         }`}
                       >
                         <Icon className={`w-[18px] h-[18px] flex-shrink-0 transition-colors ${active ? 'text-white' : 'text-[#64748B] group-hover:text-white'}`} />
-                        <span className="truncate">{label}</span>
+                        <span className="truncate flex-1">{label}</span>
+                        {badge !== null && (
+                          <span
+                            className="ml-auto min-w-[20px] h-[20px] px-1.5 rounded-full text-[10px] font-bold flex items-center justify-center"
+                            style={{
+                              backgroundColor: active ? 'rgba(255,255,255,0.2)' : '#22C55E',
+                              color: '#fff',
+                            }}
+                            title={`${badge} new unassigned contact${badge === 1 ? '' : 's'}`}
+                          >
+                            {badge > 99 ? '99+' : badge}
+                          </span>
+                        )}
                       </Link>
                     );
                   })}
