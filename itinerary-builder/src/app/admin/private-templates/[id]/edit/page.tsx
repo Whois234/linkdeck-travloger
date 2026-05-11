@@ -131,6 +131,8 @@ export default function TemplateEditPage() {
   const [states,   setStates]   = useState<StateItem[]>([]);
   const [cities,   setCities]   = useState<City[]>([]);
   const [hotelRatesCache, setHotelRatesCache] = useState<Record<string, { room_category_id: string; meal_plan_id: string }[]>>({});
+  const [destDragIdx, setDestDragIdx] = useState<number | null>(null);
+  const [destDragOver, setDestDragOver] = useState<number | null>(null);
   const [loading,  setLoading]  = useState(true);
   const [saving,   setSaving]   = useState(false);
   const [saved,    setSaved]    = useState(false);
@@ -632,49 +634,91 @@ export default function TemplateEditPage() {
                     sizeHint="800 × 600 px (4:3)"
                   />
                 </div>
-                {cms.destination_cards
-                  .filter(dc => tplSettings.destination_ids.includes(dc.destination_id))
-                  .map((dc) => {
-                  const dest = dests.find(d => d.id === dc.destination_id);
-                  const i = cms.destination_cards.indexOf(dc);
-                  const isHidden = !!dc.hidden;
-                  return (
-                    <div key={dc.destination_id} className="rounded-xl overflow-hidden transition-all"
-                      style={{ border: `1px solid ${isHidden ? '#E2E8F0' : '#E2E8F0'}`, opacity: isHidden ? 0.55 : 1, background: isHidden ? '#F8FAFC' : '#fff' }}>
-                      {/* Card header with name + eye toggle */}
-                      <div className="flex items-center justify-between px-4 pt-4 pb-3">
-                        <p className="text-sm font-semibold" style={{ color: isHidden ? '#94A3B8' : '#0F172A' }}>
-                          {dest?.name ?? dc.destination_id}
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => { const c = [...cms.destination_cards]; c[i] = { ...c[i], hidden: !isHidden }; updCms('destination_cards', c); }}
-                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-semibold transition-all flex-shrink-0"
-                          style={{
-                            borderColor: isHidden ? '#E2E8F0' : T,
-                            backgroundColor: isHidden ? '#F1F5F9' : `${T}12`,
-                            color: isHidden ? '#94A3B8' : T,
-                          }}
-                        >
-                          {isHidden ? (
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                          ) : (
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                          )}
-                          {isHidden ? 'Hidden' : 'Visible'}
-                        </button>
-                      </div>
-                      <div className="px-4 pb-4">
-                        <div className="grid grid-cols-2 gap-3" style={{ filter: isHidden ? 'grayscale(0.4)' : 'none' }}>
-                          <div className="col-span-2">
-                            <ImageUploader
-                              label="Destination Photo"
-                              folder="templates/destinations"
-                              value={dc.image_url || null}
-                              onChange={url => { const c = [...cms.destination_cards]; c[i] = { ...c[i], image_url: url ?? '' }; updCms('destination_cards', c); }}
-                              placeholder="Upload destination photo"
-                              sizeHint="800 × 600 px (4:3)"
-                            />
+                {(() => {
+                  // filtered list of cards (only those matching selected destinations)
+                  const filteredCards = cms.destination_cards.filter(dc => tplSettings.destination_ids.includes(dc.destination_id));
+                  return filteredCards.map((dc) => {
+                    const dest = dests.find(d => d.id === dc.destination_id);
+                    const i = cms.destination_cards.indexOf(dc);
+                    // index within the filtered list (for drag tracking)
+                    const fi = filteredCards.indexOf(dc);
+                    const isHidden = !!dc.hidden;
+                    const isDragging = destDragIdx === fi;
+                    const isDragTarget = destDragOver === fi && destDragIdx !== fi;
+
+                    return (
+                      <div
+                        key={dc.destination_id}
+                        draggable
+                        onDragStart={() => setDestDragIdx(fi)}
+                        onDragEnd={() => { setDestDragIdx(null); setDestDragOver(null); }}
+                        onDragOver={e => { e.preventDefault(); setDestDragOver(fi); }}
+                        onDrop={() => {
+                          if (destDragIdx === null || destDragIdx === fi) return;
+                          // reorder inside cms.destination_cards
+                          const fromId = filteredCards[destDragIdx].destination_id;
+                          const toId   = filteredCards[fi].destination_id;
+                          const fromFull = cms.destination_cards.findIndex(x => x.destination_id === fromId);
+                          const toFull   = cms.destination_cards.findIndex(x => x.destination_id === toId);
+                          const reordered = [...cms.destination_cards];
+                          const [moved] = reordered.splice(fromFull, 1);
+                          reordered.splice(toFull, 0, moved);
+                          updCms('destination_cards', reordered);
+                          setDestDragIdx(null);
+                          setDestDragOver(null);
+                        }}
+                        className="rounded-xl overflow-hidden transition-all"
+                        style={{
+                          border: `1px solid ${isDragTarget ? T : '#E2E8F0'}`,
+                          opacity: isDragging ? 0.4 : isHidden ? 0.55 : 1,
+                          background: isDragTarget ? `${T}08` : isHidden ? '#F8FAFC' : '#fff',
+                          cursor: 'grab',
+                          transform: isDragTarget ? 'scale(1.01)' : 'none',
+                          boxShadow: isDragging ? '0 4px 16px rgba(0,0,0,0.12)' : 'none',
+                        }}
+                      >
+                        {/* Card header: drag handle + name + eye toggle */}
+                        <div className="flex items-center gap-2 px-4 pt-4 pb-3">
+                          {/* Drag handle */}
+                          <div className="flex-shrink-0 cursor-grab text-[#CBD5E1] hover:text-[#94A3B8]" title="Drag to reorder">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                              <circle cx="5" cy="3" r="1.3"/><circle cx="11" cy="3" r="1.3"/>
+                              <circle cx="5" cy="8" r="1.3"/><circle cx="11" cy="8" r="1.3"/>
+                              <circle cx="5" cy="13" r="1.3"/><circle cx="11" cy="13" r="1.3"/>
+                            </svg>
+                          </div>
+                          <p className="flex-1 text-sm font-semibold" style={{ color: isHidden ? '#94A3B8' : '#0F172A' }}>
+                            {dest?.name ?? dc.destination_id}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => { const c = [...cms.destination_cards]; c[i] = { ...c[i], hidden: !isHidden }; updCms('destination_cards', c); }}
+                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-semibold transition-all flex-shrink-0"
+                            style={{
+                              borderColor: isHidden ? '#E2E8F0' : T,
+                              backgroundColor: isHidden ? '#F1F5F9' : `${T}12`,
+                              color: isHidden ? '#94A3B8' : T,
+                            }}
+                          >
+                            {isHidden ? (
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                            ) : (
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                            )}
+                            {isHidden ? 'Hidden' : 'Visible'}
+                          </button>
+                        </div>
+                        <div className="px-4 pb-4">
+                          <div className="grid grid-cols-2 gap-3" style={{ filter: isHidden ? 'grayscale(0.4)' : 'none' }}>
+                            <div className="col-span-2">
+                              <ImageUploader
+                                label="Destination Photo"
+                                folder="templates/destinations"
+                                value={dc.image_url || null}
+                                onChange={url => { const c = [...cms.destination_cards]; c[i] = { ...c[i], image_url: url ?? '' }; updCms('destination_cards', c); }}
+                                placeholder="Upload destination photo"
+                                sizeHint="800 × 600 px (4:3)"
+                              />
                           </div>
                           <div className="col-span-2">
                             <label className={lbl}>Short Description</label>
@@ -686,7 +730,7 @@ export default function TemplateEditPage() {
                       </div>
                     </div>
                   );
-                })}
+                }); })()}
                 {destList.length > 0 && cms.destination_cards.length === 0 && (
                   <button onClick={() => updCms('destination_cards', destList.map(did => ({ destination_id: did, custom_name: null, description: '', image_url: '' })))}
                     className="h-9 px-4 rounded-lg text-sm font-semibold text-white hover:opacity-90" style={{ backgroundColor: T }}>
