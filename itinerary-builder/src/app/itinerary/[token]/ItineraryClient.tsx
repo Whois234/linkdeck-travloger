@@ -337,21 +337,35 @@ function Strip({ quote }: { quote: ItineraryData['quote'] }) {
 }
 
 /* ─────────────────────────── Gallery ─────────────────────────── */
-function Gallery({ state, day_snapshots }: { state: ItineraryData['state']; day_snapshots: DaySnapshot[] }) {
-  // Build gallery from day snapshot images + state hero
+function Gallery({ state, day_snapshots, destination_cards }: {
+  state: ItineraryData['state'];
+  day_snapshots: DaySnapshot[];
+  destination_cards?: ItineraryData['destination_cards'];
+}) {
   const imgs: Array<{ url: string; label: string }> = [];
 
+  // State hero always first
   if (state.hero_image) {
     imgs.push({ url: state.hero_image, label: state.name });
   }
 
-  day_snapshots.forEach((d) => {
-    if (d.image_url && imgs.length < 8) {
-      imgs.push({ url: d.image_url, label: `Day ${d.day_number}` });
-    }
-  });
+  if (destination_cards && destination_cards.length > 0) {
+    // Use destination card images (with destination name labels) when available
+    destination_cards.forEach((dc) => {
+      if (dc.image_url && imgs.length < 8) {
+        imgs.push({ url: dc.image_url, label: dc.name });
+      }
+    });
+  } else {
+    // Fallback: day snapshot images
+    day_snapshots.forEach((d) => {
+      if (d.image_url && imgs.length < 8) {
+        imgs.push({ url: d.image_url, label: `Day ${d.day_number}` });
+      }
+    });
+  }
 
-  // Fallback images if none provided
+  // Last resort fallback
   if (imgs.length === 0) {
     [
       { url: 'https://images.unsplash.com/photo-1582510003544-4d00b7f74220?w=600&auto=format&fit=crop&q=80', label: 'Destination' },
@@ -365,6 +379,7 @@ function Gallery({ state, day_snapshots }: { state: ItineraryData['state']; day_
       <div className="tl-gal-scroll">
         {imgs.map((img, i) => (
           <div key={i} className="tl-gal-item">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={img.url} alt={img.label} loading="lazy" />
             <div className="tl-gal-label">{img.label}</div>
           </div>
@@ -923,16 +938,10 @@ function ItineraryDaysOnly({ days, openDay, setOpenDay }: { days: DaySnapshot[];
   );
 }
 
-function ItinerarySection({ days, destinationCards }: { days: DaySnapshot[]; destinationCards?: DestCard[] | null }) {
+function ItinerarySection({ days }: { days: DaySnapshot[] }) {
   const [openDay, setOpenDay] = useState<number>(0); // first day open by default
-  if (days.length === 0 && (!destinationCards || destinationCards.length === 0)) return null;
+  if (days.length === 0) return null;
 
-  // If destination cards exist → show destination card view (with days folded below)
-  if (destinationCards && destinationCards.length > 0) {
-    return <DestinationCardsSection cards={destinationCards} days={days} />;
-  }
-
-  // Fallback: plain day-by-day
   return (
     <div className="tl-sec" data-section="itinerary">
       <div className="tl-sec-eyebrow">Day by Day</div>
@@ -3022,7 +3031,7 @@ export function ItineraryClient({ data, token }: Props) {
       <div style={{ marginTop: 58 }}>
         <Strip quote={quote} />
         <Hero data={data} />
-        <Gallery state={state} day_snapshots={day_snapshots} />
+        <Gallery state={state} day_snapshots={day_snapshots} destination_cards={destination_cards} />
 
         {/* Package options — PRIVATE only (GROUP has its own tier selector below) */}
         {!isGroup && <Packages options={quote_options} selectedId={selectedId} onSelect={handleSelectOption} adults={quote.adults} />}
@@ -3053,7 +3062,7 @@ export function ItineraryClient({ data, token }: Props) {
         )}
 
         <LogoMarquee />
-        <ItinerarySection days={day_snapshots} destinationCards={destination_cards} />
+        <ItinerarySection days={day_snapshots} />
 
         {/* ── GROUP: visual what's covered; regular: plain inc/exc ── */}
         {isGroup
