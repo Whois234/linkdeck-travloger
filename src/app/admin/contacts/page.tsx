@@ -1155,11 +1155,11 @@ export default function ContactsPage() {
                         {/* Actions */}
                         <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center gap-1">
-                            <button onClick={() => setEditing(c)}
+                            <Link href={`/admin/contacts/${c.id}`}
                               className="w-7 h-7 rounded-md flex items-center justify-center transition-colors hover:bg-[#F1F5F9]"
-                              style={{ color: '#64748B' }} title="Edit">
+                              style={{ color: '#64748B' }} title="View / Edit">
                               <Edit2 className="w-3.5 h-3.5" />
-                            </button>
+                            </Link>
                             <button onClick={async () => {
                               if (!confirm(`Delete contact "${c.name}"? This soft-deletes — can be restored from the database.`)) return;
                               const res = await fetch(`/api/v1/crm/contacts/${c.id}`, { method: 'DELETE' });
