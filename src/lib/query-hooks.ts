@@ -89,7 +89,8 @@ export function useContacts(params: URLSearchParams) {
     queryFn:  () => apiFetch<{ items: unknown[]; total: number; page: number; limit: number; pages: number }>(
       `/api/v1/crm/contacts?${key}`
     ),
-    staleTime: LIVE_STALE,
+    // 60s per Part 9 spec — list data. gcTime inherits the 5min default.
+    staleTime: 60_000,
     placeholderData: (prev) => prev,  // keep previous page visible while fetching next
   });
 }

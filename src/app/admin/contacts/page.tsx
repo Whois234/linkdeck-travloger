@@ -183,71 +183,6 @@ function Chip({ children, bg, color }: { children: React.ReactNode; bg: string; 
   );
 }
 
-// ─── Create Contact Modal ────────────────────────────────────────────────────
-function CreateContactModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
-  const [form, setForm] = useState({ name: '', phone: '', email: '', source: '', notes: '' });
-  const [saving, setSaving] = useState(false);
-  const [error, setError]   = useState('');
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!form.name.trim() || !form.phone.trim()) { setError('Name and phone are required'); return; }
-    setSaving(true); setError('');
-    try {
-      const res  = await fetch('/api/v1/crm/contacts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
-      const data = await res.json();
-      if (data.success) {
-        toast.success(`Contact ${form.name.trim()} added`);
-        onCreated();
-        onClose();
-      } else {
-        const msg = data.error ?? 'Failed to create contact';
-        setError(msg);
-        toast.error(msg);
-      }
-    } catch {
-      const msg = 'Network error — please try again';
-      setError(msg);
-      toast.error(msg);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-2xl w-[440px] shadow-2xl overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: '1px solid #F1F5F9' }}>
-          <p className="font-bold" style={{ color: '#0F172A' }}>New Contact</p>
-          <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#F1F5F9]"><X className="w-4 h-4" style={{ color: '#64748B' }} /></button>
-        </div>
-        <form onSubmit={submit} className="px-6 py-5 space-y-3">
-          {[
-            { label: 'Name *',  key: 'name',   type: 'text',  ph: 'Full name' },
-            { label: 'Phone *', key: 'phone',  type: 'tel',   ph: '+91 98765 43210' },
-            { label: 'Email',   key: 'email',  type: 'email', ph: 'email@example.com' },
-            { label: 'Source',  key: 'source', type: 'text',  ph: 'Facebook, Google, Referral...' },
-          ].map(f => (
-            <div key={f.key}>
-              <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>{f.label}</label>
-              <input type={f.type} value={(form as Record<string,string>)[f.key]} placeholder={f.ph}
-                onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
-                className="w-full text-sm rounded-lg px-3 py-2.5 outline-none" style={{ border: '1px solid #D1D5DB' }} />
-            </div>
-          ))}
-          {error && <p className="text-xs text-red-600 font-medium">{error}</p>}
-          <div className="flex gap-3 pt-1">
-            <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-lg text-sm font-semibold" style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>Cancel</button>
-            <button type="submit" disabled={saving} className="flex-1 py-2.5 rounded-lg text-sm font-bold text-white flex items-center justify-center gap-2" style={{ backgroundColor: '#134956' }}>
-              {saving && <Loader2 className="w-4 h-4 animate-spin" />}{saving ? 'Creating...' : 'Create Contact'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
 // ─── Contact Detail Panel ────────────────────────────────────────────────────
 function ContactPanel({
   contact, users, allTags, onClose, onUpdated,
@@ -314,7 +249,7 @@ function ContactPanel({
   return (
     <div className="fixed inset-0 z-40 flex">
       <div className="flex-1 bg-black/30" onClick={onClose} />
-      <div className="w-[520px] bg-white flex flex-col shadow-2xl overflow-hidden" style={{ borderLeft: '1px solid #E2E8F0' }}>
+      <div className="w-full sm:w-[520px] sm:max-w-[90vw] bg-white flex flex-col shadow-2xl overflow-hidden" style={{ borderLeft: '1px solid #E2E8F0' }}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 flex-shrink-0" style={{ borderBottom: '1px solid #F1F5F9' }}>
           <div className="flex items-center gap-3">
