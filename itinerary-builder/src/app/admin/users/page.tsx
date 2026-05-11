@@ -348,17 +348,24 @@ function ResetPasswordModal({ user, onClose }: { user: User; onClose: () => void
 /* ── Toggle Status Confirm Modal ── */
 function ToggleStatusModal({ user, onClose, onSaved }: { user: User; onClose: () => void; onSaved: () => void }) {
   const [saving, setSaving] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
   const deactivating = user.status;
 
   async function handleConfirm() {
     setSaving(true);
+    setApiError(null);
     const res = await fetch(`/api/v1/users/${user.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: !user.status }),
     });
     setSaving(false);
-    if (res.ok) { onSaved(); onClose(); }
+    if (res.ok) {
+      onSaved(); onClose();
+    } else {
+      const d = await res.json().catch(() => ({}));
+      setApiError(d.error ?? 'Something went wrong. Please try again.');
+    }
   }
 
   return (
@@ -370,11 +377,14 @@ function ToggleStatusModal({ user, onClose, onSaved }: { user: User; onClose: ()
         <p className="font-semibold text-sm mb-2" style={{ color: '#0F172A' }}>
           {deactivating ? `Deactivate ${user.name}?` : `Activate ${user.name}?`}
         </p>
-        <p className="text-sm mb-6" style={{ color: '#64748B' }}>
+        <p className="text-sm mb-4" style={{ color: '#64748B' }}>
           {deactivating
             ? 'This user will no longer be able to sign in.'
             : 'This user will be able to sign in again.'}
         </p>
+        {apiError && (
+          <p className="text-xs text-red-500 mb-4 bg-red-50 rounded-lg px-3 py-2">{apiError}</p>
+        )}
         <div className="flex gap-3 justify-center">
           <button onClick={onClose} className="px-5 h-10 rounded-xl border text-sm font-semibold" style={{ borderColor: '#E2E8F0', color: '#64748B' }}>Cancel</button>
           <button onClick={handleConfirm} disabled={saving} className="px-5 h-10 rounded-xl text-white text-sm font-semibold disabled:opacity-60" style={{ backgroundColor: deactivating ? '#DC2626' : '#134956' }}>
