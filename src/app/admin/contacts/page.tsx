@@ -7,8 +7,9 @@ import { toast } from '@/components/Toaster';
 import {
   Search, Phone, Mail, Plus, X, Calendar, ChevronDown, AlertTriangle,
   Loader2, Edit2, ChevronRight, CheckSquare, Square, ChevronLeft, ExternalLink,
-  Save, User, Trash2, Tag as TagIcon, Check,
+  Save, User, Trash2, Tag as TagIcon, Check, Download, Filter as FilterIcon,
 } from 'lucide-react';
+import Link from 'next/link';
 
 interface Stage    { id: string; name: string; color: string }
 interface Pipeline { id: string; name: string }
@@ -31,15 +32,38 @@ interface ContactQuote {
 
 interface ContactTag { id: string; name: string; color: string }
 
+type LeadStage  = 'NEW' | 'CONTACTED' | 'FOLLOW_UP' | 'HOT' | 'CONVERTED' | 'LOST';
+type LeadSource = 'CTWA' | 'META_LEAD_FORM' | 'GOOGLE_ADS' | 'WEBSITE' | 'WALK_IN' | 'REFERRAL';
+type TripType   = 'GROUP' | 'PRIVATE';
+
 interface Contact {
   id: string; name: string; phone: string; email: string | null;
   source: string | null; notes: string | null;
   is_converted: boolean; converted_at: string | null; created_at: string;
   last_known_city: string | null; last_seen_at: string | null;
+  city: string | null;
   tags: string[];
   custom_fields: Record<string, unknown> | null;
-  owner: Owner | null; owner_id: string; leads: Lead[];
+  owner: Owner | null; owner_id: string;
+  leads: Lead[];
   quotes?: ContactQuote[];
+
+  // Travel interest
+  interested_destination: string | null;
+  number_of_travellers:   number | null;
+  trip_type:              TripType | null;
+  special_requirements:   string | null;
+  budget_per_person:      string | number | null; // Decimal serialises to string
+
+  // Lead source & CRM
+  lead_source:    LeadSource | null;
+  lead_stage:     LeadStage;
+  assigned_to_id: string | null;
+  assigned_to:    Owner | null;
+  follow_up_date: string | null;
+  closed_date:    string | null;
+  booking_value:  string | number | null;
+  do_not_contact: boolean;
 }
 
 interface DuplicateAttempt {
@@ -63,6 +87,54 @@ function fmtDateTime(d: string) {
   return new Date(d).toLocaleString('en-IN', {
     day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
   });
+}
+
+function fmtDate(d: string) {
+  return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function fmtINR(v: string | number | null | undefined): string {
+  if (v === null || v === undefined || v === '') return '—';
+  const n = typeof v === 'string' ? parseFloat(v) : v;
+  if (!Number.isFinite(n)) return '—';
+  return '₹' + Math.round(n).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+}
+
+// ─── Badge styling ───────────────────────────────────────────────────────────
+
+const STAGE_BADGE: Record<LeadStage, { bg: string; color: string; label: string }> = {
+  NEW:       { bg: '#DBEAFE', color: '#1D4ED8', label: 'New' },
+  CONTACTED: { bg: '#FEF3C7', color: '#B45309', label: 'Contacted' },
+  FOLLOW_UP: { bg: '#FFEDD5', color: '#C2410C', label: 'Follow up' },
+  HOT:       { bg: '#FEE2E2', color: '#DC2626', label: 'Hot' },
+  CONVERTED: { bg: '#DCFCE7', color: '#15803D', label: 'Converted' },
+  LOST:      { bg: '#F1F5F9', color: '#64748B', label: 'Lost' },
+};
+
+const SOURCE_BADGE: Record<LeadSource, { bg: string; color: string; label: string }> = {
+  CTWA:           { bg: '#DCFCE7', color: '#15803D', label: 'CTWA' },
+  META_LEAD_FORM: { bg: '#DBEAFE', color: '#1D4ED8', label: 'Meta Lead Form' },
+  GOOGLE_ADS:     { bg: '#FEF3C7', color: '#B45309', label: 'Google Ads' },
+  WEBSITE:        { bg: '#EDE9FE', color: '#6D28D9', label: 'Website' },
+  WALK_IN:        { bg: '#E0F2F1', color: '#134956', label: 'Walk-in' },
+  REFERRAL:       { bg: '#FCE7F3', color: '#BE185D', label: 'Referral' },
+};
+
+const TRIP_TYPE_BADGE: Record<TripType, { bg: string; color: string; label: string }> = {
+  GROUP:   { bg: '#E0E7FF', color: '#4338CA', label: 'Group' },
+  PRIVATE: { bg: '#CFFAFE', color: '#0E7490', label: 'Private' },
+};
+
+const STAGES: LeadStage[]  = ['NEW', 'CONTACTED', 'FOLLOW_UP', 'HOT', 'CONVERTED', 'LOST'];
+const SOURCES: LeadSource[] = ['CTWA', 'META_LEAD_FORM', 'GOOGLE_ADS', 'WEBSITE', 'WALK_IN', 'REFERRAL'];
+
+function Chip({ children, bg, color }: { children: React.ReactNode; bg: string; color: string }) {
+  return (
+    <span className="inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-semibold whitespace-nowrap"
+      style={{ backgroundColor: bg, color }}>
+      {children}
+    </span>
+  );
 }
 
 // ─── Create Contact Modal ────────────────────────────────────────────────────
@@ -495,7 +567,15 @@ export default function ContactsPage() {
   const [allTags, setAllTags]     = useState<ContactTag[]>([]);
   const [tagFilter, setTagFilter] = useState<string[]>([]);
   const [showTagFilter, setShowTagFilter] = useState(false);
-  const PER_PAGE = 50;
+
+  // New filters per Part 4 spec
+  const [stageFilter,       setStageFilter]       = useState<LeadStage[]>([]);
+  const [sourceFilter,      setSourceFilter]      = useState<LeadSource[]>([]);
+  const [assignedFilter,    setAssignedFilter]    = useState<string>(''); // user id or 'unassigned'
+  const [destinationFilter, setDestinationFilter] = useState('');
+  const [tripTypeFilter,    setTripTypeFilter]    = useState<TripType | ''>('');
+
+  const PER_PAGE = 20;
   const datePickerRef = useRef<HTMLDivElement>(null);
   const tagFilterRef  = useRef<HTMLDivElement>(null);
   const qc = useQueryClient();
@@ -519,7 +599,33 @@ export default function ContactsPage() {
   }, [search]);
 
   // Reset to page 1 when filters change
-  useEffect(() => { setPage(1); }, [sortBy, dateRange, dateFrom, dateTo, tagFilter]);
+  useEffect(() => { setPage(1); }, [sortBy, dateRange, dateFrom, dateTo, tagFilter, stageFilter, sourceFilter, assignedFilter, destinationFilter, tripTypeFilter]);
+
+  // Destinations seen in the loaded contact set — for the destination filter dropdown.
+  // (For now this is a static list of common destinations + whatever appears in the current page.)
+  const destinationOptions = useMemo(() => {
+    const set = new Set<string>(['Kerala', 'Goa', 'Ladakh', 'Kashmir', 'Himachal', 'Uttarakhand', 'Andaman', 'Rajasthan', 'Northeast', 'Bali', 'Dubai', 'Maldives', 'Singapore', 'Thailand', 'Europe']);
+    return Array.from(set).sort();
+  }, []);
+
+  function clearAllFilters() {
+    setSearch('');
+    setSortBy('newest');
+    setDateRange(''); setDateFrom(''); setDateTo('');
+    setTagFilter([]);
+    setStageFilter([]); setSourceFilter([]);
+    setAssignedFilter(''); setDestinationFilter('');
+    setTripTypeFilter('');
+  }
+
+  const activeFilterCount =
+    (stageFilter.length > 0 ? 1 : 0) +
+    (sourceFilter.length > 0 ? 1 : 0) +
+    (assignedFilter ? 1 : 0) +
+    (destinationFilter ? 1 : 0) +
+    (tripTypeFilter ? 1 : 0) +
+    (tagFilter.length > 0 ? 1 : 0) +
+    (dateRange ? 1 : 0);
 
   const tagByName = useMemo(() => Object.fromEntries(allTags.map(t => [t.name, t])), [allTags]);
 
@@ -535,6 +641,11 @@ export default function ContactsPage() {
   if (dateRange === 'custom' && dateFrom) contactParams.set('date_from', dateFrom);
   if (dateRange === 'custom' && dateTo)   contactParams.set('date_to', dateTo);
   if (tagFilter.length)                   contactParams.set('tags', tagFilter.join(','));
+  if (stageFilter.length)                 contactParams.set('lead_stage',  stageFilter.join(','));
+  if (sourceFilter.length)                contactParams.set('lead_source', sourceFilter.join(','));
+  if (assignedFilter)                     contactParams.set('assigned_to_id', assignedFilter);
+  if (destinationFilter)                  contactParams.set('interested_destination', destinationFilter);
+  if (tripTypeFilter)                     contactParams.set('trip_type', tripTypeFilter);
   contactParams.set('page', String(page));
   contactParams.set('limit', String(PER_PAGE));
 
@@ -591,13 +702,76 @@ export default function ContactsPage() {
     qc.invalidateQueries({ queryKey: QK.contacts(contactParams.toString()) });
   }
 
+  // ─── CSV export ──────────────────────────────────────────────────────────────
+  // Exports the current filtered set (uses the same query params as the table).
+  async function exportCsv() {
+    const exportParams = new URLSearchParams(contactParams);
+    exportParams.set('limit', '5000'); // hard cap to avoid runaway downloads
+    exportParams.set('page', '1');
+    try {
+      const res = await fetch(`/api/v1/crm/contacts?${exportParams}`);
+      const data = await res.json();
+      if (!data.success) return;
+      const rows: Contact[] = data.data.items ?? data.data.contacts ?? [];
+
+      const headers = [
+        'Full Name', 'Phone', 'Email', 'City', 'Interested Destination',
+        'Number of Travellers', 'Trip Type', 'Budget per Person',
+        'Lead Source', 'Lead Stage', 'Assigned To',
+        'Follow Up Date', 'Created At', 'Converted', 'Booking Value',
+        'Do Not Contact', 'Tags',
+      ];
+      const csvCell = (v: unknown) => {
+        if (v === null || v === undefined) return '';
+        const s = String(v).replace(/"/g, '""');
+        return /[",\n]/.test(s) ? `"${s}"` : s;
+      };
+      const lines = [headers.join(',')];
+      for (const r of rows) {
+        lines.push([
+          r.name, r.phone, r.email ?? '', r.city ?? '',
+          r.interested_destination ?? '',
+          r.number_of_travellers ?? '',
+          r.trip_type ?? '',
+          r.budget_per_person ?? '',
+          r.lead_source ?? '',
+          r.lead_stage,
+          r.assigned_to?.name ?? '',
+          r.follow_up_date ?? '',
+          r.created_at,
+          r.is_converted ? 'Yes' : 'No',
+          r.booking_value ?? '',
+          r.do_not_contact ? 'Yes' : 'No',
+          (r.tags ?? []).join('; '),
+        ].map(csvCell).join(','));
+      }
+      const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `contacts-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('[contacts/export]', e);
+    }
+  }
+
   const allChecked = paginated.length > 0 && checkedIds.size === paginated.length;
 
   return (
     <div className="flex flex-col h-full -m-5 lg:-m-8 overflow-hidden">
       {/* Topbar */}
       <div className="flex-shrink-0 bg-white px-6 py-3 flex items-center gap-3 flex-wrap" style={{ borderBottom: '1px solid #E2E8F0' }}>
-        <h1 className="text-base font-bold mr-2" style={{ color: '#0F172A' }}>Contacts</h1>
+        <h1 className="text-base font-bold mr-1" style={{ color: '#0F172A' }}>Contacts</h1>
+        {totalCount > 0 && (
+          <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold mr-2"
+            style={{ backgroundColor: '#E0F2F1', color: '#134956' }}>
+            {totalCount.toLocaleString()} {totalCount === 1 ? 'Contact' : 'Contacts'}
+          </span>
+        )}
 
         {/* Tabs */}
         <div className="flex gap-1 p-0.5 rounded-lg" style={{ backgroundColor: '#F1F5F9' }}>
@@ -710,6 +884,12 @@ export default function ContactsPage() {
               <option value="name">Name A–Z</option>
             </select>
 
+            <button onClick={exportCsv}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors hover:bg-[#F8FAFC]"
+              style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>
+              <Download className="w-3.5 h-3.5" /> Export CSV
+            </button>
+
             <button onClick={() => setShowCreate(true)}
               className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold text-white"
               style={{ backgroundColor: '#134956' }}>
@@ -719,6 +899,73 @@ export default function ContactsPage() {
         )}
       </div>
 
+      {/* Second filter row — stage / source / assignee / destination / trip type / clear */}
+      {tab === 'contacts' && (
+        <div className="flex-shrink-0 bg-white px-6 py-2.5 flex items-center gap-2 flex-wrap" style={{ borderBottom: '1px solid #E2E8F0' }}>
+          <FilterIcon className="w-3.5 h-3.5" style={{ color: '#94A3B8' }} />
+
+          {/* Lead Stage */}
+          <select
+            value={stageFilter[0] ?? ''}
+            onChange={e => setStageFilter(e.target.value ? [e.target.value as LeadStage] : [])}
+            className="text-xs font-medium rounded-lg px-2.5 py-1.5 outline-none cursor-pointer"
+            style={{ border: `1px solid ${stageFilter.length ? '#134956' : '#E2E8F0'}`, color: stageFilter.length ? '#134956' : '#64748B', backgroundColor: stageFilter.length ? '#F0F9FF' : '#fff' }}>
+            <option value="">All stages</option>
+            {STAGES.map(s => <option key={s} value={s}>{STAGE_BADGE[s].label}</option>)}
+          </select>
+
+          {/* Lead Source */}
+          <select
+            value={sourceFilter[0] ?? ''}
+            onChange={e => setSourceFilter(e.target.value ? [e.target.value as LeadSource] : [])}
+            className="text-xs font-medium rounded-lg px-2.5 py-1.5 outline-none cursor-pointer"
+            style={{ border: `1px solid ${sourceFilter.length ? '#134956' : '#E2E8F0'}`, color: sourceFilter.length ? '#134956' : '#64748B', backgroundColor: sourceFilter.length ? '#F0F9FF' : '#fff' }}>
+            <option value="">All sources</option>
+            {SOURCES.map(s => <option key={s} value={s}>{SOURCE_BADGE[s].label}</option>)}
+          </select>
+
+          {/* Assigned To */}
+          <select
+            value={assignedFilter}
+            onChange={e => setAssignedFilter(e.target.value)}
+            className="text-xs font-medium rounded-lg px-2.5 py-1.5 outline-none cursor-pointer max-w-[180px]"
+            style={{ border: `1px solid ${assignedFilter ? '#134956' : '#E2E8F0'}`, color: assignedFilter ? '#134956' : '#64748B', backgroundColor: assignedFilter ? '#F0F9FF' : '#fff' }}>
+            <option value="">Anyone assigned</option>
+            <option value="unassigned">Unassigned</option>
+            {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+
+          {/* Destination */}
+          <select
+            value={destinationFilter}
+            onChange={e => setDestinationFilter(e.target.value)}
+            className="text-xs font-medium rounded-lg px-2.5 py-1.5 outline-none cursor-pointer"
+            style={{ border: `1px solid ${destinationFilter ? '#134956' : '#E2E8F0'}`, color: destinationFilter ? '#134956' : '#64748B', backgroundColor: destinationFilter ? '#F0F9FF' : '#fff' }}>
+            <option value="">Any destination</option>
+            {destinationOptions.map(d => <option key={d} value={d}>{d}</option>)}
+          </select>
+
+          {/* Trip Type */}
+          <select
+            value={tripTypeFilter}
+            onChange={e => setTripTypeFilter(e.target.value as TripType | '')}
+            className="text-xs font-medium rounded-lg px-2.5 py-1.5 outline-none cursor-pointer"
+            style={{ border: `1px solid ${tripTypeFilter ? '#134956' : '#E2E8F0'}`, color: tripTypeFilter ? '#134956' : '#64748B', backgroundColor: tripTypeFilter ? '#F0F9FF' : '#fff' }}>
+            <option value="">Any trip type</option>
+            <option value="GROUP">Group</option>
+            <option value="PRIVATE">Private</option>
+          </select>
+
+          {activeFilterCount > 0 && (
+            <button onClick={clearAllFilters}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors hover:bg-[#FEF2F2]"
+              style={{ border: '1px solid #FECACA', color: '#DC2626' }}>
+              <X className="w-3 h-3" /> Clear all
+            </button>
+          )}
+        </div>
+      )}
+
       {tab === 'contacts' ? (
         <>
           {/* Table */}
@@ -726,7 +973,7 @@ export default function ContactsPage() {
             {loading && contacts.length === 0 ? (
               <TableSkeleton rows={12} />
             ) : (
-              <div className="overflow-x-auto"><table className="w-full text-sm border-collapse min-w-[900px]">
+              <div className="overflow-x-auto"><table className="w-full text-sm border-collapse min-w-[1280px]">
                 <thead>
                   <tr style={{ backgroundColor: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
                     <th className="w-10 px-4 py-3">
@@ -736,92 +983,160 @@ export default function ContactsPage() {
                           : <Square className="w-4 h-4" style={{ color: '#CBD5E1' }} />}
                       </button>
                     </th>
-                    {['Contact Name', 'Tags', 'Email', 'Contact Owner', 'Destination', 'Mobile', 'City', 'Lead Source', 'Created Time', ''].map(h => (
+                    {[
+                      'Full Name', 'Phone', 'City', 'Destination', 'Budget',
+                      'Trip', 'Source', 'Stage', 'Assigned', 'Follow-up', 'Created', '',
+                    ].map(h => (
                       <th key={h} className="text-left px-3 py-3 text-[11px] font-bold uppercase tracking-wider whitespace-nowrap" style={{ color: '#64748B' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {paginated.map((c, i) => (
-                    <tr key={c.id}
-                      onClick={() => setSelected(c)}
-                      className="cursor-pointer transition-colors hover:bg-[#F8FAFC]"
-                      style={{ borderBottom: i < paginated.length - 1 ? '1px solid #F1F5F9' : 'none' }}>
-                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                        <button onClick={() => toggleCheck(c.id)}>
-                          {checkedIds.has(c.id)
-                            ? <CheckSquare className="w-4 h-4" style={{ color: '#134956' }} />
-                            : <Square className="w-4 h-4" style={{ color: '#CBD5E1' }} />}
-                        </button>
-                      </td>
-                      <td className="px-3 py-3">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
-                            style={{ backgroundColor: c.is_converted ? '#22C55E' : '#134956' }}>
-                            {c.name.charAt(0).toUpperCase()}
-                          </div>
-                          <div>
-                            <p className="font-semibold" style={{ color: '#0F172A' }}>{c.name}</p>
-                            {c.is_converted && <span className="text-[10px] font-semibold" style={{ color: '#16A34A' }}>Converted</span>}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-3 py-3">
-                        {(c.tags ?? []).length === 0 ? <span className="text-xs" style={{ color: '#CBD5E1' }}>—</span> : (
-                          <div className="flex items-center gap-1 flex-wrap max-w-[180px]">
-                            {(c.tags ?? []).slice(0, 3).map(name => {
-                              const tag = tagByName[name];
-                              const color = tag?.color ?? '#64748B';
-                              return (
-                                <span key={name} className="px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
-                                  style={{ backgroundColor: color + '20', color }}>{name}</span>
-                              );
-                            })}
-                            {(c.tags ?? []).length > 3 && (
-                              <span className="text-[10px] font-semibold" style={{ color: '#94A3B8' }}>+{c.tags.length - 3}</span>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-3 py-3 text-xs" style={{ color: '#64748B' }}>{c.email ? <span className="truncate max-w-[140px] block">{c.email}</span> : '—'}</td>
-                      <td className="px-3 py-3">
-                        {c.owner ? (
-                          <div className="flex items-center gap-1.5">
-                            <div className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0" style={{ backgroundColor: '#134956' }}>
-                              {c.owner.name.charAt(0).toUpperCase()}
+                  {paginated.map((c, i) => {
+                    const stageStyle = STAGE_BADGE[c.lead_stage] ?? STAGE_BADGE.NEW;
+                    const sourceStyle = c.lead_source ? SOURCE_BADGE[c.lead_source] : null;
+                    const tripStyle   = c.trip_type ? TRIP_TYPE_BADGE[c.trip_type] : null;
+                    const followUpPast = c.follow_up_date && new Date(c.follow_up_date).getTime() < Date.now();
+
+                    return (
+                      <tr key={c.id}
+                        onClick={() => setSelected(c)}
+                        className="cursor-pointer transition-colors hover:bg-[#F8FAFC]"
+                        style={{ borderBottom: i < paginated.length - 1 ? '1px solid #F1F5F9' : 'none' }}>
+                        <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                          <button onClick={() => toggleCheck(c.id)}>
+                            {checkedIds.has(c.id)
+                              ? <CheckSquare className="w-4 h-4" style={{ color: '#134956' }} />
+                              : <Square className="w-4 h-4" style={{ color: '#CBD5E1' }} />}
+                          </button>
+                        </td>
+
+                        {/* Full Name — clickable → detail page */}
+                        <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+                              style={{ backgroundColor: c.is_converted ? '#22C55E' : '#134956' }}>
+                              {c.name.charAt(0).toUpperCase()}
                             </div>
-                            <span className="text-xs font-medium" style={{ color: '#0F172A' }}>{c.owner.name}</span>
+                            <div className="min-w-0">
+                              <Link href={`/admin/contacts/${c.id}`}
+                                className="font-semibold hover:underline truncate block max-w-[180px]"
+                                style={{ color: '#0F172A' }}>
+                                {c.name}
+                              </Link>
+                              {(c.tags ?? []).length > 0 && (
+                                <div className="flex items-center gap-1 mt-0.5">
+                                  {(c.tags ?? []).slice(0, 2).map(name => {
+                                    const tag = tagByName[name];
+                                    const color = tag?.color ?? '#64748B';
+                                    return (
+                                      <span key={name} className="px-1.5 py-0.5 rounded-full text-[9px] font-semibold whitespace-nowrap"
+                                        style={{ backgroundColor: color + '20', color }}>{name}</span>
+                                    );
+                                  })}
+                                  {c.tags.length > 2 && <span className="text-[9px]" style={{ color: '#94A3B8' }}>+{c.tags.length - 2}</span>}
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        ) : <span className="text-xs" style={{ color: '#94A3B8' }}>—</span>}
-                      </td>
-                      <td className="px-3 py-3 text-xs" style={{ color: '#64748B' }}>
-                        {c.leads.find(l => l.destination_interest)?.destination_interest ?? '—'}
-                      </td>
-                      <td className="px-3 py-3">
-                        <span className="flex items-center gap-1 text-xs" style={{ color: '#64748B' }}>
-                          <Phone className="w-3 h-3" />{c.phone}
-                        </span>
-                      </td>
-                      <td className="px-3 py-3 text-xs" style={{ color: '#64748B' }}>
-                        {c.last_known_city ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-medium" style={{ backgroundColor: '#EFF6FF', color: '#1D4ED8' }} title={c.last_seen_at ? `Last seen: ${fmtDateTime(c.last_seen_at)}` : undefined}>
-                            📍 {c.last_known_city}
+                        </td>
+
+                        {/* Phone */}
+                        <td className="px-3 py-3">
+                          <span className="flex items-center gap-1 text-xs whitespace-nowrap" style={{ color: '#64748B' }}>
+                            <Phone className="w-3 h-3" />{c.phone}
                           </span>
-                        ) : '—'}
-                      </td>
-                      <td className="px-3 py-3 text-xs" style={{ color: '#64748B' }}>{c.source ?? '—'}</td>
-                      <td className="px-3 py-3 text-xs whitespace-nowrap" style={{ color: '#64748B' }}>{fmtDateTime(c.created_at)}</td>
-                      <td className="px-3 py-3">
-                        <ChevronRight className="w-4 h-4" style={{ color: '#CBD5E1' }} />
-                      </td>
-                    </tr>
-                  ))}
-                  {paginated.length === 0 && (
+                        </td>
+
+                        {/* City */}
+                        <td className="px-3 py-3 text-xs" style={{ color: '#64748B' }}>
+                          {c.city ?? c.last_known_city ?? '—'}
+                        </td>
+
+                        {/* Interested Destination */}
+                        <td className="px-3 py-3 text-xs" style={{ color: '#64748B' }}>
+                          {c.interested_destination ?? c.leads.find(l => l.destination_interest)?.destination_interest ?? '—'}
+                        </td>
+
+                        {/* Budget Per Person */}
+                        <td className="px-3 py-3 text-xs font-semibold whitespace-nowrap" style={{ color: c.budget_per_person ? '#0F172A' : '#CBD5E1' }}>
+                          {fmtINR(c.budget_per_person)}
+                        </td>
+
+                        {/* Trip Type */}
+                        <td className="px-3 py-3">
+                          {tripStyle
+                            ? <Chip bg={tripStyle.bg} color={tripStyle.color}>{tripStyle.label}</Chip>
+                            : <span className="text-xs" style={{ color: '#CBD5E1' }}>—</span>}
+                        </td>
+
+                        {/* Lead Source */}
+                        <td className="px-3 py-3">
+                          {sourceStyle
+                            ? <Chip bg={sourceStyle.bg} color={sourceStyle.color}>{sourceStyle.label}</Chip>
+                            : c.source
+                              ? <span className="text-xs" style={{ color: '#64748B' }}>{c.source}</span>
+                              : <span className="text-xs" style={{ color: '#CBD5E1' }}>—</span>}
+                        </td>
+
+                        {/* Lead Stage */}
+                        <td className="px-3 py-3">
+                          <Chip bg={stageStyle.bg} color={stageStyle.color}>{stageStyle.label}</Chip>
+                        </td>
+
+                        {/* Assigned To */}
+                        <td className="px-3 py-3">
+                          {c.assigned_to ? (
+                            <div className="flex items-center gap-1.5">
+                              <div className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0" style={{ backgroundColor: '#134956' }}>
+                                {c.assigned_to.name.charAt(0).toUpperCase()}
+                              </div>
+                              <span className="text-xs font-medium" style={{ color: '#0F172A' }}>{c.assigned_to.name}</span>
+                            </div>
+                          ) : <span className="text-xs" style={{ color: '#94A3B8' }}>Unassigned</span>}
+                        </td>
+
+                        {/* Follow Up Date (red if past) */}
+                        <td className="px-3 py-3 text-xs whitespace-nowrap"
+                          style={{ color: followUpPast ? '#DC2626' : '#64748B', fontWeight: followUpPast ? 600 : 400 }}>
+                          {c.follow_up_date ? fmtDate(c.follow_up_date) : '—'}
+                        </td>
+
+                        {/* Created At */}
+                        <td className="px-3 py-3 text-xs whitespace-nowrap" style={{ color: '#64748B' }}>{fmtDate(c.created_at)}</td>
+
+                        {/* Actions */}
+                        <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+                          <div className="flex items-center gap-1">
+                            <Link href={`/admin/contacts/${c.id}`}
+                              className="w-7 h-7 rounded-md flex items-center justify-center transition-colors hover:bg-[#F1F5F9]"
+                              style={{ color: '#64748B' }} title="View / Edit">
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </Link>
+                            <button onClick={async () => {
+                              if (!confirm(`Delete contact "${c.name}"? This soft-deletes — can be restored from the database.`)) return;
+                              await fetch(`/api/v1/crm/contacts/${c.id}`, { method: 'DELETE' });
+                              qc.invalidateQueries({ queryKey: QK.contacts(contactParams.toString()) });
+                            }}
+                              className="w-7 h-7 rounded-md flex items-center justify-center transition-colors hover:bg-[#FEF2F2]"
+                              style={{ color: '#94A3B8' }} title="Delete">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {paginated.length === 0 && !loading && (
                     <tr>
-                      <td colSpan={11} className="text-center py-16">
+                      <td colSpan={13} className="text-center py-16">
                         <User className="w-8 h-8 mx-auto mb-2" style={{ color: '#CBD5E1' }} />
                         <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>No contacts found</p>
-                        <p className="text-xs mt-1" style={{ color: '#94A3B8' }}>Contacts are created automatically when a lead is added.</p>
+                        <p className="text-xs mt-1" style={{ color: '#94A3B8' }}>
+                          {activeFilterCount > 0
+                            ? <button onClick={clearAllFilters} className="underline" style={{ color: '#134956' }}>Clear filters</button>
+                            : 'Click "Contact" to add the first one — or wait for a CTWA lead to come in via webhook.'}
+                        </p>
                       </td>
                     </tr>
                   )}
@@ -841,20 +1156,28 @@ export default function ContactsPage() {
               <span className="text-[#CBD5E1]">·</span>
               <span>Untouched <span className="font-bold" style={{ color: '#0F172A' }}>{untouched.toLocaleString()}</span></span>
             </div>
-            {totalPages > 1 && (
-              <div className="flex items-center gap-2">
+            {totalCount > 0 && (
+              <div className="flex items-center gap-3">
                 <span>
-                  {(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, totalCount)} of {totalCount.toLocaleString()}
+                  Showing <span className="font-semibold" style={{ color: '#0F172A' }}>{(page - 1) * PER_PAGE + 1}</span> to{' '}
+                  <span className="font-semibold" style={{ color: '#0F172A' }}>{Math.min(page * PER_PAGE, totalCount)}</span> of{' '}
+                  <span className="font-semibold" style={{ color: '#0F172A' }}>{totalCount.toLocaleString()}</span> contacts
                   {loading && <span className="ml-2 opacity-50">…</span>}
                 </span>
-                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1 || loading}
-                  className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-[#F1F5F9] disabled:opacity-30">
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages || loading}
-                  className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-[#F1F5F9] disabled:opacity-30">
-                  <ChevronRight className="w-4 h-4" />
-                </button>
+                {totalPages > 1 && (
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1 || loading}
+                      className="flex items-center gap-1 px-2 h-7 rounded-lg text-xs font-semibold transition-colors hover:bg-[#F1F5F9] disabled:opacity-30"
+                      style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>
+                      <ChevronLeft className="w-3.5 h-3.5" /> Previous
+                    </button>
+                    <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages || loading}
+                      className="flex items-center gap-1 px-2 h-7 rounded-lg text-xs font-semibold transition-colors hover:bg-[#F1F5F9] disabled:opacity-30"
+                      style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>
+                      Next <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
