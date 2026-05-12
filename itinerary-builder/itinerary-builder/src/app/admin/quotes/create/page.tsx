@@ -28,7 +28,7 @@ function makeRoomsConfig(adults: number): { pax: number }[] {
 /* ─── Types ─── */
 interface State        { id: string; name: string; code: string }
 interface VehicleType  { id: string; display_name: string; capacity: number }
-interface VehRate      { id: string; route_name: string; vehicle_type_id: string; duration_days: number; base_cost: number; state_id: string }
+interface VehRate      { id: string; route_name: string; vehicle_type_id: string; duration_days: number; base_cost: number; state_id: string; start_city: string; end_city: string }
 interface MealPlan     { id: string; code: string; name: string }
 interface Hotel        { id: string; hotel_name: string; destination_id: string; star_rating: number | null; category_label: string; room_categories: { id: string; room_category_name: string }[] }
 interface PT           { id: string; template_name: string; duration_days: number; duration_nights: number; state_id: string; hero_image?: string | null; theme?: string | null; destinations: string[]; template_hotel_tiers: HTier[]; template_days: TDay[]; cms_data: CMSData | null }
@@ -308,11 +308,19 @@ export default function CreateQuotePage() {
   function autoFillVehicle(vtId: string) {
     setVehicleTypeId(vtId);
     if (!vtId) { setVehicleCost(0); return; }
+    const pickup = pickupLocation.trim().toLowerCase();
+    const drop   = dropLocation.trim().toLowerCase();
+    // Prefer city-matched rates, fall back to any rate for this vehicle type
+    const cityRates = vehRates.filter(r =>
+      r.vehicle_type_id === vtId &&
+      (!pickup || r.start_city.trim().toLowerCase() === pickup) &&
+      (!drop   || r.end_city.trim().toLowerCase()   === drop)
+    );
+    const pool = cityRates.length > 0 ? cityRates : vehRates.filter(r => r.vehicle_type_id === vtId);
     // First try exact duration match, then fall back to closest
-    const exactMatch = vehRates.find(r => r.vehicle_type_id === vtId && r.duration_days === durationDays);
+    const exactMatch = pool.find(r => r.duration_days === durationDays);
     if (exactMatch) { setVehicleCost(exactMatch.base_cost); return; }
-    const closest = vehRates.filter(r => r.vehicle_type_id === vtId)
-      .sort((a, b) => Math.abs(a.duration_days - durationDays) - Math.abs(b.duration_days - durationDays));
+    const closest = [...pool].sort((a, b) => Math.abs(a.duration_days - durationDays) - Math.abs(b.duration_days - durationDays));
     setVehicleCost(closest[0]?.base_cost ?? 0);
   }
 
@@ -1483,8 +1491,19 @@ export default function CreateQuotePage() {
                 r.vehicle_type_id === vehicleTypeId &&
                 (stateIds.length === 0 || stateIds.includes(r.state_id))
               );
-              const exactRates  = stateFilteredRates.filter(r => r.duration_days === durationDays);
-              const otherRates  = stateFilteredRates.filter(r => r.duration_days !== durationDays);
+              // Further narrow by pickup → drop city if both are set
+              const pickup = pickupLocation.trim().toLowerCase();
+              const drop   = dropLocation.trim().toLowerCase();
+              const cityFiltered = (pickup || drop)
+                ? stateFilteredRates.filter(r =>
+                    (!pickup || r.start_city.trim().toLowerCase() === pickup) &&
+                    (!drop   || r.end_city.trim().toLowerCase()   === drop)
+                  )
+                : stateFilteredRates;
+              const useCityFilter = (pickup || drop) && cityFiltered.length > 0;
+              const baseRates   = useCityFilter ? cityFiltered : stateFilteredRates;
+              const exactRates  = baseRates.filter(r => r.duration_days === durationDays);
+              const otherRates  = baseRates.filter(r => r.duration_days !== durationDays);
               if (exactRates.length === 0 && otherRates.length === 0) return null;
               return (
                 <div className="mt-4">

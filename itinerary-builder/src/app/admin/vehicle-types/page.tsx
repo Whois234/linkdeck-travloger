@@ -43,11 +43,11 @@ export default function VehicleTypesPage() {
 
   // ── Filters ──
   const [filterAC,         setFilterAC]         = useState('');
-  const [filterStatus,     setFilterStatus]     = useState('');
+  const [filterStatus,     setFilterStatus]     = useState('active');  // default: show only active
   const [filterDuplicates, setFilterDuplicates] = useState(false);
   const [showFilters,      setShowFilters]      = useState(true);
 
-  async function load() { setLoading(true); const r = await fetch('/api/v1/vehicle-types'); const d = await r.json(); if (d.success) setRows(Array.isArray(d.data) ? d.data : []); setLoading(false); }
+  async function load() { setLoading(true); const r = await fetch('/api/v1/vehicle-types?admin=1'); const d = await r.json(); if (d.success) setRows(Array.isArray(d.data) ? d.data : []); setLoading(false); }
   useEffect(() => { load(); }, []);
 
   function openCreate() { setEditing(null); setForm({ ...EMPTY }); setError(''); setShowForm(true); }
@@ -89,7 +89,7 @@ export default function VehicleTypesPage() {
   const duplicateIds = useMemo(() => {
     const dupKey = (r: VehicleType) => `${r.vehicle_type.trim().toLowerCase()}||${r.display_name.trim().toLowerCase()}`;
     const groups = new Map<string, { id: string; created_at: string }[]>();
-    rows.forEach(r => {
+    rows.filter(r => r.status).forEach(r => {  // only active records can be duplicates
       const k = dupKey(r);
       if (!groups.has(k)) groups.set(k, []);
       groups.get(k)!.push({ id: r.id, created_at: r.created_at });

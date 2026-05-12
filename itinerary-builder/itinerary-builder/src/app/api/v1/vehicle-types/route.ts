@@ -21,6 +21,14 @@ const Schema = z.object({
 export async function GET(req: NextRequest) {
   const user = await getAuthUser(req);
   if (!user) return unauthorized();
+
+  // Admin pages pass ?admin=1 to get a fresh, uncached list of ALL vehicle types
+  const admin = new URL(req.url).searchParams.get('admin');
+  if (admin === '1') {
+    const all = await prisma.vehicleType.findMany({ orderBy: { capacity: 'asc' } });
+    return ok(all);
+  }
+
   return ok(await getCachedVehicleTypes());
 }
 

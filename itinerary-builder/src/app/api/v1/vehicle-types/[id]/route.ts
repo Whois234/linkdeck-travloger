@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { getAuthUser, requireRole } from '@/lib/auth';
 import { ok, err, unauthorized, forbidden, notFound } from '@/lib/api-response';
 import { UserRole } from '@prisma/client';
+import { revalidateTag } from 'next/cache';
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   const user = await getAuthUser(req);
@@ -52,5 +53,6 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   if (!record) return notFound('Vehicle Type');
 
   await prisma.vehicleType.update({ where: { id: params.id }, data: { status: false } });
+  revalidateTag('master-vehicle-types'); // bust 10-min cache so next GET reflects change
   return ok({ message: 'Vehicle Type deactivated' });
 }
