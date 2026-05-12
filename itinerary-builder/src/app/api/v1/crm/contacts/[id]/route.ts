@@ -6,9 +6,6 @@ import { z } from 'zod';
 import {
   UserRole,
   LeadStage,
-  LeadSource,
-  Platform,
-  TripType,
   DevicePlatform,
 } from '@prisma/client';
 import {
@@ -36,13 +33,13 @@ const patchSchema = z.object({
   // Travel
   interested_destination: optionalString(120),
   number_of_travellers:   z.number().int().min(1).max(999).nullable().optional(),
-  trip_type:              z.nativeEnum(TripType).nullable().optional(),
+  trip_type:              z.string().max(100).nullable().optional(),
   special_requirements:   optionalString(2000),
   budget_per_person:      z.union([z.number(), z.string()]).nullable().optional(),
 
   // Ad attribution
-  lead_source:         z.nativeEnum(LeadSource).nullable().optional(),
-  platform:            z.nativeEnum(Platform).nullable().optional(),
+  lead_source:         z.string().max(100).nullable().optional(),
+  platform:            z.string().max(100).nullable().optional(),
   campaign_name:       optionalString(200),
   ad_set_name:         optionalString(200),
   ad_name:             optionalString(200),

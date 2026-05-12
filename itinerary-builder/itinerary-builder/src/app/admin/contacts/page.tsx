@@ -61,12 +61,12 @@ interface Contact {
   // Travel interest
   interested_destination: string | null;
   number_of_travellers:   number | null;
-  trip_type:              TripType | null;
+  trip_type:              string | null;
   special_requirements:   string | null;
   budget_per_person:      string | number | null; // Decimal serialises to string
 
   // Lead source & Ad data
-  lead_source:         LeadSource | null;
+  lead_source:         string | null;
   platform:            string | null;
   campaign_name:       string | null;
   ad_set_name:         string | null;
@@ -197,6 +197,16 @@ const TRIP_TYPE_BADGE: Record<TripType, { bg: string; color: string; label: stri
 
 const STAGES: LeadStage[]  = ['NEW', 'CONTACTED', 'FOLLOW_UP', 'HOT', 'CONVERTED', 'LOST'];
 const SOURCES: LeadSource[] = ['CTWA', 'META_LEAD_FORM', 'GOOGLE_ADS', 'WEBSITE', 'WALK_IN', 'REFERRAL'];
+
+// Helper to look up a badge, with graceful fallback for custom/unknown values
+function getSourceBadge(v: string | null): { bg: string; color: string; label: string } | null {
+  if (!v) return null;
+  return SOURCE_BADGE[v as LeadSource] ?? { bg: '#F1F5F9', color: '#64748B', label: v };
+}
+function getTripBadge(v: string | null): { bg: string; color: string; label: string } | null {
+  if (!v) return null;
+  return TRIP_TYPE_BADGE[v as TripType] ?? { bg: '#F1F5F9', color: '#64748B', label: v };
+}
 
 function Chip({ children, bg, color }: { children: React.ReactNode; bg: string; color: string }) {
   return (
@@ -417,7 +427,7 @@ function ContactPanel({
                 <div className="grid grid-cols-2 gap-x-6 gap-y-3">
                   <PF label="Destination"    value={c.interested_destination} />
                   <PF label="Travellers"     value={c.number_of_travellers != null ? String(c.number_of_travellers) : null} />
-                  <PF label="Trip Type"      value={c.trip_type ? TRIP_TYPE_BADGE[c.trip_type].label : null} badge={c.trip_type ? TRIP_TYPE_BADGE[c.trip_type] : undefined} />
+                  <PF label="Trip Type"      value={getTripBadge(c.trip_type)?.label ?? null} badge={getTripBadge(c.trip_type) ?? undefined} />
                   <PF label="Budget / Person" value={fmtINR(c.budget_per_person)} />
                   {c.special_requirements && <PF label="Special Requirements" value={c.special_requirements} span={2} />}
                 </div>
@@ -426,7 +436,7 @@ function ContactPanel({
               {/* ── LEAD SOURCE & AD DATA ──────────────────────────────── */}
               <PanelSection title="Lead Source & Ad Data">
                 <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-                  <PF label="Lead Source"   value={c.lead_source ? SOURCE_BADGE[c.lead_source].label : null} badge={c.lead_source ? SOURCE_BADGE[c.lead_source] : undefined} />
+                  <PF label="Lead Source"   value={getSourceBadge(c.lead_source)?.label ?? null} badge={getSourceBadge(c.lead_source) ?? undefined} />
                   <PF label="Platform"      value={c.platform} />
                   <PF label="Campaign Name" value={c.campaign_name} />
                   <PF label="Ad Set Name"   value={c.ad_set_name} />
@@ -1048,8 +1058,8 @@ export default function ContactsPage() {
                     // fall back to CrmContact.lead_stage for contacts with no pipeline lead.
                     const pipelineStage = c.leads.find(l => l.stage !== null)?.stage ?? null;
                     const stageStyle = STAGE_BADGE[c.lead_stage] ?? STAGE_BADGE.NEW;
-                    const sourceStyle = c.lead_source ? SOURCE_BADGE[c.lead_source] : null;
-                    const tripStyle   = c.trip_type ? TRIP_TYPE_BADGE[c.trip_type] : null;
+                    const sourceStyle = getSourceBadge(c.lead_source);
+                    const tripStyle   = getTripBadge(c.trip_type);
                     const followUpPast = c.follow_up_date && new Date(c.follow_up_date).getTime() < Date.now();
 
                     return (

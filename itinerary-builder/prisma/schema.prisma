@@ -1075,13 +1075,13 @@ model CrmContact {
   // ── Travel interest ────────────────────────────────────────────────────────
   interested_destination String?
   number_of_travellers   Int?
-  trip_type              TripType?
+  trip_type              String?
   special_requirements   String?
   budget_per_person      Decimal?  @db.Decimal(12, 2)
 
   // ── Lead source & ad attribution ───────────────────────────────────────────
-  lead_source       LeadSource?
-  platform          Platform?
+  lead_source       String?
+  platform          String?
   campaign_name     String?
   ad_set_name       String?
   ad_name           String?

@@ -19,9 +19,6 @@ import type {
   CrmContact,
   ContactActivityType,
   LeadStage,
-  LeadSource,
-  Platform,
-  TripType,
   DevicePlatform,
 } from '@prisma/client';
 
@@ -40,13 +37,13 @@ export type ContactCreateInput = {
   // Travel interest
   interested_destination?: string | null;
   number_of_travellers?: number | null;
-  trip_type?: TripType | null;
+  trip_type?: string | null;
   special_requirements?: string | null;
   budget_per_person?: number | string | null;   // accept number or string from JSON
 
   // Lead source & ad attribution
-  lead_source?: LeadSource | null;
-  platform?: Platform | null;
+  lead_source?: string | null;
+  platform?: string | null;
   campaign_name?: string | null;
   ad_set_name?: string | null;
   ad_name?: string | null;
@@ -197,7 +194,7 @@ export async function createContact(
 
     // Activity: LEAD_CREATED — mention the lead_source if any so the timeline reads naturally.
     const srcLabel = input.lead_source
-      ? input.lead_source.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase())
+      ? input.lead_source.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c: string) => c.toUpperCase())
       : 'manual entry';
     await logActivity(tx, {
       contact_id:      contact.id,

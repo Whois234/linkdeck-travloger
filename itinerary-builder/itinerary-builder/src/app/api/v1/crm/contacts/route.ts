@@ -9,9 +9,6 @@ import {
 } from '@/lib/contacts/service';
 import {
   LeadStage,
-  LeadSource,
-  Platform,
-  TripType,
   DevicePlatform,
 } from '@prisma/client';
 
@@ -39,13 +36,13 @@ const createSchema = z.object({
   // Travel interest
   interested_destination: optionalString(120),
   number_of_travellers:   z.number().int().min(1).max(999).nullable().optional(),
-  trip_type:              z.nativeEnum(TripType).nullable().optional(),
+  trip_type:              z.string().max(100).nullable().optional(),
   special_requirements:   optionalString(2000),
   budget_per_person:      z.union([z.number(), z.string()]).nullable().optional(),
 
   // Lead source & ad attribution
-  lead_source:         z.nativeEnum(LeadSource).nullable().optional(),
-  platform:            z.nativeEnum(Platform).nullable().optional(),
+  lead_source:         z.string().max(100).nullable().optional(),
+  platform:            z.string().max(100).nullable().optional(),
   campaign_name:       optionalString(200),
   ad_set_name:         optionalString(200),
   ad_name:             optionalString(200),
@@ -146,8 +143,8 @@ export async function GET(req: NextRequest) {
     ...(dateFilter ? { created_at: dateFilter } : {}),
     ...(tagList.length ? { tags: { hasEvery: tagList } } : {}),
     ...(stageList.length  ? { lead_stage:  { in: stageList  as LeadStage[]  } } : {}),
-    ...(sourceList.length ? { lead_source: { in: sourceList as LeadSource[] } } : {}),
-    ...(typeList.length   ? { trip_type:   { in: typeList   as TripType[]   } } : {}),
+    ...(sourceList.length ? { lead_source: { in: sourceList as string[] } } : {}),
+    ...(typeList.length   ? { trip_type:   { in: typeList   as string[]   } } : {}),
     ...(assignedToId === 'unassigned' ? { assigned_to_id: null }
        : assignedToId                  ? { assigned_to_id: assignedToId }
        : {}),
@@ -180,6 +177,8 @@ export async function GET(req: NextRequest) {
             status: true,
             created_at: true,
             destination_interest: true,
+            budget_range: true,
+            travel_month: true,
             stage:    { select: { id: true, name: true, color: true } },
             pipeline: { select: { id: true, name: true } },
             _count: { select: { call_logs: true, lead_notes: true } },
