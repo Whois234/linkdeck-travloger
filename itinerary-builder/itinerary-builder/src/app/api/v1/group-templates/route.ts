@@ -27,8 +27,12 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const state_id   = searchParams.get('state_id');
-  const statusRaw  = searchParams.get('status'); // 'live' | 'draft' | null = all
-  const statusFilter = statusRaw === 'live' ? { status: true } : statusRaw === 'draft' ? { status: false } : {};
+  const statusRaw  = searchParams.get('status');
+  const statusFilter =
+    statusRaw === 'live'    ? { status: true,  deleted_at: null } :
+    statusRaw === 'draft'   ? { status: false, deleted_at: null } :
+    statusRaw === 'deleted' ? { deleted_at: { not: null } }        :
+    { deleted_at: null };   // default: exclude trashed items
 
   const templates = await prisma.groupTemplate.findMany({
     where: { ...statusFilter, ...(state_id ? { state_id } : {}) },

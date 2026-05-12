@@ -56,6 +56,18 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   if (!requireRole(user, UserRole.ADMIN)) return forbidden();
   const record = await prisma.privateTemplate.findUnique({ where: { id: params.id } });
   if (!record) return notFound('Private Template');
-  await prisma.privateTemplate.update({ where: { id: params.id }, data: { status: false } });
-  return ok({ message: 'Private Template deactivated' });
+
+  const { searchParams } = new URL(req.url);
+  if (searchParams.get('permanent') === '1') {
+    // Hard delete — only from trash
+    await prisma.privateTemplate.delete({ where: { id: params.id } });
+    return ok({ message: 'Permanently deleted' });
+  }
+
+  // Move to trash: set deleted_at timestamp + status false
+  await prisma.privateTemplate.update({
+    where: { id: params.id },
+    data: { status: false, deleted_at: new Date() },
+  });
+  return ok({ message: 'Moved to trash' });
 }

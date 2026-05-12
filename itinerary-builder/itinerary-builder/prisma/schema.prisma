@@ -628,6 +628,7 @@ model PrivateTemplate {
   hero_image              String?
   cms_data                Json?
   status                  Boolean       @default(true)
+  deleted_at              DateTime?
   created_by              String?
   created_at              DateTime      @default(now())
   updated_at              DateTime      @updatedAt
@@ -638,6 +639,7 @@ model PrivateTemplate {
 
   @@index([state_id])
   @@index([status])
+  @@index([deleted_at])
 }
 
 model TemplateDay {
@@ -695,6 +697,7 @@ model GroupTemplate {
   cms_data              Json?
   tab_title             String?
   status                Boolean            @default(true)
+  deleted_at            DateTime?
   created_by            String?
   created_at            DateTime           @default(now())
   updated_at            DateTime           @updatedAt
@@ -705,6 +708,7 @@ model GroupTemplate {
 
   @@index([state_id])
   @@index([status])
+  @@index([deleted_at])
   @@index([created_by])
 }
 

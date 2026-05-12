@@ -54,6 +54,16 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   if (!requireRole(user, UserRole.ADMIN)) return forbidden();
   const record = await prisma.groupTemplate.findUnique({ where: { id: params.id } });
   if (!record) return notFound('Group Template');
-  await prisma.groupTemplate.update({ where: { id: params.id }, data: { status: false } });
-  return ok({ message: 'Group Template deactivated' });
+
+  const { searchParams } = new URL(req.url);
+  if (searchParams.get('permanent') === '1') {
+    await prisma.groupTemplate.delete({ where: { id: params.id } });
+    return ok({ message: 'Permanently deleted' });
+  }
+
+  await prisma.groupTemplate.update({
+    where: { id: params.id },
+    data: { status: false, deleted_at: new Date() },
+  });
+  return ok({ message: 'Moved to trash' });
 }

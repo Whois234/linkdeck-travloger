@@ -3,10 +3,10 @@ import { useState, useEffect, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
-import { Plus, Pencil, Trash2, Search, Users, ChevronRight, LayoutGrid, List, ArrowUpDown, CheckCircle2, SlidersHorizontal, X } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, Users, ChevronRight, LayoutGrid, List, ArrowUpDown, CheckCircle2, SlidersHorizontal, X, RotateCcw, AlertTriangle } from 'lucide-react';
 
 type SortKey = 'name_asc' | 'name_desc' | 'nights_asc' | 'nights_desc' | 'batches_desc' | 'state_asc';
-type StatusTab = 'all' | 'live' | 'draft';
+type StatusTab = 'all' | 'live' | 'draft' | 'deleted';
 const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: 'name_asc',     label: 'Name A → Z' },
   { value: 'name_desc',    label: 'Name Z → A' },
@@ -25,7 +25,7 @@ interface GT {
   group_template_days: { id: string }[];
   group_batches: { id: string }[];
   hero_image?: string | null; status: boolean;
-  created_at: string;
+  created_at: string; deleted_at?: string | null;
   created_by_name?: string | null;
 }
 
@@ -76,7 +76,9 @@ function GroupTemplatesPageInner() {
   const [showSetup, setShowSetup] = useState(false);
   const [saving, setSaving]   = useState(false);
   const [err, setErr]         = useState('');
-  const [deleting, setDeleting] = useState<string | null>(null);
+  const [deleting, setDeleting]     = useState<string | null>(null);
+  const [restoring, setRestoring]   = useState<string | null>(null);
+  const [permDeleting, setPermDeleting] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   // ── Selection ──
@@ -89,10 +91,12 @@ function GroupTemplatesPageInner() {
     destination_ids: [] as string[],
   });
 
-  async function load() {
+  async function load(tab?: StatusTab) {
     setLoading(true);
+    const activeTab = tab ?? statusTab;
+    const statusParam = activeTab === 'deleted' ? '?status=deleted' : '';
     const [tr, sr, dr] = await Promise.all([
-      fetch('/api/v1/group-templates'),  // no status param = all (live + draft); tabs filter client-side
+      fetch(`/api/v1/group-templates${statusParam}`),  // deleted tab fetches trash; others fetch active
       fetch('/api/v1/states'),
       fetch('/api/v1/destinations'),
     ]);
@@ -164,28 +168,54 @@ function GroupTemplatesPageInner() {
   }
 
   async function del(id: string) {
-    if (!confirm('Delete this group template?')) return;
+    if (!confirm('Move this template to trash? You can restore it within 30 days.')) return;
     setDeleting(id);
     const res = await fetch(`/api/v1/group-templates/${id}`, { method: 'DELETE' });
     setDeleting(null);
     if (res.ok) {
       setRows(prev => prev.filter(r => r.id !== id));
-      showToast('Template deleted successfully');
+      showToast('Moved to Recently Deleted');
     } else {
       alert('Delete failed. Please try again.');
     }
   }
 
+  async function restore(id: string) {
+    setRestoring(id);
+    const res = await fetch(`/api/v1/group-templates/${id}/restore`, { method: 'POST' });
+    setRestoring(null);
+    if (res.ok) {
+      setRows(prev => prev.filter(r => r.id !== id));
+      showToast('Template restored to Draft');
+    } else { alert('Restore failed.'); }
+  }
+
+  async function permanentDelete(id: string, name: string) {
+    if (!confirm(`Permanently delete "${name}"? This CANNOT be undone.`)) return;
+    setPermDeleting(id);
+    const res = await fetch(`/api/v1/group-templates/${id}?permanent=1`, { method: 'DELETE' });
+    setPermDeleting(null);
+    if (res.ok) {
+      setRows(prev => prev.filter(r => r.id !== id));
+      showToast('Permanently deleted');
+    } else { alert('Delete failed.'); }
+  }
+
   async function handleBulkDelete() {
     if (!selected.size) return;
-    if (!confirm(`Delete ${selected.size} template${selected.size !== 1 ? 's' : ''}? This cannot be undone.`)) return;
+    const isDeletedTab = statusTab === 'deleted';
+    const msg = isDeletedTab
+      ? `Permanently delete ${selected.size} template${selected.size !== 1 ? 's' : ''}? This CANNOT be undone.`
+      : `Move ${selected.size} template${selected.size !== 1 ? 's' : ''} to trash?`;
+    if (!confirm(msg)) return;
     setBulkDeleting(true);
     const ids = Array.from(selected);
-    await Promise.all(ids.map(id => fetch(`/api/v1/group-templates/${id}`, { method: 'DELETE' })));
+    const url = (id: string) => isDeletedTab ? `/api/v1/group-templates/${id}?permanent=1` : `/api/v1/group-templates/${id}`;
+    await Promise.all(ids.map(id => fetch(url(id), { method: 'DELETE' })));
     setBulkDeleting(false);
     setSelected(new Set());
     setRows(prev => prev.filter(r => !ids.includes(r.id)));
-    showToast(`${ids.length} template${ids.length !== 1 ? 's' : ''} deleted successfully`);
+    showToast(isDeletedTab ? `${ids.length} permanently deleted` : `${ids.length} moved to trash`);
   }
 
   function toggleSelect(id: string) {
@@ -279,29 +309,45 @@ function GroupTemplatesPageInner() {
         </div>
       )}
 
-      {/* All / Live / Draft tabs */}
+      {/* All / Live / Draft / Recently Deleted tabs */}
       <div className="flex items-center gap-1 mb-4 p-1 rounded-xl w-fit" style={{ backgroundColor: '#F1F5F9' }}>
         {([
-          { key: 'all',   label: 'All',   count: rows.length },
-          { key: 'live',  label: 'Live',  count: liveCount   },
-          { key: 'draft', label: 'Draft', count: draftCount  },
-        ] as { key: StatusTab; label: string; count: number }[]).map(tab => (
-          <button key={tab.key} onClick={() => setStatusTab(tab.key)}
+          { key: 'all',     label: 'All',              count: rows.length, activeBg: '#E2E8F0', activeColor: '#64748B' },
+          { key: 'live',    label: 'Live',             count: liveCount,   activeBg: '#DCFCE7', activeColor: '#16A34A' },
+          { key: 'draft',   label: 'Draft',            count: draftCount,  activeBg: '#FEF9C3', activeColor: '#A16207' },
+          { key: 'deleted', label: 'Recently Deleted', count: statusTab === 'deleted' ? rows.length : null,
+            activeBg: '#FEE2E2', activeColor: '#DC2626' },
+        ] as { key: StatusTab; label: string; count: number | null; activeBg: string; activeColor: string }[]).map(tab => (
+          <button key={tab.key} onClick={() => {
+            setStatusTab(tab.key);
+            setRows([]);
+            load(tab.key);
+          }}
             className="flex items-center gap-2 h-8 px-4 rounded-lg text-sm font-semibold transition-all"
             style={statusTab === tab.key
-              ? { backgroundColor: 'white', color: T, boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }
-              : { color: '#64748B' }}>
+              ? { backgroundColor: 'white', color: tab.key === 'deleted' ? '#DC2626' : T, boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }
+              : { color: tab.key === 'deleted' ? '#EF4444' : '#64748B' }}>
+            {tab.key === 'deleted' && <Trash2 className="w-3 h-3" />}
             {tab.label}
-            <span className="text-[11px] px-1.5 py-0.5 rounded-md font-bold"
-              style={statusTab === tab.key
-                ? { backgroundColor: tab.key === 'live' ? '#DCFCE7' : tab.key === 'draft' ? '#FEF9C3' : '#E2E8F0',
-                    color: tab.key === 'live' ? '#16A34A' : tab.key === 'draft' ? '#A16207' : '#64748B' }
-                : { backgroundColor: '#E2E8F0', color: '#94A3B8' }}>
-              {tab.count}
-            </span>
+            {tab.count !== null && (
+              <span className="text-[11px] px-1.5 py-0.5 rounded-md font-bold"
+                style={statusTab === tab.key
+                  ? { backgroundColor: tab.activeBg, color: tab.activeColor }
+                  : { backgroundColor: '#E2E8F0', color: '#94A3B8' }}>
+                {tab.count}
+              </span>
+            )}
           </button>
         ))}
       </div>
+
+      {/* Recently Deleted info banner */}
+      {statusTab === 'deleted' && (
+        <div className="flex items-start gap-3 mb-4 px-4 py-3 rounded-xl text-sm" style={{ backgroundColor: '#FFF7ED', border: '1px solid #FED7AA', color: '#C2410C' }}>
+          <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <span>Templates in trash are <strong>permanently deleted after 30 days</strong>. Restore a template to move it back to Draft.</span>
+        </div>
+      )}
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2 mb-3">
@@ -466,14 +512,31 @@ function GroupTemplatesPageInner() {
                     </td>
                     <td className="px-5 py-3.5" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
-                        <button onClick={() => router.push(`/admin/group-templates/${r.id}/edit`)}
-                          className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#F1F5F9] hover:text-[#134956]">
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                        <button onClick={() => del(r.id)} disabled={deleting === r.id}
-                          className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#FEF2F2] hover:text-[#DC2626] disabled:opacity-40">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {statusTab === 'deleted' ? (<>
+                          <button onClick={() => restore(r.id)} disabled={restoring === r.id}
+                            className="flex items-center gap-1.5 h-7 px-2.5 rounded-lg text-xs font-semibold disabled:opacity-40"
+                            style={{ backgroundColor: '#DCFCE7', color: '#16A34A' }}>
+                            <RotateCcw className="w-3 h-3" /> Restore
+                          </button>
+                          <button onClick={() => permanentDelete(r.id, r.group_template_name)} disabled={permDeleting === r.id}
+                            className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-[#FEF2F2] hover:text-[#DC2626] disabled:opacity-40"
+                            style={{ color: '#94A3B8' }}>
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                          {r.deleted_at && (() => {
+                            const days = 30 - Math.floor((Date.now() - new Date(r.deleted_at!).getTime()) / 86400000);
+                            return <span className="text-[10px] font-semibold ml-1" style={{ color: days <= 7 ? '#DC2626' : '#94A3B8' }}>{days}d left</span>;
+                          })()}
+                        </>) : (<>
+                          <button onClick={() => router.push(`/admin/group-templates/${r.id}/edit`)}
+                            className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#F1F5F9] hover:text-[#134956]">
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button onClick={() => del(r.id)} disabled={deleting === r.id}
+                            className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#FEF2F2] hover:text-[#DC2626] disabled:opacity-40">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </>)}
                       </div>
                     </td>
                   </tr>
@@ -530,14 +593,27 @@ function GroupTemplatesPageInner() {
                       {r.group_template_days.length} day{r.group_template_days.length !== 1 ? 's' : ''} · {r.group_batches?.length ?? 0} departure{(r.group_batches?.length ?? 0) !== 1 ? 's' : ''}
                     </span>
                     <div className="flex gap-1" onClick={e => e.stopPropagation()}>
-                      <button onClick={() => router.push(`/admin/group-templates/${r.id}/edit`)}
-                        className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#F1F5F9] hover:text-[#134956]">
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <button onClick={() => del(r.id)} disabled={deleting === r.id}
-                        className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#FEF2F2] hover:text-[#DC2626] disabled:opacity-40">
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      {statusTab === 'deleted' ? (<>
+                        <button onClick={() => restore(r.id)} disabled={restoring === r.id}
+                          className="flex items-center gap-1 h-7 px-2 rounded-lg text-xs font-semibold disabled:opacity-40"
+                          style={{ backgroundColor: '#DCFCE7', color: '#16A34A' }}>
+                          <RotateCcw className="w-3 h-3" /> Restore
+                        </button>
+                        <button onClick={() => permanentDelete(r.id, r.group_template_name)} disabled={permDeleting === r.id}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-[#FEF2F2] hover:text-[#DC2626]"
+                          style={{ color: '#94A3B8' }}>
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </>) : (<>
+                        <button onClick={() => router.push(`/admin/group-templates/${r.id}/edit`)}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#F1F5F9] hover:text-[#134956]">
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={() => del(r.id)} disabled={deleting === r.id}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#FEF2F2] hover:text-[#DC2626] disabled:opacity-40">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </>)}
                     </div>
                   </div>
                 </div>
