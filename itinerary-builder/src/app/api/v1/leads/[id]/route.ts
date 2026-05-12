@@ -52,6 +52,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   if (body.budget_range !== undefined) data.budget_range = body.budget_range;
   if (body.status !== undefined) data.status = body.status;
   if (body.assigned_agent_id !== undefined) data.assigned_agent_id = body.assigned_agent_id;
+  if (body.owner_id !== undefined) data.owner_id = body.owner_id;
   if (body.notes !== undefined) data.notes = body.notes;
   if (body.pipeline_id !== undefined) data.pipeline_id = body.pipeline_id;
   if (body.stage_id !== undefined) data.stage_id = body.stage_id;

@@ -7,7 +7,7 @@ import {
   Plus, Search, Phone, ChevronDown, X, Filter, ArrowUpDown, Trash2,
   MoveRight, CheckSquare, Square, Calendar, Users, MapPin, Wallet,
   MessageCircle, SlidersHorizontal, Star, Clock, FileText, PhoneCall,
-  CheckCircle2, Eye, ArrowRightLeft,
+  CheckCircle2, Eye, ArrowRightLeft, UserCheck,
 } from 'lucide-react';
 import Link from 'next/link';
 import { Stage, Lead, Pipeline, STATUS_COLORS, formatDateTime } from './types';
@@ -395,13 +395,30 @@ const KanbanColumn = memo(function KanbanColumn({
 
 // ─── Bulk Action Bar ──────────────────────────────────────────────────────────
 
-function BulkActionBar({ count, stages, onMoveStage, onDelete, onClear }: {
-  count: number; stages: Stage[];
+interface BulkUser { id: string; name: string; role?: string }
+
+function BulkActionBar({ count, stages, users, onMoveStage, onAssign, onDelete, onClear }: {
+  count: number; stages: Stage[]; users: BulkUser[];
   onMoveStage: (stageId: string) => void;
+  onAssign: (userId: string, userName: string) => void;
   onDelete: () => void;
   onClear: () => void;
 }) {
-  const [showStageMenu, setShowStageMenu] = useState(false);
+  const [showStageMenu,  setShowStageMenu]  = useState(false);
+  const [showAssignMenu, setShowAssignMenu] = useState(false);
+  const assignRef = useRef<HTMLDivElement>(null);
+  const stageRef  = useRef<HTMLDivElement>(null);
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (assignRef.current && !assignRef.current.contains(e.target as Node)) setShowAssignMenu(false);
+      if (stageRef.current  && !stageRef.current.contains(e.target as Node))  setShowStageMenu(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
   return (
     <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold shadow-lg"
       style={{ backgroundColor: '#0C1B29', color: 'white', border: '1px solid #1e3347' }}>
@@ -411,8 +428,9 @@ function BulkActionBar({ count, stages, onMoveStage, onDelete, onClear }: {
       <span className="text-[13px] font-bold" style={{ color: '#7DD3C0' }}>{count} selected</span>
       <div className="w-px h-4 mx-1" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }} />
 
-      <div className="relative">
-        <button onClick={() => setShowStageMenu(p => !p)}
+      {/* Move to Stage */}
+      <div className="relative" ref={stageRef}>
+        <button onClick={() => { setShowStageMenu(p => !p); setShowAssignMenu(false); }}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold transition-colors hover:bg-white/10">
           <MoveRight className="w-3.5 h-3.5" /> Move to Stage <ChevronDown className="w-3 h-3" />
         </button>
@@ -425,6 +443,40 @@ function BulkActionBar({ count, stages, onMoveStage, onDelete, onClear }: {
                 style={{ color: '#0F172A' }}>
                 <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: s.color, boxShadow: `0 0 4px ${s.color}66` }} />
                 {s.name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Assign to User */}
+      <div className="relative" ref={assignRef}>
+        <button onClick={() => { setShowAssignMenu(p => !p); setShowStageMenu(false); }}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold transition-colors hover:bg-white/10"
+          style={{ color: '#93C5FD' }}>
+          <UserCheck className="w-3.5 h-3.5" /> Assign <ChevronDown className="w-3 h-3" />
+        </button>
+        {showAssignMenu && (
+          <div className="absolute top-9 left-0 bg-white rounded-xl shadow-2xl overflow-hidden z-30 min-w-[200px]"
+            style={{ border: '1px solid #E2E8F0' }}>
+            <div className="px-3 py-2 border-b" style={{ borderColor: '#F1F5F9' }}>
+              <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#94A3B8' }}>Assign {count} lead{count > 1 ? 's' : ''} to</p>
+            </div>
+            {users.length === 0 && (
+              <p className="px-4 py-3 text-xs" style={{ color: '#94A3B8' }}>No users found</p>
+            )}
+            {users.map(u => (
+              <button key={u.id}
+                onClick={() => { onAssign(u.id, u.name); setShowAssignMenu(false); }}
+                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left transition-colors hover:bg-[#F8FAFC]">
+                <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0"
+                  style={{ backgroundColor: T }}>
+                  {u.name.charAt(0).toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold truncate" style={{ color: '#0F172A' }}>{u.name}</p>
+                  {u.role && <p className="text-[10px] truncate" style={{ color: '#94A3B8' }}>{u.role}</p>}
+                </div>
               </button>
             ))}
           </div>
@@ -698,6 +750,49 @@ export default function PipelinesPage() {
     }
   }
 
+  async function bulkAssign(userId: string, userName: string) {
+    const count   = selectedIds.size;
+    const leadIds = Array.from(selectedIds);
+
+    // 1. Reassign each lead's owner_id so it appears in the assignee's pipeline view
+    const results = await Promise.all(
+      leadIds.map(leadId =>
+        fetch(`/api/v1/leads/${leadId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ owner_id: userId }),
+        }).then(r => r.json())
+      )
+    );
+
+    // 2. Also update the linked CrmContact's assigned_to_id so the contact view stays in sync
+    // Collect crm_contact_ids from the pipeline data (available in activePipeline.leads)
+    const allPipelineLeads = activePipeline?.leads ?? [];
+    const contactIds = leadIds
+      .map(id => allPipelineLeads.find(l => l.id === id)?.crm_contact_id)
+      .filter(Boolean) as string[];
+    const uniqueContactIds = [...new Set(contactIds)];
+    uniqueContactIds.forEach(contactId => {
+      fetch(`/api/v1/crm/contacts/${contactId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assigned_to_id: userId }),
+      }).catch(() => {});
+    });
+
+    const failed = results.filter(r => !r.success).length;
+    const done   = count - failed;
+    setSelectedIds(new Set());
+    qc.invalidateQueries({ queryKey: [...QK.pipeline(resolvedPipelineId), filterParams.toString()] });
+    if (done > 0 && failed === 0) {
+      toast.success(`${done} lead${done > 1 ? 's' : ''} assigned to ${userName}`);
+    } else if (done > 0) {
+      toast.info(`${done} assigned, ${failed} failed`);
+    } else {
+      toast.error('Could not assign leads');
+    }
+  }
+
   const allLeads = useMemo(() => {
     let result = activePipeline?.leads ?? [];
     if (search)       result = result.filter(l => l.name.toLowerCase().includes(search.toLowerCase()) || l.phone.includes(search));
@@ -908,7 +1003,9 @@ export default function PipelinesPage() {
           <BulkActionBar
             count={selectedIds.size}
             stages={activePipeline?.stages ?? []}
+            users={users}
             onMoveStage={bulkMoveStage}
+            onAssign={bulkAssign}
             onDelete={bulkDelete}
             onClear={() => setSelectedIds(new Set())}
           />

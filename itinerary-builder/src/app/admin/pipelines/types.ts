@@ -7,7 +7,7 @@ export interface Lead {
   source: string | null; destination_interest: string | null;
   travel_month: string | null; budget_range: string | null;
   status: string; stage_id: string | null; pipeline_id: string | null;
-  owner_id: string | null;
+  owner_id: string | null; crm_contact_id: string | null;
   created_at: string;
   stage?: { id: string; name: string; color: string; order: number } | null;
   _count?: { call_logs: number; lead_notes: number };
