@@ -88,6 +88,9 @@ interface Contact {
   do_not_contact: boolean;
   // Creator
   created_by?: Owner | null;
+  // Merged from Customer module
+  nationality?:  string | null;
+  quotes_count?: number;
 }
 
 interface DuplicateAttempt {
@@ -445,8 +448,9 @@ function ContactPanel({
                 <div className="grid grid-cols-2 gap-x-6 gap-y-3">
                   <PF label="Phone"   value={c.phone} />
                   <PF label="Email"   value={c.email} />
-                  <PF label="City"    value={c.city ?? c.last_known_city} />
-                  <PF label="Owner"   value={c.owner?.name} />
+                  <PF label="City"        value={c.city ?? c.last_known_city} />
+                  <PF label="Nationality" value={c.nationality} />
+                  <PF label="Owner"       value={c.owner?.name} />
                   <PF label="Created" value={fmtDateTime(c.created_at)} />
                   <PF label="Last Seen" value={c.last_seen_at ? fmtDateTime(c.last_seen_at) : null} />
                   {c.source && <PF label="Source (legacy)" value={c.source} span={2} />}
@@ -1103,9 +1107,9 @@ export default function ContactsPage() {
                       </button>
                     </th>
                     {[
-                      'Full Name', 'Phone', 'Email', 'City', 'Destination', 'Travellers',
+                      'Full Name', 'Phone', 'Email', 'City', 'Nationality', 'Destination', 'Travellers',
                       'Budget', 'Trip', 'Source', 'Platform', 'Campaign',
-                      'Stage', 'Assigned', 'Follow-up', 'DNC', 'Booking', 'Created By', 'Created', '',
+                      'Stage', 'Assigned', 'Follow-up', 'DNC', 'Booking', 'Quotes', 'Created By', 'Created', '',
                     ].map(h => (
                       <th key={h} className="text-left px-3 py-3 text-[11px] font-bold uppercase tracking-wider whitespace-nowrap" style={{ color: '#64748B' }}>{h}</th>
                     ))}
@@ -1186,6 +1190,11 @@ export default function ContactsPage() {
                               ? <span style={{ color: '#0F172A' }}>{city}</span>
                               : <span style={{ color: '#CBD5E1' }}>—</span>;
                           })()}
+                        </td>
+
+                        {/* Nationality (from Customer record) */}
+                        <td className="px-3 py-3 text-xs" style={{ color: '#64748B' }}>
+                          {c.nationality ?? <span style={{ color: '#CBD5E1' }}>—</span>}
                         </td>
 
                         {/* Interested Destination */}
@@ -1295,6 +1304,13 @@ export default function ContactsPage() {
                         <td className="px-3 py-3 text-xs font-semibold whitespace-nowrap">
                           {c.booking_value != null && c.booking_value !== ''
                             ? <span style={{ color: '#15803D' }}>{fmtINR(c.booking_value)}</span>
+                            : <span style={{ color: '#CBD5E1' }}>—</span>}
+                        </td>
+
+                        {/* Quotes count (from Customer record) */}
+                        <td className="px-3 py-3 text-xs text-center">
+                          {(c.quotes_count ?? 0) > 0
+                            ? <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold" style={{ backgroundColor: '#E0F2FE', color: '#0369A1' }}>{c.quotes_count}</span>
                             : <span style={{ color: '#CBD5E1' }}>—</span>}
                         </td>
 

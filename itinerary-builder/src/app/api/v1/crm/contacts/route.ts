@@ -201,10 +201,26 @@ export async function GET(req: NextRequest) {
     }),
   ]);
 
+  // Enrich with nationality + quotes_count from Customer table (merged module)
+  const phones = contacts.map(c => c.phone).filter(Boolean);
+  const customers = phones.length
+    ? await prisma.customer.findMany({
+        where: { phone: { in: phones } },
+        select: { phone: true, nationality: true, _count: { select: { quotes: true } } },
+      })
+    : [];
+  const custByPhone = Object.fromEntries(customers.map(c => [c.phone, c]));
+
+  const enriched = contacts.map(c => ({
+    ...c,
+    nationality:  custByPhone[c.phone]?.nationality ?? null,
+    quotes_count: custByPhone[c.phone]?._count?.quotes ?? 0,
+  }));
+
   // Both naming conventions for backward + spec compat.
   return ok({
-    items: contacts,
-    contacts,
+    items: enriched,
+    contacts: enriched,
     total,
     totalCount: total,
     page,

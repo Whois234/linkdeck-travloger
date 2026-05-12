@@ -61,7 +61,6 @@ const ALL_NAV: NavGroup[] = [
       { label: 'Pipelines',           href: '/admin/pipelines',           icon: Kanban           },
       { label: 'Pipeline Config',     href: '/admin/pipelines/config',    icon: SlidersHorizontal, roles: ['ADMIN', 'MANAGER'] },
       { label: 'Contacts',            href: '/admin/contacts',            icon: Users            },
-      { label: 'All Customers',       href: '/admin/customers',           icon: Users            },
       { label: 'Converted Customers', href: '/admin/converted-customers', icon: UserCheck        },
       { label: 'CRM Settings',        href: '/admin/crm-settings',        icon: Cog,               roles: ['ADMIN', 'MANAGER'] },
     ],
