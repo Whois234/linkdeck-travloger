@@ -133,6 +133,73 @@ async function logActivity(
   });
 }
 
+// ─── Workflow engine ─────────────────────────────────────────────────────────
+
+/** Run all active on_create workflows for a newly-created contact (fire-and-forget). */
+async function executeContactWorkflows(contactId: string): Promise<void> {
+  try {
+    const workflows = await prisma.crmWorkflow.findMany({
+      where: { module: 'contacts', trigger: 'on_create', is_active: true },
+    });
+
+    for (const wf of workflows) {
+      const actions = wf.actions as unknown as Array<{
+        type: string;
+        strategy: 'round_robin' | 'weighted' | 'team';
+        team_name?: string;
+        users: Array<{ user_id: string; name: string; weight?: number }>;
+      }>;
+
+      for (const action of actions) {
+        if (action.type !== 'assign_user') continue;
+
+        const users = action.users ?? [];
+        if (users.length === 0) continue;
+
+        let assignedUserId: string | null = null;
+
+        if (action.strategy === 'round_robin' || action.strategy === 'team') {
+          const conditions = (wf.conditions as { rr_index?: number; source_filter?: string } | null) ?? {};
+          const idx = (conditions.rr_index ?? 0) % users.length;
+          assignedUserId = users[idx].user_id;
+          await prisma.crmWorkflow.update({
+            where: { id: wf.id },
+            data: { conditions: { ...conditions, rr_index: idx + 1 } as Prisma.InputJsonValue },
+          });
+        } else if (action.strategy === 'weighted') {
+          const total = users.reduce((s, u) => s + (u.weight ?? 0), 0);
+          if (total > 0) {
+            let rand = Math.random() * total;
+            for (const u of users) {
+              rand -= (u.weight ?? 0);
+              if (rand <= 0) { assignedUserId = u.user_id; break; }
+            }
+            assignedUserId = assignedUserId ?? users[0].user_id;
+          }
+        }
+
+        if (assignedUserId) {
+          await prisma.crmContact.update({
+            where: { id: contactId },
+            data: { assigned_to_id: assignedUserId },
+          });
+          await prisma.contactActivity.create({
+            data: {
+              contact_id:      contactId,
+              type:            'ASSIGNMENT_CHANGE',
+              description:     `Auto-assigned via workflow "${wf.name}"`,
+              metadata:        { workflow_id: wf.id, user_id: assignedUserId } as Prisma.InputJsonValue,
+              performed_by_id: null,
+            },
+          });
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[workflow] executeContactWorkflows failed:', e);
+  }
+}
+
 // ─── Create ──────────────────────────────────────────────────────────────────
 
 export async function createContact(
@@ -145,7 +212,7 @@ export async function createContact(
 
   const isConverted = input.lead_stage === 'CONVERTED';
 
-  return prisma.$transaction(async (tx) => {
+  const createdContact = await prisma.$transaction(async (tx) => {
     const contact = await tx.crmContact.create({
       data: {
         name:                   input.name,
@@ -230,6 +297,11 @@ export async function createContact(
 
     return contact;
   });
+
+  // Run active on_create workflows after the transaction commits (non-blocking).
+  void executeContactWorkflows(createdContact.id);
+
+  return createdContact;
 }
 
 // ─── Update ──────────────────────────────────────────────────────────────────

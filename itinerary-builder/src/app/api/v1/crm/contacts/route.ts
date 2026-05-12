@@ -121,6 +121,7 @@ export async function GET(req: NextRequest) {
   const tripType      = searchParams.get('trip_type');
   const doNotContact  = searchParams.get('do_not_contact'); // 'true' | 'false'
   const includeDeleted = searchParams.get('include_deleted') === 'true';
+  const hasPipeline    = searchParams.get('has_pipeline'); // 'true' | 'false' | null
 
   const dateFilter = buildDateFilter(dateRange, dateFrom, dateTo);
   const tagList    = tagsParam ? tagsParam.split(',').map(t => t.trim()).filter(Boolean) : [];
@@ -159,6 +160,9 @@ export async function GET(req: NextRequest) {
     ...(destination ? { interested_destination: { contains: destination, mode: 'insensitive' as const } } : {}),
     ...(doNotContact === 'true'  ? { do_not_contact: true  } : {}),
     ...(doNotContact === 'false' ? { do_not_contact: false } : {}),
+    // Pipeline presence filter
+    ...(hasPipeline === 'true'  ? { leads: { some: { pipeline_id: { not: null } } } } : {}),
+    ...(hasPipeline === 'false' ? { NOT: { leads: { some: { pipeline_id: { not: null } } } } } : {}),
   };
 
   // Sort
