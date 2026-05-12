@@ -21,7 +21,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, Edit2, Phone, Mail, MapPin, Calendar, Briefcase, Users as UsersIcon,
   Tag as TagIcon, AlertTriangle, BadgeCheck, Loader2, Sparkles, MessageCircle,
-  UserPlus, FileEdit, Trash2, Save,
+  UserPlus, FileEdit, Trash2, Save, ExternalLink, TrendingUp, FileText, GitBranch,
 } from 'lucide-react';
 import { toast } from '@/components/Toaster';
 import { QK } from '@/lib/query-hooks';
@@ -39,6 +39,23 @@ type DevicePlatform = 'MOBILE' | 'DESKTOP';
 type ActivityType = 'STAGE_CHANGE' | 'ASSIGNMENT_CHANGE' | 'WHATSAPP_SENT' | 'LEAD_CREATED' | 'FIELD_UPDATE' | 'CONTACT_DELETED';
 
 interface User { id: string; name: string; email?: string; role?: string }
+
+interface Lead {
+  id: string; name: string; status: string; created_at: string;
+  stage:    { id: string; name: string; color: string } | null;
+  pipeline: { id: string; name: string } | null;
+  _count?: { call_logs: number; lead_notes: number };
+}
+
+interface QuoteOption { final_price: number | null; is_most_popular: boolean }
+interface QuoteEvent  { id: string; event_type: string; created_at: string }
+interface Quote {
+  id: string; quote_number: string; quote_type: string; status: string;
+  start_date: string | null; adults: number; public_token: string; created_at: string;
+  state: { name: string; code: string } | null;
+  quote_options: QuoteOption[];
+  events: QuoteEvent[];
+}
 
 interface Activity {
   id: string;
@@ -93,6 +110,8 @@ interface Contact {
   updated_at: string;
   owner: User | null;
 
+  leads: Lead[];
+  quotes: Quote[];
   activities: Activity[];
 }
 
@@ -143,6 +162,16 @@ const ACTIVITY_DOT: Record<ActivityType, { color: string; bg: string; Icon: Reac
 };
 
 const T = '#134956';
+
+const QUOTE_STATUS: Record<string, { bg: string; color: string; label: string }> = {
+  DRAFT:     { bg: '#F1F5F9', color: '#64748B', label: 'Draft' },
+  SENT:      { bg: '#DBEAFE', color: '#1D4ED8', label: 'Sent' },
+  VIEWED:    { bg: '#FEF3C7', color: '#B45309', label: 'Viewed' },
+  APPROVED:  { bg: '#DCFCE7', color: '#15803D', label: 'Approved' },
+  CONFIRMED: { bg: '#D1FAE5', color: '#065F46', label: 'Confirmed' },
+  EXPIRED:   { bg: '#FEE2E2', color: '#DC2626', label: 'Expired' },
+  CANCELLED: { bg: '#F1F5F9', color: '#94A3B8', label: 'Cancelled' },
+};
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -414,6 +443,9 @@ export default function ContactDetailPage() {
         </div>
       )}
 
+      {/* ── Contact Analysis ─────────────────────────────────────────────────── */}
+      <ContactAnalysis contact={contact} />
+
       {/* Two-column layout */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-5">
 
@@ -611,7 +643,74 @@ export default function ContactDetailPage() {
         </div>
       </div>
 
-      {/* Activity Timeline */}
+      {/* ── Quotes ────────────────────────────────────────────────────────────── */}
+      {(contact.quotes ?? []).length > 0 && (
+        <div className="bg-white rounded-2xl p-5" style={{ border: '1px solid #E2E8F0' }}>
+          <h3 className="text-sm font-bold mb-4 flex items-center gap-2" style={{ color: '#0F172A' }}>
+            <FileText className="w-4 h-4" style={{ color: T }} />
+            Quotes ({contact.quotes.length})
+          </h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr style={{ borderBottom: '1px solid #F1F5F9' }}>
+                  {['Quote #', 'Type', 'Destination', 'Date', 'PAX', 'Price', 'Status', ''].map(h => (
+                    <th key={h} className="text-left pb-2 pr-4 font-bold uppercase tracking-wider" style={{ color: '#94A3B8', fontSize: '10px' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {contact.quotes.map(q => {
+                  const bestPrice = q.quote_options.reduce<number | null>((best, o) =>
+                    o.final_price !== null && (best === null || o.final_price < best) ? o.final_price : best, null);
+                  const popularPrice = q.quote_options.find(o => o.is_most_popular)?.final_price ?? bestPrice;
+                  const qs = QUOTE_STATUS[q.status] ?? { bg: '#F1F5F9', color: '#64748B', label: q.status };
+                  const openedCount = q.events.filter(e => e.event_type === 'VIEWED').length;
+                  return (
+                    <tr key={q.id} className="border-t" style={{ borderColor: '#F8FAFC' }}>
+                      <td className="py-2.5 pr-4">
+                        <span className="font-mono font-bold" style={{ color: T }}>{q.quote_number}</span>
+                        {openedCount > 0 && (
+                          <span className="ml-1.5 px-1 py-0.5 rounded text-[9px] font-bold" style={{ backgroundColor: '#FEF3C7', color: '#B45309' }}>
+                            👁 {openedCount}×
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2.5 pr-4">
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold" style={{ backgroundColor: '#E0E7FF', color: '#4338CA' }}>
+                          {q.quote_type}
+                        </span>
+                      </td>
+                      <td className="py-2.5 pr-4" style={{ color: '#0F172A' }}>{q.state?.name ?? '—'}</td>
+                      <td className="py-2.5 pr-4 whitespace-nowrap" style={{ color: '#64748B' }}>
+                        {q.start_date ? fmtDate(q.start_date) : '—'}
+                      </td>
+                      <td className="py-2.5 pr-4" style={{ color: '#64748B' }}>{q.adults}</td>
+                      <td className="py-2.5 pr-4 font-semibold whitespace-nowrap" style={{ color: '#0F172A' }}>
+                        {popularPrice !== null ? `₹${Math.round(popularPrice).toLocaleString('en-IN')}` : '—'}
+                      </td>
+                      <td className="py-2.5 pr-4">
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold" style={{ backgroundColor: qs.bg, color: qs.color }}>
+                          {qs.label}
+                        </span>
+                      </td>
+                      <td className="py-2.5">
+                        <a href={`/admin/quotes/${q.id}`}
+                          className="flex items-center gap-0.5 font-semibold hover:underline whitespace-nowrap"
+                          style={{ color: T }}>
+                          View <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Activity Timeline ──────────────────────────────────────────────────── */}
       <div className="bg-white rounded-2xl p-5" style={{ border: '1px solid #E2E8F0' }}>
         <h3 className="text-sm font-bold mb-4 flex items-center gap-2" style={{ color: '#0F172A' }}>
           <TagIcon className="w-4 h-4" style={{ color: T }} />
@@ -621,7 +720,6 @@ export default function ContactDetailPage() {
           <p className="text-sm py-6 text-center" style={{ color: '#94A3B8' }}>No activity yet.</p>
         ) : (
           <ol className="relative space-y-0">
-            {/* Vertical line */}
             <span className="absolute left-[15px] top-3 bottom-3 w-px" style={{ backgroundColor: '#E2E8F0' }} />
             {contact.activities.map(act => {
               const cfg = ACTIVITY_DOT[act.type] ?? ACTIVITY_DOT.FIELD_UPDATE;
@@ -693,5 +791,65 @@ function Chip({ bg, color, label }: { bg: string; color: string; label: string }
   return (
     <span className="inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-semibold whitespace-nowrap"
       style={{ backgroundColor: bg, color }}>{label}</span>
+  );
+}
+
+// ─── Contact Analysis card ────────────────────────────────────────────────────
+
+function ContactAnalysis({ contact }: { contact: Contact }) {
+  const totalQuotes   = contact.quotes?.length ?? 0;
+  const totalLeads    = contact.leads?.length ?? 0;
+  const activeLead    = contact.leads?.find(l => l.pipeline !== null);
+  const viewedCount   = (contact.quotes ?? []).reduce((n, q) => n + q.events.filter(e => e.event_type === 'VIEWED').length, 0);
+  const bookingValue  = contact.booking_value;
+
+  const stats: { icon: React.ElementType; label: string; value: React.ReactNode; sub?: string; color: string; bg: string }[] = [
+    {
+      icon:  FileText,
+      label: 'Total Quotes',
+      value: totalQuotes,
+      sub:   totalQuotes > 0 ? `${viewedCount} view${viewedCount === 1 ? '' : 's'}` : 'None sent yet',
+      color: '#4338CA', bg: '#EDE9FE',
+    },
+    {
+      icon:  GitBranch,
+      label: 'Pipeline',
+      value: activeLead ? (activeLead.pipeline?.name ?? 'In pipeline') : 'Not in pipeline',
+      sub:   activeLead?.stage ? activeLead.stage.name : (totalLeads > 0 ? `${totalLeads} lead${totalLeads > 1 ? 's' : ''}` : 'No leads'),
+      color: activeLead ? '#0E7490' : '#94A3B8', bg: activeLead ? '#CFFAFE' : '#F1F5F9',
+    },
+    {
+      icon:  TrendingUp,
+      label: 'Booking Value',
+      value: contact.is_converted ? fmtINR(bookingValue) : '—',
+      sub:   contact.is_converted ? 'Converted' : 'Not converted',
+      color: contact.is_converted ? '#15803D' : '#94A3B8',
+      bg:    contact.is_converted ? '#DCFCE7' : '#F1F5F9',
+    },
+    {
+      icon:  UsersIcon,
+      label: 'Assigned To',
+      value: contact.assigned_to?.name ?? 'Unassigned',
+      sub:   contact.assigned_to?.role ?? (contact.owner?.name ? `Owner: ${contact.owner.name}` : ''),
+      color: contact.assigned_to ? T : '#94A3B8',
+      bg:    contact.assigned_to ? '#E0F2F1' : '#F1F5F9',
+    },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      {stats.map(({ icon: Icon, label, value, sub, color, bg }) => (
+        <div key={label} className="bg-white rounded-2xl p-4 flex items-start gap-3" style={{ border: '1px solid #E2E8F0' }}>
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: bg }}>
+            <Icon className="w-4 h-4" style={{ color }} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#94A3B8' }}>{label}</p>
+            <p className="text-sm font-bold truncate mt-0.5" style={{ color: '#0F172A' }}>{value}</p>
+            {sub && <p className="text-[10px] truncate" style={{ color }}>{sub}</p>}
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }

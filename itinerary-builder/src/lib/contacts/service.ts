@@ -240,7 +240,8 @@ export async function createContact(
         gallabox_contact_id:    input.gallabox_contact_id ?? null,
 
         lead_stage:             input.lead_stage ?? 'NEW',
-        assigned_to_id:         input.assigned_to_id ?? null,
+        // Default: assign to owner (creator) unless explicitly overridden.
+        assigned_to_id:         input.assigned_to_id !== undefined ? (input.assigned_to_id ?? null) : input.owner_id,
         follow_up_date:         toDate(input.follow_up_date) ?? null,
 
         // Conversion automation on create

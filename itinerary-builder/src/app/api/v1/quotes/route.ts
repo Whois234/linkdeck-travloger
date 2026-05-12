@@ -162,11 +162,18 @@ export async function POST(req: NextRequest) {
         : null;
 
       // 3. Create CrmContact if missing
+      let contactWasNew = false;
       if (!contact) {
         try {
           contact = await prisma.crmContact.create({
-            data: { name: customer.name, phone: normalizedPhone, owner_id: user.sub },
+            data: {
+              name:          customer.name,
+              phone:         normalizedPhone,
+              owner_id:      user.sub,
+              assigned_to_id: user.sub,   // auto-assign to quote creator
+            },
           });
+          contactWasNew = true;
         } catch (e) {
           // Might already exist due to race — try to fetch again
           contact = await prisma.crmContact.findFirst({
@@ -176,7 +183,21 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      // Log LEAD_CREATED activity if we just created this contact
+      if (contact && contactWasNew) {
+        prisma.contactActivity.create({
+          data: {
+            contact_id:      contact.id,
+            type:            'LEAD_CREATED',
+            description:     `Contact created from quote`,
+            metadata:        { source: 'quote', quote_number: quote.quote_number },
+            performed_by_id: user.sub,
+          },
+        }).catch(e => console.error('[quotes/POST] contactActivity(LEAD_CREATED) failed:', e));
+      }
+
       // 4. Create pipeline Lead if missing
+      let leadWasNew = false;
       if (!lead && contact) {
         try {
           // Look for ANY pipeline (prefer default, fall back to first active)
@@ -208,9 +229,23 @@ export async function POST(req: NextRequest) {
               owner_id:       user.sub,
             } as any,
           });
+          leadWasNew = true;
         } catch (e) {
           console.error('[quotes/POST] lead.create failed:', e);
         }
+      }
+
+      // Log pipeline lead creation activity on the contact
+      if (contact && lead && leadWasNew) {
+        prisma.contactActivity.create({
+          data: {
+            contact_id:      contact.id,
+            type:            'LEAD_CREATED',
+            description:     `Pipeline lead created`,
+            metadata:        { lead_id: lead.id },
+            performed_by_id: user.sub,
+          },
+        }).catch(e => console.error('[quotes/POST] contactActivity(pipeline LEAD_CREATED) failed:', e));
       }
 
       // 5. Link quote → lead
@@ -223,8 +258,19 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // 6. Log activity on lead (non-critical)
-      if (lead) {
+      // 6. Log quote-linked activity on contact (non-critical)
+      if (contact && lead) {
+        prisma.contactActivity.create({
+          data: {
+            contact_id:      contact.id,
+            type:            'FIELD_UPDATE',
+            description:     `Quote ${quote.quote_number} created`,
+            metadata:        { quote_id: quote.id, quote_number: quote.quote_number, quote_type: quote.quote_type },
+            performed_by_id: user.sub,
+          },
+        }).catch(e => console.error('[quotes/POST] contactActivity(FIELD_UPDATE) failed:', e));
+
+        // Also log on the lead
         prisma.leadActivity.create({
           data: { lead_id: lead.id, type: 'quote_created', metadata: { quote_id: quote.id, quote_number: quote.quote_number }, created_by: user.sub },
         }).catch(e => console.error('[quotes/POST] leadActivity.create failed:', e));
