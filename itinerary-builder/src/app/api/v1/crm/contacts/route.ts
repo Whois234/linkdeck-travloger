@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getAuthUser } from '@/lib/auth';
+import { getAuthUser, requireRole } from '@/lib/auth';
 import { ok, created, err, unauthorized } from '@/lib/api-response';
 import { z } from 'zod';
 import {
@@ -10,6 +10,7 @@ import {
 import {
   LeadStage,
   DevicePlatform,
+  UserRole,
 } from '@prisma/client';
 
 // Light-weight sanitisation. We don't render user-supplied content as HTML
@@ -129,7 +130,14 @@ export async function GET(req: NextRequest) {
   const sourceList = enumList(leadSource);
   const typeList   = enumList(tripType);
 
+  // ── Role-based data isolation ─────────────────────────────────────────────
+  // Privileged roles (ADMIN, MANAGER, FINANCE, OPS) see all contacts.
+  // SALES users only see contacts they own.
+  const isPrivileged = requireRole(user, UserRole.ADMIN, UserRole.MANAGER, UserRole.FINANCE, UserRole.OPS);
+  const ownerScope = isPrivileged ? {} : { owner_id: user.sub };
+
   const where = {
+    ...ownerScope,
     ...(includeDeleted ? {} : { deleted_at: null }),
     ...(search ? {
       OR: [

@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getAuthUser } from '@/lib/auth';
+import { getAuthUser, requireRole } from '@/lib/auth';
+import { UserRole } from '@prisma/client';
 import { ok, err, unauthorized, notFound } from '@/lib/api-response';
 import { z } from 'zod';
 
@@ -16,7 +17,15 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const date_to   = searchParams.get('date_to');
 
   const leadsWhere: Record<string, unknown> = { pipeline_id: params.id };
-  if (owner_id)  leadsWhere.owner_id = owner_id;
+
+  // SALES users can only see their own leads regardless of any client-supplied owner_id
+  const isPrivileged = requireRole(user, UserRole.ADMIN, UserRole.MANAGER, UserRole.FINANCE, UserRole.OPS);
+  if (!isPrivileged) {
+    leadsWhere.owner_id = user.sub;   // always enforce for SALES
+  } else if (owner_id) {
+    leadsWhere.owner_id = owner_id;   // privileged: optional filter from UI
+  }
+
   if (date_from || date_to) {
     leadsWhere.created_at = {
       ...(date_from ? { gte: new Date(date_from) } : {}),

@@ -47,10 +47,12 @@ export async function GET(req: NextRequest) {
 
   const isPrivileged = requireRole(user, ...PRIVILEGED_ROLES);
 
-  // Privileged users see all (optionally filtered by agent); non-privileged see only their own
+  // Privileged users see all (optionally filtered by agent).
+  // SALES users see: quotes they created + quotes for any lead they own
+  // (so they see all quotes for their contacts, even if another agent created the quote).
   const ownerFilter = isPrivileged
     ? (agent_id ? { assigned_agent_id: agent_id } : {})
-    : { created_by: user.sub };
+    : { OR: [{ created_by: user.sub }, { lead: { owner_id: user.sub } }] };
 
   const where = {
     ...ownerFilter,

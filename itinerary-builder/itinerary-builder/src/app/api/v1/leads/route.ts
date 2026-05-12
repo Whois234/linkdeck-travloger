@@ -33,13 +33,15 @@ export async function GET(req: NextRequest) {
   const limit       = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') ?? '50')));
   const skip        = (page - 1) * limit;
 
-  const isLimitedSales = requireRole(user, UserRole.SALES);
-  const agentFilter = isLimitedSales
-    ? { assigned_agent_id: user.agent_id ?? undefined }
-    : agent_id ? { assigned_agent_id: agent_id } : {};
+  // SALES users see only leads they own (owner_id = their user ID).
+  // Privileged roles see all leads, optionally filtered by assigned_agent_id.
+  const isPrivileged = requireRole(user, UserRole.ADMIN, UserRole.MANAGER, UserRole.FINANCE, UserRole.OPS);
+  const ownerFilter = isPrivileged
+    ? (agent_id ? { assigned_agent_id: agent_id } : {})
+    : { owner_id: user.sub };
 
   const where = {
-    ...agentFilter,
+    ...ownerFilter,
     ...(status ? { status } : {}),
     ...(pipeline_id ? { pipeline_id } : {}),
   };
