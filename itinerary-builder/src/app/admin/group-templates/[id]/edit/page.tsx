@@ -180,6 +180,7 @@ export default function GroupTemplateEditPage() {
   const [editingBatch, setEditingBatch]     = useState<Batch & { _idx?: number } | null>(null);
   const [batchSaving, setBatchSaving]       = useState(false);
   const [batchErr, setBatchErr]             = useState('');
+  const [newCardName, setNewCardName]       = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -607,7 +608,7 @@ export default function GroupTemplateEditPage() {
                         boxShadow: isDragging ? '0 4px 16px rgba(0,0,0,0.12)' : 'none',
                       }}
                     >
-                      {/* Card header: drag handle + name + eye toggle */}
+                      {/* Card header: drag handle + name (editable) + eye toggle + delete */}
                       <div className="flex items-center gap-2 px-4 pt-4 pb-3">
                         <div className="flex-shrink-0 cursor-grab text-[#CBD5E1] hover:text-[#94A3B8]" title="Drag to reorder">
                           <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
@@ -616,9 +617,26 @@ export default function GroupTemplateEditPage() {
                             <circle cx="5" cy="13" r="1.3"/><circle cx="11" cy="13" r="1.3"/>
                           </svg>
                         </div>
-                        <p className="flex-1 text-sm font-semibold" style={{ color: isHidden ? '#94A3B8' : '#0F172A' }}>
-                          {dest?.name ?? dc.destination_id}
-                        </p>
+                        <input
+                          className="flex-1 text-sm font-semibold bg-transparent focus:outline-none rounded px-1 -ml-1 transition-colors"
+                          style={{ color: isHidden ? '#94A3B8' : '#0F172A' }}
+                          value={dc.custom_name ?? dest?.name ?? ''}
+                          placeholder={dest?.name ?? 'Card name…'}
+                          onChange={e => { const c = [...cms.destination_cards]; c[i] = { ...c[i], custom_name: e.target.value || null }; updCms('destination_cards', c); }}
+                          onFocus={e => (e.currentTarget.style.backgroundColor = '#F8FAFC')}
+                          onBlur={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => updCms('destination_cards', cms.destination_cards.filter((_, idx) => idx !== i))}
+                          className="w-6 h-6 rounded flex items-center justify-center flex-shrink-0 transition-colors hover:bg-red-50"
+                          style={{ color: '#CBD5E1' }}
+                          title="Remove card"
+                          onMouseEnter={e => (e.currentTarget.style.color = '#EF4444')}
+                          onMouseLeave={e => (e.currentTarget.style.color = '#CBD5E1')}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
                         <button
                           type="button"
                           onClick={() => { const c = [...cms.destination_cards]; c[i] = { ...c[i], hidden: !isHidden }; updCms('destination_cards', c); }}
@@ -660,12 +678,57 @@ export default function GroupTemplateEditPage() {
                     </div>
                   );
                 })}
-                {destList.length > 0 && cms.destination_cards.length === 0 && (
-                  <button onClick={() => updCms('destination_cards', destList.map(did => ({ destination_id: did, custom_name: null, description: '', image_url: '' })))}
-                    className="h-9 px-4 rounded-lg text-sm font-semibold text-white hover:opacity-90" style={{ backgroundColor: T }}>
-                    Auto-generate from destinations
-                  </button>
-                )}
+                {/* ── Add destination card ── */}
+                <div className="pt-2 border-t" style={{ borderColor: '#F1F5F9' }}>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: '#94A3B8' }}>Add Destination Card</p>
+                  {/* Quick-add chips: unused destinations from template */}
+                  {(() => {
+                    const usedIds = new Set(cms.destination_cards.map(dc => dc.destination_id));
+                    const unused  = dests.filter(d => !usedIds.has(d.id));
+                    return unused.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5 mb-3">
+                        {unused.map(d => (
+                          <button key={d.id} type="button"
+                            onClick={() => updCms('destination_cards', [...cms.destination_cards, { destination_id: d.id, custom_name: null, description: '', image_url: '' }])}
+                            className="flex items-center gap-1 h-7 px-2.5 rounded-lg text-xs font-semibold border transition-colors hover:opacity-80"
+                            style={{ borderColor: `${T}40`, color: T, backgroundColor: `${T}08` }}>
+                            + {d.name}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null;
+                  })()}
+                  {/* Custom card: type any name */}
+                  <div className="flex gap-2">
+                    <input
+                      className="flex-1 h-9 px-3 rounded-lg border text-sm placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white"
+                      style={{ borderColor: '#E2E8F0' }}
+                      value={newCardName}
+                      onChange={e => setNewCardName(e.target.value)}
+                      placeholder="Custom card name (e.g. Ooty Lake)…"
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && newCardName.trim()) {
+                          updCms('destination_cards', [...cms.destination_cards, { destination_id: `custom_${Date.now()}`, custom_name: newCardName.trim(), description: '', image_url: '' }]);
+                          setNewCardName('');
+                        }
+                      }}
+                    />
+                    <button type="button"
+                      disabled={!newCardName.trim()}
+                      onClick={() => { updCms('destination_cards', [...cms.destination_cards, { destination_id: `custom_${Date.now()}`, custom_name: newCardName.trim(), description: '', image_url: '' }]); setNewCardName(''); }}
+                      className="h-9 px-4 rounded-lg text-sm font-semibold text-white disabled:opacity-40 hover:opacity-90 flex-shrink-0"
+                      style={{ backgroundColor: T }}>
+                      + Add
+                    </button>
+                  </div>
+                  {destList.length > 0 && cms.destination_cards.length === 0 && (
+                    <button type="button" onClick={() => updCms('destination_cards', destList.map(did => ({ destination_id: did, custom_name: null, description: '', image_url: '' })))}
+                      className="mt-2 h-8 px-3 rounded-lg text-xs font-semibold border hover:bg-[#F8FAFC] transition-colors"
+                      style={{ borderColor: '#E2E8F0', color: '#64748B' }}>
+                      Auto-generate from template destinations
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           )}
