@@ -44,6 +44,15 @@ interface RoomConfig { pax: number }
 
 interface MealOverrideDay { breakfast: boolean; lunch: boolean; dinner: boolean }
 
+interface ActivityOption {
+  id: string; activity_name: string; activity_type: string | null;
+  duration: string | null; description: string | null;
+  adult_cost: number; child_cost: number | null;
+  rate_type: string; // 'PER_PERSON' | 'PER_GROUP'
+  destination_id: string; destination: { name: string };
+}
+interface SelectedAct { adults: number; children: number; quantity: number }
+
 interface HotelRow {
   destination_id: string;
   hotel_id: string;
@@ -74,12 +83,13 @@ const STAR_OPTIONS = [1, 2, 3, 4, 5] as const;
 type StarRating = typeof STAR_OPTIONS[number];
 
 const PRIVATE_STEPS = [
-  { id: 1, label: 'Basics',    icon: Users      },
-  { id: 2, label: 'Package',   icon: LayoutList },
-  { id: 3, label: 'Hotels',    icon: MapPin     },
-  { id: 4, label: 'Vehicle',   icon: Car        },
-  { id: 5, label: 'Summary',   icon: DollarSign },
-  { id: 6, label: 'Share',     icon: Link2      },
+  { id: 1, label: 'Basics',     icon: Users      },
+  { id: 2, label: 'Package',    icon: LayoutList },
+  { id: 3, label: 'Hotels',     icon: MapPin     },
+  { id: 4, label: 'Vehicle',    icon: Car        },
+  { id: 5, label: 'Activities', icon: Star       },
+  { id: 6, label: 'Summary',    icon: DollarSign },
+  { id: 7, label: 'Share',      icon: Link2      },
 ];
 const GROUP_STEPS = [
   { id: 1, label: 'Customer',  icon: Users      },
@@ -143,7 +153,14 @@ export default function CreateQuotePage() {
   const [vehicleTypeId, setVehicleTypeId] = useState('');
   const [vehicleCost, setVehicleCost]     = useState(0);
 
-  /* ─── Step 5 margins ─── */
+  /* ─── Step 5 activities ─── */
+  const [availableActivities, setAvailableActivities] = useState<ActivityOption[]>([]);
+  const [loadingActs, setLoadingActs] = useState(false);
+  // optionActs[optionIndex][activityId] = { adults, children, quantity }
+  const [optionActs, setOptionActs] = useState<Record<number, Record<string, SelectedAct>>>({});
+  const [activeActTab, setActiveActTab] = useState(0);
+
+  /* ─── Step 6 margins ─── */
   const [profitType, setProfitType]   = useState<'PERCENTAGE' | 'FLAT'>('PERCENTAGE');
   const [profitValue, setProfitValue] = useState(30);
   const [gstPercent, setGstPercent]   = useState(5);
@@ -206,6 +223,33 @@ export default function CreateQuotePage() {
       if (cd.success) setCities(cd.data);
     });
   }, [stateIds]);
+
+  /* ─── Load activities when step 5 is reached ─── */
+  useEffect(() => {
+    if (step !== 5 || availableActivities.length > 0) return;
+    setLoadingActs(true);
+    // Collect all unique destination_ids from all option hotels
+    const destIds = Array.from(new Set(options.flatMap(o => o.hotels.map(h => h.destination_id)).filter(Boolean)));
+    const url = destIds.length === 1
+      ? `/api/v1/activities?destination_id=${destIds[0]}`
+      : '/api/v1/activities';
+    fetch(url).then(r => r.json()).then(d => {
+      if (d.success) setAvailableActivities(Array.isArray(d.data) ? d.data : []);
+    }).finally(() => setLoadingActs(false));
+  }, [step]);
+
+  /* ─── Compute total activity cost for an option ─── */
+  function computeActivityCost(oi: number): number {
+    const acts = optionActs[oi] ?? {};
+    return availableActivities.reduce((sum, act) => {
+      const sel = acts[act.id];
+      if (!sel) return sum;
+      if (act.rate_type === 'PER_PERSON') {
+        return sum + act.adult_cost * sel.adults + (act.child_cost ?? 0) * sel.children;
+      }
+      return sum + act.adult_cost * sel.quantity;
+    }, 0);
+  }
 
   /* ─── Load templates when step 2 is reached ─── */
   useEffect(() => {
@@ -489,7 +533,7 @@ export default function CreateQuotePage() {
           is_most_popular: opt.is_most_popular,
           vehicle_type_id: vehicleTypeId || null,
           vehicle_cost: vehicleCost,
-          activity_cost: 0, transfer_cost: 0, misc_cost: 0,
+          activity_cost: computeActivityCost(oi), transfer_cost: 0, misc_cost: 0,
           profit_type: profitType,
           profit_value: profitValue,
           discount_type: discountType,
@@ -534,7 +578,7 @@ export default function CreateQuotePage() {
       if (!pRes.ok) { setErrMsg(pData.error ?? 'Failed to publish quote'); return; }
 
       setCreatedQuote({ id: quoteId, quote_number: qData.data.quote_number, public_token: pData.data.public_token ?? qData.data.public_token });
-      setStep(quoteType === 'PRIVATE' ? 6 : 3);
+      setStep(quoteType === 'PRIVATE' ? 7 : 3);
     } finally {
       setSaving(false); setCalculating(false);
     }
@@ -601,6 +645,8 @@ export default function CreateQuotePage() {
     } else if (step === 4) {
       setStep(5);
     } else if (step === 5) {
+      setStep(6);
+    } else if (step === 6) {
       await publishAndGenerate();
     }
   }
@@ -1558,9 +1604,203 @@ export default function CreateQuotePage() {
       )}
 
       {/* ══════════════════════════════════════════════════════════════ */}
-      {/* STEP 5 — PROFIT MARGIN & SUMMARY                              */}
+      {/* STEP 5 — ACTIVITIES                                           */}
       {/* ══════════════════════════════════════════════════════════════ */}
       {step === 5 && quoteType === 'PRIVATE' && (
+        <div className="flex flex-col gap-4">
+          {/* Header */}
+          <div className="bg-white rounded-2xl p-5" style={card}>
+            <p className="text-sm font-bold text-[#0F172A] mb-1">Activities</p>
+            <p className="text-xs text-[#94A3B8]">Select optional activities for each package option — costs are added to the final price</p>
+          </div>
+
+          {/* Option tabs */}
+          {options.length > 1 && (
+            <div className="flex gap-2">
+              {options.map((opt, oi) => (
+                <button key={oi} onClick={() => setActiveActTab(oi)}
+                  className="h-8 px-4 rounded-lg text-xs font-semibold border transition-all"
+                  style={activeActTab === oi
+                    ? { backgroundColor: T, borderColor: T, color: 'white' }
+                    : { backgroundColor: 'white', borderColor: '#E2E8F0', color: '#64748B' }}>
+                  {opt.name}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Activity list */}
+          <div className="bg-white rounded-2xl p-5" style={card}>
+            {loadingActs ? (
+              <div className="flex items-center justify-center py-10">
+                <div className="w-6 h-6 rounded-full border-2 border-[#134956] border-t-transparent animate-spin" />
+              </div>
+            ) : availableActivities.length === 0 ? (
+              <div className="text-center py-10">
+                <p className="text-sm font-semibold text-[#0F172A]">No activities found</p>
+                <p className="text-xs text-[#94A3B8] mt-1">Add activities in Masters → Activities, then they'll appear here</p>
+              </div>
+            ) : (() => {
+              const oi = options.length > 1 ? activeActTab : 0;
+              const optDests = new Set(options[oi]?.hotels.map(h => h.destination_id).filter(Boolean) ?? []);
+              // Show activities matching this option's destinations first, then others
+              const matched   = availableActivities.filter(a => optDests.has(a.destination_id));
+              const unmatched = availableActivities.filter(a => !optDests.has(a.destination_id));
+              const grouped   = [...matched, ...unmatched];
+              // Group by destination
+              const byDest = grouped.reduce<Record<string, ActivityOption[]>>((acc, a) => {
+                const key = a.destination?.name ?? 'Other';
+                (acc[key] ??= []).push(a);
+                return acc;
+              }, {});
+
+              return (
+                <div className="flex flex-col gap-5">
+                  {Object.entries(byDest).map(([destName, acts]) => (
+                    <div key={destName}>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider mb-3" style={{ color: '#94A3B8' }}>{destName}</p>
+                      <div className="flex flex-col gap-2">
+                        {acts.map(act => {
+                          const sel = optionActs[oi]?.[act.id];
+                          const isSelected = !!sel;
+                          const actCost = isSelected
+                            ? act.rate_type === 'PER_PERSON'
+                              ? act.adult_cost * sel.adults + (act.child_cost ?? 0) * sel.children
+                              : act.adult_cost * sel.quantity
+                            : 0;
+
+                          return (
+                            <div key={act.id} className="rounded-xl p-3.5 border transition-all"
+                              style={isSelected
+                                ? { borderColor: T, backgroundColor: `${T}08` }
+                                : { borderColor: '#E2E8F0', backgroundColor: '#FAFBFC' }}>
+                              <div className="flex items-start gap-3">
+                                {/* Checkbox */}
+                                <button onClick={() => {
+                                  setOptionActs(prev => {
+                                    const cur = { ...(prev[oi] ?? {}) };
+                                    if (cur[act.id]) {
+                                      delete cur[act.id];
+                                    } else {
+                                      cur[act.id] = act.rate_type === 'PER_PERSON'
+                                        ? { adults, children: children512, quantity: 1 }
+                                        : { adults: 0, children: 0, quantity: 1 };
+                                    }
+                                    return { ...prev, [oi]: cur };
+                                  });
+                                }}
+                                  className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0 mt-0.5 border-2 transition-all"
+                                  style={isSelected ? { backgroundColor: T, borderColor: T } : { borderColor: '#CBD5E1', backgroundColor: 'white' }}>
+                                  {isSelected && <Check className="w-3 h-3 text-white" />}
+                                </button>
+
+                                {/* Info */}
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <p className="text-sm font-semibold text-[#0F172A]">{act.activity_name}</p>
+                                    {isSelected && (
+                                      <span className="text-sm font-bold flex-shrink-0" style={{ color: T }}>
+                                        ₹{Math.round(actCost).toLocaleString('en-IN')}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                                    {act.activity_type && <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md" style={{ backgroundColor: '#F1F5F9', color: '#475569' }}>{act.activity_type}</span>}
+                                    {act.duration && <span className="text-xs text-[#94A3B8]">⏱ {act.duration}</span>}
+                                    <span className="text-xs" style={{ color: '#64748B' }}>
+                                      {act.rate_type === 'PER_PERSON'
+                                        ? <>₹{Math.round(act.adult_cost).toLocaleString('en-IN')}/adult{act.child_cost ? ` · ₹${Math.round(act.child_cost).toLocaleString('en-IN')}/child` : ''}</>
+                                        : <>₹{Math.round(act.adult_cost).toLocaleString('en-IN')}/group</>}
+                                    </span>
+                                  </div>
+                                  {act.description && <p className="text-xs mt-1" style={{ color: '#94A3B8' }}>{act.description}</p>}
+
+                                  {/* Qty controls — shown only when selected */}
+                                  {isSelected && (
+                                    <div className="flex items-center gap-4 mt-2.5 pt-2.5" style={{ borderTop: '1px solid #E2E8F0' }}>
+                                      {act.rate_type === 'PER_PERSON' ? (
+                                        <>
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: '#94A3B8' }}>Adults</span>
+                                            <div className="flex items-center gap-1">
+                                              <button onClick={() => setOptionActs(prev => { const c = { ...prev[oi] }; c[act.id] = { ...c[act.id], adults: Math.max(0, c[act.id].adults - 1) }; return { ...prev, [oi]: c }; })}
+                                                className="w-6 h-6 rounded-md flex items-center justify-center border text-[#64748B] hover:bg-[#F1F5F9]" style={{ borderColor: '#E2E8F0' }}><Minus className="w-3 h-3" /></button>
+                                              <span className="w-6 text-center text-sm font-semibold text-[#0F172A]">{sel.adults}</span>
+                                              <button onClick={() => setOptionActs(prev => { const c = { ...prev[oi] }; c[act.id] = { ...c[act.id], adults: c[act.id].adults + 1 }; return { ...prev, [oi]: c }; })}
+                                                className="w-6 h-6 rounded-md flex items-center justify-center border text-[#64748B] hover:bg-[#F1F5F9]" style={{ borderColor: '#E2E8F0' }}><Plus className="w-3 h-3" /></button>
+                                            </div>
+                                          </div>
+                                          {(act.child_cost ?? 0) > 0 && (
+                                            <div className="flex items-center gap-2">
+                                              <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: '#94A3B8' }}>Children</span>
+                                              <div className="flex items-center gap-1">
+                                                <button onClick={() => setOptionActs(prev => { const c = { ...prev[oi] }; c[act.id] = { ...c[act.id], children: Math.max(0, c[act.id].children - 1) }; return { ...prev, [oi]: c }; })}
+                                                  className="w-6 h-6 rounded-md flex items-center justify-center border text-[#64748B] hover:bg-[#F1F5F9]" style={{ borderColor: '#E2E8F0' }}><Minus className="w-3 h-3" /></button>
+                                                <span className="w-6 text-center text-sm font-semibold text-[#0F172A]">{sel.children}</span>
+                                                <button onClick={() => setOptionActs(prev => { const c = { ...prev[oi] }; c[act.id] = { ...c[act.id], children: c[act.id].children + 1 }; return { ...prev, [oi]: c }; })}
+                                                  className="w-6 h-6 rounded-md flex items-center justify-center border text-[#64748B] hover:bg-[#F1F5F9]" style={{ borderColor: '#E2E8F0' }}><Plus className="w-3 h-3" /></button>
+                                              </div>
+                                            </div>
+                                          )}
+                                        </>
+                                      ) : (
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: '#94A3B8' }}>Groups</span>
+                                          <div className="flex items-center gap-1">
+                                            <button onClick={() => setOptionActs(prev => { const c = { ...prev[oi] }; c[act.id] = { ...c[act.id], quantity: Math.max(1, c[act.id].quantity - 1) }; return { ...prev, [oi]: c }; })}
+                                              className="w-6 h-6 rounded-md flex items-center justify-center border text-[#64748B] hover:bg-[#F1F5F9]" style={{ borderColor: '#E2E8F0' }}><Minus className="w-3 h-3" /></button>
+                                            <span className="w-6 text-center text-sm font-semibold text-[#0F172A]">{sel.quantity}</span>
+                                            <button onClick={() => setOptionActs(prev => { const c = { ...prev[oi] }; c[act.id] = { ...c[act.id], quantity: c[act.id].quantity + 1 }; return { ...prev, [oi]: c }; })}
+                                              className="w-6 h-6 rounded-md flex items-center justify-center border text-[#64748B] hover:bg-[#F1F5F9]" style={{ borderColor: '#E2E8F0' }}><Plus className="w-3 h-3" /></button>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* Per-option activity cost summary */}
+          {options.length > 0 && (
+            <div className="bg-white rounded-2xl p-5" style={card}>
+              <p className={lbl}>Activity Cost Summary</p>
+              <div className="flex flex-col gap-2 mt-1">
+                {options.map((opt, oi) => {
+                  const actCost  = computeActivityCost(oi);
+                  const hotelTotal = opt.hotels.reduce((s, h) => s + (h.fetched_price ?? 0), 0);
+                  const selCount = Object.keys(optionActs[oi] ?? {}).length;
+                  return (
+                    <div key={oi} className="flex items-center justify-between text-xs p-2.5 rounded-lg" style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                      <span className="font-semibold text-[#0F172A]">{opt.name}</span>
+                      <span className="text-[#64748B]">
+                        {selCount > 0
+                          ? <>Hotel ₹{Math.round(hotelTotal).toLocaleString('en-IN')} + Vehicle ₹{Math.round(vehicleCost).toLocaleString('en-IN')} + Activities ₹{Math.round(actCost).toLocaleString('en-IN')} = <span className="font-bold text-[#0F172A]">₹{Math.round(hotelTotal + vehicleCost + actCost).toLocaleString('en-IN')}</span></>
+                          : <span className="text-[#94A3B8]">No activities selected — <button className="underline" style={{ color: T }} onClick={() => setActiveActTab(oi)}>add for {opt.name}</button></span>
+                        }
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {/* STEP 6 — PROFIT MARGIN & SUMMARY                              */}
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {step === 6 && quoteType === 'PRIVATE' && (
         <div className="flex flex-col gap-4">
           <div className="bg-white rounded-2xl p-5" style={card}>
             <p className="text-sm font-bold text-[#0F172A] mb-1">Profit & GST</p>
@@ -1725,7 +1965,7 @@ export default function CreateQuotePage() {
       {/* ══════════════════════════════════════════════════════════════ */}
       {/* STEP 6 / SHARE — SUCCESS SCREEN                               */}
       {/* ══════════════════════════════════════════════════════════════ */}
-      {((step === 6 && quoteType === 'PRIVATE') || (step === 3 && quoteType === 'GROUP')) && createdQuote && (
+      {((step === 7 && quoteType === 'PRIVATE') || (step === 3 && quoteType === 'GROUP')) && createdQuote && (
         <div className="flex flex-col gap-4">
           <div className="bg-white rounded-2xl p-8 text-center" style={card}>
             <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: '#DCFCE7' }}>
@@ -1802,7 +2042,7 @@ export default function CreateQuotePage() {
             style={{ backgroundColor: T }}>
             {saving || calculating
               ? <><Loader2 className="w-4 h-4 animate-spin" /> {calculating ? 'Calculating…' : 'Publishing…'}</>
-              : step === 5 || (quoteType === 'GROUP' && step === 2)
+              : step === 6 || (quoteType === 'GROUP' && step === 2)
                 ? 'Publish & Generate Link'
                 : 'Next →'}
           </button>
