@@ -42,8 +42,8 @@ export async function POST(req: NextRequest) {
     });
 
     if (existing) {
-      // Contact exists — ensure it's linked to a Lead if one exists for this customer
-      if (cust.lead_id && !existing.leads?.length) {
+      // Contact exists — ensure the lead is linked to this contact if it isn't already
+      if (cust.lead_id) {
         const lead = await prisma.lead.findUnique({ where: { id: cust.lead_id } });
         if (lead && !lead.crm_contact_id) {
           await prisma.lead.update({
