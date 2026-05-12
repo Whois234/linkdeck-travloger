@@ -6,6 +6,7 @@ import { Modal } from '@/components/admin/Modal';
 import { Plus, Pencil, Trash2, Search, Users, ChevronRight, LayoutGrid, List, ArrowUpDown, CheckCircle2, SlidersHorizontal, X } from 'lucide-react';
 
 type SortKey = 'name_asc' | 'name_desc' | 'nights_asc' | 'nights_desc' | 'batches_desc' | 'state_asc';
+type StatusTab = 'all' | 'live' | 'draft';
 const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: 'name_asc',     label: 'Name A → Z' },
   { value: 'name_desc',    label: 'Name Z → A' },
@@ -69,12 +70,14 @@ function GroupTemplatesPageInner() {
   const [filterNights, setFilterNights] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const [statusTab, setStatusTab] = useState<StatusTab>('all');
   const [sortKey, setSortKey]   = useState<SortKey>('name_asc');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [showSetup, setShowSetup] = useState(false);
   const [saving, setSaving]   = useState(false);
   const [err, setErr]         = useState('');
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   // ── Selection ──
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -89,7 +92,7 @@ function GroupTemplatesPageInner() {
   async function load() {
     setLoading(true);
     const [tr, sr, dr] = await Promise.all([
-      fetch('/api/v1/group-templates'),
+      fetch('/api/v1/group-templates'),  // no status param = all (live + draft); tabs filter client-side
       fetch('/api/v1/states'),
       fetch('/api/v1/destinations'),
     ]);
@@ -155,21 +158,34 @@ function GroupTemplatesPageInner() {
     router.push(`/admin/group-templates/${d.data.id}/edit`);
   }
 
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3500);
+  }
+
   async function del(id: string) {
-    if (!confirm('Deactivate this group template?')) return;
+    if (!confirm('Delete this group template?')) return;
     setDeleting(id);
-    await fetch(`/api/v1/group-templates/${id}`, { method: 'DELETE' });
-    setDeleting(null); load();
+    const res = await fetch(`/api/v1/group-templates/${id}`, { method: 'DELETE' });
+    setDeleting(null);
+    if (res.ok) {
+      setRows(prev => prev.filter(r => r.id !== id));
+      showToast('Template deleted successfully');
+    } else {
+      alert('Delete failed. Please try again.');
+    }
   }
 
   async function handleBulkDelete() {
     if (!selected.size) return;
-    if (!confirm(`Deactivate ${selected.size} template${selected.size !== 1 ? 's' : ''}? This cannot be undone.`)) return;
+    if (!confirm(`Delete ${selected.size} template${selected.size !== 1 ? 's' : ''}? This cannot be undone.`)) return;
     setBulkDeleting(true);
-    await Promise.all(Array.from(selected).map(id => fetch(`/api/v1/group-templates/${id}`, { method: 'DELETE' })));
+    const ids = Array.from(selected);
+    await Promise.all(ids.map(id => fetch(`/api/v1/group-templates/${id}`, { method: 'DELETE' })));
     setBulkDeleting(false);
     setSelected(new Set());
-    load();
+    setRows(prev => prev.filter(r => !ids.includes(r.id)));
+    showToast(`${ids.length} template${ids.length !== 1 ? 's' : ''} deleted successfully`);
   }
 
   function toggleSelect(id: string) {
@@ -187,6 +203,9 @@ function GroupTemplatesPageInner() {
       .map(n => ({ value: String(n), label: `${n} Nights` }))
   , [rows]);
 
+  const liveCount  = useMemo(() => rows.filter(r => r.status).length,  [rows]);
+  const draftCount = useMemo(() => rows.filter(r => !r.status).length, [rows]);
+
   const filtered = useMemo(() => {
     let list = rows.filter(r => {
       const q = search.toLowerCase();
@@ -195,6 +214,8 @@ function GroupTemplatesPageInner() {
       if (filterTheme && (r.theme ?? '') !== filterTheme) return false;
       if (filterNights && r.duration_nights !== Number(filterNights)) return false;
       if (filterStatus && (filterStatus === 'active' ? !r.status : r.status)) return false;
+      const tab = statusTab === 'all' || (statusTab === 'live' ? r.status : !r.status);
+      if (!tab) return false;
       return true;
     });
     list = [...list].sort((a, b) => {
@@ -209,7 +230,7 @@ function GroupTemplatesPageInner() {
       }
     });
     return list;
-  }, [rows, search, stateFilter, filterTheme, filterNights, filterStatus, sortKey]);
+  }, [rows, search, stateFilter, filterTheme, filterNights, filterStatus, statusTab, sortKey]);
 
   const allSelected = filtered.length > 0 && filtered.every(r => selected.has(r.id));
 
@@ -226,6 +247,18 @@ function GroupTemplatesPageInner() {
 
   return (
     <div className="max-w-[1400px]">
+      {/* Success toast */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-xl shadow-xl text-sm font-semibold"
+          style={{ backgroundColor: '#134956', color: 'white', minWidth: 260 }}>
+          <CheckCircle2 className="w-4 h-4 text-green-300 flex-shrink-0" />
+          {toast}
+          <button onClick={() => setToast(null)} className="ml-auto opacity-70 hover:opacity-100">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       <PageHeader
         title="Group Templates"
         subtitle="Build and manage itinerary templates for fixed-departure group tours"
@@ -245,6 +278,30 @@ function GroupTemplatesPageInner() {
           Group template published successfully!
         </div>
       )}
+
+      {/* All / Live / Draft tabs */}
+      <div className="flex items-center gap-1 mb-4 p-1 rounded-xl w-fit" style={{ backgroundColor: '#F1F5F9' }}>
+        {([
+          { key: 'all',   label: 'All',   count: rows.length },
+          { key: 'live',  label: 'Live',  count: liveCount   },
+          { key: 'draft', label: 'Draft', count: draftCount  },
+        ] as { key: StatusTab; label: string; count: number }[]).map(tab => (
+          <button key={tab.key} onClick={() => setStatusTab(tab.key)}
+            className="flex items-center gap-2 h-8 px-4 rounded-lg text-sm font-semibold transition-all"
+            style={statusTab === tab.key
+              ? { backgroundColor: 'white', color: T, boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }
+              : { color: '#64748B' }}>
+            {tab.label}
+            <span className="text-[11px] px-1.5 py-0.5 rounded-md font-bold"
+              style={statusTab === tab.key
+                ? { backgroundColor: tab.key === 'live' ? '#DCFCE7' : tab.key === 'draft' ? '#FEF9C3' : '#E2E8F0',
+                    color: tab.key === 'live' ? '#16A34A' : tab.key === 'draft' ? '#A16207' : '#64748B' }
+                : { backgroundColor: '#E2E8F0', color: '#94A3B8' }}>
+              {tab.count}
+            </span>
+          </button>
+        ))}
+      </div>
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2 mb-3">

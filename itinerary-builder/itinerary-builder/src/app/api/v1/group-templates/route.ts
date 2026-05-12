@@ -26,10 +26,12 @@ export async function GET(req: NextRequest) {
   if (!user) return unauthorized();
 
   const { searchParams } = new URL(req.url);
-  const state_id = searchParams.get('state_id');
+  const state_id   = searchParams.get('state_id');
+  const statusRaw  = searchParams.get('status'); // 'live' | 'draft' | null = all
+  const statusFilter = statusRaw === 'live' ? { status: true } : statusRaw === 'draft' ? { status: false } : {};
 
   const templates = await prisma.groupTemplate.findMany({
-    where: { status: true, ...(state_id ? { state_id } : {}) },
+    where: { ...statusFilter, ...(state_id ? { state_id } : {}) },
     include: {
       state: { select: { name: true } },
       group_template_days: { orderBy: { sort_order: 'asc' } },
