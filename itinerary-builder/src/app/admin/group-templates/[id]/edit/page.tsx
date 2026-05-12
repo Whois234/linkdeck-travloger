@@ -1572,23 +1572,23 @@ export default function GroupTemplateEditPage() {
             <div className="p-5 flex flex-col gap-6">
 
               {/* Hero */}
-              {(cms.hero_image_url || cms.title || cms.subtitle) && (
+              {(cms.hero_images?.[0] || cms.hero_heading) && (
                 <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
-                  {cms.hero_image_url && (
+                  {cms.hero_images?.[0] && (
                     <div className="relative h-44 bg-slate-100">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={cms.hero_image_url} alt="Hero" className="w-full h-full object-cover" />
+                      <img src={cms.hero_images[0]} alt="Hero" className="w-full h-full object-cover" />
                       <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.55), transparent)' }} />
                       <div className="absolute bottom-0 left-0 p-4">
-                        {cms.title && <p className="text-white font-bold text-lg leading-tight">{cms.title}</p>}
-                        {cms.subtitle && <p className="text-white/80 text-xs mt-0.5">{cms.subtitle}</p>}
+                        {cms.hero_heading && <p className="text-white font-bold text-lg leading-tight">{cms.hero_heading}</p>}
+                        {cms.hero_subheading && <p className="text-white/80 text-xs mt-0.5">{cms.hero_subheading}</p>}
                       </div>
                     </div>
                   )}
-                  {!cms.hero_image_url && (
+                  {!cms.hero_images?.[0] && (
                     <div className="p-4" style={{ background: `${T}10` }}>
-                      {cms.title && <p className="font-bold text-base text-[#0F172A]">{cms.title}</p>}
-                      {cms.subtitle && <p className="text-sm text-[#64748B] mt-1">{cms.subtitle}</p>}
+                      {cms.hero_heading && <p className="font-bold text-base text-[#0F172A]">{cms.hero_heading}</p>}
+                      {cms.hero_subheading && <p className="text-sm text-[#64748B] mt-1">{cms.hero_subheading}</p>}
                     </div>
                   )}
                 </div>
