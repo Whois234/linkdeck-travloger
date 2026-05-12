@@ -40,7 +40,6 @@ const ALL_NAV: NavGroup[] = [
     items: [
       { label: 'Private Templates', href: '/admin/private-templates', icon: Layout    },
       { label: 'Group Templates',   href: '/admin/group-templates',   icon: Layers    },
-      { label: 'Group Batches',     href: '/admin/group-batches',     icon: CalendarDays },
     ],
   },
   {

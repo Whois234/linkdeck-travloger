@@ -282,6 +282,11 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
           : (Array.isArray((groupCms as Record<string,unknown>)?.hero_images) && ((groupCms as Record<string,unknown>).hero_images as string[]).filter(Boolean).length > 1)
             ? ((groupCms as Record<string,unknown>).hero_images as string[]).filter(Boolean)
             : null,
+      // Custom label for the gallery cover (state) card — overrides state.name on the itinerary
+      custom_name:
+        ((templateCmsData as Record<string,unknown>)?.state_gallery_custom_name as string | undefined || null)
+        ?? ((groupCms as Record<string,unknown>)?.state_gallery_custom_name as string | undefined || null)
+        ?? null,
     },
     quote_options:         enrichedOptions,
     group_package_options: groupPackageOptions,
@@ -295,13 +300,14 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
       const raw = (templateCmsData as any)?.destination_cards ?? (groupCms as any)?.destination_cards;
       if (!Array.isArray(raw) || raw.length === 0) return null;
       return (raw as Array<{ destination_id: string; custom_name?: string | null; description?: string; image_url?: string; hidden?: boolean }>)
-        .filter(dc => dc.destination_id && destsMap[dc.destination_id] && !dc.hidden)
+        .filter(dc => dc.destination_id && !dc.hidden)
         .map(dc => ({
           destination_id: dc.destination_id,
           name:           dc.custom_name?.trim() || destsMap[dc.destination_id]?.name || '',
           description:    dc.description?.trim() || '',
           image_url:      dc.image_url?.trim()   || destsMap[dc.destination_id]?.hero_image || '',
-        }));
+        }))
+        .filter(dc => dc.name); // only include if it has a resolved name
     })(),
     // Why Choose items from template CMS — with icon keys
     why_choose: (() => {

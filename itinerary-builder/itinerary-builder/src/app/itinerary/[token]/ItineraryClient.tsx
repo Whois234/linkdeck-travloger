@@ -112,7 +112,7 @@ interface ItineraryData {
     speciality?: string | null;
     available_hours?: string | null;
   } | null;
-  state: { name: string; description?: string | null; hero_image?: string | null; hero_images?: string[] | null };
+  state: { name: string; custom_name?: string | null; description?: string | null; hero_image?: string | null; hero_images?: string[] | null };
   quote_options: QuoteOption[];
   group_package_options?: GroupPackageOption[];
   group_pricing_mode?: 'date_based' | 'package_based';
@@ -357,9 +357,9 @@ function Gallery({ state, day_snapshots, destination_cards }: {
 }) {
   const imgs: Array<{ url: string; label: string }> = [];
 
-  // State hero always first
+  // State hero always first — use custom_name if set in template CMS
   if (state.hero_image) {
-    imgs.push({ url: state.hero_image, label: state.name });
+    imgs.push({ url: state.hero_image, label: state.custom_name?.trim() || state.name });
   }
 
   if (destination_cards && destination_cards.length > 0) {

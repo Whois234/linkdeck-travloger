@@ -976,7 +976,7 @@ export default function CreateQuotePage() {
                 </div>
                 {isSelected && (
                   <div className="mt-3 flex flex-col gap-2">
-                    {gt.group_batches.filter(b => b.booking_status === 'OPEN').map(b => {
+                    {gt.group_batches.filter(b => ['OPEN','FILLING_FAST','ALMOST_FULL'].includes(b.booking_status)).map(b => {
                       const start = new Date(b.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
                       const end   = new Date(b.end_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
                       const isSel = selectedBatch?.id === b.id;
@@ -998,8 +998,8 @@ export default function CreateQuotePage() {
                         </div>
                       );
                     })}
-                    {gt.group_batches.filter(b => b.booking_status === 'OPEN').length === 0 && (
-                      <p className="text-xs text-[#94A3B8] text-center py-3">No open batches available</p>
+                    {gt.group_batches.filter(b => ['OPEN','FILLING_FAST','ALMOST_FULL'].includes(b.booking_status)).length === 0 && (
+                      <p className="text-xs text-[#94A3B8] text-center py-3">No available batches for this tour</p>
                     )}
                   </div>
                 )}
