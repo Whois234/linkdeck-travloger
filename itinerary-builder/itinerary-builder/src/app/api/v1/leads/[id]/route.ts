@@ -69,10 +69,14 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   const user = await getAuthUser(req);
   if (!user) return unauthorized();
-  if (!requireRole(user, UserRole.ADMIN, UserRole.MANAGER)) return forbidden();
 
   const record = await prisma.lead.findUnique({ where: { id: params.id } });
   if (!record) return notFound('Lead');
+
+  // ADMIN + MANAGER can delete any lead.
+  // SALES can delete only leads they own.
+  const isPrivileged = requireRole(user, UserRole.ADMIN, UserRole.MANAGER);
+  if (!isPrivileged && record.owner_id !== user.sub) return forbidden();
 
   await prisma.lead.delete({ where: { id: params.id } });
   return ok({ message: 'Lead deleted' });

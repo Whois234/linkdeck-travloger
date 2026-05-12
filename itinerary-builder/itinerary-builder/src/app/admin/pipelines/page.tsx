@@ -13,6 +13,7 @@ import Link from 'next/link';
 import { Stage, Lead, Pipeline, STATUS_COLORS, formatDateTime } from './types';
 import type { CallState } from './LeadDrawer';
 import { KanbanSkeleton } from '@/components/Skeleton';
+import { toast } from '@/components/Toaster';
 
 const LeadDrawer      = dynamic(() => import('./LeadDrawer'),    { ssr: false });
 const AddLeadDrawer   = dynamic(() => import('./AddLeadDrawer'), { ssr: false });
@@ -673,12 +674,28 @@ export default function PipelinesPage() {
   }, [selectedIds]);
 
   async function bulkDelete() {
-    if (!confirm(`Delete ${selectedIds.size} lead(s)? This cannot be undone.`)) return;
-    await Promise.all(Array.from(selectedIds).map(leadId =>
-      fetch(`/api/v1/leads/${leadId}`, { method: 'DELETE' })
-    ));
+    const count = selectedIds.size;
+    if (!confirm(`Delete ${count} lead(s)? This cannot be undone.`)) return;
+
+    const results = await Promise.all(
+      Array.from(selectedIds).map(leadId =>
+        fetch(`/api/v1/leads/${leadId}`, { method: 'DELETE' }).then(r => r.json())
+      )
+    );
+
+    const failed = results.filter(r => !r.success).length;
+    const deleted = count - failed;
+
     setSelectedIds(new Set());
     qc.invalidateQueries({ queryKey: [...QK.pipeline(resolvedPipelineId), filterParams.toString()] });
+
+    if (deleted > 0 && failed === 0) {
+      toast.success(`${deleted} lead${deleted > 1 ? 's' : ''} deleted successfully`);
+    } else if (deleted > 0 && failed > 0) {
+      toast.info(`${deleted} deleted, ${failed} could not be deleted (permission denied)`);
+    } else {
+      toast.error('Could not delete lead(s) — you may not have permission');
+    }
   }
 
   const allLeads = useMemo(() => {
