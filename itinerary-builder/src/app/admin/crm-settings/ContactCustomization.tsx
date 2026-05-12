@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState, useRef } from 'react';
 import {
-  GripVertical, Plus, Pencil, Trash2, X, Check, Loader2, Tag as TagIcon, ListPlus,
+  GripVertical, Plus, Pencil, Trash2, X, Check, Loader2, Tag as TagIcon, ListPlus, Zap,
 } from 'lucide-react';
 
 const T = '#134956';
@@ -28,8 +28,71 @@ const FIELD_TYPES: { value: string; label: string }[] = [
   { value: 'url',         label: 'URL' },
 ];
 
-const inp = 'w-full h-9 px-3 rounded-lg border text-sm placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white';
+// Keys that are auto-populated by the analytics system
+const AUTO_KEYS = new Set(['detected_os', 'detected_device', 'detected_browser', 'detected_city', 'detected_country']);
+
+const inp      = 'w-full h-9 px-3 rounded-lg border text-sm placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white';
 const inpStyle = { borderColor: '#E2E8F0' };
+
+// ─── Chip-based options editor ────────────────────────────────────────────────
+function OptionsEditor({
+  options, onChange,
+}: { options: string[]; onChange: (opts: string[]) => void }) {
+  const [draft, setDraft] = useState('');
+
+  function addOption() {
+    const v = draft.trim();
+    if (!v || options.includes(v)) return;
+    onChange([...options, v]);
+    setDraft('');
+  }
+
+  function removeOption(idx: number) {
+    onChange(options.filter((_, i) => i !== idx));
+  }
+
+  return (
+    <div>
+      <label className="block text-xs font-semibold mb-1.5" style={{ color: '#374151' }}>
+        Options <span className="font-normal text-[10px]" style={{ color: '#94A3B8' }}>— what users can pick</span>
+      </label>
+
+      {/* Existing chips */}
+      {options.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-2 p-2.5 rounded-lg" style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+          {options.map((opt, i) => (
+            <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold"
+              style={{ backgroundColor: '#E0F2F1', color: T, border: '1px solid #A7F3D0' }}>
+              {opt}
+              <button type="button" onClick={() => removeOption(i)}
+                className="hover:opacity-60 flex-shrink-0" title="Remove">
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Add new option */}
+      <div className="flex gap-2">
+        <input
+          className={inp + ' flex-1'}
+          style={inpStyle}
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addOption(); } }}
+          placeholder="Type an option and press Enter or +"
+        />
+        <button type="button" onClick={addOption}
+          disabled={!draft.trim()}
+          className="h-9 w-9 rounded-lg flex items-center justify-center text-white disabled:opacity-40 flex-shrink-0"
+          style={{ backgroundColor: T }}>
+          <Plus className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
 
 // ═══════════════════════════════════════════════════════════════════════
 // CONTACT FIELDS TAB
@@ -45,7 +108,8 @@ export function ContactFieldsTab() {
   const dragId = useRef<string | null>(null);
 
   const [form, setForm] = useState({
-    key: '', label: '', type: 'text', required: false, options: '', placeholder: '',
+    key: '', label: '', type: 'text', required: false,
+    options: [] as string[], placeholder: '',
   });
 
   async function load() {
@@ -60,7 +124,7 @@ export function ContactFieldsTab() {
 
   function openCreate() {
     setEditing(null);
-    setForm({ key: '', label: '', type: 'text', required: false, options: '', placeholder: '' });
+    setForm({ key: '', label: '', type: 'text', required: false, options: [], placeholder: '' });
     setError('');
     setShowForm(true);
   }
@@ -72,7 +136,7 @@ export function ContactFieldsTab() {
       label:       f.label,
       type:        f.type,
       required:    f.required,
-      options:     (f.options ?? []).join(', '),
+      options:     Array.isArray(f.options) ? f.options : [],
       placeholder: f.placeholder ?? '',
     });
     setError('');
@@ -81,13 +145,13 @@ export function ContactFieldsTab() {
 
   async function save() {
     setSaving(true); setError('');
-    const optList = form.options.split(',').map(o => o.trim()).filter(Boolean);
+    const isSelectType = form.type === 'select' || form.type === 'multiselect';
     const payload = {
       label:       form.label,
-      type:        form.type,
+      type:        editing?.is_system ? undefined : form.type,  // system fields: type locked
       required:    form.required,
       placeholder: form.placeholder || null,
-      options:     (form.type === 'select' || form.type === 'multiselect') ? optList : null,
+      options:     isSelectType ? form.options : null,
       ...(editing ? {} : { key: form.key.toLowerCase() }),
     };
     const url    = editing ? `/api/v1/crm/contact-fields/${editing.id}` : '/api/v1/crm/contact-fields';
@@ -126,6 +190,8 @@ export function ContactFieldsTab() {
     });
   }
 
+  const isSelectType = form.type === 'select' || form.type === 'multiselect';
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -152,116 +218,169 @@ export function ContactFieldsTab() {
           </div>
         ) : (
           <div>
-            {fields.map(f => (
-              <div key={f.id}
-                draggable
-                onDragStart={() => onDragStart(f.id)}
-                onDragOver={onDragOver}
-                onDrop={() => onDrop(f.id)}
-                className="flex items-center gap-3 px-4 py-3 hover:bg-[#F8FAFC] transition-colors"
-                style={{ borderBottom: '1px solid #F1F5F9', cursor: 'grab' }}>
-                <button className="w-6 h-6 flex items-center justify-center text-[#94A3B8] cursor-grab" title="Drag to reorder">
-                  <GripVertical className="w-4 h-4" />
-                </button>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="font-semibold text-sm" style={{ color: '#0F172A' }}>{f.label}</p>
-                    {f.required && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: '#FEE2E2', color: '#B91C1C' }}>REQUIRED</span>}
-                    {f.is_system && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: '#E0F2FE', color: '#0369A1' }}>SYSTEM</span>}
-                  </div>
-                  <p className="text-[11px] mt-0.5" style={{ color: '#94A3B8' }}>
-                    <span className="font-mono">{f.key}</span> · {FIELD_TYPES.find(t => t.value === f.type)?.label ?? f.type}
-                    {f.options && f.options.length > 0 && ` · ${f.options.length} options`}
-                  </p>
-                </div>
-                <button onClick={() => openEdit(f)}
-                  className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#F1F5F9]"
-                  style={{ color: '#94A3B8' }}>
-                  <Pencil className="w-3.5 h-3.5" />
-                </button>
-                {!f.is_system && (
-                  <button onClick={() => del(f)}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#FEF2F2]"
-                    style={{ color: '#94A3B8' }}>
-                    <Trash2 className="w-3.5 h-3.5" />
+            {fields.map(f => {
+              const isAuto = AUTO_KEYS.has(f.key);
+              return (
+                <div key={f.id}
+                  draggable
+                  onDragStart={() => onDragStart(f.id)}
+                  onDragOver={onDragOver}
+                  onDrop={() => onDrop(f.id)}
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-[#F8FAFC] transition-colors"
+                  style={{ borderBottom: '1px solid #F1F5F9', cursor: 'grab' }}>
+                  <button className="w-6 h-6 flex items-center justify-center text-[#94A3B8] cursor-grab" title="Drag to reorder">
+                    <GripVertical className="w-4 h-4" />
                   </button>
-                )}
-              </div>
-            ))}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-semibold text-sm" style={{ color: '#0F172A' }}>{f.label}</p>
+                      {f.required && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: '#FEE2E2', color: '#B91C1C' }}>REQUIRED</span>
+                      )}
+                      {f.is_system && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: '#E0F2FE', color: '#0369A1' }}>SYSTEM</span>
+                      )}
+                      {isAuto && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5" style={{ backgroundColor: '#FEF3C7', color: '#B45309' }}>
+                          <Zap className="w-2.5 h-2.5" /> AUTO
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] mt-0.5" style={{ color: '#94A3B8' }}>
+                      <span className="font-mono">{f.key}</span> · {FIELD_TYPES.find(t => t.value === f.type)?.label ?? f.type}
+                      {f.options && f.options.length > 0 && ` · ${f.options.length} options`}
+                      {f.placeholder && ` · "${f.placeholder}"`}
+                    </p>
+                  </div>
+                  <button onClick={() => openEdit(f)}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#F1F5F9]"
+                    style={{ color: '#94A3B8' }}>
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                  {!f.is_system && (
+                    <button onClick={() => del(f)}
+                      className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#FEF2F2]"
+                      style={{ color: '#94A3B8' }}>
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
 
       {/* Add / Edit modal */}
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowForm(false)}>
-          <div className="bg-white rounded-2xl w-[480px] shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: '1px solid #F1F5F9' }}>
-              <p className="font-bold" style={{ color: '#0F172A' }}>{editing ? 'Edit Field' : 'Add Contact Field'}</p>
-              <button onClick={() => setShowForm(false)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#F1F5F9]"><X className="w-4 h-4" /></button>
-            </div>
-            <div className="px-6 py-5 space-y-3">
-              {error && <p className="text-xs p-2.5 rounded-lg" style={{ backgroundColor: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>{error}</p>}
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowForm(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-[520px] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
 
-              {/* System field notice */}
-              {editing?.is_system && (
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 flex-shrink-0" style={{ borderBottom: '1px solid #F1F5F9' }}>
+              <p className="font-bold" style={{ color: '#0F172A' }}>{editing ? 'Edit Field' : 'Add Contact Field'}</p>
+              <button onClick={() => setShowForm(false)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#F1F5F9]">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Body — scrollable */}
+            <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 space-y-4">
+              {error && (
+                <p className="text-xs p-2.5 rounded-lg" style={{ backgroundColor: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>{error}</p>
+              )}
+
+              {/* System / Auto field notices */}
+              {editing && AUTO_KEYS.has(editing.key) && (
+                <div className="flex items-start gap-2 p-3 rounded-lg text-xs" style={{ backgroundColor: '#FFFBEB', color: '#B45309', border: '1px solid #FDE68A' }}>
+                  <Zap className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                  <span>This field is <strong>auto-populated</strong> when a customer opens their quote link (IP geo + device detection). You can rename the label, edit the placeholder, and manage the dropdown options.</span>
+                </div>
+              )}
+              {editing?.is_system && !AUTO_KEYS.has(editing.key) && (
                 <div className="flex items-start gap-2 p-3 rounded-lg text-xs" style={{ backgroundColor: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE' }}>
                   <span className="font-bold mt-0.5">ℹ</span>
-                  <span>This is a system field. You can rename the label and change the placeholder, but the field type and key are fixed.</span>
+                  <span>System field — you can rename the label, edit the placeholder, and manage dropdown options. The field key and type are fixed.</span>
                 </div>
               )}
 
+              {/* Label */}
               <div>
                 <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Label *</label>
-                <input className={inp} style={inpStyle} value={form.label} onChange={e => setForm(p => ({ ...p, label: e.target.value }))} placeholder="Anniversary Date" autoFocus />
+                <input className={inp} style={inpStyle} value={form.label}
+                  onChange={e => setForm(p => ({ ...p, label: e.target.value }))}
+                  placeholder="e.g. Anniversary Date" autoFocus />
               </div>
-              {!editing && (
+
+              {/* Key */}
+              {!editing ? (
                 <div>
-                  <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Key * <span className="font-normal text-[10px]" style={{ color: '#94A3B8' }}>(snake_case, immutable)</span></label>
-                  <input className={inp} style={inpStyle} value={form.key} onChange={e => setForm(p => ({ ...p, key: e.target.value.replace(/[^a-z0-9_]/gi, '_').toLowerCase() }))} placeholder="anniversary_date" />
+                  <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>
+                    Key * <span className="font-normal text-[10px]" style={{ color: '#94A3B8' }}>(snake_case, immutable once created)</span>
+                  </label>
+                  <input className={inp} style={inpStyle} value={form.key}
+                    onChange={e => setForm(p => ({ ...p, key: e.target.value.replace(/[^a-z0-9_]/gi, '_').toLowerCase() }))}
+                    placeholder="anniversary_date" />
                 </div>
-              )}
-              {editing && (
+              ) : (
                 <div>
                   <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Key <span className="font-normal text-[10px]" style={{ color: '#94A3B8' }}>(immutable)</span></label>
                   <div className="h-9 px-3 rounded-lg border flex items-center text-sm font-mono" style={{ borderColor: '#E2E8F0', backgroundColor: '#F8FAFC', color: '#64748B' }}>{editing.key}</div>
                 </div>
               )}
+
+              {/* Type */}
               <div>
                 <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Type</label>
                 {editing?.is_system ? (
-                  <div className="h-9 px-3 rounded-lg border flex items-center text-sm" style={{ borderColor: '#E2E8F0', backgroundColor: '#F8FAFC', color: '#64748B' }}>
+                  <div className="h-9 px-3 rounded-lg border flex items-center text-sm gap-2" style={{ borderColor: '#E2E8F0', backgroundColor: '#F8FAFC', color: '#64748B' }}>
                     {FIELD_TYPES.find(t => t.value === form.type)?.label ?? form.type}
-                    <span className="ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ backgroundColor: '#E0F2FE', color: '#0369A1' }}>LOCKED</span>
+                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ backgroundColor: '#E0F2FE', color: '#0369A1' }}>LOCKED</span>
                   </div>
                 ) : (
-                  <select className={inp} style={inpStyle} value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}>
+                  <select className={inp} style={inpStyle} value={form.type}
+                    onChange={e => setForm(p => ({ ...p, type: e.target.value, options: [] }))}>
                     {FIELD_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                   </select>
                 )}
               </div>
-              {(form.type === 'select' || form.type === 'multiselect') && !editing?.is_system && (
-                <div>
-                  <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Options <span className="font-normal text-[10px]" style={{ color: '#94A3B8' }}>(comma-separated)</span></label>
-                  <input className={inp} style={inpStyle} value={form.options} onChange={e => setForm(p => ({ ...p, options: e.target.value }))} placeholder="Honeymoon, Family, Adventure" />
-                </div>
+
+              {/* Options — shown for select/multiselect for BOTH system and custom fields */}
+              {isSelectType && (
+                <OptionsEditor
+                  options={form.options}
+                  onChange={opts => setForm(p => ({ ...p, options: opts }))}
+                />
               )}
+
+              {/* Placeholder — always editable */}
               <div>
-                <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Placeholder</label>
-                <input className={inp} style={inpStyle} value={form.placeholder} onChange={e => setForm(p => ({ ...p, placeholder: e.target.value }))} placeholder="e.g. dd-mm-yyyy" />
+                <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Placeholder <span className="font-normal text-[10px]" style={{ color: '#94A3B8' }}>(hint text shown in forms)</span></label>
+                <input className={inp} style={inpStyle} value={form.placeholder}
+                  onChange={e => setForm(p => ({ ...p, placeholder: e.target.value }))}
+                  placeholder="e.g. dd-mm-yyyy" />
               </div>
+
+              {/* Required */}
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" checked={form.required}
                   disabled={editing?.is_system && (editing.key === 'name' || editing.key === 'phone')}
-                  onChange={e => setForm(p => ({ ...p, required: e.target.checked }))} style={{ accentColor: T }} />
+                  onChange={e => setForm(p => ({ ...p, required: e.target.checked }))}
+                  style={{ accentColor: T }} />
                 <span className="text-sm" style={{ color: '#0F172A' }}>Required when creating a contact</span>
                 {editing?.is_system && (editing.key === 'name' || editing.key === 'phone') && (
                   <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ backgroundColor: '#E0F2FE', color: '#0369A1' }}>always required</span>
                 )}
               </label>
             </div>
-            <div className="px-6 py-4 flex gap-3" style={{ borderTop: '1px solid #F1F5F9' }}>
-              <button onClick={() => setShowForm(false)} className="flex-1 h-9 rounded-lg text-sm font-semibold" style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>Cancel</button>
+
+            {/* Footer */}
+            <div className="px-6 py-4 flex gap-3 flex-shrink-0" style={{ borderTop: '1px solid #F1F5F9' }}>
+              <button onClick={() => setShowForm(false)}
+                className="flex-1 h-9 rounded-lg text-sm font-semibold"
+                style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>
+                Cancel
+              </button>
               <button onClick={save} disabled={saving || !form.label || (!editing && !form.key)}
                 className="flex-1 h-9 rounded-lg text-sm font-bold text-white flex items-center justify-center gap-2 disabled:opacity-50"
                 style={{ backgroundColor: T }}>
@@ -300,18 +419,9 @@ export function ContactTagsTab() {
   }
   useEffect(() => { load(); }, []);
 
-  function openCreate() {
-    setEditing(null);
-    setForm({ name: '', color: TAG_COLORS[0] });
-    setError('');
-    setShowForm(true);
-  }
-  function openEdit(t: ContactTag) {
-    setEditing(t);
-    setForm({ name: t.name, color: t.color });
-    setError('');
-    setShowForm(true);
-  }
+  function openCreate() { setEditing(null); setForm({ name: '', color: TAG_COLORS[0] }); setError(''); setShowForm(true); }
+  function openEdit(t: ContactTag) { setEditing(t); setForm({ name: t.name, color: t.color }); setError(''); setShowForm(true); }
+
   async function save() {
     setSaving(true); setError('');
     const url    = editing ? `/api/v1/crm/contact-tags/${editing.id}` : '/api/v1/crm/contact-tags';
@@ -323,6 +433,7 @@ export function ContactTagsTab() {
     setShowForm(false);
     load();
   }
+
   async function del(t: ContactTag) {
     if (!confirm(`Delete tag "${t.name}"? It will be removed from all contacts that carry it.`)) return;
     await fetch(`/api/v1/crm/contact-tags/${t.id}`, { method: 'DELETE' });
@@ -359,12 +470,8 @@ export function ContactTagsTab() {
                 style={{ backgroundColor: t.color + '20', color: t.color, border: `1px solid ${t.color}40` }}>
                 <span className="w-2 h-2 rounded-full" style={{ backgroundColor: t.color }} />
                 {t.name}
-                <button onClick={() => openEdit(t)} className="opacity-0 group-hover:opacity-100 hover:opacity-80 ml-0.5" title="Edit">
-                  <Pencil className="w-3 h-3" />
-                </button>
-                <button onClick={() => del(t)} className="opacity-0 group-hover:opacity-100 hover:opacity-80" title="Delete">
-                  <X className="w-3 h-3" />
-                </button>
+                <button onClick={() => openEdit(t)} className="opacity-0 group-hover:opacity-100 hover:opacity-80 ml-0.5" title="Edit"><Pencil className="w-3 h-3" /></button>
+                <button onClick={() => del(t)} className="opacity-0 group-hover:opacity-100 hover:opacity-80" title="Delete"><X className="w-3 h-3" /></button>
               </div>
             ))}
           </div>
