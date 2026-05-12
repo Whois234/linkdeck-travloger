@@ -2055,7 +2055,7 @@ export default function CreateQuotePage() {
       )}
 
       {/* ── Navigation buttons ── */}
-      {step < (quoteType === 'PRIVATE' ? 6 : 3) && (
+      {step < (quoteType === 'PRIVATE' ? 7 : 3) && (
         <div className="flex items-center justify-between mt-6 pt-5" style={{ borderTop: '1px solid #F1F5F9' }}>
           <button onClick={goBack} disabled={step === 1}
             className="h-9 px-4 rounded-lg text-sm font-semibold text-[#64748B] hover:bg-[#F8FAFC] disabled:opacity-30"
