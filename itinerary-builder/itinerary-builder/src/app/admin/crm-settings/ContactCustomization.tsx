@@ -148,11 +148,12 @@ export function ContactFieldsTab() {
     const isSelectType = form.type === 'select' || form.type === 'multiselect';
     const payload = {
       label:       form.label,
-      type:        editing?.is_system ? undefined : form.type,  // system fields: type locked
+      type:        form.type,
       required:    form.required,
       placeholder: form.placeholder || null,
       options:     isSelectType ? form.options : null,
-      ...(editing ? {} : { key: form.key.toLowerCase() }),
+      // Always send key — on create use form.key, on edit use current form.key (allows renaming)
+      key:         form.key.toLowerCase().replace(/[^a-z0-9_]/g, '_'),
     };
     const url    = editing ? `/api/v1/crm/contact-fields/${editing.id}` : '/api/v1/crm/contact-fields';
     const method = editing ? 'PATCH' : 'POST';
@@ -290,17 +291,11 @@ export function ContactFieldsTab() {
                 <p className="text-xs p-2.5 rounded-lg" style={{ backgroundColor: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>{error}</p>
               )}
 
-              {/* System / Auto field notices */}
+              {/* Auto field notice */}
               {editing && AUTO_KEYS.has(editing.key) && (
                 <div className="flex items-start gap-2 p-3 rounded-lg text-xs" style={{ backgroundColor: '#FFFBEB', color: '#B45309', border: '1px solid #FDE68A' }}>
                   <Zap className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
-                  <span>This field is <strong>auto-populated</strong> when a customer opens their quote link (IP geo + device detection). You can rename the label, edit the placeholder, and manage the dropdown options.</span>
-                </div>
-              )}
-              {editing?.is_system && !AUTO_KEYS.has(editing.key) && (
-                <div className="flex items-start gap-2 p-3 rounded-lg text-xs" style={{ backgroundColor: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE' }}>
-                  <span className="font-bold mt-0.5">ℹ</span>
-                  <span>System field — you can rename the label, edit the placeholder, and manage dropdown options. The field key and type are fixed.</span>
+                  <span>This field is <strong>auto-populated</strong> when a customer opens their quote link (IP geo + device detection).</span>
                 </div>
               )}
 
@@ -312,37 +307,23 @@ export function ContactFieldsTab() {
                   placeholder="e.g. Anniversary Date" autoFocus />
               </div>
 
-              {/* Key */}
-              {!editing ? (
-                <div>
-                  <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>
-                    Key * <span className="font-normal text-[10px]" style={{ color: '#94A3B8' }}>(snake_case, immutable once created)</span>
-                  </label>
-                  <input className={inp} style={inpStyle} value={form.key}
-                    onChange={e => setForm(p => ({ ...p, key: e.target.value.replace(/[^a-z0-9_]/gi, '_').toLowerCase() }))}
-                    placeholder="anniversary_date" />
-                </div>
-              ) : (
-                <div>
-                  <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Key <span className="font-normal text-[10px]" style={{ color: '#94A3B8' }}>(immutable)</span></label>
-                  <div className="h-9 px-3 rounded-lg border flex items-center text-sm font-mono" style={{ borderColor: '#E2E8F0', backgroundColor: '#F8FAFC', color: '#64748B' }}>{editing.key}</div>
-                </div>
-              )}
+              {/* Key — always editable */}
+              <div>
+                <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>
+                  Key * <span className="font-normal text-[10px]" style={{ color: '#94A3B8' }}>(snake_case)</span>
+                </label>
+                <input className={inp} style={inpStyle} value={form.key}
+                  onChange={e => setForm(p => ({ ...p, key: e.target.value.replace(/[^a-z0-9_]/gi, '_').toLowerCase() }))}
+                  placeholder="anniversary_date" />
+              </div>
 
-              {/* Type */}
+              {/* Type — always editable */}
               <div>
                 <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Type</label>
-                {editing?.is_system ? (
-                  <div className="h-9 px-3 rounded-lg border flex items-center text-sm gap-2" style={{ borderColor: '#E2E8F0', backgroundColor: '#F8FAFC', color: '#64748B' }}>
-                    {FIELD_TYPES.find(t => t.value === form.type)?.label ?? form.type}
-                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ backgroundColor: '#E0F2FE', color: '#0369A1' }}>LOCKED</span>
-                  </div>
-                ) : (
-                  <select className={inp} style={inpStyle} value={form.type}
-                    onChange={e => setForm(p => ({ ...p, type: e.target.value, options: [] }))}>
-                    {FIELD_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                  </select>
-                )}
+                <select className={inp} style={inpStyle} value={form.type}
+                  onChange={e => setForm(p => ({ ...p, type: e.target.value, options: [] }))}>
+                  {FIELD_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </select>
               </div>
 
               {/* Options — shown for select/multiselect for BOTH system and custom fields */}
@@ -364,13 +345,9 @@ export function ContactFieldsTab() {
               {/* Required */}
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" checked={form.required}
-                  disabled={editing?.is_system && (editing.key === 'name' || editing.key === 'phone')}
                   onChange={e => setForm(p => ({ ...p, required: e.target.checked }))}
                   style={{ accentColor: T }} />
                 <span className="text-sm" style={{ color: '#0F172A' }}>Required when creating a contact</span>
-                {editing?.is_system && (editing.key === 'name' || editing.key === 'phone') && (
-                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ backgroundColor: '#E0F2FE', color: '#0369A1' }}>always required</span>
-                )}
               </label>
             </div>
 

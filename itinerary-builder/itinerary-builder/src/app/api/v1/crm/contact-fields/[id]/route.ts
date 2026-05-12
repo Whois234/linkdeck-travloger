@@ -8,6 +8,7 @@ import { z } from 'zod';
 const FIELD_TYPES = ['text', 'email', 'phone', 'number', 'date', 'select', 'multiselect', 'textarea', 'url'] as const;
 
 const patchSchema = z.object({
+  key:         z.string().min(1).regex(/^[a-z0-9_]+$/, 'Key must be lowercase snake_case').optional(),
   label:       z.string().min(1).optional(),
   type:        z.enum(FIELD_TYPES).optional(),
   required:    z.boolean().optional(),
