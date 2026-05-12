@@ -139,34 +139,62 @@ export async function POST(req: NextRequest) {
       data: { lead_id: finalLeadId, type: 'quote_created', metadata: { quote_id: quote.id, quote_number: quote.quote_number }, created_by: user.sub },
     }).catch(() => {});
   } else {
-    try {
-      const customer = await prisma.customer.findUnique({ where: { id: quote.customer_id } });
-      if (customer?.phone) {
-        const normalizedPhone = customer.phone.replace(/[\s\-\(\)]/g, '');
+    // Auto-link: find or create a pipeline lead for this customer.
+    // Each step has its own error handling so a failure in one step doesn't
+    // silently kill the entire chain.
+    const customer = await prisma.customer.findUnique({ where: { id: quote.customer_id } }).catch(() => null);
 
-        // 1. Find existing CrmContact by phone
-        let contact = await prisma.crmContact.findFirst({
-          where: { OR: [{ phone: normalizedPhone }, { phone: customer.phone }] },
-        });
+    if (customer?.phone) {
+      const rawPhone = customer.phone;
+      const normalizedPhone = rawPhone.replace(/[\s\-\(\)]/g, '');
 
-        // 2. Find existing active (non-converted) lead for this contact
-        let lead = contact
-          ? await prisma.lead.findFirst({
-              where: { crm_contact_id: contact.id, is_converted: false },
-              orderBy: { created_at: 'desc' },
-            })
-          : null;
+      // 1. Find existing CrmContact by phone (try both forms)
+      let contact = await prisma.crmContact.findFirst({
+        where: { OR: [{ phone: normalizedPhone }, { phone: rawPhone }] },
+      }).catch(() => null);
 
-        // 3. If no lead yet, create CrmContact + Lead in default pipeline
-        if (!lead) {
-          if (!contact) {
-            contact = await prisma.crmContact.create({
-              data: { name: customer.name, phone: normalizedPhone, owner_id: user.sub },
-            });
+      // 2. Find existing active (non-converted) lead for this contact
+      let lead = contact
+        ? await prisma.lead.findFirst({
+            where: { crm_contact_id: contact.id, is_converted: false },
+            orderBy: { created_at: 'desc' },
+          }).catch(() => null)
+        : null;
+
+      // 3. Create CrmContact if missing
+      if (!contact) {
+        try {
+          contact = await prisma.crmContact.create({
+            data: { name: customer.name, phone: normalizedPhone, owner_id: user.sub },
+          });
+        } catch (e) {
+          // Might already exist due to race — try to fetch again
+          contact = await prisma.crmContact.findFirst({
+            where: { OR: [{ phone: normalizedPhone }, { phone: rawPhone }] },
+          }).catch(() => null);
+          if (!contact) console.error('[quotes/POST] crmContact.create failed:', e);
+        }
+      }
+
+      // 4. Create pipeline Lead if missing
+      if (!lead && contact) {
+        try {
+          // Look for ANY pipeline (prefer default, fall back to first active)
+          let defaultPipeline = await prisma.pipeline.findFirst({
+            where: { is_default: true, status: true },
+          }).catch(() => null);
+          if (!defaultPipeline) {
+            defaultPipeline = await prisma.pipeline.findFirst({
+              where: { status: true },
+              orderBy: { created_at: 'asc' },
+            }).catch(() => null);
           }
-          const defaultPipeline = await prisma.pipeline.findFirst({ where: { is_default: true, status: true } });
+
           const firstStage = defaultPipeline
-            ? await prisma.pipelineStage.findFirst({ where: { pipeline_id: defaultPipeline.id, status: true }, orderBy: { order: 'asc' } })
+            ? await prisma.pipelineStage.findFirst({
+                where: { pipeline_id: defaultPipeline.id, status: true },
+                orderBy: { order: 'asc' },
+              }).catch(() => null)
             : null;
 
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -180,18 +208,28 @@ export async function POST(req: NextRequest) {
               owner_id:       user.sub,
             } as any,
           });
+        } catch (e) {
+          console.error('[quotes/POST] lead.create failed:', e);
         }
-
-        // 4. Link quote → lead
-        await prisma.quote.update({ where: { id: quote.id }, data: { lead_id: lead.id } });
-        finalLeadId = lead.id;
-
-        // 5. Log activity on lead
-        await prisma.leadActivity.create({
-          data: { lead_id: lead.id, type: 'quote_created', metadata: { quote_id: quote.id, quote_number: quote.quote_number }, created_by: user.sub },
-        });
       }
-    } catch { /* non-blocking — quote is created regardless */ }
+
+      // 5. Link quote → lead
+      if (lead) {
+        try {
+          await prisma.quote.update({ where: { id: quote.id }, data: { lead_id: lead.id } });
+          finalLeadId = lead.id;
+        } catch (e) {
+          console.error('[quotes/POST] quote.update(lead_id) failed:', e);
+        }
+      }
+
+      // 6. Log activity on lead (non-critical)
+      if (lead) {
+        prisma.leadActivity.create({
+          data: { lead_id: lead.id, type: 'quote_created', metadata: { quote_id: quote.id, quote_number: quote.quote_number }, created_by: user.sub },
+        }).catch(e => console.error('[quotes/POST] leadActivity.create failed:', e));
+      }
+    }
   }
 
   return created({ ...quote, lead_id: finalLeadId });
