@@ -1,9 +1,9 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { PageHeader } from '@/components/admin/PageHeader';
-import { User, Mail, Shield, KeyRound, Check, Eye, EyeOff } from 'lucide-react';
+import { User, Mail, Shield, KeyRound, Check, Eye, EyeOff, Phone } from 'lucide-react';
 
-interface AuthUser { id: string; name: string; email: string; role: string }
+interface AuthUser { id: string; name: string; email: string; role: string; phone?: string | null; gender?: string | null }
 
 const inp = 'w-full h-10 px-3 rounded-lg border text-sm placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white transition-colors';
 const inpStyle = { borderColor: '#E2E8F0' };
@@ -18,6 +18,8 @@ export default function ProfilePage() {
   // Profile form
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [gender, setGender] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileSuccess, setProfileSuccess] = useState(false);
   const [profileError, setProfileError] = useState('');
@@ -39,6 +41,8 @@ export default function ProfilePage() {
         setUser(d.data);
         setName(d.data.name);
         setEmail(d.data.email);
+        setPhone(d.data.phone ?? '');
+        setGender(d.data.gender ?? '');
       }
       setLoading(false);
     }).catch(() => setLoading(false));
@@ -51,7 +55,7 @@ export default function ProfilePage() {
       const res = await fetch('/api/v1/auth/me', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email }),
+        body: JSON.stringify({ name, email, phone: phone || '', gender: gender || '' }),
       });
       if (res.ok) {
         setProfileSuccess(true);
@@ -147,6 +151,22 @@ export default function ProfilePage() {
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: '#94A3B8' }} />
                   <input type="email" className={inp} style={{ ...inpStyle, paddingLeft: '2.25rem' }} value={email} onChange={e => setEmail(e.target.value)} placeholder="your@email.com" />
                 </div>
+              </div>
+              <div>
+                <label className={lbl} style={lblStyle}>Phone Number</label>
+                <div className="relative">
+                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: '#94A3B8' }} />
+                  <input type="tel" className={inp} style={{ ...inpStyle, paddingLeft: '2.25rem' }} value={phone} onChange={e => setPhone(e.target.value)} placeholder="+91 98765 43210" />
+                </div>
+              </div>
+              <div>
+                <label className={lbl} style={lblStyle}>Gender</label>
+                <select className={inp} style={inpStyle} value={gender} onChange={e => setGender(e.target.value)}>
+                  <option value="">Prefer not to say</option>
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                  <option value="other">Other</option>
+                </select>
               </div>
               <div>
                 <label className={lbl} style={lblStyle}>Role</label>

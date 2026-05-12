@@ -123,6 +123,7 @@ export async function GET(req: NextRequest) {
   const includeDeleted = searchParams.get('include_deleted') === 'true';
   const deletedOnly    = searchParams.get('deleted_only') === 'true';
   const hasPipeline    = searchParams.get('has_pipeline'); // 'true' | 'false' | null
+  const untouched      = searchParams.get('untouched');    // 'true' = no calls/notes on any lead
 
   // Auto-purge contacts soft-deleted more than 30 days ago (run opportunistically on deleted_only fetch)
   if (deletedOnly) {
@@ -171,6 +172,8 @@ export async function GET(req: NextRequest) {
     // Pipeline presence filter
     ...(hasPipeline === 'true'  ? { leads: { some: { pipeline_id: { not: null } } } } : {}),
     ...(hasPipeline === 'false' ? { NOT: { leads: { some: { pipeline_id: { not: null } } } } } : {}),
+    // Untouched filter: contacts with no leads that have call logs or lead notes
+    ...(untouched === 'true' ? { NOT: { leads: { some: { OR: [{ call_logs: { some: {} } }, { lead_notes: { some: {} } }] } } } } : {}),
   };
 
   // Sort

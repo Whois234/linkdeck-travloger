@@ -860,8 +860,16 @@ export default function ContactsPage() {
   const [tagFilter, setTagFilter] = useState<string[]>([]);
   const [showTagFilter, setShowTagFilter] = useState(false);
 
-  // Pipeline presence filter (clicked from stats bar)
-  const [pipelineScope, setPipelineScope] = useState<'with' | 'without' | null>(null);
+  // Stats bar quick-filter scope
+  const [pipelineScope,  setPipelineScope]  = useState<'with' | 'without' | null>(null);
+  const [untouchedScope, setUntouchedScope] = useState(false);
+
+  // Accurate stats from dedicated endpoint (role-aware, always reflects true totals)
+  const [barStats, setBarStats] = useState({ total: 0, withPipeline: 0, withoutPipeline: 0, untouched: 0 });
+  function refreshStats() {
+    fetch('/api/v1/crm/contacts/stats').then(r => r.json()).then(d => { if (d.success) setBarStats(d.data); }).catch(() => {});
+  }
+  useEffect(() => { refreshStats(); }, []);
 
   // New filters per Part 4 spec
   const [stageFilter,       setStageFilter]       = useState<LeadStage[]>([]);
@@ -894,7 +902,7 @@ export default function ContactsPage() {
   }, [search]);
 
   // Reset to page 1 when filters change
-  useEffect(() => { setPage(1); }, [sortBy, dateRange, dateFrom, dateTo, tagFilter, stageFilter, sourceFilter, assignedFilter, destinationFilter, tripTypeFilter, perPage, pipelineScope]);
+  useEffect(() => { setPage(1); }, [sortBy, dateRange, dateFrom, dateTo, tagFilter, stageFilter, sourceFilter, assignedFilter, destinationFilter, tripTypeFilter, perPage, pipelineScope, untouchedScope]);
 
   // Destinations seen in the loaded contact set — for the destination filter dropdown.
   // (For now this is a static list of common destinations + whatever appears in the current page.)
@@ -912,6 +920,7 @@ export default function ContactsPage() {
     setAssignedFilter(''); setDestinationFilter('');
     setTripTypeFilter('');
     setPipelineScope(null);
+    setUntouchedScope(false);
   }
 
   const activeFilterCount =
@@ -944,6 +953,7 @@ export default function ContactsPage() {
   if (tripTypeFilter)                     contactParams.set('trip_type', tripTypeFilter);
   if (pipelineScope === 'with')           contactParams.set('has_pipeline', 'true');
   if (pipelineScope === 'without')        contactParams.set('has_pipeline', 'false');
+  if (untouchedScope)                     contactParams.set('untouched', 'true');
   contactParams.set('page', String(page));
   contactParams.set('limit', perPage === 'ALL' ? '9999' : String(perPage));
 
@@ -973,11 +983,7 @@ export default function ContactsPage() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // Page-level stats (computed from current page; totals come from API)
-  const paginated       = contacts;   // already server-paginated
-  const withPipeline    = contacts.filter(c => c.leads.some(l => l.pipeline !== null)).length;
-  const withoutPipeline = contacts.filter(c => c.leads.every(l => l.pipeline === null) || c.leads.length === 0).length;
-  const untouched       = contacts.filter(c => c.leads.every(l => (l._count?.call_logs ?? 0) + (l._count?.lead_notes ?? 0) === 0)).length;
+  const paginated = contacts; // server-paginated
 
   const [bulkDeleting, setBulkDeleting]         = useState(false);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
@@ -1565,35 +1571,53 @@ export default function ContactsPage() {
           {/* Stats + Pagination bar (Bigin-style) */}
           <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 bg-white text-xs" style={{ borderTop: '1px solid #E2E8F0', color: '#64748B' }}>
             <div className="flex items-center gap-4 flex-wrap">
-              <button onClick={() => { setPipelineScope(null); setPage(1); }}
-                className="transition-colors"
-                style={{ color: pipelineScope === null ? '#0F172A' : '#94A3B8', fontWeight: pipelineScope === null ? 700 : 400 }}>
-                Total Contacts <span className="font-bold" style={{ color: pipelineScope === null ? '#134956' : '#0F172A' }}>{totalCount.toLocaleString()}</span>
+              {/* Total Contacts — clears all scope filters */}
+              <button
+                onClick={() => { setPipelineScope(null); setUntouchedScope(false); setPage(1); }}
+                className="transition-colors rounded px-1 -mx-1"
+                style={{
+                  color: (!pipelineScope && !untouchedScope) ? '#134956' : '#64748B',
+                  backgroundColor: (!pipelineScope && !untouchedScope) ? '#EFF6FF' : 'transparent',
+                  fontWeight: (!pipelineScope && !untouchedScope) ? 700 : 400,
+                }}>
+                Total Contacts <span className="font-bold" style={{ color: '#0F172A' }}>{barStats.total.toLocaleString()}</span>
               </button>
               <span className="text-[#CBD5E1]">·</span>
+              {/* With Open Pipelines */}
               <button
-                onClick={() => { setPipelineScope(pipelineScope === 'with' ? null : 'with'); setPage(1); }}
+                onClick={() => { setPipelineScope(pipelineScope === 'with' ? null : 'with'); setUntouchedScope(false); setPage(1); }}
                 className="transition-colors rounded px-1 -mx-1"
                 style={{
                   color: pipelineScope === 'with' ? '#134956' : '#64748B',
                   backgroundColor: pipelineScope === 'with' ? '#EFF6FF' : 'transparent',
                   fontWeight: pipelineScope === 'with' ? 600 : 400,
                 }}>
-                With Open Pipelines <span className="font-bold" style={{ color: '#0F172A' }}>{withPipeline.toLocaleString()}</span>
+                With Open Pipelines <span className="font-bold" style={{ color: '#0F172A' }}>{barStats.withPipeline.toLocaleString()}</span>
               </button>
               <span className="text-[#CBD5E1]">·</span>
+              {/* Without Pipelines */}
               <button
-                onClick={() => { setPipelineScope(pipelineScope === 'without' ? null : 'without'); setPage(1); }}
+                onClick={() => { setPipelineScope(pipelineScope === 'without' ? null : 'without'); setUntouchedScope(false); setPage(1); }}
                 className="transition-colors rounded px-1 -mx-1"
                 style={{
                   color: pipelineScope === 'without' ? '#134956' : '#64748B',
                   backgroundColor: pipelineScope === 'without' ? '#EFF6FF' : 'transparent',
                   fontWeight: pipelineScope === 'without' ? 600 : 400,
                 }}>
-                Without Pipelines <span className="font-bold" style={{ color: '#0F172A' }}>{withoutPipeline.toLocaleString()}</span>
+                Without Pipelines <span className="font-bold" style={{ color: '#0F172A' }}>{barStats.withoutPipeline.toLocaleString()}</span>
               </button>
               <span className="text-[#CBD5E1]">·</span>
-              <span>Untouched <span className="font-bold" style={{ color: '#0F172A' }}>{untouched.toLocaleString()}</span></span>
+              {/* Untouched — no calls or notes on any lead */}
+              <button
+                onClick={() => { setUntouchedScope(v => !v); setPipelineScope(null); setPage(1); }}
+                className="transition-colors rounded px-1 -mx-1"
+                style={{
+                  color: untouchedScope ? '#134956' : '#64748B',
+                  backgroundColor: untouchedScope ? '#EFF6FF' : 'transparent',
+                  fontWeight: untouchedScope ? 600 : 400,
+                }}>
+                Untouched <span className="font-bold" style={{ color: '#0F172A' }}>{barStats.untouched.toLocaleString()}</span>
+              </button>
             </div>
             {totalCount > 0 && (
               <div className="flex items-center gap-3">
