@@ -377,8 +377,10 @@ export default function TemplateEditPage() {
   );
   if (!tpl) return <div className="py-20 text-center text-sm text-[#64748B]">Template not found.</div>;
 
-  // Use tplSettings.destination_ids as the canonical ordered list — it's what gets saved
-  const destList = tplSettings.destination_ids;
+  // For hotel sections: only show destinations already saved in the DB, in the current drag order.
+  // tplSettings.destination_ids may contain unsaved additions (which would inflate night counts).
+  const _savedDestSet = new Set((tpl.destinations as string[]) ?? []);
+  const destList = tplSettings.destination_ids.filter(id => _savedDestSet.has(id));
 
   return (
     <div className="max-w-[1200px]">
