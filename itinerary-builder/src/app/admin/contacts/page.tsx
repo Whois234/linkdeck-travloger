@@ -247,7 +247,7 @@ const DEV_META: Record<string, { label: string; icon: React.ReactNode }> = {
   DESKTOP: { label: 'Desktop', icon: <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg> },
 };
 
-function getPlatformMeta(val: string | null) {
+function getPlatformMeta(val: string | null | undefined) {
   if (!val) return null;
   return PLATFORM_META[val.toLowerCase().replace(/[^a-z0-9]/g, '_')] ?? PLATFORM_META[val.toLowerCase()] ?? { label: val.replace(/_/g, ' '), bg: '#64748B12', color: '#475569', icon: null };
 }
