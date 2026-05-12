@@ -251,6 +251,16 @@ export default function CreateQuotePage() {
     }, 0);
   }
 
+  /* ─── Auto-suggest vehicle when entering step 4 ─── */
+  useEffect(() => {
+    if (step !== 4 || !vehTypes.length || vehicleTypeId) return;
+    const totalPax = adults + children512; // total pax to seat
+    // Pick smallest vehicle type whose capacity >= totalPax, else largest available
+    const sorted = [...vehTypes].sort((a, b) => a.capacity - b.capacity);
+    const fit    = sorted.find(v => v.capacity >= totalPax) ?? sorted[sorted.length - 1];
+    if (fit) autoFillVehicle(fit.id);
+  }, [step, vehTypes]);
+
   /* ─── Load templates when step 2 is reached ─── */
   useEffect(() => {
     if (step !== 2 || !stateIds.length) return;
@@ -462,18 +472,19 @@ export default function CreateQuotePage() {
   }
 
   /* ─── Live comparison calc ─── */
-  function liveCalc(opt: OptionDraft) {
-    const hotelTotal  = opt.hotels.reduce((s, h) => s + effectivePrice(h), 0);
-    const baseCost    = hotelTotal + vehicleCost;
-    const profitAmt   = profitType === 'PERCENTAGE' ? baseCost * profitValue / 100 : profitValue;
-    const beforeGst   = Math.max(0, baseCost + profitAmt);
-    const discountAmt = discountValue > 0
+  function liveCalc(opt: OptionDraft, oi: number = 0) {
+    const hotelTotal   = opt.hotels.reduce((s, h) => s + effectivePrice(h), 0);
+    const activityCost = computeActivityCost(oi);
+    const baseCost     = hotelTotal + vehicleCost + activityCost;
+    const profitAmt    = profitType === 'PERCENTAGE' ? baseCost * profitValue / 100 : profitValue;
+    const beforeGst    = Math.max(0, baseCost + profitAmt);
+    const discountAmt  = discountValue > 0
       ? (discountType === 'PERCENTAGE' ? beforeGst * discountValue / 100 : discountValue)
       : 0;
-    const afterDiscount = Math.max(0, beforeGst - discountAmt);
+    const afterDiscount  = Math.max(0, beforeGst - discountAmt);
     const effectiveGstPct = includeGst ? gstPercent : 0;
-    const gstAmt      = afterDiscount * effectiveGstPct / 100;
-    return { hotelTotal, baseCost, profitAmt, beforeGst, discountAmt, afterDiscount, gstAmt, total: afterDiscount + gstAmt };
+    const gstAmt         = afterDiscount * effectiveGstPct / 100;
+    return { hotelTotal, activityCost, baseCost, profitAmt, beforeGst, discountAmt, afterDiscount, gstAmt, total: afterDiscount + gstAmt };
   }
 
   /* ─── Create/ensure customer ─── */
@@ -1504,6 +1515,19 @@ export default function CreateQuotePage() {
           <div className="bg-white rounded-2xl p-5" style={card}>
             <p className="text-sm font-bold text-[#0F172A] mb-1">Vehicle Selection</p>
             <p className="text-xs text-[#94A3B8]">One vehicle applies to all package options · {durationDays}D trip</p>
+            {/* Auto-suggest badge */}
+            {(() => {
+              const totalPax = adults + children512;
+              const sorted   = [...vehTypes].sort((a, b) => a.capacity - b.capacity);
+              const fit      = sorted.find(v => v.capacity >= totalPax) ?? sorted[sorted.length - 1];
+              return fit ? (
+                <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold"
+                  style={{ backgroundColor: `${T}12`, color: T }}>
+                  <Users className="w-3 h-3" />
+                  {totalPax} pax → {fit.display_name} ({fit.capacity} seats) suggested
+                </div>
+              ) : null;
+            })()}
             {(pickupLocation || dropLocation) && (
               <div className="mt-2 flex items-center gap-3 text-xs" style={{ color: '#64748B' }}>
                 <MapPin className="w-3.5 h-3.5 flex-shrink-0" style={{ color: T }} />
@@ -1909,6 +1933,7 @@ export default function CreateQuotePage() {
                   {[
                     { label: 'Hotel B2B',   fn: (c: ReturnType<typeof liveCalc>) => c.hotelTotal },
                     { label: 'Vehicle',     fn: () => vehicleCost },
+                    { label: 'Activities',  fn: (c: ReturnType<typeof liveCalc>) => c.activityCost },
                     { label: 'B2B Subtotal',fn: (c: ReturnType<typeof liveCalc>) => c.baseCost,   bold: true },
                     { label: `Profit ${profitType === 'PERCENTAGE' ? `(${profitValue}%)` : '(flat)'}`, fn: (c: ReturnType<typeof liveCalc>) => c.profitAmt, green: true },
                     { label: 'Before Discount', fn: (c: ReturnType<typeof liveCalc>) => c.beforeGst },
@@ -1920,7 +1945,7 @@ export default function CreateQuotePage() {
                     <tr key={ri} style={{ borderTop: '1px solid #F1F5F9', backgroundColor: row.bold ? '#F8FAFC' : 'white' }}>
                       <td className="px-4 py-2.5 text-xs text-[#64748B]" style={{ fontWeight: row.bold ? 700 : 400 }}>{row.label}</td>
                       {options.map((opt, oi) => {
-                        const c   = liveCalc(opt);
+                        const c   = liveCalc(opt, oi);
                         const val = row.fn(c);
                         const isNeg = val < 0;
                         return (
@@ -1943,7 +1968,7 @@ export default function CreateQuotePage() {
               <p className="text-xs font-bold text-[#64748B] mb-2">Price Per Adult</p>
               <div className="flex gap-3">
                 {options.map((opt, oi) => {
-                  const c = liveCalc(opt);
+                  const c = liveCalc(opt, oi);
                   return (
                     <div key={oi} className="flex-1 p-3 rounded-xl text-center" style={{ backgroundColor: `${T}08`, border: `1px solid ${T}20` }}>
                       <p className="text-[10px] font-bold text-[#64748B]">{opt.name}</p>
