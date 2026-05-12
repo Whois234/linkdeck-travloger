@@ -9,7 +9,7 @@ import {
   ChevronDown, ChevronRight, Plus, Trash2, Check,
   Save, Star, Image as ImgIcon, FileText, LayoutList,
   MapPin, Shield, HelpCircle, BookOpen, Calendar,
-  Users, X, GripVertical, ListPlus,
+  Users, X, GripVertical, ListPlus, Eye,
 } from 'lucide-react';
 
 /* ── Style tokens ── */
@@ -142,7 +142,6 @@ const SECTIONS = [
   { id: 'batches', label: 'Batches',           icon: Calendar   },
   { id: 'covered', label: "What's Covered",    icon: Check      },
   { id: 'why',      label: 'Why Choose',        icon: Star       },
-  { id: 'incl_excl', label: 'Incl / Excl',    icon: ListPlus   },
   { id: 'policy',  label: 'Policies',          icon: Shield     },
   { id: 'faq',     label: 'FAQs',              icon: HelpCircle },
   { id: 'terms',   label: 'Terms',             icon: BookOpen   },
@@ -168,6 +167,7 @@ export default function GroupTemplateEditPage() {
   const [activeSection, setActiveSection] = useState('hero');
   const [expandedDays, setExpandedDays]   = useState<Set<number>>(new Set([1]));
   const [selectedPolicies, setSelectedPolicies] = useState<string[]>([]);
+  const [showPreview, setShowPreview] = useState(false);
 
   /* Drag-and-drop ref: tracks { field, from } while dragging */
   const dragRef = useRef<{ field: string; from: number } | null>(null);
@@ -396,6 +396,11 @@ export default function GroupTemplateEditPage() {
         crumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Group Templates', href: '/admin/group-templates' }, { label: tpl.group_template_name || 'Edit' }]}
         action={
           <div className="flex gap-2">
+            <button onClick={() => setShowPreview(true)}
+              className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold border hover:bg-slate-50 transition-colors"
+              style={{ borderColor: '#E2E8F0', color: '#64748B' }}>
+              <Eye className="w-4 h-4" /> Preview
+            </button>
             <button onClick={() => save(false)} disabled={saving}
               className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold disabled:opacity-50 hover:opacity-90"
               style={{ backgroundColor: saved ? '#22c55e' : T, color: 'white' }}>
@@ -1321,69 +1326,6 @@ export default function GroupTemplateEditPage() {
             </div>
           )}
 
-          {/* ═══ INCLUSIONS / EXCLUSIONS ═══ */}
-          {activeSection === 'incl_excl' && (
-            <div className="bg-white rounded-2xl p-6" style={card}>
-              <SectionHeader title="Inclusions & Exclusions" desc="List what is included and excluded in this package." />
-              <div className="grid grid-cols-2 gap-6">
-                {/* Inclusions */}
-                <div>
-                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#15803D' }}>✓ Inclusions</p>
-                  <div className="flex flex-col gap-2">
-                    {(cms.inclusions ?? []).map((item, i) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <span className="text-green-500 flex-shrink-0">•</span>
-                        <input
-                          className="flex-1 h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white"
-                          style={{ borderColor: '#E2E8F0' }}
-                          value={item}
-                          placeholder="e.g. Accommodation on twin sharing"
-                          onChange={e => {
-                            const arr = [...(cms.inclusions ?? [])];
-                            arr[i] = e.target.value;
-                            updCms('inclusions', arr);
-                          }} />
-                        <button onClick={() => updCms('inclusions', (cms.inclusions ?? []).filter((_, j) => j !== i))}
-                          className="text-[#94A3B8] hover:text-red-500 flex-shrink-0"><Trash2 className="w-4 h-4" /></button>
-                      </div>
-                    ))}
-                  </div>
-                  <button onClick={() => updCms('inclusions', [...(cms.inclusions ?? []), ''])}
-                    className="flex items-center gap-2 text-sm font-semibold mt-3" style={{ color: '#15803D' }}>
-                    <Plus className="w-4 h-4" /> Add Inclusion
-                  </button>
-                </div>
-                {/* Exclusions */}
-                <div>
-                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#DC2626' }}>✕ Exclusions</p>
-                  <div className="flex flex-col gap-2">
-                    {(cms.exclusions ?? []).map((item, i) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <span className="text-red-500 flex-shrink-0">•</span>
-                        <input
-                          className="flex-1 h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white"
-                          style={{ borderColor: '#E2E8F0' }}
-                          value={item}
-                          placeholder="e.g. Airfare / train tickets"
-                          onChange={e => {
-                            const arr = [...(cms.exclusions ?? [])];
-                            arr[i] = e.target.value;
-                            updCms('exclusions', arr);
-                          }} />
-                        <button onClick={() => updCms('exclusions', (cms.exclusions ?? []).filter((_, j) => j !== i))}
-                          className="text-[#94A3B8] hover:text-red-500 flex-shrink-0"><Trash2 className="w-4 h-4" /></button>
-                      </div>
-                    ))}
-                  </div>
-                  <button onClick={() => updCms('exclusions', [...(cms.exclusions ?? []), ''])}
-                    className="flex items-center gap-2 text-sm font-semibold mt-3" style={{ color: '#DC2626' }}>
-                    <Plus className="w-4 h-4" /> Add Exclusion
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* ═══ POLICIES ═══ */}
           {activeSection === 'policy' && (
             <div className="bg-white rounded-2xl p-6" style={card}>
@@ -1611,6 +1553,150 @@ export default function GroupTemplateEditPage() {
           </button>
         </div>
       </Modal>
+
+      {/* ═══ PREVIEW DRAWER ═══ */}
+      {showPreview && (
+        <div className="fixed inset-0 z-50 flex justify-end" style={{ background: 'rgba(0,0,0,0.45)' }} onClick={() => setShowPreview(false)}>
+          <div className="relative h-full w-full max-w-[520px] bg-white overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="sticky top-0 z-10 bg-white flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #E2E8F0' }}>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: T }}>Template Preview</p>
+                <p className="text-sm font-bold text-[#0F172A] mt-0.5">{tpl.group_template_name}</p>
+              </div>
+              <button onClick={() => setShowPreview(false)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-slate-100" style={{ color: '#64748B' }}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 flex flex-col gap-6">
+
+              {/* Hero */}
+              {(cms.hero_image_url || cms.title || cms.subtitle) && (
+                <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
+                  {cms.hero_image_url && (
+                    <div className="relative h-44 bg-slate-100">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={cms.hero_image_url} alt="Hero" className="w-full h-full object-cover" />
+                      <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.55), transparent)' }} />
+                      <div className="absolute bottom-0 left-0 p-4">
+                        {cms.title && <p className="text-white font-bold text-lg leading-tight">{cms.title}</p>}
+                        {cms.subtitle && <p className="text-white/80 text-xs mt-0.5">{cms.subtitle}</p>}
+                      </div>
+                    </div>
+                  )}
+                  {!cms.hero_image_url && (
+                    <div className="p-4" style={{ background: `${T}10` }}>
+                      {cms.title && <p className="font-bold text-base text-[#0F172A]">{cms.title}</p>}
+                      {cms.subtitle && <p className="text-sm text-[#64748B] mt-1">{cms.subtitle}</p>}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Destination Cards */}
+              {(cms.destination_cards ?? []).length > 0 && (
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#64748B' }}>Destinations</p>
+                  <div className="flex flex-wrap gap-2">
+                    {(cms.destination_cards ?? []).map((dc, i) => (
+                      <div key={i} className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium text-white" style={{ background: T }}>
+                        <MapPin className="w-3 h-3" />
+                        {dc.custom_name || dc.name}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Inclusions / Exclusions */}
+              {((cms.inclusions ?? []).length > 0 || (cms.exclusions ?? []).length > 0) && (
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#64748B' }}>What&apos;s Covered</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: '#15803D' }}>✓ Inclusions</p>
+                      <ul className="flex flex-col gap-1.5">
+                        {(cms.inclusions ?? []).filter(Boolean).map((item, i) => (
+                          <li key={i} className="flex items-start gap-1.5 text-xs text-[#374151]">
+                            <span className="mt-0.5 flex-shrink-0 text-green-500">•</span>{item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: '#DC2626' }}>✕ Exclusions</p>
+                      <ul className="flex flex-col gap-1.5">
+                        {(cms.exclusions ?? []).filter(Boolean).map((item, i) => (
+                          <li key={i} className="flex items-start gap-1.5 text-xs text-[#374151]">
+                            <span className="mt-0.5 flex-shrink-0 text-red-500">•</span>{item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Why Choose */}
+              {(cms.why_choose ?? []).filter(w => (typeof w === 'string' ? w : w.title)).length > 0 && (
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#64748B' }}>Why Choose Us</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {(cms.why_choose ?? []).map((raw, i) => {
+                      const w = typeof raw === 'string' ? { title: raw, description: '' } : raw;
+                      return (
+                        <div key={i} className="rounded-xl p-3" style={{ background: `${T}08`, border: `1px solid ${T}20` }}>
+                          <p className="text-xs font-bold text-[#0F172A]">{w.title}</p>
+                          {w.description && <p className="text-[11px] text-[#64748B] mt-0.5 leading-relaxed">{w.description}</p>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Day Itinerary */}
+              {days.length > 0 && (
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#64748B' }}>Day Itinerary ({days.length} days)</p>
+                  <div className="flex flex-col gap-2">
+                    {days.map((d, i) => (
+                      <div key={d.id} className="rounded-xl p-3" style={{ border: '1px solid #E2E8F0' }}>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold px-2 py-0.5 rounded-full text-white" style={{ background: T }}>Day {i + 1}</span>
+                          <p className="text-sm font-semibold text-[#0F172A]">{d.title}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Package Options */}
+              {(cms.package_options ?? []).length > 0 && (
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#64748B' }}>Package Options</p>
+                  <div className="flex flex-col gap-2">
+                    {(cms.package_options ?? []).map((opt, i) => (
+                      <div key={i} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: opt.is_most_popular ? `${T}10` : '#F8FAFC', border: `1px solid ${opt.is_most_popular ? T : '#E2E8F0'}` }}>
+                        <div>
+                          <p className="text-sm font-bold" style={{ color: opt.is_most_popular ? T : '#0F172A' }}>{opt.tier_name}</p>
+                          {opt.is_most_popular && <span className="text-[10px] font-bold" style={{ color: T }}>★ Most Popular</span>}
+                        </div>
+                        <div className="text-right">
+                          {opt.adult_price > 0 && <p className="text-sm font-bold text-[#0F172A]">₹{opt.adult_price.toLocaleString()}<span className="text-[10px] font-normal text-[#64748B]">/adult</span></p>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

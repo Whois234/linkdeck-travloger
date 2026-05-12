@@ -7,7 +7,7 @@ import { RichTextEditor } from '@/components/admin/RichTextEditor';
 import {
   ChevronDown, ChevronRight, Plus, Trash2, Check,
   Save, Star, Image as ImgIcon, FileText, LayoutList,
-  MapPin, Shield, HelpCircle, BookOpen, ListPlus, Settings, GripVertical,
+  MapPin, Shield, HelpCircle, BookOpen, ListPlus, Settings, GripVertical, Eye, X,
 } from 'lucide-react';
 
 /* ── Shared style tokens ── */
@@ -146,6 +146,7 @@ export default function TemplateEditPage() {
   const [expandedDays, setExpandedDays]   = useState<Set<number>>(new Set([1]));
   const [selectedPolicies, setSelectedPolicies] = useState<string[]>([]);
   const [newCardName, setNewCardName]       = useState('');
+  const [showPreview, setShowPreview]       = useState(false);
 
   // ── Editable template settings (mirrors the create-modal fields) ──
   const [tplSettings, setTplSettings] = useState({
@@ -441,6 +442,11 @@ export default function TemplateEditPage() {
           </p>
         </div>
         <div className="flex gap-2 flex-shrink-0 ml-4">
+          <button onClick={() => setShowPreview(true)}
+            className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold border hover:bg-slate-50 transition-colors"
+            style={{ borderColor: '#E2E8F0', color: '#64748B' }}>
+            <Eye className="w-4 h-4" /> Preview
+          </button>
           <button onClick={deleteTemplate} disabled={deleting || saving}
             className="flex items-center gap-2 h-9 px-3 rounded-lg text-sm font-semibold disabled:opacity-50 hover:opacity-90 transition-colors"
             style={{ backgroundColor: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}
@@ -1491,6 +1497,146 @@ export default function TemplateEditPage() {
 
         </div>{/* end main content */}
       </div>{/* end flex */}
+
+      {/* ═══ PREVIEW DRAWER ═══ */}
+      {showPreview && (
+        <div className="fixed inset-0 z-50 flex justify-end" style={{ background: 'rgba(0,0,0,0.45)' }} onClick={() => setShowPreview(false)}>
+          <div className="relative h-full w-full max-w-[520px] bg-white overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="sticky top-0 z-10 bg-white flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #E2E8F0' }}>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: T }}>Template Preview</p>
+                <p className="text-sm font-bold text-[#0F172A] mt-0.5">{tplSettings.template_name || tpl.template_name}</p>
+              </div>
+              <button onClick={() => setShowPreview(false)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-slate-100" style={{ color: '#64748B' }}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 flex flex-col gap-6">
+
+              {/* Hero */}
+              {(cms.hero_images?.[0] || cms.hero_heading) && (
+                <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
+                  {cms.hero_images?.[0] && (
+                    <div className="relative h-44 bg-slate-100">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={cms.hero_images[0]} alt="Hero" className="w-full h-full object-cover" />
+                      <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.55), transparent)' }} />
+                      <div className="absolute bottom-0 left-0 p-4">
+                        {cms.hero_heading && <p className="text-white font-bold text-lg leading-tight">{cms.hero_heading}</p>}
+                        {cms.hero_subheading && <p className="text-white/80 text-xs mt-0.5">{cms.hero_subheading}</p>}
+                      </div>
+                    </div>
+                  )}
+                  {!cms.hero_images?.[0] && (
+                    <div className="p-4" style={{ background: `${T}10` }}>
+                      {cms.hero_heading && <p className="font-bold text-base text-[#0F172A]">{cms.hero_heading}</p>}
+                      {cms.hero_subheading && <p className="text-sm text-[#64748B] mt-1">{cms.hero_subheading}</p>}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Destination Cards */}
+              {(cms.destination_cards ?? []).filter(dc => !dc.hidden).length > 0 && (
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#64748B' }}>Destinations</p>
+                  <div className="flex flex-wrap gap-2">
+                    {(cms.destination_cards ?? []).filter(dc => !dc.hidden).map((dc, i) => (
+                      <div key={i} className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium text-white" style={{ background: T }}>
+                        <MapPin className="w-3 h-3" />
+                        {dc.custom_name || dests.find(d => d.id === dc.destination_id)?.name || dc.destination_id}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Inclusions / Exclusions */}
+              {((cms.inclusions ?? []).length > 0 || (cms.exclusions ?? []).length > 0) && (
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#64748B' }}>Inclusions & Exclusions</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: '#15803D' }}>✓ Inclusions</p>
+                      <ul className="flex flex-col gap-1.5">
+                        {(cms.inclusions ?? []).filter(Boolean).map((item, i) => (
+                          <li key={i} className="flex items-start gap-1.5 text-xs text-[#374151]">
+                            <span className="mt-0.5 flex-shrink-0 text-green-500">•</span>{item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: '#DC2626' }}>✕ Exclusions</p>
+                      <ul className="flex flex-col gap-1.5">
+                        {(cms.exclusions ?? []).filter(Boolean).map((item, i) => (
+                          <li key={i} className="flex items-start gap-1.5 text-xs text-[#374151]">
+                            <span className="mt-0.5 flex-shrink-0 text-red-500">•</span>{item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Why Choose */}
+              {normaliseWhy(cms.why_choose ?? []).filter(w => w.title).length > 0 && (
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#64748B' }}>Why Choose Us</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {normaliseWhy(cms.why_choose ?? []).map((w, i) => (
+                      <div key={i} className="rounded-xl p-3" style={{ background: `${T}08`, border: `1px solid ${T}20` }}>
+                        <p className="text-xs font-bold text-[#0F172A]">{w.title}</p>
+                        {w.description && <p className="text-[11px] text-[#64748B] mt-0.5 leading-relaxed">{w.description}</p>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Day Itinerary */}
+              {days.length > 0 && (
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#64748B' }}>Day Itinerary ({days.length} days)</p>
+                  <div className="flex flex-col gap-2">
+                    {days.map((d, i) => (
+                      <div key={d.id} className="rounded-xl p-3" style={{ border: '1px solid #E2E8F0' }}>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold px-2 py-0.5 rounded-full text-white" style={{ background: T }}>Day {i + 1}</span>
+                          <p className="text-sm font-semibold text-[#0F172A]">{d.title}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Hotel Tiers */}
+              {tiers.length > 0 && (
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#64748B' }}>Hotel Tiers</p>
+                  <div className="flex flex-col gap-2">
+                    {tiers.map((tier, i) => {
+                      const hotel = hotels.find(h => h.id === tier.default_hotel_id);
+                      return (
+                        <div key={i} className="rounded-xl p-3" style={{ border: '1px solid #E2E8F0' }}>
+                          <p className="text-xs font-bold text-[#0F172A]">{tier.tier_name}</p>
+                          {hotel && <p className="text-[11px] text-[#64748B] mt-0.5">{hotel.name}</p>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
