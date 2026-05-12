@@ -86,6 +86,8 @@ interface Contact {
   closed_date:    string | null;
   booking_value:  string | number | null;
   do_not_contact: boolean;
+  // Creator
+  created_by?: Owner | null;
 }
 
 interface DuplicateAttempt {
@@ -987,7 +989,7 @@ export default function ContactsPage() {
                     {[
                       'Full Name', 'Phone', 'Email', 'City', 'Destination', 'Travellers',
                       'Budget', 'Trip', 'Source', 'Platform', 'Campaign',
-                      'Stage', 'Assigned', 'Follow-up', 'DNC', 'Booking', 'Created', '',
+                      'Stage', 'Assigned', 'Follow-up', 'DNC', 'Booking', 'Created By', 'Created', '',
                     ].map(h => (
                       <th key={h} className="text-left px-3 py-3 text-[11px] font-bold uppercase tracking-wider whitespace-nowrap" style={{ color: '#64748B' }}>{h}</th>
                     ))}
@@ -1170,6 +1172,25 @@ export default function ContactsPage() {
                             : <span style={{ color: '#CBD5E1' }}>—</span>}
                         </td>
 
+                        {/* Created By */}
+                        <td className="px-3 py-3">
+                          {c.created_by ? (
+                            <div className="flex items-center gap-1.5">
+                              <div className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0" style={{ backgroundColor: '#64748B' }}>
+                                {c.created_by.name.charAt(0).toUpperCase()}
+                              </div>
+                              <span className="text-xs font-medium" style={{ color: '#0F172A' }}>{c.created_by.name}</span>
+                            </div>
+                          ) : c.owner ? (
+                            <div className="flex items-center gap-1.5">
+                              <div className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0" style={{ backgroundColor: '#94A3B8' }}>
+                                {c.owner.name.charAt(0).toUpperCase()}
+                              </div>
+                              <span className="text-xs font-medium" style={{ color: '#64748B' }}>{c.owner.name}</span>
+                            </div>
+                          ) : <span className="text-xs" style={{ color: '#CBD5E1' }}>—</span>}
+                        </td>
+
                         {/* Created At */}
                         <td className="px-3 py-3 text-xs whitespace-nowrap" style={{ color: '#64748B' }}>{fmtDate(c.created_at)}</td>
 
@@ -1199,7 +1220,7 @@ export default function ContactsPage() {
                   })}
                   {paginated.length === 0 && !loading && (
                     <tr>
-                      <td colSpan={19} className="text-center py-16">
+                      <td colSpan={20} className="text-center py-16">
                         <User className="w-8 h-8 mx-auto mb-2" style={{ color: '#CBD5E1' }} />
                         <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>No contacts found</p>
                         <p className="text-xs mt-1" style={{ color: '#94A3B8' }}>
@@ -1230,19 +1251,17 @@ export default function ContactsPage() {
               <div className="flex items-center gap-3">
                 {/* Rows per page */}
                 <div className="flex items-center gap-1.5">
-                  <span className="text-xs" style={{ color: '#94A3B8' }}>Rows:</span>
-                  <div className="flex gap-0.5">
-                    {([25, 50, 75, 100, 200, 300, 'ALL'] as const).map(n => (
-                      <button key={n} onClick={() => { setPerPage(n); setPage(1); }}
-                        className="px-2 py-1 rounded text-[11px] font-semibold transition-colors"
-                        style={{
-                          backgroundColor: perPage === n ? '#134956' : '#F1F5F9',
-                          color: perPage === n ? '#fff' : '#64748B',
-                        }}>
-                        {n}
-                      </button>
+                  <span className="text-xs" style={{ color: '#94A3B8' }}>Rows per page:</span>
+                  <select
+                    value={perPage}
+                    onChange={e => { setPerPage(e.target.value === 'ALL' ? 'ALL' : Number(e.target.value)); setPage(1); }}
+                    className="text-xs font-semibold rounded-lg px-2.5 py-1.5 outline-none cursor-pointer"
+                    style={{ border: '1px solid #E2E8F0', color: '#134956', backgroundColor: '#fff' }}>
+                    {([25, 50, 75, 100, 200, 300] as const).map(n => (
+                      <option key={n} value={n}>{n}</option>
                     ))}
-                  </div>
+                    <option value="ALL">All</option>
+                  </select>
                 </div>
                 <span className="text-[#CBD5E1]">·</span>
                 <span>
