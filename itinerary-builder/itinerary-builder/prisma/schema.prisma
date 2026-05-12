@@ -693,7 +693,9 @@ model GroupTemplate {
   hero_image            String?
   gallery_images        Json?
   cms_data              Json?
+  tab_title             String?
   status                Boolean            @default(true)
+  created_by            String?
   created_at            DateTime           @default(now())
   updated_at            DateTime           @updatedAt
 
@@ -703,6 +705,7 @@ model GroupTemplate {
 
   @@index([state_id])
   @@index([status])
+  @@index([created_by])
 }
 
 model GroupTemplateDay {

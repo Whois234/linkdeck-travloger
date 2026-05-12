@@ -16,6 +16,7 @@ const Schema = z.object({
   theme: z.string().optional().nullable(),
   start_city: z.string().optional().nullable(),
   end_city: z.string().optional().nullable(),
+  tab_title: z.string().optional().nullable(),
   cms_data: z.record(z.unknown()).optional().nullable(),
   status: z.boolean().optional(),
 });
@@ -37,7 +38,20 @@ export async function GET(req: NextRequest) {
     orderBy: { group_template_name: 'asc' },
     take: 200,
   });
-  return ok(templates);
+
+  // Resolve creator names for all templates that have a created_by user id
+  const creatorIds = Array.from(new Set(templates.map(t => t.created_by).filter((v): v is string => !!v)));
+  const creators = creatorIds.length
+    ? await prisma.user.findMany({ where: { id: { in: creatorIds } }, select: { id: true, name: true } })
+    : [];
+  const creatorById = Object.fromEntries(creators.map(u => [u.id, u.name]));
+
+  const enriched = templates.map(t => ({
+    ...t,
+    created_by_name: t.created_by ? (creatorById[t.created_by] ?? 'Unknown') : null,
+  }));
+
+  return ok(enriched);
 }
 
 export async function POST(req: NextRequest) {
@@ -49,6 +63,11 @@ export async function POST(req: NextRequest) {
   const parsed = Schema.safeParse(body);
   if (!parsed.success) return err('Validation failed', 400, parsed.error.flatten());
 
-  const record = await prisma.groupTemplate.create({ data: parsed.data as Parameters<typeof prisma.groupTemplate.create>[0]['data'] });
+  const record = await prisma.groupTemplate.create({
+    data: {
+      ...(parsed.data as Parameters<typeof prisma.groupTemplate.create>[0]['data']),
+      created_by: user.sub,
+    },
+  });
   return created(record);
 }

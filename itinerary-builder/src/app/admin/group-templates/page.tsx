@@ -24,6 +24,8 @@ interface GT {
   group_template_days: { id: string }[];
   group_batches: { id: string }[];
   hero_image?: string | null; status: boolean;
+  created_at: string;
+  created_by_name?: string | null;
 }
 
 const inp   = 'w-full h-9 px-3 rounded-lg border text-sm placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white';
@@ -356,6 +358,8 @@ function GroupTemplatesPageInner() {
                 <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Theme</th>
                 <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Days</th>
                 <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Departures</th>
+                <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Created By</th>
+                <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Created At</th>
                 <th className="text-right px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Actions</th>
               </tr>
             </thead>
@@ -378,8 +382,30 @@ function GroupTemplatesPageInner() {
                     <td className="px-4 py-3.5 text-[#64748B]">{r.group_template_days.length}</td>
                     <td className="px-4 py-3.5">
                       {(r.group_batches?.length ?? 0) > 0
-                        ? <span className="text-[11px] font-bold px-2 py-0.5 rounded-md" style={{ backgroundColor: '#DCFCE7', color: '#166534' }}>{r.group_batches.length} batch{r.group_batches.length !== 1 ? 'es' : ''}</span>
+                        ? <span className="text-[11px] font-bold px-2 py-0.5 rounded-md" style={{ backgroundColor: '#DCFCE7', color: '#166634' }}>{r.group_batches.length} batch{r.group_batches.length !== 1 ? 'es' : ''}</span>
                         : <span className="text-[#CBD5E1] text-xs">—</span>}
+                    </td>
+                    {/* Created By */}
+                    <td className="px-4 py-3.5">
+                      {r.created_by_name ? (
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0" style={{ backgroundColor: '#134956' }}>
+                            {r.created_by_name.charAt(0).toUpperCase()}
+                          </div>
+                          <span className="text-xs font-medium text-[#0F172A]">{r.created_by_name}</span>
+                        </div>
+                      ) : <span className="text-xs text-[#CBD5E1]">—</span>}
+                    </td>
+                    {/* Created At */}
+                    <td className="px-4 py-3.5 whitespace-nowrap">
+                      <div className="text-xs font-medium text-[#0F172A]">
+                        {r.created_at ? new Date(r.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                      </div>
+                      {r.created_at && (
+                        <div className="text-[10px] text-[#94A3B8] mt-0.5">
+                          {new Date(r.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                        </div>
+                      )}
                     </td>
                     <td className="px-5 py-3.5" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
@@ -434,7 +460,14 @@ function GroupTemplatesPageInner() {
                     <p className="font-semibold text-sm text-[#0F172A] leading-tight">{r.group_template_name}</p>
                     <ChevronRight className="w-4 h-4 text-[#CBD5E1] group-hover:text-[#134956] transition-colors flex-shrink-0 mt-0.5" />
                   </div>
-                  <p className="text-xs text-[#94A3B8] mb-3">{r.duration_nights}N/{r.duration_days}D · {r.theme ?? 'Group Tour'}{r.start_city ? ` · ${r.start_city}` : ''}</p>
+                  <p className="text-xs text-[#94A3B8] mb-2">{r.duration_nights}N/{r.duration_days}D · {r.theme ?? 'Group Tour'}{r.start_city ? ` · ${r.start_city}` : ''}</p>
+                  {(r.created_by_name || r.created_at) && (
+                    <p className="text-[10px] text-[#CBD5E1] mb-2">
+                      {r.created_by_name ? `By ${r.created_by_name}` : ''}
+                      {r.created_by_name && r.created_at ? ' · ' : ''}
+                      {r.created_at ? new Date(r.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
+                    </p>
+                  )}
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-medium text-[#64748B]">
                       {r.group_template_days.length} day{r.group_template_days.length !== 1 ? 's' : ''} · {r.group_batches?.length ?? 0} departure{(r.group_batches?.length ?? 0) !== 1 ? 's' : ''}
