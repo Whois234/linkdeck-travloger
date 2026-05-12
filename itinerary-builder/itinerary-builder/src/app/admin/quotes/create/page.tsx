@@ -368,7 +368,7 @@ export default function CreateQuotePage() {
             hotel_id: row.hotel_id, room_category_id: row.room_category_id, meal_plan_id: row.meal_plan_id,
             check_in_date: new Date(row.check_in_date).toISOString(),
             check_out_date: new Date(row.check_out_date).toISOString(),
-            rooms: row.rooms_config.length, adults_per_room: row.adults_per_room, cwb: row.cwb, cwob: row.cwob,
+            rooms_config: row.rooms_config, cwb: row.cwb, cwob: row.cwob,
           }),
         });
         const d = await res.json();
