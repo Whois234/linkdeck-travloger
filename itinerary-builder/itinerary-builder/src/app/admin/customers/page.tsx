@@ -9,6 +9,7 @@ import { toast } from '@/components/Toaster';
 interface Customer {
   id: string; name: string; phone: string; email?: string | null;
   city?: string | null; nationality?: string | null; status: boolean;
+  created_at?: string | null; created_by?: string | null; created_by_name?: string | null;
 }
 const EMPTY = { name: '', phone: '', email: '', city: '', nationality: 'Indian', whatsapp: '', notes: '' };
 const inp      = 'w-full h-10 px-3 rounded-lg border text-sm placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white transition-colors';
@@ -314,7 +315,7 @@ export default function CustomersPage() {
                       {allSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
                     </button>
                   </th>
-                  {['Name', 'Phone', 'Email', 'City', 'Nationality', 'Status', ''].map(h => (
+                  {['Name', 'Phone', 'Email', 'City', 'Nationality', 'Status', 'Created By', 'Created At', ''].map(h => (
                     <th key={h} className="px-5 py-3.5 text-left text-[11px] font-semibold uppercase tracking-wider whitespace-nowrap" style={{ color: '#64748B' }}>{h}</th>
                   ))}
                 </tr>
@@ -347,6 +348,14 @@ export default function CustomersPage() {
                           style={r.status ? { backgroundColor: '#DCFCE7', color: '#15803D' } : { backgroundColor: '#F1F5F9', color: '#475569' }}>
                           {r.status ? 'Active' : 'Inactive'}
                         </span>
+                      </td>
+                      <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>
+                        {r.created_by_name ?? '—'}
+                      </td>
+                      <td className="px-5 py-0 text-sm whitespace-nowrap" style={{ color: '#64748B' }}>
+                        {r.created_at
+                          ? new Date(r.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                          : '—'}
                       </td>
                       <td className="px-5 py-0">
                         <div className="flex items-center justify-end gap-1">

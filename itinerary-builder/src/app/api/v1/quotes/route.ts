@@ -127,11 +127,70 @@ export async function POST(req: NextRequest) {
     data: { quote_id: quote.id, event_type: 'quote_created', metadata: { created_by: user.sub } },
   });
 
-  if (quote.lead_id) {
+  // ── Auto-link to pipeline lead ────────────────────────────────────────────
+  // If lead_id was provided, just log the activity.
+  // If not, find or create a pipeline lead for this customer automatically.
+  let finalLeadId = quote.lead_id;
+
+  if (finalLeadId) {
     await prisma.leadActivity.create({
-      data: { lead_id: quote.lead_id, type: 'quote_created', metadata: { quote_id: quote.id, quote_number: quote.quote_number }, created_by: user.sub },
-    });
+      data: { lead_id: finalLeadId, type: 'quote_created', metadata: { quote_id: quote.id, quote_number: quote.quote_number }, created_by: user.sub },
+    }).catch(() => {});
+  } else {
+    try {
+      const customer = await prisma.customer.findUnique({ where: { id: quote.customer_id } });
+      if (customer?.phone) {
+        const normalizedPhone = customer.phone.replace(/[\s\-\(\)]/g, '');
+
+        // 1. Find existing CrmContact by phone
+        let contact = await prisma.crmContact.findFirst({
+          where: { OR: [{ phone: normalizedPhone }, { phone: customer.phone }] },
+        });
+
+        // 2. Find existing active (non-converted) lead for this contact
+        let lead = contact
+          ? await prisma.lead.findFirst({
+              where: { crm_contact_id: contact.id, is_converted: false },
+              orderBy: { created_at: 'desc' },
+            })
+          : null;
+
+        // 3. If no lead yet, create CrmContact + Lead in default pipeline
+        if (!lead) {
+          if (!contact) {
+            contact = await prisma.crmContact.create({
+              data: { name: customer.name, phone: normalizedPhone, owner_id: user.sub },
+            });
+          }
+          const defaultPipeline = await prisma.pipeline.findFirst({ where: { is_default: true, status: true } });
+          const firstStage = defaultPipeline
+            ? await prisma.pipelineStage.findFirst({ where: { pipeline_id: defaultPipeline.id, status: true }, orderBy: { order: 'asc' } })
+            : null;
+
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          lead = await prisma.lead.create({
+            data: {
+              name:           customer.name,
+              phone:          normalizedPhone,
+              crm_contact_id: contact.id,
+              pipeline_id:    defaultPipeline?.id ?? null,
+              stage_id:       firstStage?.id ?? null,
+              owner_id:       user.sub,
+            } as any,
+          });
+        }
+
+        // 4. Link quote → lead
+        await prisma.quote.update({ where: { id: quote.id }, data: { lead_id: lead.id } });
+        finalLeadId = lead.id;
+
+        // 5. Log activity on lead
+        await prisma.leadActivity.create({
+          data: { lead_id: lead.id, type: 'quote_created', metadata: { quote_id: quote.id, quote_number: quote.quote_number }, created_by: user.sub },
+        });
+      }
+    } catch { /* non-blocking — quote is created regardless */ }
   }
 
-  return created(quote);
+  return created({ ...quote, lead_id: finalLeadId });
 }

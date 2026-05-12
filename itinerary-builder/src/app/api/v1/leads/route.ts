@@ -153,5 +153,27 @@ export async function POST(req: NextRequest) {
     data: { lead_id: record.id, type: 'created', metadata: { name: record.name }, created_by: user.sub },
   }).catch(() => {});
 
+  // ── Ensure Customer record exists for this lead ───────────────────────────
+  // Every lead should also appear in the Customers table so agents have
+  // a single unified customer view.
+  try {
+    const existingCustomer = await prisma.customer.findFirst({
+      where: { OR: [{ phone: normalizedPhone }, { phone: rest.phone }] },
+    });
+    if (!existingCustomer) {
+      await prisma.customer.create({
+        data: {
+          name:       rest.name,
+          phone:      normalizedPhone,
+          email:      rest.email ?? null,
+          lead_id:    record.id,
+          created_by: user.sub,
+        },
+      });
+    } else if (!existingCustomer.lead_id) {
+      await prisma.customer.update({ where: { id: existingCustomer.id }, data: { lead_id: record.id } });
+    }
+  } catch { /* non-blocking */ }
+
   return created(record);
 }
