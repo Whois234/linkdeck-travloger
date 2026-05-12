@@ -1550,13 +1550,34 @@ export default function GroupTemplateEditPage() {
                 </div>
                 <div>
                   <label className={lbl}>Badge Color</label>
-                  <div className="flex items-center gap-3 mt-1">
-                    <input type="color" value={editingBatch.badge_color ?? '#F59E0B'}
-                      onChange={e => updBatch('badge_color', e.target.value)}
-                      className="h-9 w-14 rounded cursor-pointer border-0 p-0.5" style={{ backgroundColor: 'transparent' }} />
-                    <span className="text-xs text-[#64748B] font-mono">{editingBatch.badge_color ?? '#F59E0B'}</span>
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    {[
+                      { hex: '#F59E0B', label: 'Amber'  },
+                      { hex: '#EF4444', label: 'Red'    },
+                      { hex: '#22C55E', label: 'Green'  },
+                      { hex: '#3B82F6', label: 'Blue'   },
+                      { hex: '#8B5CF6', label: 'Purple' },
+                      { hex: '#EC4899', label: 'Pink'   },
+                      { hex: '#134956', label: 'Teal'   },
+                      { hex: '#64748B', label: 'Slate'  },
+                    ].map(({ hex, label }) => {
+                      const active = (editingBatch.badge_color ?? '#F59E0B').toUpperCase() === hex.toUpperCase();
+                      return (
+                        <button key={hex} type="button" title={label}
+                          onClick={() => updBatch('badge_color', hex)}
+                          className="w-8 h-8 rounded-lg flex items-center justify-center transition-all"
+                          style={{
+                            backgroundColor: hex,
+                            boxShadow: active ? `0 0 0 2px white, 0 0 0 4px ${hex}` : 'none',
+                            transform: active ? 'scale(1.15)' : 'scale(1)',
+                          }}>
+                          {active && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
+                        </button>
+                      );
+                    })}
                     <button type="button" onClick={() => updBatch('badge_color', null)}
-                      className="text-xs text-[#94A3B8] hover:text-[#64748B] underline">Reset</button>
+                      className="h-8 px-2.5 rounded-lg text-xs font-semibold transition-colors hover:bg-[#F1F5F9]"
+                      style={{ border: '1px solid #E2E8F0', color: '#94A3B8' }}>Reset</button>
                   </div>
                 </div>
               </div>
