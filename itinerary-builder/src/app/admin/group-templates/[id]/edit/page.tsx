@@ -25,15 +25,24 @@ const card  = { border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.
 interface Dest    { id: string; name: string }
 interface DayPlan { id: string; title: string; destination_id: string; description?: string | null }
 interface Policy  { id: string; title: string; policy_type: string; content: string }
-interface WhyItem { title: string; description: string }
+interface WhyItem { title: string; description: string; icon?: string }
 
 function normaliseWhy(arr: (string | WhyItem)[]): WhyItem[] {
   return arr.map(item =>
     typeof item === 'string'
-      ? { title: item, description: '' }
-      : item
+      ? { title: item, description: '', icon: 'star' }
+      : { icon: 'star', ...item }
   );
 }
+
+const ICON_OPTS = [
+  { key: 'star',   label: '★' },
+  { key: 'dollar', label: '$' },
+  { key: 'shield', label: '✓' },
+  { key: 'clock',  label: '⏱' },
+  { key: 'heart',  label: '♥' },
+  { key: 'pin',    label: '📍' },
+] as const;
 
 interface CmsOption {
   tier_name: string;
@@ -1252,49 +1261,59 @@ export default function GroupTemplateEditPage() {
           {/* ═══ WHY CHOOSE ═══ */}
           {activeSection === 'why' && (
             <div className="bg-white rounded-2xl p-6" style={card}>
-              <SectionHeader title="Why Choose Travloger" desc="Pre-filled trust points shown to customers. Each can have a title and short description." />
+              <SectionHeader title="Why Choose Travloger" desc="Add trust points with titles and descriptions shown on the customer quotation page." />
               <div className="flex flex-col gap-3">
                 {normaliseWhy(cms.why_choose).map((item, i) => (
-                  <div
-                    key={i}
-                    draggable
-                    onDragStart={() => { dragRef.current = { field: 'why_choose', from: i }; }}
-                    onDragOver={e => { e.preventDefault(); setDragOver({ field: 'why_choose', idx: i }); }}
-                    onDragLeave={() => setDragOver(null)}
-                    onDrop={() => { setDragOver(null); if (dragRef.current?.field === 'why_choose') dndReorder('why_choose', dragRef.current.from, i); dragRef.current = null; }}
-                    onDragEnd={() => { setDragOver(null); dragRef.current = null; }}
-                    className="rounded-xl p-4 transition-all"
-                    style={{ border: dragOver?.field === 'why_choose' && dragOver?.idx === i ? `2px dashed ${T}` : '1px solid #E2E8F0', opacity: dragRef.current?.field === 'why_choose' && dragRef.current?.from === i ? 0.4 : 1, background: dragOver?.field === 'why_choose' && dragOver?.idx === i ? '#F0F7F9' : 'white' }}
-                  >
-                    <div className="flex items-start gap-3">
-                      <GripVertical className="w-4 h-4 flex-shrink-0 cursor-grab active:cursor-grabbing mt-1.5" style={{ color: '#CBD5E1' }} />
-                      <div className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-white text-[10px] font-bold mt-1" style={{ backgroundColor: T }}>{i + 1}</div>
-                      <div className="flex-1 flex flex-col gap-2">
-                        <input
-                          className="w-full h-9 px-3 rounded-lg border text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white"
-                          style={inpSt} placeholder="Title e.g. Best Prices Guaranteed"
-                          value={item.title}
-                          onChange={e => {
+                  <div key={i} className="p-4 rounded-xl" style={{ border: '1px solid #E2E8F0', backgroundColor: '#F8FAFC' }}>
+                    {/* Icon picker */}
+                    <div className="flex items-center gap-1 mb-2">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-[#94A3B8] mr-1">Icon</span>
+                      {ICON_OPTS.map(opt => (
+                        <button key={opt.key} type="button"
+                          onClick={() => {
                             const w = normaliseWhy(cms.why_choose);
-                            w[i] = { ...w[i], title: e.target.value };
+                            w[i] = { ...w[i], icon: opt.key };
                             updCms('why_choose', w);
-                          }} />
-                        <textarea
-                          className="w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white resize-none"
-                          style={inpSt} rows={2} placeholder="Short description (optional)"
-                          value={item.description}
-                          onChange={e => {
-                            const w = normaliseWhy(cms.why_choose);
-                            w[i] = { ...w[i], description: e.target.value };
-                            updCms('why_choose', w);
-                          }} />
-                      </div>
-                      <button onClick={() => updCms('why_choose', normaliseWhy(cms.why_choose).filter((_, j) => j !== i))}
-                        className="text-[#94A3B8] hover:text-red-500 mt-1 flex-shrink-0"><Trash2 className="w-4 h-4" /></button>
+                          }}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-sm border transition-all"
+                          style={{
+                            borderColor: item.icon === opt.key ? T : '#E2E8F0',
+                            backgroundColor: item.icon === opt.key ? `${T}18` : 'white',
+                            color: item.icon === opt.key ? T : '#64748B',
+                            fontWeight: item.icon === opt.key ? 700 : 400,
+                          }}
+                          title={opt.key}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
                     </div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center text-white text-[10px] font-bold" style={{ backgroundColor: T }}>{i + 1}</div>
+                      <input
+                        className="flex-1 h-9 px-3 rounded-lg border text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white" style={inpSt}
+                        placeholder="Point title (e.g. Best Prices Guaranteed)"
+                        value={item.title}
+                        onChange={e => {
+                          const w = normaliseWhy(cms.why_choose);
+                          w[i] = { ...w[i], title: e.target.value };
+                          updCms('why_choose', w);
+                        }} />
+                      <button onClick={() => updCms('why_choose', normaliseWhy(cms.why_choose).filter((_, j) => j !== i))}
+                        className="text-[#94A3B8] hover:text-red-500 flex-shrink-0"><Trash2 className="w-4 h-4" /></button>
+                    </div>
+                    <textarea
+                      className={ta} style={inpSt} rows={2}
+                      placeholder="Short description shown below the title (optional)"
+                      value={item.description}
+                      onChange={e => {
+                        const w = normaliseWhy(cms.why_choose);
+                        w[i] = { ...w[i], description: e.target.value };
+                        updCms('why_choose', w);
+                      }} />
                   </div>
                 ))}
-                <button onClick={() => updCms('why_choose', [...normaliseWhy(cms.why_choose), { title: '', description: '' }])}
+                <button onClick={() => updCms('why_choose', [...normaliseWhy(cms.why_choose), { title: '', description: '', icon: 'star' }])}
                   className="flex items-center gap-2 text-sm font-semibold mt-1" style={{ color: T }}>
                   <Plus className="w-4 h-4" /> Add Point
                 </button>
