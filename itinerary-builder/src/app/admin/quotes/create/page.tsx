@@ -1594,7 +1594,9 @@ export default function CreateQuotePage() {
                           {otherRates.map(r => (
                             <button key={r.id} type="button" onClick={() => setVehicleCost(r.base_cost)}
                               className="text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors"
-                              style={{ backgroundColor: '#FFF7ED', borderColor: '#FED7AA', color: '#92400E' }}>
+                              style={vehicleCost === r.base_cost
+                                ? { backgroundColor: `${T}15`, borderColor: T, color: T }
+                                : { backgroundColor: '#FFF7ED', borderColor: '#FED7AA', color: '#92400E' }}>
                               {r.route_name} · {r.duration_days}D · ₹{Math.round(r.base_cost).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                             </button>
                           ))}
