@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
 import Link from 'next/link';
-import { Plus, Pencil, Trash2, Search, CheckSquare, Square, AlertTriangle, ShieldCheck, Loader2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, CheckSquare, Square, AlertTriangle, ShieldCheck, Loader2, RefreshCw } from 'lucide-react';
 import { toast } from '@/components/Toaster';
 
 interface Customer {
@@ -35,6 +35,8 @@ export default function CustomersPage() {
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [keepMap,   setKeepMap]   = useState<Record<string, string>>({}); // phone → id to keep
   const [cleaningPhone, setCleaningPhone] = useState<string | null>(null);
+  const [syncing,   setSyncing]   = useState(false);
+  const [syncResult, setSyncResult] = useState<{ created: number; skipped: number; linked: number } | null>(null);
 
   const load = useCallback(async (q?: string) => {
     setLoading(true);
@@ -49,6 +51,14 @@ export default function CustomersPage() {
     const t = setTimeout(() => load(search), 300);
     return () => clearTimeout(t);
   }, [search, load]);
+
+  async function syncToContacts() {
+    setSyncing(true); setSyncResult(null);
+    const res = await fetch('/api/v1/customers/sync-contacts', { method: 'POST' });
+    const d = await res.json();
+    if (d.success) { setSyncResult(d.data); load(); }
+    setSyncing(false);
+  }
 
   // ── Duplicate groups (by phone) ──────────────────────────────────────────────
   const duplicateGroups = useMemo(() => {
@@ -227,8 +237,34 @@ export default function CustomersPage() {
         title="Customers"
         subtitle="Customer database and contact management"
         crumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Customers' }]}
-        action={<button onClick={openCreate} className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white hover:opacity-90" style={{ backgroundColor: T }}><Plus className="w-4 h-4" /> Add Customer</button>}
+        action={
+          <div className="flex items-center gap-2">
+            <button onClick={syncToContacts} disabled={syncing}
+              className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold disabled:opacity-50 hover:opacity-90 transition-colors"
+              style={{ backgroundColor: '#F0FDF4', color: '#15803D', border: '1px solid #BBF7D0' }}
+              title="Sync all customers to Contacts / CRM module">
+              <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+              {syncing ? 'Syncing…' : 'Sync to Contacts'}
+            </button>
+            <button onClick={openCreate} className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white hover:opacity-90" style={{ backgroundColor: T }}>
+              <Plus className="w-4 h-4" /> Add Customer
+            </button>
+          </div>
+        }
       />
+
+      {/* Sync result banner */}
+      {syncResult && (
+        <div className="mb-4 flex items-center justify-between px-4 py-3 rounded-xl text-sm font-medium"
+          style={{ backgroundColor: '#F0FDF4', color: '#15803D', border: '1px solid #BBF7D0' }}>
+          <span>
+            ✓ Sync complete — <strong>{syncResult.created}</strong> new contacts created,&nbsp;
+            <strong>{syncResult.linked}</strong> leads linked,&nbsp;
+            <strong>{syncResult.skipped}</strong> already in contacts.
+          </span>
+          <button onClick={() => setSyncResult(null)} className="ml-4 opacity-60 hover:opacity-100">✕</button>
+        </div>
+      )}
 
       {/* Edit / Create modal */}
       <Modal open={showForm} onClose={() => setShowForm(false)} title={editing ? 'Edit Customer' : 'Add New Customer'} subtitle="Fill in customer details">
