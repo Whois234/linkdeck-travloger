@@ -430,7 +430,22 @@ function ContactPanel({
               {/* ── CRM ────────────────────────────────────────────────── */}
               <PanelSection title="CRM">
                 <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-                  <PF label="Stage"       value={STAGE_BADGE[c.lead_stage].label} badge={STAGE_BADGE[c.lead_stage]} />
+                  {/* Show live pipeline stage if available, else CRM lead_stage */}
+                  {(() => {
+                    const ps = c.leads.find(l => l.stage !== null)?.stage ?? null;
+                    if (ps) {
+                      return (
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: '#94A3B8' }}>Stage</p>
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-semibold"
+                            style={{ backgroundColor: ps.color + '22', color: ps.color }}>
+                            {ps.name}
+                          </span>
+                        </div>
+                      );
+                    }
+                    return <PF label="Stage" value={STAGE_BADGE[c.lead_stage].label} badge={STAGE_BADGE[c.lead_stage]} />;
+                  })()}
                   <PF label="Assigned To" value={c.assigned_to?.name} />
                   <PF label="Follow-up"   value={c.follow_up_date ? fmtDate(c.follow_up_date) : null} />
                   <PF label="Booking Value" value={fmtINR(c.booking_value)} />
@@ -997,6 +1012,9 @@ export default function ContactsPage() {
                 </thead>
                 <tbody>
                   {paginated.map((c, i) => {
+                    // Prefer the live pipeline stage from the most recent lead (always accurate),
+                    // fall back to CrmContact.lead_stage for contacts with no pipeline lead.
+                    const pipelineStage = c.leads.find(l => l.stage !== null)?.stage ?? null;
                     const stageStyle = STAGE_BADGE[c.lead_stage] ?? STAGE_BADGE.NEW;
                     const sourceStyle = c.lead_source ? SOURCE_BADGE[c.lead_source] : null;
                     const tripStyle   = c.trip_type ? TRIP_TYPE_BADGE[c.trip_type] : null;
@@ -1135,9 +1153,15 @@ export default function ContactsPage() {
                             : <span style={{ color: '#CBD5E1' }}>—</span>}
                         </td>
 
-                        {/* Lead Stage */}
+                        {/* Lead Stage — pipeline stage takes precedence for accuracy */}
                         <td className="px-3 py-3">
-                          <Chip bg={stageStyle.bg} color={stageStyle.color}>{stageStyle.label}</Chip>
+                          {pipelineStage ? (
+                            <Chip bg={pipelineStage.color + '22'} color={pipelineStage.color}>
+                              {pipelineStage.name}
+                            </Chip>
+                          ) : (
+                            <Chip bg={stageStyle.bg} color={stageStyle.color}>{stageStyle.label}</Chip>
+                          )}
                         </td>
 
                         {/* Assigned To */}

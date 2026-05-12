@@ -24,8 +24,29 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     data: { stage_id: parsed.data.stage_id, pipeline_id: parsed.data.pipeline_id ?? stage.pipeline_id },
   });
 
-  // Auto-convert when moved to "Won" stage
-  const isWon = stage.name.toLowerCase().includes('won');
+  // ── Sync CrmContact.lead_stage from pipeline stage name ─────────────────────
+  // Map common pipeline stage name patterns → LeadStage enum value.
+  function pipelineStageToLeadStage(name: string): string | null {
+    const n = name.toLowerCase();
+    if (n.includes('won') || n.includes('converted') || n.includes('closed')) return 'CONVERTED';
+    if (n.includes('lost') || n.includes('dead') || n.includes('disqualified'))  return 'LOST';
+    if (n.includes('hot'))                                                         return 'HOT';
+    if (n.includes('follow'))                                                      return 'FOLLOW_UP';
+    if (n.includes('contacted') || n.includes('contact') || n.includes('quote') || n.includes('proposal')) return 'CONTACTED';
+    if (n.includes('new'))                                                         return 'NEW';
+    return null; // unknown mapping — leave the CRM stage unchanged
+  }
+
+  const mappedStage = pipelineStageToLeadStage(stage.name);
+  if (mappedStage && lead.crm_contact_id) {
+    await prisma.crmContact.update({
+      where: { id: lead.crm_contact_id },
+      data: { lead_stage: mappedStage as 'NEW' | 'CONTACTED' | 'FOLLOW_UP' | 'HOT' | 'CONVERTED' | 'LOST' },
+    }).catch(() => {});
+  }
+
+  // Auto-convert when moved to "Won" / "Converted" stage
+  const isWon = stage.name.toLowerCase().includes('won') || stage.name.toLowerCase().includes('converted');
   if (isWon && lead.crm_contact_id) {
     await prisma.crmContact.update({
       where: { id: lead.crm_contact_id },
