@@ -52,6 +52,7 @@ interface CmsData {
   hero_images: string[];
   state_gallery_image: string;
   state_gallery_hidden?: boolean;
+  state_gallery_custom_name?: string | null;
   destination_cards: Array<{ destination_id: string; custom_name: string | null; description: string; image_url: string; hidden?: boolean }>;
   pricing_mode: 'date_based' | 'package_based';
   trip_dates: Array<{ start_date: string; end_date: string; label: string; availability: 'available' | 'few_left' | 'filling_fast' | 'sold_out' }>;
@@ -552,8 +553,16 @@ export default function GroupTemplateEditPage() {
                       opacity: stateHidden ? 0.55 : 1,
                     }}>
                       <div className="flex items-center gap-2 px-4 pt-4 pb-3">
-                        <span className="flex-1 text-sm font-semibold" style={{ color: stateHidden ? '#94A3B8' : '#4338CA' }}>{tpl?.state?.name ?? 'State'}</span>
-                        <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: stateHidden ? '#F1F5F9' : '#EEF2FF', color: stateHidden ? '#94A3B8' : '#6366F1' }}>Gallery Cover Card</span>
+                        <input
+                          className="flex-1 text-sm font-semibold bg-transparent focus:outline-none rounded px-1 -ml-1 transition-colors"
+                          style={{ color: stateHidden ? '#94A3B8' : '#4338CA' }}
+                          value={cms.state_gallery_custom_name ?? tpl?.state?.name ?? ''}
+                          placeholder={tpl?.state?.name ?? 'State name…'}
+                          onChange={e => updCms('state_gallery_custom_name', e.target.value || null)}
+                          onFocus={e => (e.currentTarget.style.backgroundColor = '#EEF2FF')}
+                          onBlur={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                        />
+                        <span className="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0" style={{ background: stateHidden ? '#F1F5F9' : '#EEF2FF', color: stateHidden ? '#94A3B8' : '#6366F1' }}>Gallery Cover Card</span>
                         <button
                           type="button"
                           onClick={() => updCms('state_gallery_hidden', !stateHidden)}
