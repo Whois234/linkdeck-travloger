@@ -140,6 +140,7 @@ export default function TemplateEditPage() {
   const [loading,  setLoading]  = useState(true);
   const [saving,   setSaving]   = useState(false);
   const [saved,    setSaved]    = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [activeSection, setActiveSection] = useState('settings');
   const [expandedDays, setExpandedDays]   = useState<Set<number>>(new Set([1]));
   const [selectedPolicies, setSelectedPolicies] = useState<string[]>([]);
@@ -311,6 +312,17 @@ export default function TemplateEditPage() {
     }
   }, [id, cms, days, tiers, selectedPolicies, tplSettings, router]);
 
+  async function deleteTemplate() {
+    if (!confirm('Move this template to Recently Deleted? You can restore it within 30 days.')) return;
+    setDeleting(true);
+    try {
+      await fetch(`/api/v1/private-templates/${id}`, { method: 'DELETE' });
+      router.push('/admin/private-templates');
+    } catch {
+      setDeleting(false);
+    }
+  }
+
   /* ── Helpers ── */
   function updCms<K extends keyof CmsData>(key: K, val: CmsData[K]) {
     setCms(p => ({ ...p, [key]: val }));
@@ -427,6 +439,13 @@ export default function TemplateEditPage() {
           </p>
         </div>
         <div className="flex gap-2 flex-shrink-0 ml-4">
+          <button onClick={deleteTemplate} disabled={deleting || saving}
+            className="flex items-center gap-2 h-9 px-3 rounded-lg text-sm font-semibold disabled:opacity-50 hover:opacity-90 transition-colors"
+            style={{ backgroundColor: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}
+            title="Move to Recently Deleted">
+            <Trash2 className="w-4 h-4" />
+            {deleting ? 'Deleting…' : 'Delete'}
+          </button>
           <button onClick={() => save(false)} disabled={saving}
             className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold disabled:opacity-50 hover:opacity-90"
             style={{ backgroundColor: saved ? '#22c55e' : T, color: 'white' }}>
@@ -956,9 +975,9 @@ export default function TemplateEditPage() {
                             <GripVertical
                               className="w-3.5 h-3.5 cursor-grab active:cursor-grabbing opacity-0 group-hover/dest:opacity-100 transition-opacity flex-shrink-0"
                               style={{ color: '#CBD5E1' }} />
-                            <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: skipping ? '#CBD5E1' : '#94A3B8' }}>
-                              {dest?.name}
-                              {skipping && <span className="ml-2 normal-case font-medium text-[#CBD5E1]">· Not staying</span>}
+                            <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: dest ? (skipping ? '#CBD5E1' : '#94A3B8') : '#FDA4AF' }}>
+                              {dest?.name ?? <span className="normal-case font-medium text-red-400">Unknown destination · <button onClick={() => setTplSettings(p => ({ ...p, destination_ids: p.destination_ids.filter(x => x !== did) }))} className="underline hover:text-red-600">Remove</button></span>}
+                              {dest && skipping && <span className="ml-2 normal-case font-medium text-[#CBD5E1]">· Not staying</span>}
                             </p>
                           </div>
                           {/* Nights stepper */}
