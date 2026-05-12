@@ -17,6 +17,14 @@ const inpSt = { borderColor: '#E2E8F0' };
 const T     = '#134956';
 const card  = { border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' };
 
+/** Distribute `adults` across rooms (max 2 per room), last room gets remainder */
+function makeRoomsConfig(adults: number): { pax: number }[] {
+  const numRooms = Math.max(1, Math.ceil(adults / 2));
+  return Array.from({ length: numRooms }, (_, i) => ({
+    pax: i < numRooms - 1 ? 2 : adults - (numRooms - 1) * 2,
+  }));
+}
+
 /* ─── Types ─── */
 interface State        { id: string; name: string; code: string }
 interface VehicleType  { id: string; display_name: string; capacity: number }
@@ -256,8 +264,8 @@ export default function CreateQuotePage() {
           check_in_date: checkIn,
           check_out_date: checkOut,
           nights: n,
-          rooms: defaultRooms,
-          rooms_config: Array.from({ length: defaultRooms }, () => ({ pax: 2 })),
+          rooms: makeRoomsConfig(adults).length,
+          rooms_config: makeRoomsConfig(adults),
           adults_per_room: 2,
           cwb: children512,
           cwob: childrenBelow5,
@@ -988,8 +996,8 @@ export default function CreateQuotePage() {
                     if (n === 0) return null;
                     const checkIn  = new Date(cursorMs).toISOString().slice(0, 10);
                     cursorMs += n * 86400000;
-                    const defRooms = Math.max(1, Math.ceil(adults / 2));
-                    return { destination_id: did, hotel_id: '', room_category_id: '', meal_plan_id: '', check_in_date: checkIn, check_out_date: new Date(cursorMs).toISOString().slice(0, 10), nights: n, rooms: defRooms, rooms_config: Array.from({ length: defRooms }, () => ({ pax: 2 })), adults_per_room: 2, cwb: children512, cwob: childrenBelow5, fetched_price: null, fetching: false, fetch_error: null, manual_cost: null, meal_overrides: {} };
+                    const roomsCfg = makeRoomsConfig(adults);
+                    return { destination_id: did, hotel_id: '', room_category_id: '', meal_plan_id: '', check_in_date: checkIn, check_out_date: new Date(cursorMs).toISOString().slice(0, 10), nights: n, rooms: roomsCfg.length, rooms_config: roomsCfg, adults_per_room: 2, cwb: children512, cwob: childrenBelow5, fetched_price: null, fetching: false, fetch_error: null, manual_cost: null, meal_overrides: {} };
                   }).filter(Boolean) as HotelRow[];
                   setOptions(p => [...p, { name: OPTION_NAMES[ni], is_most_popular: false, hotels }]);
                   setExpandedOpt(ni);
