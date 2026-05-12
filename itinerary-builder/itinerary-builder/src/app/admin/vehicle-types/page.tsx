@@ -68,13 +68,13 @@ export default function VehicleTypesPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Deactivate this vehicle type?')) return;
+    if (!confirm('Permanently delete this vehicle type? This will also delete its associated vehicle rates and transfers.')) return;
     setDeleting(id); await fetch(`/api/v1/vehicle-types/${id}`, { method: 'DELETE' }); setDeleting(null); load();
   }
 
   async function handleBulkDelete() {
     if (!selected.size) return;
-    if (!confirm(`Deactivate ${selected.size} selected item${selected.size !== 1 ? 's' : ''}?`)) return;
+    if (!confirm(`Permanently delete ${selected.size} vehicle type${selected.size !== 1 ? 's' : ''}? Their associated rates and transfers will also be deleted.`)) return;
     setBulkDeleting(true);
     await Promise.all(Array.from(selected).map(id => fetch(`/api/v1/vehicle-types/${id}`, { method: 'DELETE' })));
     setBulkDeleting(false);
