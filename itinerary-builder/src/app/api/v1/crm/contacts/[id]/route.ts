@@ -133,14 +133,26 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!user) return unauthorized();
 
   const existing = await prisma.crmContact.findUnique({ where: { id: params.id } });
-  if (!existing || existing.deleted_at) return notFound('Contact');
+  if (!existing) return notFound('Contact');
+
+  // ── Restore a soft-deleted contact ──────────────────────────────────────────
+  const rawBody = await req.json().catch(() => ({}));
+  if (rawBody.restore === true) {
+    if (!requireRole(user, UserRole.ADMIN, UserRole.MANAGER) && existing.owner_id !== user.sub) return forbidden();
+    const restored = await prisma.crmContact.update({
+      where: { id: params.id },
+      data:  { deleted_at: null },
+    });
+    return ok(restored);
+  }
+
+  if (existing.deleted_at) return notFound('Contact');
 
   const isOwner = existing.owner_id === user.sub;
   const isAdmin = requireRole(user, UserRole.ADMIN, UserRole.MANAGER);
   if (!isOwner && !isAdmin) return forbidden();
 
-  const body   = await req.json().catch(() => ({}));
-  const parsed = patchSchema.safeParse(body);
+  const parsed = patchSchema.safeParse(rawBody);
   if (!parsed.success) return err('Validation failed', 400, parsed.error.flatten());
 
   // Only admin/manager can reassign owner.

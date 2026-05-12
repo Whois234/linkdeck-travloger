@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState, useRef, useMemo } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useContacts, useUsers, QK } from '@/lib/query-hooks';
 import { TableSkeleton } from '@/components/Skeleton';
 import { toast } from '@/components/Toaster';
@@ -637,42 +637,212 @@ function ContactPanel({
           )}
 
           {/* Deals */}
-          {c.leads.length > 0 && (
-            <div style={{ borderTop: '1px solid #F1F5F9' }}>
-              <div className="px-6 py-3">
-                <p className="text-[10px] font-bold uppercase tracking-widest mb-3" style={{ color: '#94A3B8' }}>Deals</p>
-                <div className="space-y-2">
-                  {c.leads.map(lead => (
-                    <div key={lead.id} className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate" style={{ color: '#0F172A' }}>{lead.name}</p>
-                        <p className="text-[11px] mt-0.5" style={{ color: '#94A3B8' }}>
-                          {lead.pipeline?.name ?? 'No pipeline'} · {fmtDateTime(lead.created_at)}
-                        </p>
-                      </div>
-                      {lead.stage && (
-                        <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold text-white flex-shrink-0" style={{ backgroundColor: lead.stage.color }}>
-                          {lead.stage.name}
-                        </span>
-                      )}
-                      <a href="/admin/pipelines" className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white flex-shrink-0" style={{ color: '#94A3B8' }}>
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </a>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
+          <ContactPipelineSection c={c} onRefresh={onUpdated} />
         </div>
       </div>
     </div>
   );
 }
 
+// ─── Contact Pipeline Section (with Add-to-Pipeline button) ──────────────────
+
+function ContactPipelineSection({ c, onRefresh }: { c: Contact; onRefresh: () => void }) {
+  const [adding, setAdding] = useState(false);
+
+  const hasActiveLead = c.leads.some(l => l.pipeline !== null);
+
+  async function addToPipeline() {
+    setAdding(true);
+    try {
+      const res  = await fetch('/api/v1/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: c.name, phone: c.phone, crm_contact_id: c.id }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success('Lead added to pipeline');
+        onRefresh();
+      } else {
+        toast.error(data.message ?? 'Failed to add to pipeline');
+      }
+    } catch {
+      toast.error('Network error');
+    }
+    setAdding(false);
+  }
+
+  return (
+    <div style={{ borderTop: '1px solid #F1F5F9' }}>
+      <div className="px-6 py-3">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#94A3B8' }}>Pipeline Deals</p>
+          {!hasActiveLead && (
+            <button onClick={addToPipeline} disabled={adding}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors"
+              style={{ backgroundColor: '#134956', color: '#fff' }}>
+              {adding ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+              Add to Pipeline
+            </button>
+          )}
+        </div>
+        {c.leads.length === 0 ? (
+          <p className="text-xs" style={{ color: '#94A3B8' }}>No pipeline deals yet. Click "Add to Pipeline" to create one.</p>
+        ) : (
+          <div className="space-y-2">
+            {c.leads.map(lead => (
+              <div key={lead.id} className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate" style={{ color: '#0F172A' }}>{lead.name}</p>
+                  <p className="text-[11px] mt-0.5" style={{ color: '#94A3B8' }}>
+                    {lead.pipeline?.name ?? 'No pipeline'} · {fmtDateTime(lead.created_at)}
+                  </p>
+                </div>
+                {lead.stage && (
+                  <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold text-white flex-shrink-0" style={{ backgroundColor: lead.stage.color }}>
+                    {lead.stage.name}
+                  </span>
+                )}
+                <a href="/admin/pipelines" className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white flex-shrink-0" style={{ color: '#94A3B8' }}>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Deleted Contacts Recycle Bin ────────────────────────────────────────────
+
+function DeletedContactsTab({ qc, contactParams }: { qc: QueryClient; contactParams: URLSearchParams }) {
+  const [deleted, setDeleted]   = useState<{ id: string; name: string; phone: string; deleted_at: string; email?: string | null }[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [restoring, setRestoring] = useState<string | null>(null);
+  const [purging, setPurging]   = useState<string | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    const res = await fetch('/api/v1/crm/contacts?deleted_only=true&limit=200').catch(() => null);
+    const data = await res?.json().catch(() => null);
+    setDeleted(data?.success ? (data.data?.items ?? data.data?.contacts ?? []) : []);
+    setLoading(false);
+  };
+
+  useEffect(() => { void load(); }, []);
+
+  async function restore(id: string) {
+    setRestoring(id);
+    const res = await fetch(`/api/v1/crm/contacts/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ restore: true }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      toast.success('Contact restored successfully');
+      qc.invalidateQueries({ queryKey: QK.contacts(contactParams.toString()) });
+      void load();
+    } else {
+      toast.error('Failed to restore contact');
+    }
+    setRestoring(null);
+  }
+
+  async function purgeNow(id: string) {
+    if (!confirm('Permanently delete this contact? This CANNOT be undone.')) return;
+    setPurging(id);
+    const res = await fetch(`/api/v1/crm/contacts/${id}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (data.success) {
+      toast.success('Contact permanently deleted');
+      setDeleted(prev => prev.filter(c => c.id !== id));
+    } else {
+      toast.error('Failed to delete contact');
+    }
+    setPurging(null);
+  }
+
+  const daysSince = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / (1000 * 60 * 60 * 24));
+
+  return (
+    <div className="flex-1 overflow-auto p-6 space-y-4">
+      {/* Info banner */}
+      <div className="flex items-start gap-3 px-5 py-4 rounded-xl" style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA' }}>
+        <Trash2 className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: '#DC2626' }} />
+        <div>
+          <p className="text-sm font-semibold" style={{ color: '#991B1B' }}>Deleted Contacts Recycle Bin</p>
+          <p className="text-xs mt-0.5" style={{ color: '#B91C1C' }}>
+            Contacts are soft-deleted and kept here for 30 days. After 30 days they are permanently removed automatically.
+            Restore a contact at any time to bring it back.
+          </p>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center h-32">
+          <Loader2 className="w-5 h-5 animate-spin" style={{ color: '#94A3B8' }} />
+        </div>
+      ) : deleted.length === 0 ? (
+        <div className="text-center py-16">
+          <Trash2 className="w-10 h-10 mx-auto mb-3" style={{ color: '#CBD5E1' }} />
+          <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>No deleted contacts</p>
+          <p className="text-xs mt-1" style={{ color: '#94A3B8' }}>Deleted contacts appear here and are auto-purged after 30 days.</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
+          <div className="grid grid-cols-5 px-5 py-3 text-[11px] font-bold uppercase tracking-wider"
+            style={{ backgroundColor: '#FFF5F5', borderBottom: '1px solid #FECACA', color: '#94A3B8' }}>
+            <div className="col-span-2">Contact</div>
+            <div>Phone</div>
+            <div>Deleted</div>
+            <div className="text-right">Actions</div>
+          </div>
+          {deleted.map((c, i) => {
+            const days = daysSince(c.deleted_at);
+            const daysLeft = 30 - days;
+            return (
+              <div key={c.id} className="grid grid-cols-5 items-center px-5 py-4"
+                style={{ borderBottom: i < deleted.length - 1 ? '1px solid #FEF2F2' : 'none' }}>
+                <div className="col-span-2">
+                  <p className="text-sm font-semibold" style={{ color: '#374151' }}>{c.name}</p>
+                  {c.email && <p className="text-xs" style={{ color: '#94A3B8' }}>{c.email}</p>}
+                </div>
+                <div className="font-mono text-xs" style={{ color: '#134956' }}>{c.phone}</div>
+                <div>
+                  <p className="text-xs" style={{ color: '#64748B' }}>{days} day{days !== 1 ? 's' : ''} ago</p>
+                  <p className="text-[10px] font-semibold" style={{ color: daysLeft <= 5 ? '#DC2626' : '#94A3B8' }}>
+                    {daysLeft > 0 ? `${daysLeft}d left` : 'Due for purge'}
+                  </p>
+                </div>
+                <div className="flex items-center justify-end gap-2">
+                  <button onClick={() => restore(c.id)} disabled={restoring === c.id}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                    style={{ backgroundColor: '#134956', color: '#fff' }}>
+                    {restoring === c.id ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                    Restore
+                  </button>
+                  <button onClick={() => purgeNow(c.id)} disabled={purging === c.id}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                    style={{ backgroundColor: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
+                    {purging === c.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                    Delete Forever
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function ContactsPage() {
-  const [tab, setTab]             = useState<'contacts' | 'duplicates'>('contacts');
+  const [tab, setTab]             = useState<'contacts' | 'duplicates' | 'deleted'>('contacts');
   const [dupes, setDupes]         = useState<DuplicateAttempt[]>([]);
   const [search, setSearch]       = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -903,11 +1073,19 @@ export default function ContactsPage() {
 
         {/* Tabs */}
         <div className="flex gap-1 p-0.5 rounded-lg" style={{ backgroundColor: '#F1F5F9' }}>
-          {(['contacts', 'duplicates'] as const).map(t => (
-            <button key={t} onClick={() => setTab(t)}
-              className="px-3 py-1.5 rounded-md text-xs font-semibold transition-all capitalize"
-              style={{ backgroundColor: tab === t ? '#fff' : 'transparent', color: tab === t ? '#0F172A' : '#64748B', boxShadow: tab === t ? '0 1px 2px rgba(0,0,0,0.06)' : 'none' }}>
-              {t === 'duplicates' ? `Duplicate Cleanup${dupes.length ? ` (${dupes.length})` : ''}` : 'All Contacts'}
+          {([
+            { key: 'contacts',   label: 'All Contacts' },
+            { key: 'duplicates', label: `Duplicate Cleanup${dupes.length ? ` (${dupes.length})` : ''}` },
+            { key: 'deleted',    label: 'Deleted' },
+          ] as const).map(({ key, label }) => (
+            <button key={key} onClick={() => setTab(key)}
+              className="px-3 py-1.5 rounded-md text-xs font-semibold transition-all"
+              style={{
+                backgroundColor: tab === key ? '#fff' : 'transparent',
+                color:            tab === key ? (key === 'deleted' ? '#DC2626' : '#0F172A') : '#64748B',
+                boxShadow:        tab === key ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+              }}>
+              {label}
             </button>
           ))}
         </div>
@@ -1458,6 +1636,9 @@ export default function ContactsPage() {
             )}
           </div>
         </>
+      ) : tab === 'deleted' ? (
+        /* ── Deleted Contacts Recycle Bin ── */
+        <DeletedContactsTab qc={qc} contactParams={contactParams} />
       ) : (
         /* Duplicate Cleanup Tab */
         <div className="flex-1 overflow-auto p-6 space-y-4">

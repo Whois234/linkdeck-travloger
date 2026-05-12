@@ -121,7 +121,14 @@ export async function GET(req: NextRequest) {
   const tripType      = searchParams.get('trip_type');
   const doNotContact  = searchParams.get('do_not_contact'); // 'true' | 'false'
   const includeDeleted = searchParams.get('include_deleted') === 'true';
+  const deletedOnly    = searchParams.get('deleted_only') === 'true';
   const hasPipeline    = searchParams.get('has_pipeline'); // 'true' | 'false' | null
+
+  // Auto-purge contacts soft-deleted more than 30 days ago (run opportunistically on deleted_only fetch)
+  if (deletedOnly) {
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    await prisma.crmContact.deleteMany({ where: { deleted_at: { not: null, lt: cutoff } } }).catch(() => {});
+  }
 
   const dateFilter = buildDateFilter(dateRange, dateFrom, dateTo);
   const tagList    = tagsParam ? tagsParam.split(',').map(t => t.trim()).filter(Boolean) : [];
@@ -139,7 +146,8 @@ export async function GET(req: NextRequest) {
 
   const where = {
     ...ownerScope,
-    ...(includeDeleted ? {} : { deleted_at: null }),
+    // deleted_only → show ONLY soft-deleted; includeDeleted → show all; default → exclude deleted
+    ...(deletedOnly ? { deleted_at: { not: null } } : includeDeleted ? {} : { deleted_at: null }),
     ...(search ? {
       OR: [
         { name:  { contains: search, mode: 'insensitive' as const } },

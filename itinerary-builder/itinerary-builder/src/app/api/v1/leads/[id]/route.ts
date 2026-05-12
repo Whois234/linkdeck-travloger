@@ -78,6 +78,41 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   const isPrivileged = requireRole(user, UserRole.ADMIN, UserRole.MANAGER);
   if (!isPrivileged && record.owner_id !== user.sub) return forbidden();
 
+  // ── Snapshot all lead activity into the CrmContact before deleting ──────────
+  if (record.crm_contact_id) {
+    try {
+      const [notes, calls, tasks, activities] = await Promise.all([
+        prisma.leadNote.findMany({ where: { lead_id: params.id }, orderBy: { created_at: 'asc' } }),
+        prisma.callLog.findMany({ where: { lead_id: params.id }, orderBy: { created_at: 'asc' } }),
+        prisma.leadTask.findMany({ where: { lead_id: params.id }, orderBy: { due_time: 'asc' } }),
+        prisma.leadActivity.findMany({ where: { lead_id: params.id }, orderBy: { created_at: 'asc' } }),
+      ]);
+
+      // Write a single FIELD_UPDATE activity on the contact with full history in metadata
+      await prisma.contactActivity.create({
+        data: {
+          contact_id:      record.crm_contact_id,
+          type:            'FIELD_UPDATE',
+          description:     `Pipeline lead deleted — ${notes.length} note(s), ${calls.length} call(s), ${tasks.length} task(s) archived`,
+          metadata:        {
+            lead_id:    params.id,
+            lead_name:  record.name,
+            pipeline:   record.pipeline_id,
+            stage:      record.stage_id,
+            deleted_by: user.sub,
+            notes:      notes.map(n => ({ content: n.content, created_at: n.created_at })),
+            calls:      calls.map(c => ({ duration: c.duration, outcome: c.outcome, notes: c.notes, created_at: c.created_at })),
+            tasks:      tasks.map(t => ({ type: t.type, status: t.status, due_time: t.due_time, notes: t.notes })),
+            activities: activities.map(a => ({ type: a.type, metadata: a.metadata, created_at: a.created_at })),
+          } as Parameters<typeof prisma.contactActivity.create>[0]['data']['metadata'],
+          performed_by_id: user.sub,
+        },
+      });
+    } catch (e) {
+      console.error('[lead/DELETE] activity snapshot failed:', e);
+    }
+  }
+
   await prisma.lead.delete({ where: { id: params.id } });
   return ok({ message: 'Lead deleted' });
 }
