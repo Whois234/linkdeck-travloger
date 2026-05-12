@@ -380,6 +380,38 @@ function ContactPanel({
                 </div>
               </PanelSection>
 
+              {/* ── DEVICE & LOCATION (auto-detected when customer opens a quote) ── */}
+              {(() => {
+                const cf = c.custom_fields as Record<string, string> | null;
+                const os      = cf?.detected_os;
+                const browser = cf?.detected_browser;
+                const device  = cf?.detected_device ?? (c.device_platform ?? null);
+                const dCity   = cf?.detected_city;
+                const dRegion = cf?.detected_region;
+                const dCountry= cf?.detected_country;
+                if (!os && !device && !dCity) return null;
+
+                // OS icon labels
+                const OS_ICON: Record<string, string> = {
+                  iOS: '🍎 iOS', Android: '🤖 Android', Windows: '🪟 Windows',
+                  macOS: '🍏 macOS', Linux: '🐧 Linux', Unknown: '?',
+                };
+                const DEV_ICON: Record<string, string> = {
+                  Mobile: '📱 Mobile', Tablet: '📲 Tablet', Desktop: '🖥️ Desktop', MOBILE: '📱 Mobile', DESKTOP: '🖥️ Desktop',
+                };
+
+                return (
+                  <PanelSection title="Device & Location (Auto-detected)">
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+                      {os && <PF label="OS / Platform" value={OS_ICON[os] ?? os} />}
+                      {device && <PF label="Device Type" value={DEV_ICON[device] ?? device} />}
+                      {browser && <PF label="Browser" value={browser} />}
+                      {dCity && <PF label="Location (IP)" value={[dCity, dRegion, dCountry].filter(Boolean).join(', ')} />}
+                    </div>
+                  </PanelSection>
+                );
+              })()}
+
               {/* ── TRAVEL INTEREST ────────────────────────────────────── */}
               <PanelSection title="Travel Interest">
                 <div className="grid grid-cols-2 gap-x-6 gap-y-3">
@@ -1139,11 +1171,25 @@ export default function ContactsPage() {
                               : <span className="text-xs" style={{ color: '#CBD5E1' }}>—</span>}
                         </td>
 
-                        {/* Platform */}
-                        <td className="px-3 py-3 text-xs" style={{ color: '#64748B' }}>
+                        {/* Platform + detected OS */}
+                        <td className="px-3 py-3 text-xs">
                           {c.platform
                             ? <span className="font-medium" style={{ color: '#0F172A' }}>{c.platform.replace(/_/g, ' ')}</span>
-                            : <span style={{ color: '#CBD5E1' }}>—</span>}
+                            : null}
+                          {(() => {
+                            const cf = c.custom_fields as Record<string, string> | null;
+                            const os = cf?.detected_os;
+                            const dev = cf?.detected_device ?? c.device_platform;
+                            if (!os && !dev) return c.platform ? null : <span style={{ color: '#CBD5E1' }}>—</span>;
+                            const OS_ICON: Record<string, string> = { iOS: '🍎', Android: '🤖', Windows: '🪟', macOS: '🍏', Linux: '🐧' };
+                            const DEV_ICON: Record<string, string> = { Mobile: '📱', Tablet: '📲', Desktop: '🖥️', MOBILE: '📱', DESKTOP: '🖥️' };
+                            return (
+                              <div className="flex items-center gap-1 mt-0.5">
+                                {dev && <span className="text-[10px]">{DEV_ICON[dev] ?? dev}</span>}
+                                {os  && <span className="text-[10px]" style={{ color: '#64748B' }}>{(OS_ICON[os] ?? '') + ' ' + os}</span>}
+                              </div>
+                            );
+                          })()}
                         </td>
 
                         {/* Campaign */}

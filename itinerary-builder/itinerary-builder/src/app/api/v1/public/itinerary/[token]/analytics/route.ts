@@ -107,11 +107,40 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
     },
   });
 
-  // Auto-update the CRM contact's last known city when a viewer event resolves a city
-  if (location?.city && quote.lead?.crm_contact_id) {
+  // Auto-update CRM contact with geo + device info from this view event
+  if (quote.lead?.crm_contact_id && eventType === 'quote_viewed') {
+    const contactPatch: Record<string, unknown> = { last_seen_at: new Date() };
+
+    // Geo — city from IP resolution
+    if (location?.city) contactPatch.last_known_city = location.city;
+
+    // Device platform — MOBILE or DESKTOP (enum on CrmContact)
+    if (uaParsed.device === 'Mobile' || uaParsed.device === 'Tablet') {
+      contactPatch.device_platform = 'MOBILE';
+    } else {
+      contactPatch.device_platform = 'DESKTOP';
+    }
+
+    // OS + browser — stored in custom_fields JSONB under auto-detected keys
+    // We merge (not overwrite) so existing user-set custom fields are preserved.
+    const existingContact = await prisma.crmContact.findUnique({
+      where: { id: quote.lead.crm_contact_id },
+      select: { custom_fields: true },
+    }).catch(() => null);
+    const existingCf = (existingContact?.custom_fields as Record<string, unknown>) ?? {};
+    contactPatch.custom_fields = {
+      ...existingCf,
+      detected_os:      uaParsed.os,
+      detected_browser: uaParsed.browser,
+      detected_device:  uaParsed.device,
+      ...(location?.city    ? { detected_city:    location.city }    : {}),
+      ...(location?.region  ? { detected_region:  location.region }  : {}),
+      ...(location?.country ? { detected_country: location.country } : {}),
+    };
+
     await prisma.crmContact.update({
       where: { id: quote.lead.crm_contact_id },
-      data: { last_known_city: location.city, last_seen_at: new Date() },
+      data: contactPatch as Parameters<typeof prisma.crmContact.update>[0]['data'],
     }).catch(() => {});
   }
 
