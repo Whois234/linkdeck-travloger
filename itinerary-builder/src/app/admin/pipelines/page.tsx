@@ -771,7 +771,7 @@ export default function PipelinesPage() {
     const contactIds = leadIds
       .map(id => allPipelineLeads.find(l => l.id === id)?.crm_contact_id)
       .filter(Boolean) as string[];
-    const uniqueContactIds = [...new Set(contactIds)];
+    const uniqueContactIds = Array.from(new Set(contactIds));
     uniqueContactIds.forEach(contactId => {
       fetch(`/api/v1/crm/contacts/${contactId}`, {
         method: 'PATCH',
