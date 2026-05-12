@@ -81,6 +81,7 @@ function PrivateTemplatesPageInner() {
   const [err, setErr]         = useState('');
   const [deleting, setDeleting]     = useState<string | null>(null);
   const [duplicating, setDuplicating] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   // ── Selection ──
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -165,12 +166,23 @@ function PrivateTemplatesPageInner() {
     router.push(`/admin/private-templates/${d.data.id}/edit`);
   }
 
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3500);
+  }
+
   async function del(id: string) {
-    if (!confirm('Deactivate this template?')) return;
+    if (!confirm('Delete this template?')) return;
     setDeleting(id);
-    await fetch(`/api/v1/private-templates/${id}`, { method: 'DELETE' });
+    const res = await fetch(`/api/v1/private-templates/${id}`, { method: 'DELETE' });
     setDeleting(null);
-    load();
+    if (res.ok) {
+      // Optimistically remove from local state so it disappears immediately in all tabs
+      setRows(prev => prev.filter(r => r.id !== id));
+      showToast('Template deleted successfully');
+    } else {
+      alert('Delete failed. Please try again.');
+    }
   }
 
   async function duplicate(id: string, name: string) {
@@ -189,12 +201,14 @@ function PrivateTemplatesPageInner() {
 
   async function handleBulkDelete() {
     if (!selected.size) return;
-    if (!confirm(`Deactivate ${selected.size} template${selected.size !== 1 ? 's' : ''}? This cannot be undone.`)) return;
+    if (!confirm(`Delete ${selected.size} template${selected.size !== 1 ? 's' : ''}? This cannot be undone.`)) return;
     setBulkDeleting(true);
-    await Promise.all(Array.from(selected).map(id => fetch(`/api/v1/private-templates/${id}`, { method: 'DELETE' })));
+    const ids = Array.from(selected);
+    await Promise.all(ids.map(id => fetch(`/api/v1/private-templates/${id}`, { method: 'DELETE' })));
     setBulkDeleting(false);
     setSelected(new Set());
-    load();
+    setRows(prev => prev.filter(r => !ids.includes(r.id)));
+    showToast(`${ids.length} template${ids.length !== 1 ? 's' : ''} deleted successfully`);
   }
 
   function toggleSelect(id: string) {
@@ -258,6 +272,18 @@ function PrivateTemplatesPageInner() {
 
   return (
     <div className="max-w-[1400px]">
+      {/* Success toast */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-xl shadow-xl text-sm font-semibold animate-fade-in-up"
+          style={{ backgroundColor: '#134956', color: 'white', minWidth: 260 }}>
+          <CheckCircle2 className="w-4 h-4 text-green-300 flex-shrink-0" />
+          {toast}
+          <button onClick={() => setToast(null)} className="ml-auto opacity-70 hover:opacity-100">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       <PageHeader
         title="Private Templates"
         subtitle="Build and manage itinerary templates for private tours"

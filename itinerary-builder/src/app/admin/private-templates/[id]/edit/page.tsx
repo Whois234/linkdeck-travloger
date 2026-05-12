@@ -7,7 +7,7 @@ import { RichTextEditor } from '@/components/admin/RichTextEditor';
 import {
   ChevronDown, ChevronRight, Plus, Trash2, Check,
   Save, Star, Image as ImgIcon, FileText, LayoutList,
-  MapPin, Shield, HelpCircle, BookOpen, ListPlus, Settings,
+  MapPin, Shield, HelpCircle, BookOpen, ListPlus, Settings, GripVertical,
 } from 'lucide-react';
 
 /* ── Shared style tokens ── */
@@ -331,6 +331,31 @@ export default function TemplateEditPage() {
   function tiersForOption(optName: string) {
     return tiers.filter(t => t.tier_name === optName);
   }
+
+  /* ── Destination drag-and-drop (hotel selections) ── */
+  const dragSrcId = useRef<string | null>(null);
+  const dragOverId = useRef<string | null>(null);
+  function handleDestDragStart(did: string) { dragSrcId.current = did; }
+  function handleDestDragOver(e: React.DragEvent, did: string) {
+    e.preventDefault();
+    dragOverId.current = did;
+  }
+  function handleDestDrop() {
+    const src = dragSrcId.current;
+    const over = dragOverId.current;
+    if (!src || !over || src === over) return;
+    setTplSettings(p => {
+      const ids = [...p.destination_ids];
+      const fromIdx = ids.indexOf(src);
+      const toIdx   = ids.indexOf(over);
+      if (fromIdx === -1 || toIdx === -1) return p;
+      ids.splice(fromIdx, 1);
+      ids.splice(toIdx, 0, src);
+      return { ...p, destination_ids: ids };
+    });
+    dragSrcId.current  = null;
+    dragOverId.current = null;
+  }
   function hotelsForDest(destId: string) {
     return hotels.filter(h => h.destination_id === destId);
   }
@@ -352,7 +377,8 @@ export default function TemplateEditPage() {
   );
   if (!tpl) return <div className="py-20 text-center text-sm text-[#64748B]">Template not found.</div>;
 
-  const destList = (tpl.destinations ?? []) as string[];
+  // Use tplSettings.destination_ids as the canonical ordered list — it's what gets saved
+  const destList = tplSettings.destination_ids;
 
   return (
     <div className="max-w-[1200px]">
@@ -915,13 +941,24 @@ export default function TemplateEditPage() {
                     const rooms = roomsForHotel(tier.default_hotel_id ?? '');
                     const skipping = tier.nights === 0;
                     return (
-                      <div key={did} className="mb-4 pb-4" style={{ borderBottom: '1px solid #F1F5F9' }}>
-                        {/* Destination label + nights stepper */}
+                      <div key={did} className="mb-4 pb-4 group/dest"
+                        style={{ borderBottom: '1px solid #F1F5F9' }}
+                        draggable
+                        onDragStart={() => handleDestDragStart(did)}
+                        onDragOver={e => handleDestDragOver(e, did)}
+                        onDrop={handleDestDrop}
+                        onDragEnd={() => { dragSrcId.current = null; dragOverId.current = null; }}>
+                        {/* Destination label + drag handle + nights stepper */}
                         <div className="flex items-center justify-between mb-2">
-                          <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: skipping ? '#CBD5E1' : '#94A3B8' }}>
-                            {dest?.name}
-                            {skipping && <span className="ml-2 normal-case font-medium text-[#CBD5E1]">· Not staying</span>}
-                          </p>
+                          <div className="flex items-center gap-1.5">
+                            <GripVertical
+                              className="w-3.5 h-3.5 cursor-grab active:cursor-grabbing opacity-0 group-hover/dest:opacity-100 transition-opacity flex-shrink-0"
+                              style={{ color: '#CBD5E1' }} />
+                            <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: skipping ? '#CBD5E1' : '#94A3B8' }}>
+                              {dest?.name}
+                              {skipping && <span className="ml-2 normal-case font-medium text-[#CBD5E1]">· Not staying</span>}
+                            </p>
+                          </div>
                           {/* Nights stepper */}
                           <div className="flex items-center gap-1">
                             <span className="text-[10px] font-semibold text-[#94A3B8] mr-1">Nights</span>
