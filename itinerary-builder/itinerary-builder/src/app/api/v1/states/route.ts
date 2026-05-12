@@ -13,7 +13,7 @@ const StateSchema = z.object({
   country: z.string().min(1),
   code: z.string().min(2).max(6).toUpperCase(),
   trip_id_prefix: z.string().min(1),
-  description: z.string().optional(),
+  description: z.string().optional().nullable(),
   hero_image: z.string().url().optional().nullable(),
   status: z.boolean().optional(),
 });
