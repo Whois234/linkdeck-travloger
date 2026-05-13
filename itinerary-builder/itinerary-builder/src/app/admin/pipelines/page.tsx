@@ -19,6 +19,7 @@ const LeadDrawer      = dynamic(() => import('./LeadDrawer'),    { ssr: false })
 const AddLeadDrawer   = dynamic(() => import('./AddLeadDrawer'), { ssr: false });
 const CallBanner      = dynamic(() => import('./LeadDrawer').then(m => ({ default: m.CallBanner })),      { ssr: false });
 const CallLogPopup    = dynamic(() => import('./LeadDrawer').then(m => ({ default: m.CallLogPopup })),    { ssr: false });
+const WhatsAppPanel   = dynamic(() => import('@/components/WhatsAppPanel'),                               { ssr: false });
 
 const T = '#134956';
 
@@ -99,7 +100,7 @@ function MoveToSheet({ lead, stages, stageCounts, onMove, onClose }: {
 
 const LeadCard = memo(function LeadCard({
   lead, stageColor, onDragStart, onClick, selected, onToggleSelect, onPrefetch,
-  onLongPress, onMoveTap, onCall, isDragging,
+  onLongPress, onMoveTap, onCall, onWhatsAppChat, isDragging,
 }: {
   lead: Lead; stageColor: string;
   onDragStart: (e: React.DragEvent, leadId: string) => void;
@@ -110,6 +111,7 @@ const LeadCard = memo(function LeadCard({
   onLongPress: (lead: Lead, rect: DOMRect, touchX: number, touchY: number) => void;
   onMoveTap: (lead: Lead) => void;
   onCall: (lead: Lead) => void;
+  onWhatsAppChat: (lead: Lead) => void;
   isDragging: boolean;
 }) {
   const callCount  = lead._count?.call_logs ?? 0;
@@ -278,9 +280,17 @@ const LeadCard = memo(function LeadCard({
               className="w-6 h-6 rounded-lg flex items-center justify-center transition-colors hover:bg-[#F0FDF4]" title="Call">
               <Phone className="w-3 h-3" style={{ color: '#16A34A' }} />
             </button>
+            {/* Blue — opens conversation panel (API-based) */}
+            <button onClick={e => { e.stopPropagation(); onWhatsAppChat(lead); }}
+              className="w-6 h-6 rounded-lg flex items-center justify-center transition-colors hover:bg-[#EFF6FF]"
+              title="WhatsApp chat (API)">
+              <MessageCircle className="w-3 h-3" style={{ color: '#2563EB' }} />
+            </button>
+            {/* Green — opens wa.me in new tab */}
             <a href={`https://wa.me/${lead.phone.replace(/\D/g, '')}`} target="_blank" rel="noreferrer"
               onClick={e => e.stopPropagation()}
-              className="w-6 h-6 rounded-lg flex items-center justify-center transition-colors hover:bg-[#F0FDF4]" title="WhatsApp">
+              className="w-6 h-6 rounded-lg flex items-center justify-center transition-colors hover:bg-[#F0FDF4]"
+              title="Open in WhatsApp">
               <MessageCircle className="w-3 h-3" style={{ color: '#25D366' }} />
             </a>
           </div>
@@ -294,7 +304,7 @@ const LeadCard = memo(function LeadCard({
 
 const KanbanColumn = memo(function KanbanColumn({
   stage, leads, onDragStart, onDrop, onLeadClick, selectedIds, onToggleSelect, onSelectAllInStage, onPrefetch,
-  onLongPress, onMoveTap, onCall, draggingLeadId,
+  onLongPress, onMoveTap, onCall, onWhatsAppChat, draggingLeadId,
 }: {
   stage: Stage; leads: Lead[];
   onDragStart: (e: React.DragEvent, leadId: string) => void;
@@ -307,6 +317,7 @@ const KanbanColumn = memo(function KanbanColumn({
   onLongPress: (lead: Lead, rect: DOMRect, touchX: number, touchY: number) => void;
   onMoveTap: (lead: Lead) => void;
   onCall: (lead: Lead) => void;
+  onWhatsAppChat: (lead: Lead) => void;
   draggingLeadId: string | null;
 }) {
   const PAGE_SIZE   = 20;
@@ -366,6 +377,7 @@ const KanbanColumn = memo(function KanbanColumn({
             selected={selectedIds.has(lead.id)} onToggleSelect={onToggleSelect}
             onPrefetch={onPrefetch}
             onLongPress={onLongPress} onMoveTap={onMoveTap} onCall={onCall}
+            onWhatsAppChat={onWhatsAppChat}
             isDragging={draggingLeadId === lead.id} />
         ))}
 
@@ -539,6 +551,7 @@ export default function PipelinesPage() {
   const [showSortMenu, setShowSortMenu]         = useState(false);
   const draggingLeadId = useRef<string | null>(null);
   const [moveLead, setMoveLead] = useState<Lead | null>(null);
+  const [waPanel, setWaPanel]   = useState<{ phone: string; name: string } | null>(null);
   const [callState, setCallState] = useState<CallState>(null);
   const [callPopupState, setCallPopupState] = useState<{ leadId: string; leadName: string; elapsed: number; outcome: string } | null>(null);
 
@@ -606,6 +619,10 @@ export default function PipelinesPage() {
   const handleCall = useCallback((lead: Lead) => {
     window.location.href = `tel:${lead.phone}`;
     setCallState({ active: true, leadId: lead.id, leadName: lead.name, phone: lead.phone, elapsed: 0 });
+  }, []);
+
+  const handleWhatsAppChat = useCallback((lead: Lead) => {
+    setWaPanel({ phone: lead.phone, name: lead.name });
   }, []);
 
   const handleLongPress = useCallback((lead: Lead, rect: DOMRect, touchX: number, touchY: number) => {
@@ -1032,6 +1049,7 @@ export default function PipelinesPage() {
                 onLongPress={handleLongPress}
                 onMoveTap={handleMoveTap}
                 onCall={handleCall}
+                onWhatsAppChat={handleWhatsAppChat}
                 draggingLeadId={mobileDrag?.lead.id ?? null}
               />
             );
@@ -1196,6 +1214,15 @@ export default function PipelinesPage() {
       })()}
 
       {/* MoveToSheet triggered when ghost is released over Move To zone */}
+
+      {/* WhatsApp conversation panel */}
+      {waPanel && (
+        <WhatsAppPanel
+          phone={waPanel.phone}
+          contactName={waPanel.name}
+          onClose={() => setWaPanel(null)}
+        />
+      )}
     </div>
   );
 }
