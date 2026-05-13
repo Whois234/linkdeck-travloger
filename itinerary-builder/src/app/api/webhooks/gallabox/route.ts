@@ -132,64 +132,88 @@ export async function POST(req: NextRequest) {
   try {
 
     // ── Message.Received ─────────────────────────────────────────────────────
-    // Payload shape (FLAT — no data wrapper):
-    //   { id, conversationId, contactId, whatsapp: { from, type, text:{body} }, contact: { id, name } }
+    // Payload shape (confirmed from real traffic):
+    //   { id, conversationId, contactId,
+    //     contact: { id, name },
+    //     whatsapp: { from, type, text:{body}, status, time } }
     if (event === 'Message.Received') {
       const wa      = (payload.whatsapp  ?? {}) as Record<string, unknown>;
       const contact = (payload.contact   ?? {}) as Record<string, unknown>;
 
-      const gallaboxId     = payload.id           as string | undefined;
+      const gallaboxId     = payload.id            as string | undefined;
       const conversationId = payload.conversationId as string | undefined;
-      const phone          = normalisePhone(wa.from ?? contact.phone);
-      const name           = (contact.name ?? contact.displayName) as string | undefined;
-      const msgType        = (wa.type ?? wa.messageType) as string | undefined;
+      const contactId      = payload.contactId      as string | undefined;
 
-      console.log('[gallabox-webhook] Message.Received gallaboxId=', gallaboxId, 'phone=', phone);
+      // phone comes from whatsapp.from (e.g. "919391203737")
+      const phone = normalisePhone(wa.from ?? contact.phone);
+      // name from contact.name
+      const name  = (contact.name ?? contact.displayName) as string | undefined;
+      // type: "text" | "image" | "audio" | …
+      const msgType = (wa.type ?? wa.messageType) as string | undefined;
+      // status from whatsapp.status ("received" | "sent" | "delivered" | "read")
+      const waStatus = (wa.status ?? 'received') as string;
+      // direction: incoming when the sender (whatsapp.from) is the contactId's phone
+      // For Message.Received the message always comes FROM the contact → incoming
+      const direction = 'incoming';
+
+      console.log('[gallabox-webhook] Message.Received gallaboxId=', gallaboxId,
+                  'phone=', phone, 'type=', msgType, 'contactId=', contactId);
 
       await prisma.gallaboxMessage.upsert({
         where:  { gallabox_id: gallaboxId ?? `recv_${Date.now()}` },
-        update: { status: 'received', updated_at: new Date() },
+        update: {
+          status:     waStatus,
+          updated_at: new Date(),
+          // also keep these fresh in case name/phone changed
+          contact_phone: phone ?? undefined,
+          contact_name:  name  ?? undefined,
+        },
         create: {
           gallabox_id:     gallaboxId,
           conversation_id: conversationId,
           contact_phone:   phone,
           contact_name:    name,
-          direction:       'incoming',
+          direction,
           message_type:    msgType,
           content:         extractText(wa),
           media_url:       extractMediaUrl(wa),
-          status:          'received',
+          status:          waStatus,
           event_type:      event,
           raw_payload:     payload as Prisma.InputJsonValue,
         },
       });
 
-      console.log('[gallabox-webhook] Message.Received saved OK');
+      console.log('[gallabox-webhook] Message.Received saved OK — content:', extractText(wa));
     }
 
     // ── Message.Send ─────────────────────────────────────────────────────────
+    // Outgoing: Gallabox → contact. whatsapp.from is the channel number,
+    // recipient phone is whatsapp.to OR contact.phone.
     else if (event === 'Message.Send') {
       const wa = (payload.whatsapp ?? payload.message ?? {}) as Record<string, unknown>;
 
-      const gallaboxId     = payload.id           as string | undefined;
+      const gallaboxId     = payload.id            as string | undefined;
       const conversationId = payload.conversationId as string | undefined;
       const contact        = (payload.contact ?? {}) as Record<string, unknown>;
-      const toPhone        = normalisePhone((wa.to ?? contact.phone ?? payload.to));
-      const msgType        = (wa.type ?? wa.messageType) as string | undefined;
+      // For outgoing, recipient is whatsapp.to or contact.phone
+      const toPhone  = normalisePhone(wa.to ?? contact.phone ?? payload.to);
+      const name     = (contact.name ?? contact.displayName) as string | undefined;
+      const msgType  = (wa.type ?? wa.messageType) as string | undefined;
+      const waStatus = (wa.status ?? 'sent') as string;
 
       await prisma.gallaboxMessage.upsert({
         where:  { gallabox_id: gallaboxId ?? `send_${Date.now()}` },
-        update: { status: 'sent', updated_at: new Date() },
+        update: { status: waStatus, updated_at: new Date() },
         create: {
           gallabox_id:     gallaboxId,
           conversation_id: conversationId,
           contact_phone:   toPhone,
-          contact_name:    (contact.name ?? contact.displayName) as string | undefined,
+          contact_name:    name,
           direction:       'outgoing',
           message_type:    msgType,
           content:         extractText(wa),
           media_url:       extractMediaUrl(wa),
-          status:          'sent',
+          status:          waStatus,
           event_type:      event,
           raw_payload:     payload as Prisma.InputJsonValue,
         },
