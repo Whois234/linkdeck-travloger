@@ -132,21 +132,23 @@ export default function CrmSettingsPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [pRes, uRes, autoRes, wfRes] = await Promise.all([
+    const [pRes, uRes, autoRes, wfRes, teamsRes] = await Promise.all([
       fetch('/api/v1/pipelines'),
       fetch('/api/v1/users'),
       fetch('/api/v1/crm/automations'),
       fetch('/api/v1/crm/workflows'),
+      fetch('/api/v1/crm/teams'),
     ]);
-    const [pData, uData, autoData, wfData] = await Promise.all([
-      pRes.json(), uRes.json(), autoRes.json(), wfRes.json(),
+    const [pData, uData, autoData, wfData, teamsData] = await Promise.all([
+      pRes.json(), uRes.json(), autoRes.json(), wfRes.json(), teamsRes.json(),
     ]);
     if (pData.success)    setPipelines(Array.isArray(pData.data) ? pData.data : []);
     // /api/v1/users returns a paginated object: { data: { items: [], total, ... } }
     if (uData.success) setUsers((Array.isArray(uData.data) ? uData.data : (uData.data?.items ?? uData.items ?? [])) as User[]);
     else if (Array.isArray(uData)) setUsers(uData);
-    if (autoData.success) setAutomations(autoData.data ?? []);
-    if (wfData.success)   setWorkflows(wfData.data ?? []);
+    if (autoData.success)  setAutomations(Array.isArray(autoData.data) ? autoData.data : []);
+    if (wfData.success)    setWorkflows(Array.isArray(wfData.data) ? wfData.data : []);
+    if (teamsData.success) setTeams(Array.isArray(teamsData.data) ? teamsData.data : []);
     setLoading(false);
   }, []);
 
@@ -650,14 +652,22 @@ export default function CrmSettingsPage() {
                     </div>
                   </div>
 
-                  {/* Team name (only for team strategy) */}
+                  {/* Team name (only for team strategy) — dropdown from Teams tab */}
                   {wfStrategy === 'team' && (
                     <div>
-                      <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Team Name</label>
-                      <input type="text" value={wfTeamName} onChange={e => setWfTeamName(e.target.value)}
-                        placeholder="e.g. Sales Team A"
-                        className="w-full text-sm rounded-lg px-3 py-2.5 outline-none"
-                        style={{ border: '1px solid #D1D5DB' }} />
+                      <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Select Team</label>
+                      {teams.length === 0 ? (
+                        <p className="text-xs px-3 py-2.5 rounded-lg" style={{ backgroundColor: '#FFFBEB', color: '#B45309', border: '1px solid #FDE68A' }}>
+                          No teams yet — go to the <strong>Teams</strong> tab to create one first.
+                        </p>
+                      ) : (
+                        <SelectBox value={wfTeamName} onChange={setWfTeamName}>
+                          <option value="">Select a team…</option>
+                          {teams.map(t => (
+                            <option key={t.id} value={t.name}>{t.name} ({t.members.length} member{t.members.length !== 1 ? 's' : ''})</option>
+                          ))}
+                        </SelectBox>
+                      )}
                     </div>
                   )}
 
