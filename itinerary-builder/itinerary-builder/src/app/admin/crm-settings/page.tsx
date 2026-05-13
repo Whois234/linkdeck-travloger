@@ -21,12 +21,23 @@ interface StageAutomation {
 interface CrmWorkflow {
   id: string; name: string; module: string; trigger: string;
   conditions: Record<string, unknown> | null;
-  actions: Array<{ type: string; strategy: string; team_name?: string; users: WfUser[] }>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  actions: Array<any>;
   is_active: boolean; created_at: string;
 }
 
 interface User { id: string; name: string; email: string; role: string }
 interface WfUser { user_id: string; name: string; weight?: number }
+
+interface WfRule { field: string; operator: string; value: string }
+interface WfActionItem {
+  type: 'assign_user' | 'set_follow_up' | 'send_notification' | 'update_lead_stage';
+  user_id?: string;
+  user_name?: string;
+  hours_from_now?: number;
+  message?: string;
+  stage?: string;
+}
 
 interface CrmTeamMemberUser { id: string; name: string; email: string; role: string }
 interface CrmTeamMember { id: string; user_id: string; user: CrmTeamMemberUser }
@@ -52,6 +63,38 @@ const ASSIGNMENT_STRATEGIES = [
 ];
 
 const LEAD_SOURCES = ['GOOGLE_ADS', 'META_ADS', 'CTWA', 'ORGANIC', 'REFERRAL', 'WALK_IN', 'WEBSITE', 'OTHER'];
+
+const LEAD_STAGES_LIST = ['NEW', 'CONTACTED', 'ENGAGED', 'FOLLOW_UP_REQUIRED', 'QUOTE_SENT', 'WON', 'LOST'];
+
+const WF_CONDITION_FIELDS = [
+  { value: 'lead_source',            label: 'Lead Source',   type: 'leadSource' },
+  { value: 'interested_destination', label: 'Destination',   type: 'text' },
+  { value: 'trip_type',              label: 'Trip Type',     type: 'text' },
+  { value: 'city',                   label: 'City',          type: 'text' },
+  { value: 'tags',                   label: 'Tag',           type: 'tag' },
+  { value: 'campaign_name',          label: 'Campaign Name', type: 'text' },
+  { value: 'notes',                  label: 'Notes',         type: 'text' },
+  { value: 'special_requirements',   label: 'Requirements',  type: 'text' },
+];
+
+const TEXT_OPERATORS = [
+  { value: 'contains',     label: 'Contains' },
+  { value: 'not_contains', label: "Doesn't Contain" },
+  { value: 'is',           label: 'Is' },
+  { value: 'is_not',       label: 'Is Not' },
+  { value: 'starts_with',  label: 'Starts With' },
+  { value: 'is_empty',     label: 'Is Empty' },
+  { value: 'is_not_empty', label: 'Is Not Empty' },
+];
+const SELECT_OPERATORS = [{ value: 'is', label: 'Is' }, { value: 'is_not', label: 'Is Not' }];
+const TAG_OPERATORS    = [{ value: 'has_tag', label: 'Has Tag' }, { value: 'not_contains', label: "Doesn't Have Tag" }];
+
+const WF_ACTION_TYPES = [
+  { value: 'assign_user',       label: 'Assign to User' },
+  { value: 'set_follow_up',     label: 'Set Follow-up Date' },
+  { value: 'send_notification', label: 'Send Notification' },
+  { value: 'update_lead_stage', label: 'Update Lead Stage' },
+];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -101,15 +144,14 @@ export default function CrmSettingsPage() {
   const [autoError, setAutoError]   = useState('');
 
   // ── Workflow form ──
-  const [showWfForm, setShowWfForm]     = useState(false);
-  const [wfStep, setWfStep]             = useState<'basics' | 'action'>('basics');
-  const [wfName, setWfName]             = useState('');
-  const [wfSourceFilter, setWfSourceFilter] = useState(''); // optional condition
-  const [wfStrategy, setWfStrategy]     = useState<'round_robin' | 'weighted' | 'team'>('round_robin');
-  const [wfTeamName, setWfTeamName]     = useState('');
-  const [wfUsers, setWfUsers]           = useState<WfUser[]>([]);
-  const [savingWf, setSavingWf]         = useState(false);
-  const [wfError, setWfError]           = useState('');
+  const [showWfForm, setShowWfForm]   = useState(false);
+  const [wfStep, setWfStep]           = useState<'basics' | 'conditions' | 'actions'>('basics');
+  const [wfName, setWfName]           = useState('');
+  const [wfMatch, setWfMatch]         = useState<'AND' | 'OR'>('OR');
+  const [wfRules, setWfRules]         = useState<WfRule[]>([]);
+  const [wfActions, setWfActions]     = useState<WfActionItem[]>([{ type: 'assign_user', user_id: '', user_name: '' }]);
+  const [savingWf, setSavingWf]       = useState(false);
+  const [wfError, setWfError]         = useState('');
 
   // ── Teams ──
   const [teams, setTeams]               = useState<CrmTeam[]>([]);
@@ -195,33 +237,31 @@ export default function CrmSettingsPage() {
   // ── Workflow CRUD ──
 
   function resetWfForm() {
-    setWfName(''); setWfSourceFilter(''); setWfStrategy('round_robin');
-    setWfTeamName(''); setWfUsers([]); setWfStep('basics');
+    setWfName(''); setWfMatch('OR'); setWfRules([]);
+    setWfActions([{ type: 'assign_user', user_id: '', user_name: '' }]);
+    setWfStep('basics'); setWfError('');
   }
 
   async function createWorkflow() {
-    if (!wfName.trim() || wfUsers.length === 0) return;
+    const validActions = wfActions.filter(a => {
+      if (a.type === 'assign_user')       return !!a.user_id;
+      if (a.type === 'set_follow_up')     return (a.hours_from_now ?? 0) > 0;
+      if (a.type === 'send_notification') return !!a.message?.trim();
+      if (a.type === 'update_lead_stage') return !!a.stage;
+      return false;
+    });
+    if (!wfName.trim() || validActions.length === 0) { setWfError('Add at least one complete action.'); return; }
     setSavingWf(true); setWfError('');
-    const conditions: Record<string, unknown> = { rr_index: 0 };
-    if (wfSourceFilter) conditions.source_filter = wfSourceFilter;
-    const action: Record<string, unknown> = {
-      type: 'assign_user', strategy: wfStrategy,
-      users: wfUsers,
-    };
-    if (wfStrategy === 'team') action.team_name = wfTeamName;
-    const res  = await fetch('/api/v1/crm/workflows', {
+    const validRules = wfRules.filter(r => r.field && (r.operator === 'is_empty' || r.operator === 'is_not_empty' || r.value.trim()));
+    const conditions = validRules.length > 0 ? { match: wfMatch, rules: validRules } : null;
+    const res = await fetch('/api/v1/crm/workflows', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: wfName, module: 'contacts', trigger: 'on_create',
-        conditions, actions: [action],
-      }),
+      body: JSON.stringify({ name: wfName, module: 'contacts', trigger: 'on_create', conditions, actions: validActions }),
     });
     const data = await res.json();
     setSavingWf(false);
     if (!res.ok) { setWfError(data.error ?? 'Failed to save workflow'); return; }
-    setShowWfForm(false);
-    resetWfForm();
-    load();
+    setShowWfForm(false); resetWfForm(); load();
   }
 
   async function toggleWorkflow(id: string, is_active: boolean) {
@@ -236,19 +276,6 @@ export default function CrmSettingsPage() {
     if (!confirm('Delete this workflow?')) return;
     await fetch(`/api/v1/crm/workflows/${id}`, { method: 'DELETE' });
     setWorkflows(prev => prev.filter(w => w.id !== id));
-  }
-
-  // ── User toggle for workflow ──
-  function toggleWfUser(u: User) {
-    setWfUsers(prev => {
-      const exists = prev.find(w => w.user_id === u.id);
-      if (exists) return prev.filter(w => w.user_id !== u.id);
-      return [...prev, { user_id: u.id, name: u.name, weight: Math.floor(100 / (prev.length + 1)) }];
-    });
-  }
-
-  function setUserWeight(userId: string, weight: number) {
-    setWfUsers(prev => prev.map(u => u.user_id === userId ? { ...u, weight } : u));
   }
 
   // ── Teams CRUD ──
@@ -302,16 +329,40 @@ export default function CrmSettingsPage() {
   }
 
   function wfActionLabel(wf: CrmWorkflow): string {
-    const action = wf.actions?.[0];
-    if (!action) return 'No action';
-    const strat = action.strategy === 'round_robin' ? 'Round Robin'
-      : action.strategy === 'weighted' ? 'Weighted'
-      : `Team: ${action.team_name ?? 'Unnamed'}`;
-    const names = (action.users ?? []).map(u => u.name).join(', ') || 'No users';
-    return `Assign (${strat}) → ${names}`;
+    if (!Array.isArray(wf.actions) || wf.actions.length === 0) return 'No actions';
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const first = wf.actions[0] as any;
+    // Old format
+    if (first.strategy) {
+      const strat = first.strategy === 'round_robin' ? 'Round Robin' : first.strategy === 'weighted' ? 'Weighted' : `Team: ${first.team_name ?? ''}`;
+      const names = (first.users ?? []).map((u: { name: string }) => u.name).join(', ') || 'No users';
+      return `Assign (${strat}) → ${names}`;
+    }
+    // New format
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return wf.actions.map((a: any) => {
+      if (a.type === 'assign_user')       return `Assign → ${a.user_name || a.user_id || 'User'}`;
+      if (a.type === 'set_follow_up')     return `Follow-up in ${a.hours_from_now ?? 24}h`;
+      if (a.type === 'send_notification') return `Notify: "${(a.message ?? '').slice(0, 30)}"`;
+      if (a.type === 'update_lead_stage') return `Stage → ${(a.stage ?? '').replace(/_/g, ' ')}`;
+      return a.type;
+    }).join(' + ');
   }
 
-  const totalWfWeight = wfUsers.reduce((s, u) => s + (u.weight ?? 0), 0);
+  function wfConditionLabel(wf: CrmWorkflow): string {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cond = wf.conditions as any;
+    if (!cond) return 'All new contacts';
+    if (cond.source_filter) return `Source: ${cond.source_filter.replace(/_/g, ' ')}`;
+    if (Array.isArray(cond.rules) && cond.rules.length > 0) {
+      const labels = cond.rules.map((r: { field: string; operator: string; value: string }) => {
+        const fieldLabel = WF_CONDITION_FIELDS.find(f => f.value === r.field)?.label ?? r.field;
+        return `${fieldLabel} ${r.operator.replace(/_/g, ' ')} "${r.value}"`;
+      });
+      return `IF (${labels.join(` ${cond.match ?? 'OR'} `)})`;
+    }
+    return 'All new contacts';
+  }
 
   if (loading) {
     return (
@@ -528,14 +579,14 @@ export default function CrmSettingsPage() {
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════════
-          Workflows — fires when a new contact is created → auto-assign user
+          Workflows — fires when a new contact is created (Bigin-style)
       ══════════════════════════════════════════════════════════════════════════ */}
       {tab === 'workflows' && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>Lead Assignment Workflows</p>
-              <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>Auto-assign new contacts to your team using round-robin, weighted, or team rules</p>
+              <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>Workflows</p>
+              <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>Multi-condition rules with multi-action sequences — runs when a new contact is created</p>
             </div>
             <button onClick={() => { resetWfForm(); setShowWfForm(true); }}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white"
@@ -546,248 +597,286 @@ export default function CrmSettingsPage() {
 
           {/* Workflow builder form */}
           {showWfForm && (
-            <div className="bg-white rounded-2xl p-6 space-y-6" style={{ border: '1px solid #E2E8F0' }}>
-              <div className="flex items-center justify-between">
+            <div className="bg-white rounded-2xl shadow-sm overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: '1px solid #F1F5F9' }}>
                 <div>
-                  <p className="font-semibold" style={{ color: '#0F172A' }}>New Assignment Workflow</p>
-                  <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>
-                    {wfStep === 'basics' ? 'Step 1 of 2 — Name & Conditions' : 'Step 2 of 2 — Assignment Strategy'}
+                  <p className="font-bold text-sm" style={{ color: '#0F172A' }}>New Workflow</p>
+                  <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>
+                    {wfStep === 'basics' ? 'Step 1 of 3 — Name' : wfStep === 'conditions' ? 'Step 2 of 3 — Conditions (optional)' : 'Step 3 of 3 — Actions'}
                   </p>
                 </div>
-                <button onClick={() => { setShowWfForm(false); resetWfForm(); }}
-                  className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#F1F5F9]">
+                <button onClick={() => { setShowWfForm(false); resetWfForm(); }} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#F1F5F9]">
                   <X className="w-4 h-4" style={{ color: '#64748B' }} />
                 </button>
               </div>
 
-              {/* Step indicators */}
-              <div className="flex gap-2">
-                {(['basics', 'action'] as const).map((s, i) => (
+              {/* Step progress dots */}
+              <div className="flex items-center gap-2 px-6 py-3" style={{ borderBottom: '1px solid #F8FAFC' }}>
+                {(['basics', 'conditions', 'actions'] as const).map((s, i) => (
                   <div key={s} className="flex items-center gap-2">
                     {i > 0 && <div className="w-8 h-px" style={{ backgroundColor: '#E2E8F0' }} />}
                     <div className="flex items-center gap-1.5">
                       <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold"
                         style={{
-                          backgroundColor: wfStep === s ? T : (wfStep === 'action' && s === 'basics') ? '#22C55E' : '#E2E8F0',
-                          color: (wfStep === s || (wfStep === 'action' && s === 'basics')) ? '#fff' : '#94A3B8',
+                          backgroundColor: wfStep === s ? T : (['basics', 'conditions', 'actions'].indexOf(wfStep) > i ? '#22C55E' : '#E2E8F0'),
+                          color: wfStep === s || ['basics', 'conditions', 'actions'].indexOf(wfStep) > i ? '#fff' : '#94A3B8',
                         }}>
-                        {(wfStep === 'action' && s === 'basics') ? '✓' : i + 1}
+                        {['basics', 'conditions', 'actions'].indexOf(wfStep) > i ? '✓' : i + 1}
                       </div>
                       <span className="text-xs font-medium" style={{ color: wfStep === s ? '#0F172A' : '#94A3B8' }}>
-                        {s === 'basics' ? 'Basics' : 'Assignment'}
+                        {s === 'basics' ? 'Name' : s === 'conditions' ? 'Conditions' : 'Actions'}
                       </span>
                     </div>
                   </div>
                 ))}
               </div>
 
-              {/* ── Step 1: Basics ── */}
-              {wfStep === 'basics' && (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Workflow Name</label>
-                    <input type="text" value={wfName} onChange={e => setWfName(e.target.value)}
-                      placeholder="e.g. New Google Ads Leads"
-                      className="w-full text-sm rounded-lg px-3 py-2.5 outline-none"
-                      style={{ border: '1px solid #D1D5DB' }} />
-                  </div>
+              <div className="px-6 py-5 space-y-4">
+                {wfError && <p className="text-xs px-3 py-2 rounded-lg" style={{ backgroundColor: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>{wfError}</p>}
 
-                  {/* Trigger (fixed) */}
-                  <div className="flex items-center gap-3 px-4 py-3 rounded-xl" style={{ backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0' }}>
-                    <Zap className="w-4 h-4 flex-shrink-0" style={{ color: '#16A34A' }} />
+                {/* ── Step 1: Name ── */}
+                {wfStep === 'basics' && (
+                  <div className="space-y-4">
                     <div>
-                      <p className="text-xs font-semibold" style={{ color: '#15803D' }}>Trigger</p>
-                      <p className="text-sm font-medium" style={{ color: '#0F172A' }}>When a new contact is created</p>
+                      <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Workflow Name *</label>
+                      <input type="text" value={wfName} onChange={e => setWfName(e.target.value)}
+                        placeholder="e.g. New Google Ads Lead"
+                        className="w-full text-sm rounded-lg px-3 py-2.5 outline-none"
+                        style={{ border: '1px solid #D1D5DB' }} autoFocus />
+                    </div>
+                    {/* Fixed trigger display */}
+                    <div className="flex items-center gap-3 px-4 py-3 rounded-xl" style={{ backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0' }}>
+                      <Zap className="w-4 h-4 flex-shrink-0" style={{ color: '#16A34A' }} />
+                      <div>
+                        <p className="text-xs font-semibold" style={{ color: '#15803D' }}>Trigger</p>
+                        <p className="text-sm font-medium" style={{ color: '#0F172A' }}>When a new contact is created</p>
+                      </div>
+                    </div>
+                    <div className="flex justify-end">
+                      <button onClick={() => setWfStep('conditions')} disabled={!wfName.trim()}
+                        className="px-4 py-2 rounded-lg text-sm font-bold text-white disabled:opacity-50"
+                        style={{ backgroundColor: T }}>
+                        Next: Add Conditions →
+                      </button>
                     </div>
                   </div>
+                )}
 
-                  {/* Condition (optional) */}
-                  <div>
-                    <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>
-                      Condition — Lead Source <span className="font-normal text-[#94A3B8]">(optional)</span>
-                    </label>
-                    <SelectBox value={wfSourceFilter} onChange={setWfSourceFilter}>
-                      <option value="">Any source (always trigger)</option>
-                      {LEAD_SOURCES.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
-                    </SelectBox>
-                    <p className="text-[11px] mt-1" style={{ color: '#94A3B8' }}>
-                      Leave empty to run for all new contacts regardless of source
-                    </p>
-                  </div>
+                {/* ── Step 2: Conditions ── */}
+                {wfStep === 'conditions' && (
+                  <div className="space-y-4">
+                    {/* Match toggle */}
+                    {wfRules.length > 1 && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold" style={{ color: '#374151' }}>Match</span>
+                        {(['OR', 'AND'] as const).map(m => (
+                          <button key={m} onClick={() => setWfMatch(m)}
+                            className="px-3 py-1 rounded-lg text-xs font-bold border transition-all"
+                            style={{
+                              borderColor:     wfMatch === m ? T : '#E2E8F0',
+                              backgroundColor: wfMatch === m ? `${T}10` : '#fff',
+                              color:           wfMatch === m ? T : '#64748B',
+                            }}>
+                            {m === 'OR' ? 'ANY condition' : 'ALL conditions'}
+                          </button>
+                        ))}
+                      </div>
+                    )}
 
-                  <div className="flex justify-end gap-3 pt-2">
-                    <button onClick={() => { setShowWfForm(false); resetWfForm(); }}
-                      className="px-4 py-2 rounded-lg text-sm font-semibold"
-                      style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>
-                      Cancel
-                    </button>
-                    <button onClick={() => setWfStep('action')} disabled={!wfName.trim()}
-                      className="px-4 py-2 rounded-lg text-sm font-bold text-white disabled:opacity-50"
-                      style={{ backgroundColor: T }}>
-                      Next: Set Assignment →
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* ── Step 2: Assignment Strategy ── */}
-              {wfStep === 'action' && (
-                <div className="space-y-5">
-                  {/* Strategy selector */}
-                  <div>
-                    <label className="block text-xs font-semibold mb-2" style={{ color: '#374151' }}>Assignment Strategy</label>
-                    <div className="grid grid-cols-3 gap-3">
-                      {ASSIGNMENT_STRATEGIES.map(({ value, label, desc, icon: Icon }) => (
-                        <button key={value} onClick={() => setWfStrategy(value as typeof wfStrategy)}
-                          className="p-4 rounded-xl text-left transition-all"
-                          style={{
-                            border:          `2px solid ${wfStrategy === value ? T : '#E2E8F0'}`,
-                            backgroundColor: wfStrategy === value ? `${T}08` : '#fff',
-                          }}>
-                          <Icon className="w-5 h-5 mb-2" style={{ color: wfStrategy === value ? T : '#94A3B8' }} />
-                          <p className="text-sm font-semibold" style={{ color: wfStrategy === value ? T : '#0F172A' }}>{label}</p>
-                          <p className="text-[11px] mt-0.5" style={{ color: '#94A3B8' }}>{desc}</p>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Team name (only for team strategy) — dropdown from Teams tab */}
-                  {wfStrategy === 'team' && (
-                    <div>
-                      <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Select Team</label>
-                      {teams.length === 0 ? (
-                        <p className="text-xs px-3 py-2.5 rounded-lg" style={{ backgroundColor: '#FFFBEB', color: '#B45309', border: '1px solid #FDE68A' }}>
-                          No teams yet — go to the <strong>Teams</strong> tab to create one first.
-                        </p>
-                      ) : (
-                        <SelectBox value={wfTeamName} onChange={setWfTeamName}>
-                          <option value="">Select a team…</option>
-                          {teams.map(t => (
-                            <option key={t.id} value={t.name}>{t.name} ({t.members.length} member{t.members.length !== 1 ? 's' : ''})</option>
-                          ))}
-                        </SelectBox>
-                      )}
-                    </div>
-                  )}
-
-                  {/* User selection */}
-                  <div>
-                    <label className="block text-xs font-semibold mb-2" style={{ color: '#374151' }}>
-                      Select Users
-                      {wfStrategy === 'weighted' && (
-                        <span className="ml-2 font-normal text-[11px]" style={{
-                          color: totalWfWeight === 100 ? '#16A34A' : '#EF4444',
-                        }}>
-                          (total: {totalWfWeight}% — must equal 100%)
-                        </span>
-                      )}
-                    </label>
-                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                      {users.map(u => {
-                        const selected = wfUsers.find(w => w.user_id === u.id);
+                    {/* Condition rows */}
+                    <div className="space-y-2">
+                      {wfRules.map((rule, idx) => {
+                        const fieldDef = WF_CONDITION_FIELDS.find(f => f.value === rule.field);
+                        const ops = fieldDef?.type === 'leadSource' ? SELECT_OPERATORS
+                          : fieldDef?.type === 'tag' ? TAG_OPERATORS : TEXT_OPERATORS;
+                        const needsValue = !['is_empty', 'is_not_empty'].includes(rule.operator);
                         return (
-                          <div key={u.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
-                            style={{ border: `1px solid ${selected ? T : '#E2E8F0'}`, backgroundColor: selected ? `${T}06` : '#fff' }}>
-                            <input type="checkbox" checked={!!selected} onChange={() => toggleWfUser(u)}
-                              className="rounded w-4 h-4 cursor-pointer" style={{ accentColor: T }} />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>{u.name}</p>
-                              <p className="text-[11px]" style={{ color: '#94A3B8' }}>{u.role} · {u.email}</p>
+                          <div key={idx} className="flex items-center gap-2 flex-wrap">
+                            {idx > 0 && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: '#F1F5F9', color: '#64748B' }}>{wfMatch}</span>}
+                            {/* Field */}
+                            <div className="relative flex-1 min-w-[140px]">
+                              <select value={rule.field} onChange={e => {
+                                const newRules = [...wfRules];
+                                newRules[idx] = { field: e.target.value, operator: 'contains', value: '' };
+                                setWfRules(newRules);
+                              }} className="w-full text-sm rounded-lg px-3 py-2 outline-none appearance-none" style={{ border: '1px solid #D1D5DB' }}>
+                                <option value="">Select field…</option>
+                                {WF_CONDITION_FIELDS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+                              </select>
                             </div>
-                            {wfStrategy === 'weighted' && selected && (
-                              <div className="flex items-center gap-1.5 flex-shrink-0">
-                                <input type="number" min="1" max="99"
-                                  value={selected.weight ?? 0}
-                                  onChange={e => setUserWeight(u.id, Number(e.target.value))}
-                                  className="w-16 text-sm text-center rounded-lg px-2 py-1 font-semibold outline-none"
-                                  style={{ border: `1px solid ${T}`, color: T }} />
-                                <span className="text-xs font-semibold" style={{ color: T }}>%</span>
-                              </div>
+                            {/* Operator */}
+                            <div className="relative min-w-[130px]">
+                              <select value={rule.operator} onChange={e => {
+                                const newRules = [...wfRules];
+                                newRules[idx] = { ...newRules[idx], operator: e.target.value, value: '' };
+                                setWfRules(newRules);
+                              }} className="w-full text-sm rounded-lg px-3 py-2 outline-none appearance-none" style={{ border: '1px solid #D1D5DB' }}>
+                                {ops.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                              </select>
+                            </div>
+                            {/* Value */}
+                            {needsValue && (
+                              fieldDef?.type === 'leadSource' ? (
+                                <select value={rule.value} onChange={e => {
+                                  const newRules = [...wfRules]; newRules[idx] = { ...newRules[idx], value: e.target.value }; setWfRules(newRules);
+                                }} className="flex-1 min-w-[120px] text-sm rounded-lg px-3 py-2 outline-none appearance-none" style={{ border: '1px solid #D1D5DB' }}>
+                                  <option value="">Select…</option>
+                                  {LEAD_SOURCES.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
+                                </select>
+                              ) : (
+                                <input type="text" value={rule.value}
+                                  onChange={e => { const newRules = [...wfRules]; newRules[idx] = { ...newRules[idx], value: e.target.value }; setWfRules(newRules); }}
+                                  placeholder={fieldDef?.type === 'tag' ? 'tag name…' : 'value…'}
+                                  className="flex-1 min-w-[120px] text-sm rounded-lg px-3 py-2 outline-none"
+                                  style={{ border: '1px solid #D1D5DB' }} />
+                              )
                             )}
-                            {wfStrategy === 'round_robin' && selected && (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ backgroundColor: `${T}15`, color: T }}>
-                                #{wfUsers.findIndex(w => w.user_id === u.id) + 1}
-                              </span>
-                            )}
-                            {wfStrategy === 'team' && selected && (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ backgroundColor: '#F0FDF4', color: '#16A34A' }}>
-                                ✓ In team
-                              </span>
-                            )}
+                            {/* Remove */}
+                            <button onClick={() => setWfRules(wfRules.filter((_, i) => i !== idx))}
+                              className="w-7 h-7 flex-shrink-0 rounded-lg flex items-center justify-center hover:bg-[#FEF2F2]" style={{ color: '#EF4444' }}>
+                              <X className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         );
                       })}
-                      {users.length === 0 && (
-                        <p className="text-sm text-center py-4" style={{ color: '#94A3B8' }}>No users found</p>
-                      )}
                     </div>
-                  </div>
 
-                  {/* Summary preview */}
-                  {wfUsers.length > 0 && (
-                    <div className="rounded-xl px-4 py-3 text-xs" style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
-                      <span className="font-semibold" style={{ color: '#64748B' }}>Preview: </span>
-                      <span style={{ color: '#0F172A' }}>
-                        When a new contact is created
-                        {wfSourceFilter ? ` (from ${wfSourceFilter.replace(/_/g, ' ')})` : ''}
-                        {' '}→ {wfStrategy === 'round_robin' ? 'Rotate between' : wfStrategy === 'weighted' ? 'Distribute to' : `Team "${wfTeamName || 'Unnamed'}":` }
-                        {' '}{wfUsers.map(u => wfStrategy === 'weighted' ? `${u.name} (${u.weight}%)` : u.name).join(', ')}
-                      </span>
-                    </div>
-                  )}
-
-                  {wfError && (
-                    <p className="text-xs px-3 py-2 rounded-lg" style={{ backgroundColor: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>{wfError}</p>
-                  )}
-
-                  <div className="flex items-center justify-between pt-2">
-                    <button onClick={() => setWfStep('basics')}
-                      className="px-4 py-2 rounded-lg text-sm font-semibold"
-                      style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>
-                      ← Back
+                    <button onClick={() => setWfRules([...wfRules, { field: 'lead_source', operator: 'is', value: '' }])}
+                      className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border transition-colors hover:bg-[#F8FAFC]"
+                      style={{ borderColor: '#E2E8F0', color: '#475569' }}>
+                      <Plus className="w-3.5 h-3.5" /> Add Condition
                     </button>
-                    <div className="flex gap-3">
-                      <button onClick={() => { setShowWfForm(false); resetWfForm(); setWfError(''); }}
-                        className="px-4 py-2 rounded-lg text-sm font-semibold"
-                        style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>
-                        Cancel
-                      </button>
-                      <button onClick={createWorkflow}
-                        disabled={
-                          savingWf || wfUsers.length === 0 ||
-                          (wfStrategy === 'weighted' && totalWfWeight !== 100) ||
-                          (wfStrategy === 'team' && !wfTeamName.trim())
-                        }
-                        className="px-4 py-2 rounded-lg text-sm font-bold text-white flex items-center gap-2 disabled:opacity-50"
-                        style={{ backgroundColor: T }}>
-                        {savingWf && <Loader2 className="w-4 h-4 animate-spin" />}
-                        Create Workflow
-                      </button>
+
+                    {wfRules.length === 0 && (
+                      <p className="text-xs" style={{ color: '#94A3B8' }}>No conditions — workflow will apply to every new contact.</p>
+                    )}
+
+                    <div className="flex justify-between pt-2">
+                      <button onClick={() => setWfStep('basics')} className="px-4 py-2 rounded-lg text-sm font-semibold" style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>← Back</button>
+                      <button onClick={() => setWfStep('actions')} className="px-4 py-2 rounded-lg text-sm font-bold text-white" style={{ backgroundColor: T }}>Next: Add Actions →</button>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
+
+                {/* ── Step 3: Actions ── */}
+                {wfStep === 'actions' && (
+                  <div className="space-y-4">
+                    <div className="space-y-3">
+                      {wfActions.map((action, idx) => (
+                        <div key={idx} className="p-4 rounded-xl space-y-3" style={{ border: '1px solid #E2E8F0', backgroundColor: '#FAFAFA' }}>
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2 flex-1">
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ backgroundColor: `${T}15`, color: T }}>
+                                Action {idx + 1}
+                              </span>
+                              <div className="relative flex-1">
+                                <select value={action.type}
+                                  onChange={e => {
+                                    const newActions = [...wfActions];
+                                    newActions[idx] = { type: e.target.value as WfActionItem['type'] };
+                                    setWfActions(newActions);
+                                  }}
+                                  className="w-full text-sm rounded-lg px-3 py-2 outline-none appearance-none bg-white"
+                                  style={{ border: '1px solid #D1D5DB' }}>
+                                  {WF_ACTION_TYPES.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
+                                </select>
+                              </div>
+                            </div>
+                            {wfActions.length > 1 && (
+                              <button onClick={() => setWfActions(wfActions.filter((_, i) => i !== idx))}
+                                className="w-7 h-7 flex-shrink-0 rounded-lg flex items-center justify-center hover:bg-[#FEF2F2]" style={{ color: '#EF4444' }}>
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                          {/* Action-specific fields */}
+                          {action.type === 'assign_user' && (
+                            <select value={action.user_id ?? ''}
+                              onChange={e => {
+                                const u = users.find(u => u.id === e.target.value);
+                                const newActions = [...wfActions];
+                                newActions[idx] = { ...newActions[idx], user_id: e.target.value, user_name: u?.name ?? '' };
+                                setWfActions(newActions);
+                              }}
+                              className="w-full text-sm rounded-lg px-3 py-2 outline-none appearance-none bg-white"
+                              style={{ border: '1px solid #D1D5DB' }}>
+                              <option value="">Select user to assign…</option>
+                              {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
+                            </select>
+                          )}
+                          {action.type === 'set_follow_up' && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-medium" style={{ color: '#374151' }}>Due in</span>
+                              <input type="number" min="1" value={action.hours_from_now ?? 24}
+                                onChange={e => { const newActions = [...wfActions]; newActions[idx] = { ...newActions[idx], hours_from_now: Number(e.target.value) }; setWfActions(newActions); }}
+                                className="w-20 text-sm rounded-lg px-3 py-2 outline-none text-center bg-white"
+                                style={{ border: '1px solid #D1D5DB' }} />
+                              <span className="text-xs font-medium" style={{ color: '#374151' }}>hours</span>
+                            </div>
+                          )}
+                          {action.type === 'send_notification' && (
+                            <input type="text" value={action.message ?? ''}
+                              onChange={e => { const newActions = [...wfActions]; newActions[idx] = { ...newActions[idx], message: e.target.value }; setWfActions(newActions); }}
+                              placeholder="e.g. New high-value lead from Google Ads"
+                              className="w-full text-sm rounded-lg px-3 py-2 outline-none bg-white"
+                              style={{ border: '1px solid #D1D5DB' }} />
+                          )}
+                          {action.type === 'update_lead_stage' && (
+                            <select value={action.stage ?? ''}
+                              onChange={e => { const newActions = [...wfActions]; newActions[idx] = { ...newActions[idx], stage: e.target.value }; setWfActions(newActions); }}
+                              className="w-full text-sm rounded-lg px-3 py-2 outline-none appearance-none bg-white"
+                              style={{ border: '1px solid #D1D5DB' }}>
+                              <option value="">Select stage…</option>
+                              {LEAD_STAGES_LIST.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
+                            </select>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    <button onClick={() => setWfActions([...wfActions, { type: 'assign_user', user_id: '', user_name: '' }])}
+                      className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border transition-colors hover:bg-[#F8FAFC]"
+                      style={{ borderColor: '#E2E8F0', color: '#475569' }}>
+                      <Plus className="w-3.5 h-3.5" /> Add Another Action
+                    </button>
+
+                    <div className="flex items-center justify-between pt-2">
+                      <button onClick={() => setWfStep('conditions')} className="px-4 py-2 rounded-lg text-sm font-semibold" style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>← Back</button>
+                      <div className="flex gap-3">
+                        <button onClick={() => { setShowWfForm(false); resetWfForm(); }} className="px-4 py-2 rounded-lg text-sm font-semibold" style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>Cancel</button>
+                        <button onClick={createWorkflow} disabled={savingWf}
+                          className="px-4 py-2 rounded-lg text-sm font-bold text-white flex items-center gap-2 disabled:opacity-50"
+                          style={{ backgroundColor: T }}>
+                          {savingWf ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                          Create Workflow
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
           {/* Workflows list */}
           {workflows.length === 0 && !showWfForm ? (
             <div className="text-center py-16 bg-white rounded-2xl" style={{ border: '1px solid #E2E8F0' }}>
-              <Users className="w-10 h-10 mx-auto mb-3" style={{ color: '#CBD5E1' }} />
+              <Workflow className="w-10 h-10 mx-auto mb-3" style={{ color: '#CBD5E1' }} />
               <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>No workflows yet</p>
               <p className="text-xs mt-1 max-w-sm mx-auto" style={{ color: '#94A3B8' }}>
-                Create a workflow to automatically distribute new contacts to your sales team using round-robin or weighted assignment.
+                Create a workflow with conditions and actions to automate your lead management process.
               </p>
             </div>
           ) : (
             <div className="space-y-2">
               {workflows.map(wf => {
-                const action = wf.actions?.[0];
-                const stratIcon = action?.strategy === 'round_robin' ? RotateCcw
-                  : action?.strategy === 'weighted' ? Weight : Shield;
-                const StratIcon = stratIcon;
-                const cond = wf.conditions as { source_filter?: string } | null;
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const firstAction = (wf.actions as any)?.[0];
+                const hasStrategy = !!firstAction?.strategy;
+                const StratIcon = hasStrategy
+                  ? (firstAction.strategy === 'round_robin' ? RotateCcw : firstAction.strategy === 'weighted' ? Weight : Shield)
+                  : Workflow;
                 return (
                   <div key={wf.id} className="bg-white rounded-xl px-5 py-4 flex items-start gap-4" style={{ border: '1px solid #E2E8F0' }}>
                     <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${T}12` }}>
@@ -796,16 +885,8 @@ export default function CrmSettingsPage() {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>{wf.name}</p>
                       <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>
-                        New contact{cond?.source_filter ? ` (source: ${cond.source_filter})` : ''} → {wfActionLabel(wf)}
+                        {wfConditionLabel(wf)} → {wfActionLabel(wf)}
                       </p>
-                      <div className="flex gap-1 flex-wrap mt-1.5">
-                        {action?.users?.map(u => (
-                          <span key={u.user_id} className="px-2 py-0.5 rounded-full text-[10px] font-semibold"
-                            style={{ backgroundColor: '#F1F5F9', color: '#475569' }}>
-                            {u.name}{action.strategy === 'weighted' ? ` ${u.weight}%` : ''}
-                          </span>
-                        ))}
-                      </div>
                     </div>
                     <Toggle on={wf.is_active} onToggle={() => toggleWorkflow(wf.id, !wf.is_active)} />
                     <button onClick={() => deleteWorkflow(wf.id)}

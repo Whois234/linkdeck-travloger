@@ -135,6 +135,52 @@ async function logActivity(
 
 // ─── Workflow engine ─────────────────────────────────────────────────────────
 
+/** Evaluate multi-condition logic against a contact record. */
+function evaluateConditions(contact: Record<string, unknown>, conditions: unknown): boolean {
+  const cond = conditions as {
+    match?: 'AND' | 'OR';
+    rules?: Array<{ field: string; operator: string; value: string }>;
+    source_filter?: string;
+  } | null;
+  if (!cond) return true;
+
+  // Old format: source_filter only
+  if (!Array.isArray(cond.rules) || cond.rules.length === 0) {
+    if (cond.source_filter) {
+      return String(contact.lead_source ?? '').toUpperCase() === cond.source_filter.toUpperCase();
+    }
+    return true;
+  }
+
+  const match = cond.match ?? 'OR';
+  const results = cond.rules.map(rule => {
+    const raw = contact[rule.field];
+    const ruleVal = String(rule.value ?? '').toLowerCase();
+
+    // Tags is a string array
+    if (rule.field === 'tags' && Array.isArray(raw)) {
+      const tagArr = raw as string[];
+      if (rule.operator === 'has_tag')     return tagArr.some(t => t.toLowerCase() === ruleVal);
+      if (rule.operator === 'not_contains') return !tagArr.some(t => t.toLowerCase() === ruleVal);
+      return tagArr.join(' ').toLowerCase().includes(ruleVal);
+    }
+
+    const fieldVal = String(raw ?? '').toLowerCase();
+    switch (rule.operator) {
+      case 'is':           return fieldVal === ruleVal;
+      case 'is_not':       return fieldVal !== ruleVal;
+      case 'contains':     return fieldVal.includes(ruleVal);
+      case 'not_contains': return !fieldVal.includes(ruleVal);
+      case 'starts_with':  return fieldVal.startsWith(ruleVal);
+      case 'is_empty':     return !fieldVal.trim();
+      case 'is_not_empty': return !!fieldVal.trim();
+      default:             return true;
+    }
+  });
+
+  return match === 'AND' ? results.every(Boolean) : results.some(Boolean);
+}
+
 /** Run all active on_create workflows for a newly-created contact (fire-and-forget). */
 async function executeContactWorkflows(contactId: string): Promise<void> {
   try {
@@ -142,56 +188,135 @@ async function executeContactWorkflows(contactId: string): Promise<void> {
       where: { module: 'contacts', trigger: 'on_create', is_active: true },
     });
 
+    // Fetch the full contact record for condition evaluation
+    const contact = await prisma.crmContact.findUnique({ where: { id: contactId } });
+    if (!contact) return;
+
+    // Cast contact to a plain record for condition evaluation
+    const contactRecord = contact as unknown as Record<string, unknown>;
+
     for (const wf of workflows) {
-      const actions = wf.actions as unknown as Array<{
-        type: string;
-        strategy: 'round_robin' | 'weighted' | 'team';
-        team_name?: string;
-        users: Array<{ user_id: string; name: string; weight?: number }>;
-      }>;
+      // Evaluate conditions — skip if they don't match
+      if (!evaluateConditions(contactRecord, wf.conditions)) continue;
 
-      for (const action of actions) {
-        if (action.type !== 'assign_user') continue;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const actions = wf.actions as unknown as Array<any>;
+      if (!Array.isArray(actions) || actions.length === 0) continue;
 
-        const users = action.users ?? [];
-        if (users.length === 0) continue;
+      // Detect format: old format has strategy on first action
+      const isOldFormat = !!actions[0]?.strategy;
 
-        let assignedUserId: string | null = null;
+      if (isOldFormat) {
+        // ── Old format: round_robin / weighted / team ──
+        for (const action of actions) {
+          if (action.type !== 'assign_user') continue;
 
-        if (action.strategy === 'round_robin' || action.strategy === 'team') {
-          const conditions = (wf.conditions as { rr_index?: number; source_filter?: string } | null) ?? {};
-          const idx = (conditions.rr_index ?? 0) % users.length;
-          assignedUserId = users[idx].user_id;
-          await prisma.crmWorkflow.update({
-            where: { id: wf.id },
-            data: { conditions: { ...conditions, rr_index: idx + 1 } as Prisma.InputJsonValue },
-          });
-        } else if (action.strategy === 'weighted') {
-          const total = users.reduce((s, u) => s + (u.weight ?? 0), 0);
-          if (total > 0) {
-            let rand = Math.random() * total;
-            for (const u of users) {
-              rand -= (u.weight ?? 0);
-              if (rand <= 0) { assignedUserId = u.user_id; break; }
+          const users = action.users ?? [];
+          if (users.length === 0) continue;
+
+          let assignedUserId: string | null = null;
+
+          if (action.strategy === 'round_robin' || action.strategy === 'team') {
+            const conditions = (wf.conditions as { rr_index?: number; source_filter?: string } | null) ?? {};
+            const idx = (conditions.rr_index ?? 0) % users.length;
+            assignedUserId = users[idx].user_id;
+            await prisma.crmWorkflow.update({
+              where: { id: wf.id },
+              data: { conditions: { ...conditions, rr_index: idx + 1 } as Prisma.InputJsonValue },
+            });
+          } else if (action.strategy === 'weighted') {
+            const total = users.reduce((s: number, u: { weight?: number }) => s + (u.weight ?? 0), 0);
+            if (total > 0) {
+              let rand = Math.random() * total;
+              for (const u of users) {
+                rand -= (u.weight ?? 0);
+                if (rand <= 0) { assignedUserId = u.user_id; break; }
+              }
+              assignedUserId = assignedUserId ?? users[0].user_id;
             }
-            assignedUserId = assignedUserId ?? users[0].user_id;
+          }
+
+          if (assignedUserId) {
+            await prisma.crmContact.update({
+              where: { id: contactId },
+              data: { assigned_to_id: assignedUserId },
+            });
+            await prisma.contactActivity.create({
+              data: {
+                contact_id:      contactId,
+                type:            'ASSIGNMENT_CHANGE',
+                description:     `Auto-assigned via workflow "${wf.name}"`,
+                metadata:        { workflow_id: wf.id, user_id: assignedUserId } as Prisma.InputJsonValue,
+                performed_by_id: null,
+              },
+            });
           }
         }
-
-        if (assignedUserId) {
-          await prisma.crmContact.update({
-            where: { id: contactId },
-            data: { assigned_to_id: assignedUserId },
-          });
-          await prisma.contactActivity.create({
-            data: {
-              contact_id:      contactId,
-              type:            'ASSIGNMENT_CHANGE',
-              description:     `Auto-assigned via workflow "${wf.name}"`,
-              metadata:        { workflow_id: wf.id, user_id: assignedUserId } as Prisma.InputJsonValue,
-              performed_by_id: null,
-            },
-          });
+      } else {
+        // ── New format: multi-action ──
+        for (const action of actions) {
+          if (action.type === 'assign_user') {
+            // Direct user assignment
+            const userId = action.user_id as string | undefined;
+            if (userId) {
+              await prisma.crmContact.update({
+                where: { id: contactId },
+                data: { assigned_to_id: userId },
+              });
+              await prisma.contactActivity.create({
+                data: {
+                  contact_id:      contactId,
+                  type:            'ASSIGNMENT_CHANGE',
+                  description:     `Auto-assigned to ${action.user_name ?? userId} via workflow "${wf.name}"`,
+                  metadata:        { workflow_id: wf.id, user_id: userId } as Prisma.InputJsonValue,
+                  performed_by_id: null,
+                },
+              });
+            }
+          } else if (action.type === 'set_follow_up') {
+            const hoursFromNow = (action.hours_from_now as number | undefined) ?? 24;
+            const followUpDate = new Date(Date.now() + hoursFromNow * 3_600_000);
+            await prisma.crmContact.update({
+              where: { id: contactId },
+              data: { follow_up_date: followUpDate },
+            });
+          } else if (action.type === 'update_lead_stage') {
+            const stage = action.stage as string | undefined;
+            if (stage) {
+              await prisma.crmContact.update({
+                where: { id: contactId },
+                data: { lead_stage: stage as LeadStage },
+              });
+              await prisma.contactActivity.create({
+                data: {
+                  contact_id:      contactId,
+                  type:            'STAGE_CHANGE',
+                  description:     `Stage set to ${stage} via workflow "${wf.name}"`,
+                  metadata:        { workflow_id: wf.id, stage } as Prisma.InputJsonValue,
+                  performed_by_id: null,
+                },
+              });
+            }
+          } else if (action.type === 'send_notification') {
+            const message = action.message as string | undefined;
+            if (message) {
+              // Notify all ADMIN and MANAGER users
+              const adminManagers = await prisma.user.findMany({
+                where: { role: { in: ['ADMIN', 'MANAGER'] } },
+                select: { id: true },
+              });
+              if (adminManagers.length > 0) {
+                await prisma.notification.createMany({
+                  data: adminManagers.map(u => ({
+                    user_id:    u.id,
+                    message:    `[${wf.name}] ${message}`,
+                    event_type: 'WORKFLOW',
+                    is_read:    false,
+                  })),
+                });
+              }
+            }
+          }
         }
       }
     }
