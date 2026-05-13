@@ -32,6 +32,10 @@ interface WfUser { user_id: string; name: string; weight?: number }
 interface WfRule { field: string; operator: string; value: string }
 interface WfActionItem {
   type: 'assign_user' | 'set_follow_up' | 'send_notification' | 'update_lead_stage';
+  // multi-user assign (new)
+  users?: WfUser[];
+  strategy?: 'round_robin' | 'weighted';
+  // legacy single-user (kept for backward compat)
   user_id?: string;
   user_name?: string;
   hours_from_now?: number;
@@ -145,11 +149,10 @@ export default function CrmSettingsPage() {
 
   // ── Workflow form ──
   const [showWfForm, setShowWfForm]   = useState(false);
-  const [wfStep, setWfStep]           = useState<'basics' | 'conditions' | 'actions'>('basics');
   const [wfName, setWfName]           = useState('');
   const [wfMatch, setWfMatch]         = useState<'AND' | 'OR'>('OR');
   const [wfRules, setWfRules]         = useState<WfRule[]>([]);
-  const [wfActions, setWfActions]     = useState<WfActionItem[]>([{ type: 'assign_user', user_id: '', user_name: '' }]);
+  const [wfActions, setWfActions]     = useState<WfActionItem[]>([{ type: 'assign_user', users: [], strategy: 'round_robin' }]);
   const [savingWf, setSavingWf]       = useState(false);
   const [wfError, setWfError]         = useState('');
 
@@ -238,13 +241,13 @@ export default function CrmSettingsPage() {
 
   function resetWfForm() {
     setWfName(''); setWfMatch('OR'); setWfRules([]);
-    setWfActions([{ type: 'assign_user', user_id: '', user_name: '' }]);
-    setWfStep('basics'); setWfError('');
+    setWfActions([{ type: 'assign_user', users: [], strategy: 'round_robin' }]);
+    setWfError('');
   }
 
   async function createWorkflow() {
     const validActions = wfActions.filter(a => {
-      if (a.type === 'assign_user')       return !!a.user_id;
+      if (a.type === 'assign_user')       return (a.users ?? []).length > 0;
       if (a.type === 'set_follow_up')     return (a.hours_from_now ?? 0) > 0;
       if (a.type === 'send_notification') return !!a.message?.trim();
       if (a.type === 'update_lead_stage') return !!a.stage;
@@ -341,7 +344,14 @@ export default function CrmSettingsPage() {
     // New format
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return wf.actions.map((a: any) => {
-      if (a.type === 'assign_user')       return `Assign → ${a.user_name || a.user_id || 'User'}`;
+      if (a.type === 'assign_user') {
+        if (Array.isArray(a.users) && a.users.length > 0) {
+          const names = a.users.map((u: WfUser) => u.name).join(', ');
+          const strat = a.users.length > 1 ? ` (${a.strategy === 'weighted' ? 'Weighted' : 'Round Robin'})` : '';
+          return `Assign${strat} → ${names}`;
+        }
+        return `Assign → ${a.user_name || a.user_id || 'User'}`;
+      }
       if (a.type === 'set_follow_up')     return `Follow-up in ${a.hours_from_now ?? 24}h`;
       if (a.type === 'send_notification') return `Notify: "${(a.message ?? '').slice(0, 30)}"`;
       if (a.type === 'update_lead_stage') return `Stage → ${(a.stage ?? '').replace(/_/g, ' ')}`;
@@ -595,193 +605,159 @@ export default function CrmSettingsPage() {
             </button>
           </div>
 
-          {/* Workflow builder form */}
+          {/* ── Workflow builder form — single page ── */}
           {showWfForm && (
             <div className="bg-white rounded-2xl shadow-sm overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
               {/* Header */}
               <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: '1px solid #F1F5F9' }}>
                 <div>
                   <p className="font-bold text-sm" style={{ color: '#0F172A' }}>New Workflow</p>
-                  <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>
-                    {wfStep === 'basics' ? 'Step 1 of 3 — Name' : wfStep === 'conditions' ? 'Step 2 of 3 — Conditions (optional)' : 'Step 3 of 3 — Actions'}
-                  </p>
+                  <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>Configure name, conditions, and actions on one screen</p>
                 </div>
                 <button onClick={() => { setShowWfForm(false); resetWfForm(); }} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#F1F5F9]">
                   <X className="w-4 h-4" style={{ color: '#64748B' }} />
                 </button>
               </div>
 
-              {/* Step progress dots */}
-              <div className="flex items-center gap-2 px-6 py-3" style={{ borderBottom: '1px solid #F8FAFC' }}>
-                {(['basics', 'conditions', 'actions'] as const).map((s, i) => (
-                  <div key={s} className="flex items-center gap-2">
-                    {i > 0 && <div className="w-8 h-px" style={{ backgroundColor: '#E2E8F0' }} />}
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold"
-                        style={{
-                          backgroundColor: wfStep === s ? T : (['basics', 'conditions', 'actions'].indexOf(wfStep) > i ? '#22C55E' : '#E2E8F0'),
-                          color: wfStep === s || ['basics', 'conditions', 'actions'].indexOf(wfStep) > i ? '#fff' : '#94A3B8',
-                        }}>
-                        {['basics', 'conditions', 'actions'].indexOf(wfStep) > i ? '✓' : i + 1}
-                      </div>
-                      <span className="text-xs font-medium" style={{ color: wfStep === s ? '#0F172A' : '#94A3B8' }}>
-                        {s === 'basics' ? 'Name' : s === 'conditions' ? 'Conditions' : 'Actions'}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="px-6 py-5 space-y-4">
+              <div className="px-6 py-5 space-y-6">
                 {wfError && <p className="text-xs px-3 py-2 rounded-lg" style={{ backgroundColor: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>{wfError}</p>}
 
-                {/* ── Step 1: Name ── */}
-                {wfStep === 'basics' && (
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Workflow Name *</label>
-                      <input type="text" value={wfName} onChange={e => setWfName(e.target.value)}
-                        placeholder="e.g. New Google Ads Lead"
-                        className="w-full text-sm rounded-lg px-3 py-2.5 outline-none"
-                        style={{ border: '1px solid #D1D5DB' }} autoFocus />
-                    </div>
-                    {/* Fixed trigger display */}
-                    <div className="flex items-center gap-3 px-4 py-3 rounded-xl" style={{ backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0' }}>
-                      <Zap className="w-4 h-4 flex-shrink-0" style={{ color: '#16A34A' }} />
-                      <div>
-                        <p className="text-xs font-semibold" style={{ color: '#15803D' }}>Trigger</p>
-                        <p className="text-sm font-medium" style={{ color: '#0F172A' }}>When a new contact is created</p>
-                      </div>
-                    </div>
-                    <div className="flex justify-end">
-                      <button onClick={() => setWfStep('conditions')} disabled={!wfName.trim()}
-                        className="px-4 py-2 rounded-lg text-sm font-bold text-white disabled:opacity-50"
-                        style={{ backgroundColor: T }}>
-                        Next: Add Conditions →
-                      </button>
-                    </div>
+                {/* ── 1. Name + Trigger ── */}
+                <div className="space-y-3">
+                  <p className="text-xs font-bold uppercase tracking-wider" style={{ color: '#64748B' }}>1 · Name</p>
+                  <input type="text" value={wfName} onChange={e => setWfName(e.target.value)}
+                    placeholder="e.g. Assign Google Ads leads to Priya"
+                    className="w-full text-sm rounded-lg px-3 py-2.5 outline-none"
+                    style={{ border: '1px solid #D1D5DB' }} autoFocus />
+                  <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl" style={{ backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0' }}>
+                    <Zap className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#16A34A' }} />
+                    <p className="text-xs font-medium" style={{ color: '#15803D' }}>Trigger: <span className="font-semibold text-[#0F172A]">When a new contact is created</span></p>
                   </div>
-                )}
+                </div>
 
-                {/* ── Step 2: Conditions ── */}
-                {wfStep === 'conditions' && (
-                  <div className="space-y-4">
-                    {/* Match toggle */}
+                <div style={{ borderTop: '1px solid #F1F5F9' }} />
+
+                {/* ── 2. Conditions ── */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-bold uppercase tracking-wider" style={{ color: '#64748B' }}>2 · Conditions <span className="normal-case font-normal text-[#94A3B8]">(optional)</span></p>
                     {wfRules.length > 1 && (
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
                         <span className="text-xs font-semibold" style={{ color: '#374151' }}>Match</span>
                         {(['OR', 'AND'] as const).map(m => (
                           <button key={m} onClick={() => setWfMatch(m)}
-                            className="px-3 py-1 rounded-lg text-xs font-bold border transition-all"
+                            className="px-2.5 py-0.5 rounded-lg text-[11px] font-bold border transition-all"
                             style={{
                               borderColor:     wfMatch === m ? T : '#E2E8F0',
                               backgroundColor: wfMatch === m ? `${T}10` : '#fff',
                               color:           wfMatch === m ? T : '#64748B',
                             }}>
-                            {m === 'OR' ? 'ANY condition' : 'ALL conditions'}
+                            {m === 'OR' ? 'ANY' : 'ALL'}
                           </button>
                         ))}
                       </div>
                     )}
-
-                    {/* Condition rows */}
-                    <div className="space-y-2">
-                      {wfRules.map((rule, idx) => {
-                        const fieldDef = WF_CONDITION_FIELDS.find(f => f.value === rule.field);
-                        const ops = fieldDef?.type === 'leadSource' ? SELECT_OPERATORS
-                          : fieldDef?.type === 'tag' ? TAG_OPERATORS : TEXT_OPERATORS;
-                        const needsValue = !['is_empty', 'is_not_empty'].includes(rule.operator);
-                        return (
-                          <div key={idx} className="flex items-center gap-2 flex-wrap">
-                            {idx > 0 && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: '#F1F5F9', color: '#64748B' }}>{wfMatch}</span>}
-                            {/* Field */}
-                            <div className="relative flex-1 min-w-[140px]">
-                              <select value={rule.field} onChange={e => {
-                                const newRules = [...wfRules];
-                                newRules[idx] = { field: e.target.value, operator: 'contains', value: '' };
-                                setWfRules(newRules);
-                              }} className="w-full text-sm rounded-lg px-3 py-2 outline-none appearance-none" style={{ border: '1px solid #D1D5DB' }}>
-                                <option value="">Select field…</option>
-                                {WF_CONDITION_FIELDS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
-                              </select>
-                            </div>
-                            {/* Operator */}
-                            <div className="relative min-w-[130px]">
-                              <select value={rule.operator} onChange={e => {
-                                const newRules = [...wfRules];
-                                newRules[idx] = { ...newRules[idx], operator: e.target.value, value: '' };
-                                setWfRules(newRules);
-                              }} className="w-full text-sm rounded-lg px-3 py-2 outline-none appearance-none" style={{ border: '1px solid #D1D5DB' }}>
-                                {ops.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                              </select>
-                            </div>
-                            {/* Value */}
-                            {needsValue && (
-                              fieldDef?.type === 'leadSource' ? (
-                                <select value={rule.value} onChange={e => {
-                                  const newRules = [...wfRules]; newRules[idx] = { ...newRules[idx], value: e.target.value }; setWfRules(newRules);
-                                }} className="flex-1 min-w-[120px] text-sm rounded-lg px-3 py-2 outline-none appearance-none" style={{ border: '1px solid #D1D5DB' }}>
-                                  <option value="">Select…</option>
-                                  {LEAD_SOURCES.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
-                                </select>
-                              ) : (
-                                <input type="text" value={rule.value}
-                                  onChange={e => { const newRules = [...wfRules]; newRules[idx] = { ...newRules[idx], value: e.target.value }; setWfRules(newRules); }}
-                                  placeholder={fieldDef?.type === 'tag' ? 'tag name…' : 'value…'}
-                                  className="flex-1 min-w-[120px] text-sm rounded-lg px-3 py-2 outline-none"
-                                  style={{ border: '1px solid #D1D5DB' }} />
-                              )
-                            )}
-                            {/* Remove */}
-                            <button onClick={() => setWfRules(wfRules.filter((_, i) => i !== idx))}
-                              className="w-7 h-7 flex-shrink-0 rounded-lg flex items-center justify-center hover:bg-[#FEF2F2]" style={{ color: '#EF4444' }}>
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    <button onClick={() => setWfRules([...wfRules, { field: 'lead_source', operator: 'is', value: '' }])}
-                      className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border transition-colors hover:bg-[#F8FAFC]"
-                      style={{ borderColor: '#E2E8F0', color: '#475569' }}>
-                      <Plus className="w-3.5 h-3.5" /> Add Condition
-                    </button>
-
-                    {wfRules.length === 0 && (
-                      <p className="text-xs" style={{ color: '#94A3B8' }}>No conditions — workflow will apply to every new contact.</p>
-                    )}
-
-                    <div className="flex justify-between pt-2">
-                      <button onClick={() => setWfStep('basics')} className="px-4 py-2 rounded-lg text-sm font-semibold" style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>← Back</button>
-                      <button onClick={() => setWfStep('actions')} className="px-4 py-2 rounded-lg text-sm font-bold text-white" style={{ backgroundColor: T }}>Next: Add Actions →</button>
-                    </div>
                   </div>
-                )}
 
-                {/* ── Step 3: Actions ── */}
-                {wfStep === 'actions' && (
-                  <div className="space-y-4">
-                    <div className="space-y-3">
-                      {wfActions.map((action, idx) => (
-                        <div key={idx} className="p-4 rounded-xl space-y-3" style={{ border: '1px solid #E2E8F0', backgroundColor: '#FAFAFA' }}>
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2 flex-1">
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ backgroundColor: `${T}15`, color: T }}>
-                                Action {idx + 1}
-                              </span>
-                              <div className="relative flex-1">
-                                <select value={action.type}
-                                  onChange={e => {
-                                    const newActions = [...wfActions];
-                                    newActions[idx] = { type: e.target.value as WfActionItem['type'] };
-                                    setWfActions(newActions);
-                                  }}
-                                  className="w-full text-sm rounded-lg px-3 py-2 outline-none appearance-none bg-white"
-                                  style={{ border: '1px solid #D1D5DB' }}>
-                                  {WF_ACTION_TYPES.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
-                                </select>
-                              </div>
+                  {wfRules.length === 0 && (
+                    <p className="text-xs italic" style={{ color: '#94A3B8' }}>No conditions — runs for every new contact.</p>
+                  )}
+
+                  <div className="space-y-2">
+                    {wfRules.map((rule, idx) => {
+                      const fieldDef = WF_CONDITION_FIELDS.find(f => f.value === rule.field);
+                      const ops = fieldDef?.type === 'leadSource' ? SELECT_OPERATORS
+                        : fieldDef?.type === 'tag' ? TAG_OPERATORS : TEXT_OPERATORS;
+                      const needsValue = !['is_empty', 'is_not_empty'].includes(rule.operator);
+                      return (
+                        <div key={idx} className="flex items-center gap-2 flex-wrap">
+                          {idx > 0 && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: '#F1F5F9', color: '#64748B' }}>{wfMatch}</span>
+                          )}
+                          <div className="relative flex-1 min-w-[130px]">
+                            <select value={rule.field} onChange={e => {
+                              const newRules = [...wfRules];
+                              newRules[idx] = { field: e.target.value, operator: 'contains', value: '' };
+                              setWfRules(newRules);
+                            }} className="w-full text-sm rounded-lg px-3 py-2 outline-none appearance-none" style={{ border: '1px solid #D1D5DB' }}>
+                              <option value="">Select field…</option>
+                              {WF_CONDITION_FIELDS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+                            </select>
+                          </div>
+                          <div className="relative min-w-[120px]">
+                            <select value={rule.operator} onChange={e => {
+                              const newRules = [...wfRules];
+                              newRules[idx] = { ...newRules[idx], operator: e.target.value, value: '' };
+                              setWfRules(newRules);
+                            }} className="w-full text-sm rounded-lg px-3 py-2 outline-none appearance-none" style={{ border: '1px solid #D1D5DB' }}>
+                              {ops.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                            </select>
+                          </div>
+                          {needsValue && (
+                            fieldDef?.type === 'leadSource' ? (
+                              <select value={rule.value} onChange={e => {
+                                const nr = [...wfRules]; nr[idx] = { ...nr[idx], value: e.target.value }; setWfRules(nr);
+                              }} className="flex-1 min-w-[110px] text-sm rounded-lg px-3 py-2 outline-none appearance-none" style={{ border: '1px solid #D1D5DB' }}>
+                                <option value="">Select…</option>
+                                {LEAD_SOURCES.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
+                              </select>
+                            ) : (
+                              <input type="text" value={rule.value}
+                                onChange={e => { const nr = [...wfRules]; nr[idx] = { ...nr[idx], value: e.target.value }; setWfRules(nr); }}
+                                placeholder={fieldDef?.type === 'tag' ? 'tag name…' : 'value…'}
+                                className="flex-1 min-w-[110px] text-sm rounded-lg px-3 py-2 outline-none"
+                                style={{ border: '1px solid #D1D5DB' }} />
+                            )
+                          )}
+                          <button onClick={() => setWfRules(wfRules.filter((_, i) => i !== idx))}
+                            className="w-7 h-7 flex-shrink-0 rounded-lg flex items-center justify-center hover:bg-[#FEF2F2]" style={{ color: '#EF4444' }}>
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <button onClick={() => setWfRules([...wfRules, { field: 'lead_source', operator: 'is', value: '' }])}
+                    className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors hover:bg-[#F8FAFC]"
+                    style={{ borderColor: '#E2E8F0', color: '#475569' }}>
+                    <Plus className="w-3.5 h-3.5" /> Add Condition
+                  </button>
+                </div>
+
+                <div style={{ borderTop: '1px solid #F1F5F9' }} />
+
+                {/* ── 3. Actions ── */}
+                <div className="space-y-3">
+                  <p className="text-xs font-bold uppercase tracking-wider" style={{ color: '#64748B' }}>3 · Actions</p>
+                  <div className="space-y-3">
+                    {wfActions.map((action, idx) => {
+                      const selectedUsers = action.users ?? [];
+                      const availableUsers = users.filter(u => !selectedUsers.some(su => su.user_id === u.id));
+                      const isMultiUser = selectedUsers.length > 1;
+
+                      return (
+                        <div key={idx} className="rounded-xl space-y-3 p-4" style={{ border: '1px solid #E2E8F0', backgroundColor: '#FAFAFA' }}>
+                          {/* Action header row */}
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded flex-shrink-0" style={{ backgroundColor: `${T}15`, color: T }}>
+                              Action {idx + 1}
+                            </span>
+                            <div className="relative flex-1">
+                              <select value={action.type}
+                                onChange={e => {
+                                  const newActions = [...wfActions];
+                                  const t = e.target.value as WfActionItem['type'];
+                                  newActions[idx] = t === 'assign_user'
+                                    ? { type: t, users: [], strategy: 'round_robin' }
+                                    : { type: t };
+                                  setWfActions(newActions);
+                                }}
+                                className="w-full text-sm rounded-lg px-3 py-2 outline-none appearance-none bg-white"
+                                style={{ border: '1px solid #D1D5DB' }}>
+                                {WF_ACTION_TYPES.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
+                              </select>
+                              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none" style={{ color: '#94A3B8' }} />
                             </div>
                             {wfActions.length > 1 && (
                               <button onClick={() => setWfActions(wfActions.filter((_, i) => i !== idx))}
@@ -790,71 +766,180 @@ export default function CrmSettingsPage() {
                               </button>
                             )}
                           </div>
-                          {/* Action-specific fields */}
+
+                          {/* ── Assign to User ── */}
                           {action.type === 'assign_user' && (
-                            <select value={action.user_id ?? ''}
-                              onChange={e => {
-                                const u = users.find(u => u.id === e.target.value);
-                                const newActions = [...wfActions];
-                                newActions[idx] = { ...newActions[idx], user_id: e.target.value, user_name: u?.name ?? '' };
-                                setWfActions(newActions);
-                              }}
-                              className="w-full text-sm rounded-lg px-3 py-2 outline-none appearance-none bg-white"
-                              style={{ border: '1px solid #D1D5DB' }}>
-                              <option value="">Select user to assign…</option>
-                              {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
-                            </select>
+                            <div className="space-y-2.5">
+                              {/* Selected user pills */}
+                              {selectedUsers.length > 0 && (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {selectedUsers.map((u, ui) => (
+                                    <div key={u.user_id} className="flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full text-xs font-semibold"
+                                      style={{ backgroundColor: `${T}10`, border: `1px solid ${T}30`, color: T }}>
+                                      {u.name}
+                                      <button onClick={() => {
+                                        const newActions = [...wfActions];
+                                        const newUsers = selectedUsers.filter((_, i) => i !== ui);
+                                        newActions[idx] = {
+                                          ...newActions[idx],
+                                          users: newUsers,
+                                          strategy: newUsers.length > 1 ? (action.strategy ?? 'round_robin') : 'round_robin',
+                                        };
+                                        setWfActions(newActions);
+                                      }} className="w-4 h-4 rounded-full flex items-center justify-center hover:opacity-70" style={{ backgroundColor: `${T}20` }}>
+                                        <X className="w-2.5 h-2.5" />
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+
+                              {/* Add user dropdown */}
+                              {availableUsers.length > 0 && (
+                                <div className="relative">
+                                  <select defaultValue=""
+                                    onChange={e => {
+                                      if (!e.target.value) return;
+                                      const u = users.find(u => u.id === e.target.value);
+                                      if (!u) return;
+                                      const newActions = [...wfActions];
+                                      const newUsers = [...selectedUsers, { user_id: u.id, name: u.name, weight: 0 }];
+                                      newActions[idx] = {
+                                        ...newActions[idx],
+                                        users: newUsers,
+                                        strategy: action.strategy ?? 'round_robin',
+                                      };
+                                      setWfActions(newActions);
+                                      e.target.value = '';
+                                    }}
+                                    className="w-full text-sm rounded-lg px-3 py-2 outline-none appearance-none bg-white"
+                                    style={{ border: '1px solid #D1D5DB' }}>
+                                    <option value="">{selectedUsers.length === 0 ? 'Select user to assign…' : '+ Add another user…'}</option>
+                                    {availableUsers.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
+                                  </select>
+                                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none" style={{ color: '#94A3B8' }} />
+                                </div>
+                              )}
+
+                              {/* Strategy picker — only when 2+ users */}
+                              {isMultiUser && (
+                                <div className="space-y-2 pt-1">
+                                  <p className="text-[11px] font-semibold" style={{ color: '#374151' }}>Distribution strategy</p>
+                                  <div className="flex gap-2">
+                                    {([
+                                      { value: 'round_robin', label: 'Round Robin', desc: 'Equal rotation', icon: RotateCcw },
+                                      { value: 'weighted',    label: 'Weighted',    desc: 'Custom %',       icon: Weight },
+                                    ] as const).map(s => (
+                                      <button key={s.value}
+                                        onClick={() => {
+                                          const newActions = [...wfActions];
+                                          newActions[idx] = { ...newActions[idx], strategy: s.value };
+                                          setWfActions(newActions);
+                                        }}
+                                        className="flex-1 flex items-center gap-2 px-3 py-2 rounded-xl border text-left transition-all"
+                                        style={{
+                                          borderColor:     action.strategy === s.value ? T : '#E2E8F0',
+                                          backgroundColor: action.strategy === s.value ? `${T}08` : '#fff',
+                                        }}>
+                                        <s.icon className="w-4 h-4 flex-shrink-0" style={{ color: action.strategy === s.value ? T : '#94A3B8' }} />
+                                        <div>
+                                          <p className="text-xs font-bold" style={{ color: action.strategy === s.value ? T : '#0F172A' }}>{s.label}</p>
+                                          <p className="text-[10px]" style={{ color: '#94A3B8' }}>{s.desc}</p>
+                                        </div>
+                                      </button>
+                                    ))}
+                                  </div>
+
+                                  {/* Weighted inputs */}
+                                  {action.strategy === 'weighted' && (
+                                    <div className="space-y-1.5 pt-1">
+                                      {selectedUsers.map((u, ui) => (
+                                        <div key={u.user_id} className="flex items-center gap-2">
+                                          <span className="text-xs font-medium flex-1" style={{ color: '#374151' }}>{u.name}</span>
+                                          <div className="flex items-center gap-1">
+                                            <input type="number" min="0" max="100" value={u.weight ?? 0}
+                                              onChange={e => {
+                                                const newActions = [...wfActions];
+                                                const newUsers = [...selectedUsers];
+                                                newUsers[ui] = { ...newUsers[ui], weight: Number(e.target.value) };
+                                                newActions[idx] = { ...newActions[idx], users: newUsers };
+                                                setWfActions(newActions);
+                                              }}
+                                              className="w-16 text-sm rounded-lg px-2 py-1.5 outline-none text-center bg-white"
+                                              style={{ border: '1px solid #D1D5DB' }} />
+                                            <span className="text-xs font-semibold" style={{ color: '#64748B' }}>%</span>
+                                          </div>
+                                        </div>
+                                      ))}
+                                      <p className="text-[10px]" style={{ color: (selectedUsers.reduce((s, u) => s + (u.weight ?? 0), 0)) === 100 ? '#16A34A' : '#F59E0B' }}>
+                                        Total: {selectedUsers.reduce((s, u) => s + (u.weight ?? 0), 0)}% {(selectedUsers.reduce((s, u) => s + (u.weight ?? 0), 0)) === 100 ? '✓' : '(must equal 100%)'}
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           )}
+
+                          {/* ── Set Follow-up ── */}
                           {action.type === 'set_follow_up' && (
                             <div className="flex items-center gap-2">
                               <span className="text-xs font-medium" style={{ color: '#374151' }}>Due in</span>
                               <input type="number" min="1" value={action.hours_from_now ?? 24}
-                                onChange={e => { const newActions = [...wfActions]; newActions[idx] = { ...newActions[idx], hours_from_now: Number(e.target.value) }; setWfActions(newActions); }}
+                                onChange={e => { const na = [...wfActions]; na[idx] = { ...na[idx], hours_from_now: Number(e.target.value) }; setWfActions(na); }}
                                 className="w-20 text-sm rounded-lg px-3 py-2 outline-none text-center bg-white"
                                 style={{ border: '1px solid #D1D5DB' }} />
-                              <span className="text-xs font-medium" style={{ color: '#374151' }}>hours</span>
+                              <span className="text-xs font-medium" style={{ color: '#374151' }}>hours from contact creation</span>
                             </div>
                           )}
+
+                          {/* ── Send Notification ── */}
                           {action.type === 'send_notification' && (
                             <input type="text" value={action.message ?? ''}
-                              onChange={e => { const newActions = [...wfActions]; newActions[idx] = { ...newActions[idx], message: e.target.value }; setWfActions(newActions); }}
+                              onChange={e => { const na = [...wfActions]; na[idx] = { ...na[idx], message: e.target.value }; setWfActions(na); }}
                               placeholder="e.g. New high-value lead from Google Ads"
                               className="w-full text-sm rounded-lg px-3 py-2 outline-none bg-white"
                               style={{ border: '1px solid #D1D5DB' }} />
                           )}
+
+                          {/* ── Update Lead Stage ── */}
                           {action.type === 'update_lead_stage' && (
-                            <select value={action.stage ?? ''}
-                              onChange={e => { const newActions = [...wfActions]; newActions[idx] = { ...newActions[idx], stage: e.target.value }; setWfActions(newActions); }}
-                              className="w-full text-sm rounded-lg px-3 py-2 outline-none appearance-none bg-white"
-                              style={{ border: '1px solid #D1D5DB' }}>
-                              <option value="">Select stage…</option>
-                              {LEAD_STAGES_LIST.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
-                            </select>
+                            <div className="relative">
+                              <select value={action.stage ?? ''}
+                                onChange={e => { const na = [...wfActions]; na[idx] = { ...na[idx], stage: e.target.value }; setWfActions(na); }}
+                                className="w-full text-sm rounded-lg px-3 py-2 outline-none appearance-none bg-white"
+                                style={{ border: '1px solid #D1D5DB' }}>
+                                <option value="">Select stage…</option>
+                                {LEAD_STAGES_LIST.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
+                              </select>
+                              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none" style={{ color: '#94A3B8' }} />
+                            </div>
                           )}
                         </div>
-                      ))}
-                    </div>
-
-                    <button onClick={() => setWfActions([...wfActions, { type: 'assign_user', user_id: '', user_name: '' }])}
-                      className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border transition-colors hover:bg-[#F8FAFC]"
-                      style={{ borderColor: '#E2E8F0', color: '#475569' }}>
-                      <Plus className="w-3.5 h-3.5" /> Add Another Action
-                    </button>
-
-                    <div className="flex items-center justify-between pt-2">
-                      <button onClick={() => setWfStep('conditions')} className="px-4 py-2 rounded-lg text-sm font-semibold" style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>← Back</button>
-                      <div className="flex gap-3">
-                        <button onClick={() => { setShowWfForm(false); resetWfForm(); }} className="px-4 py-2 rounded-lg text-sm font-semibold" style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>Cancel</button>
-                        <button onClick={createWorkflow} disabled={savingWf}
-                          className="px-4 py-2 rounded-lg text-sm font-bold text-white flex items-center gap-2 disabled:opacity-50"
-                          style={{ backgroundColor: T }}>
-                          {savingWf ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                          Create Workflow
-                        </button>
-                      </div>
-                    </div>
+                      );
+                    })}
                   </div>
-                )}
+
+                  <button onClick={() => setWfActions([...wfActions, { type: 'assign_user', users: [], strategy: 'round_robin' }])}
+                    className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors hover:bg-[#F8FAFC]"
+                    style={{ borderColor: '#E2E8F0', color: '#475569' }}>
+                    <Plus className="w-3.5 h-3.5" /> Add Another Action
+                  </button>
+                </div>
+
+                {/* ── Footer buttons ── */}
+                <div className="flex items-center justify-end gap-3 pt-2" style={{ borderTop: '1px solid #F1F5F9' }}>
+                  <button onClick={() => { setShowWfForm(false); resetWfForm(); }}
+                    className="px-4 py-2 rounded-lg text-sm font-semibold" style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>
+                    Cancel
+                  </button>
+                  <button onClick={createWorkflow} disabled={savingWf}
+                    className="px-5 py-2 rounded-lg text-sm font-bold text-white flex items-center gap-2 disabled:opacity-50"
+                    style={{ backgroundColor: T }}>
+                    {savingWf ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                    Create Workflow
+                  </button>
+                </div>
               </div>
             </div>
           )}

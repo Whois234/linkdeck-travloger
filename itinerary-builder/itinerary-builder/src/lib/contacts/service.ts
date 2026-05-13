@@ -256,19 +256,51 @@ async function executeContactWorkflows(contactId: string): Promise<void> {
         // ── New format: multi-action ──
         for (const action of actions) {
           if (action.type === 'assign_user') {
-            // Direct user assignment
-            const userId = action.user_id as string | undefined;
-            if (userId) {
+            const multiUsers = action.users as Array<{ user_id: string; name?: string; weight?: number }> | undefined;
+            let assignedUserId: string | null = null;
+            let assignedUserName: string = '';
+
+            if (Array.isArray(multiUsers) && multiUsers.length > 0) {
+              // Multi-user: apply strategy
+              if (action.strategy === 'weighted') {
+                const total = multiUsers.reduce((s, u) => s + (u.weight ?? 0), 0);
+                if (total > 0) {
+                  let rand = Math.random() * total;
+                  for (const u of multiUsers) {
+                    rand -= (u.weight ?? 0);
+                    if (rand <= 0) { assignedUserId = u.user_id; assignedUserName = u.name ?? u.user_id; break; }
+                  }
+                  assignedUserId = assignedUserId ?? multiUsers[0].user_id;
+                  assignedUserName = assignedUserName || (multiUsers[0].name ?? multiUsers[0].user_id);
+                }
+              } else {
+                // round_robin: use rr_index stored in conditions metadata
+                const cond = (wf.conditions as { rr_index?: number } | null) ?? {};
+                const rrIdx = (cond.rr_index ?? 0) % multiUsers.length;
+                assignedUserId = multiUsers[rrIdx].user_id;
+                assignedUserName = multiUsers[rrIdx].name ?? assignedUserId;
+                await prisma.crmWorkflow.update({
+                  where: { id: wf.id },
+                  data: { conditions: { ...cond, rr_index: rrIdx + 1 } as Prisma.InputJsonValue },
+                }).catch(() => {});
+              }
+            } else {
+              // Legacy single-user field
+              assignedUserId = (action.user_id as string | undefined) ?? null;
+              assignedUserName = (action.user_name as string | undefined) ?? assignedUserId ?? '';
+            }
+
+            if (assignedUserId) {
               await prisma.crmContact.update({
                 where: { id: contactId },
-                data: { assigned_to_id: userId },
+                data: { assigned_to_id: assignedUserId },
               });
               await prisma.contactActivity.create({
                 data: {
                   contact_id:      contactId,
                   type:            'ASSIGNMENT_CHANGE',
-                  description:     `Auto-assigned to ${action.user_name ?? userId} via workflow "${wf.name}"`,
-                  metadata:        { workflow_id: wf.id, user_id: userId } as Prisma.InputJsonValue,
+                  description:     `Auto-assigned to ${assignedUserName} via workflow "${wf.name}"`,
+                  metadata:        { workflow_id: wf.id, user_id: assignedUserId } as Prisma.InputJsonValue,
                   performed_by_id: null,
                 },
               });
