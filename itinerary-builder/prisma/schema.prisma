@@ -1368,6 +1368,64 @@ model CrmWorkflow {
   updated_at DateTime @updatedAt
 }
 
+// ─── Gallabox integration ─────────────────────────────────────────────────────
+
+model GallaboxMessage {
+  id              String   @id @default(cuid())
+  gallabox_id     String?  @unique          // Gallabox message ID (for dedup + status updates)
+  conversation_id String?                   // Gallabox conversation ID
+  contact_phone   String?
+  contact_name    String?
+  direction       String   @default("incoming")  // 'incoming' | 'outgoing'
+  message_type    String?                   // 'text', 'image', 'template', etc.
+  content         String?                   // extracted message text
+  media_url       String?
+  status          String?                   // 'sent', 'delivered', 'read', 'failed'
+  failure_reason  String?
+  event_type      String?                   // original Gallabox event name
+  raw_payload     Json?                     // full raw event for debugging
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  @@index([gallabox_id])
+  @@index([conversation_id])
+  @@index([contact_phone])
+  @@index([created_at])
+}
+
+model GallaboxConversation {
+  id            String   @id @default(cuid())
+  gallabox_id   String   @unique            // Gallabox conversation ID
+  contact_phone String?
+  contact_name  String?
+  status        String?                     // 'open', 'closed', 'pending'
+  channel       String?
+  assigned_to   String?                     // agent name or ID
+  raw_payload   Json?
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  @@index([gallabox_id])
+  @@index([contact_phone])
+  @@index([status])
+}
+
+model GallaboxTemplate {
+  id               String   @id @default(cuid())
+  gallabox_id      String?  @unique         // Gallabox template ID
+  template_name    String?
+  status           String?                  // 'APPROVED', 'REJECTED', 'PENDING'
+  category         String?
+  language         String?
+  rejection_reason String?
+  raw_payload      Json?
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  @@index([gallabox_id])
+  @@index([status])
+}
+
 // ─── CRM Teams ────────────────────────────────────────────────────────────────
 
 model CrmTeam {
