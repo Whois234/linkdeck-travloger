@@ -130,8 +130,10 @@ export async function POST(req: NextRequest) {
   // ════════════════════════════════════════════════════════════
   // STEP 5 — Resolve event type from EVERY possible location
   // ════════════════════════════════════════════════════════════
-  // Try every header variant Gallabox might use
+  // Try every header variant Gallabox might use.
+  // CONFIRMED from Vercel logs: Gallabox sends "x-event-name" (e.g. "Message.Received")
   const rawEventFromHeader = (
+    req.headers.get('x-event-name')           ??   // ← confirmed actual header
     req.headers.get('x-gallabox-event')       ??
     req.headers.get('x-gallabox-event-type')  ??
     req.headers.get('x-gallabox-topic')       ??
