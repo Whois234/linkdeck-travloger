@@ -1624,7 +1624,7 @@ export default function TemplateEditPage() {
                       return (
                         <div key={i} className="rounded-xl p-3" style={{ border: '1px solid #E2E8F0' }}>
                           <p className="text-xs font-bold text-[#0F172A]">{tier.tier_name}</p>
-                          {hotel && <p className="text-[11px] text-[#64748B] mt-0.5">{hotel.name}</p>}
+                          {hotel && <p className="text-[11px] text-[#64748B] mt-0.5">{hotel.hotel_name}</p>}
                         </div>
                       );
                     })}
