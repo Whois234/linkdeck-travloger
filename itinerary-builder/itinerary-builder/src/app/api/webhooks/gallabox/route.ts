@@ -5,13 +5,22 @@
  * The event type comes from the x-gallabox-event header.
  * Signature is HMAC-SHA256(secret, rawBody) encoded as Base64 in x-gallabox-signature.
  *
- * Actual payload shape (Message.Received example):
+ * IMPORTANT: Gallabox may send the event name with spaces OR dots, e.g.
+ *   "Message Received" OR "Message.Received" — we normalise to dot-notation internally.
+ *
+ * Confirmed payload shape (Message.Received):
  * {
  *   "id": "<message_id>",
  *   "conversationId": "<conv_id>",
  *   "contactId": "<contact_id>",
- *   "whatsapp": { "from": "919...", "type": "text", "text": { "body": "..." } },
- *   "contact": { "id": "...", "name": "..." },
+ *   "contact": { "id": "...", "name": "Gajanand" },
+ *   "whatsapp": {
+ *     "from": "919391203737",
+ *     "type": "text",
+ *     "text": { "body": "Hello test" },
+ *     "status": "received",
+ *     "time": "2026-05-13T11:02:54.000Z"
+ *   },
  *   "channelId": "..."
  * }
  */
@@ -43,9 +52,20 @@ function verifySignature(rawBody: string, header: string | null): boolean {
   }
 }
 
+// ─── Event name normalisation ─────────────────────────────────────────────────
+// Gallabox sometimes uses spaces ("Message Received") and sometimes dots
+// ("Message.Received"). Normalise everything to dot-notation for matching.
+
+function normaliseEvent(raw: string): string {
+  // "Message Received"  → "Message.Received"
+  // "Contact Created"   → "Contact.Created"
+  // "Message.Received"  → "Message.Received"  (unchanged)
+  return raw.trim().replace(/\s+/g, '.');
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Extract plain text from a Gallabox message object (whatsapp sub-object). */
+/** Extract plain text from a Gallabox whatsapp sub-object. */
 function extractText(msg: Record<string, unknown>): string | null {
   // whatsapp.text.body  (text messages)
   const text = msg.text as Record<string, unknown> | undefined;
@@ -116,8 +136,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  // 5. Resolve event type — Gallabox puts it in a header, NOT the body
-  const event = (
+  // 5. Resolve event type — Gallabox puts it in a header, NOT the body.
+  //    Normalise spaces → dots so matching is consistent.
+  const rawEvent = (
     req.headers.get('x-gallabox-event')      ??
     req.headers.get('x-gallabox-event-type') ??
     req.headers.get('x-gallabox-topic')      ??
@@ -125,85 +146,112 @@ export async function POST(req: NextRequest) {
     (payload.type  as string | undefined)    ??
     'unknown'
   );
+  const event = normaliseEvent(rawEvent);
 
-  console.log('[gallabox-webhook] event=', event, '| payload keys:', Object.keys(payload).join(', '));
+  console.log('[gallabox-webhook] rawEvent=', rawEvent, '→ event=', event,
+              '| payload keys:', Object.keys(payload).join(', '));
   console.log('[gallabox-webhook] full payload:', JSON.stringify(payload));
 
   try {
 
     // ── Message.Received ─────────────────────────────────────────────────────
-    // Payload shape (confirmed from real traffic):
-    //   { id, conversationId, contactId,
-    //     contact: { id, name },
-    //     whatsapp: { from, type, text:{body}, status, time } }
+    // Confirmed payload shape (flat, no data wrapper):
+    //   payload.id              → message ID
+    //   payload.conversationId  → conversation ID
+    //   payload.contact.name    → contact name
+    //   payload.whatsapp.from   → phone number ("919391203737")
+    //   payload.whatsapp.type   → "text" | "image" | "audio" …
+    //   payload.whatsapp.text.body → message content (for text messages)
+    //   payload.whatsapp.status → "received"
     if (event === 'Message.Received') {
-      const wa      = (payload.whatsapp  ?? {}) as Record<string, unknown>;
-      const contact = (payload.contact   ?? {}) as Record<string, unknown>;
+      const wa      = (payload.whatsapp ?? {}) as Record<string, unknown>;
+      const contact = (payload.contact  ?? {}) as Record<string, unknown>;
 
       const gallaboxId     = payload.id            as string | undefined;
       const conversationId = payload.conversationId as string | undefined;
-      const contactId      = payload.contactId      as string | undefined;
 
-      // phone comes from whatsapp.from (e.g. "919391203737")
-      const phone = normalisePhone(wa.from ?? contact.phone);
-      // name from contact.name
-      const name  = (contact.name ?? contact.displayName) as string | undefined;
-      // type: "text" | "image" | "audio" | …
-      const msgType = (wa.type ?? wa.messageType) as string | undefined;
-      // status from whatsapp.status ("received" | "sent" | "delivered" | "read")
+      const phone    = normalisePhone(wa.from ?? contact.phone);
+      const name     = (contact.name ?? contact.displayName ?? null) as string | null;
+      const msgType  = (wa.type ?? wa.messageType ?? null) as string | null;
+      const content  = extractText(wa);
+      const mediaUrl = extractMediaUrl(wa);
       const waStatus = (wa.status ?? 'received') as string;
-      // direction: incoming when the sender (whatsapp.from) is the contactId's phone
-      // For Message.Received the message always comes FROM the contact → incoming
-      const direction = 'incoming';
 
-      console.log('[gallabox-webhook] Message.Received gallaboxId=', gallaboxId,
-                  'phone=', phone, 'type=', msgType, 'contactId=', contactId);
+      const insertData = {
+        gallabox_id:     gallaboxId,
+        conversation_id: conversationId,
+        contact_phone:   phone,
+        contact_name:    name,
+        direction:       'incoming',
+        message_type:    msgType,
+        content,
+        media_url:       mediaUrl,
+        status:          waStatus,
+        event_type:      event,
+        raw_payload:     payload as Prisma.InputJsonValue,
+      };
+
+      console.log('[gallabox-webhook] Message.Received — about to upsert:', JSON.stringify({
+        gallaboxId, conversationId, phone, name, msgType, content, waStatus,
+      }));
 
       await prisma.gallaboxMessage.upsert({
         where:  { gallabox_id: gallaboxId ?? `recv_${Date.now()}` },
+        // Full update so retried events fill in any NULL columns from earlier partial inserts
         update: {
-          status:     waStatus,
-          updated_at: new Date(),
-          // also keep these fresh in case name/phone changed
-          contact_phone: phone ?? undefined,
-          contact_name:  name  ?? undefined,
-        },
-        create: {
-          gallabox_id:     gallaboxId,
           conversation_id: conversationId,
-          contact_phone:   phone,
-          contact_name:    name,
-          direction,
-          message_type:    msgType,
-          content:         extractText(wa),
-          media_url:       extractMediaUrl(wa),
+          contact_phone:   phone   ?? undefined,
+          contact_name:    name    ?? undefined,
+          direction:       'incoming',
+          message_type:    msgType ?? undefined,
+          content:         content ?? undefined,
+          media_url:       mediaUrl ?? undefined,
           status:          waStatus,
           event_type:      event,
           raw_payload:     payload as Prisma.InputJsonValue,
+          updated_at:      new Date(),
         },
+        create: insertData,
       });
 
-      console.log('[gallabox-webhook] Message.Received saved OK — content:', extractText(wa));
+      console.log('[gallabox-webhook] Message.Received saved OK — phone:', phone,
+                  'name:', name, 'content:', content, 'status:', waStatus);
     }
 
     // ── Message.Send ─────────────────────────────────────────────────────────
-    // Outgoing: Gallabox → contact. whatsapp.from is the channel number,
-    // recipient phone is whatsapp.to OR contact.phone.
+    // Outgoing: Gallabox → contact.
     else if (event === 'Message.Send') {
-      const wa = (payload.whatsapp ?? payload.message ?? {}) as Record<string, unknown>;
+      const wa      = (payload.whatsapp ?? payload.message ?? {}) as Record<string, unknown>;
+      const contact = (payload.contact ?? {}) as Record<string, unknown>;
 
       const gallaboxId     = payload.id            as string | undefined;
       const conversationId = payload.conversationId as string | undefined;
-      const contact        = (payload.contact ?? {}) as Record<string, unknown>;
-      // For outgoing, recipient is whatsapp.to or contact.phone
       const toPhone  = normalisePhone(wa.to ?? contact.phone ?? payload.to);
-      const name     = (contact.name ?? contact.displayName) as string | undefined;
-      const msgType  = (wa.type ?? wa.messageType) as string | undefined;
+      const name     = (contact.name ?? contact.displayName ?? null) as string | null;
+      const msgType  = (wa.type ?? wa.messageType ?? null) as string | null;
+      const content  = extractText(wa);
+      const mediaUrl = extractMediaUrl(wa);
       const waStatus = (wa.status ?? 'sent') as string;
+
+      console.log('[gallabox-webhook] Message.Send — about to upsert:', JSON.stringify({
+        gallaboxId, conversationId, toPhone, name, msgType, content, waStatus,
+      }));
 
       await prisma.gallaboxMessage.upsert({
         where:  { gallabox_id: gallaboxId ?? `send_${Date.now()}` },
-        update: { status: waStatus, updated_at: new Date() },
+        update: {
+          conversation_id: conversationId,
+          contact_phone:   toPhone  ?? undefined,
+          contact_name:    name     ?? undefined,
+          direction:       'outgoing',
+          message_type:    msgType  ?? undefined,
+          content:         content  ?? undefined,
+          media_url:       mediaUrl ?? undefined,
+          status:          waStatus,
+          event_type:      event,
+          raw_payload:     payload as Prisma.InputJsonValue,
+          updated_at:      new Date(),
+        },
         create: {
           gallabox_id:     gallaboxId,
           conversation_id: conversationId,
@@ -211,18 +259,19 @@ export async function POST(req: NextRequest) {
           contact_name:    name,
           direction:       'outgoing',
           message_type:    msgType,
-          content:         extractText(wa),
-          media_url:       extractMediaUrl(wa),
+          content,
+          media_url:       mediaUrl,
           status:          waStatus,
           event_type:      event,
           raw_payload:     payload as Prisma.InputJsonValue,
         },
       });
+
+      console.log('[gallabox-webhook] Message.Send saved OK');
     }
 
     // ── Contact.Created / Contact.Updated ────────────────────────────────────
     else if (event === 'Contact.Created' || event === 'Contact.Updated') {
-      // May be flat or nested under payload.contact
       const contact = (payload.contact ?? payload) as Record<string, unknown>;
       const gallaboxContactId = (contact.id ?? contact.contactId) as string | undefined;
       const phone  = normalisePhone(contact.phone ?? contact.phoneNumber);
@@ -273,7 +322,6 @@ export async function POST(req: NextRequest) {
 
     // ── Conversation.Create / Conversation.Update ─────────────────────────────
     else if (event === 'Conversation.Create' || event === 'Conversation.Update') {
-      // May be flat or nested
       const convId  = (payload.id ?? payload.conversationId) as string | undefined;
       const contact = (payload.contact ?? {}) as Record<string, unknown>;
       const phone   = normalisePhone(contact.phone ?? payload.phone);
@@ -369,9 +417,10 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Unknown / catch-all ──────────────────────────────────────────────────
-    // Save everything to GallaboxMessage with direction=unknown so nothing is ever lost.
+    // Save everything so nothing is ever silently lost.
     else {
-      console.log('[gallabox-webhook] unhandled event type:', event, '— saving raw payload');
+      console.log('[gallabox-webhook] unhandled event type:', event,
+                  '(rawEvent was:', rawEvent, ') — saving raw payload');
       const gallaboxId = payload.id as string | undefined;
       await prisma.gallaboxMessage.create({
         data: {
@@ -385,8 +434,8 @@ export async function POST(req: NextRequest) {
     }
 
   } catch (err) {
-    console.error('[gallabox-webhook] DB insert error:', err);
-    // Still return 200 so Gallabox doesn't retry and flood logs
+    console.error('[gallabox-webhook] DB error:', err);
+    // Return 200 so Gallabox doesn't retry and flood logs
     return NextResponse.json({ ok: false, event, error: String(err) }, { status: 200 });
   }
 
