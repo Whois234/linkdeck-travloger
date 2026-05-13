@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
-import { Plus, Pencil, Trash2, Search, Users, ChevronRight, LayoutGrid, List, ArrowUpDown, CheckCircle2, SlidersHorizontal, X, RotateCcw, AlertTriangle } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, Users, ChevronRight, LayoutGrid, List, ArrowUpDown, CheckCircle2, SlidersHorizontal, X, RotateCcw, AlertTriangle, Eye } from 'lucide-react';
 
 type SortKey = 'name_asc' | 'name_desc' | 'nights_asc' | 'nights_desc' | 'batches_desc' | 'state_asc';
 type StatusTab = 'all' | 'live' | 'draft' | 'deleted';
@@ -528,6 +528,11 @@ function GroupTemplatesPageInner() {
                             return <span className="text-[10px] font-semibold ml-1" style={{ color: days <= 7 ? '#DC2626' : '#94A3B8' }}>{days}d left</span>;
                           })()}
                         </>) : (<>
+                          <button onClick={() => window.open(`/admin/group-templates/${r.id}/preview`, '_blank')}
+                            title="Preview customer view"
+                            className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#EFF6FF] hover:text-[#2563EB]">
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
                           <button onClick={() => router.push(`/admin/group-templates/${r.id}/edit`)}
                             className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#F1F5F9] hover:text-[#134956]">
                             <Pencil className="w-3.5 h-3.5" />
@@ -605,6 +610,11 @@ function GroupTemplatesPageInner() {
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </>) : (<>
+                        <button onClick={() => window.open(`/admin/group-templates/${r.id}/preview`, '_blank')}
+                          title="Preview customer view"
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#EFF6FF] hover:text-[#2563EB]">
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
                         <button onClick={() => router.push(`/admin/group-templates/${r.id}/edit`)}
                           className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#F1F5F9] hover:text-[#134956]">
                           <Pencil className="w-3.5 h-3.5" />
