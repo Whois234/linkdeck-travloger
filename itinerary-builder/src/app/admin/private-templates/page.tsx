@@ -555,9 +555,9 @@ function PrivateTemplatesPageInner() {
                           })()}
                         </>) : (<>
                           <button onClick={() => window.open(`/admin/private-templates/${r.id}/preview`, '_blank')}
-                            title="Preview customer view"
-                            className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#EFF6FF] hover:text-[#2563EB]">
-                            <Eye className="w-3.5 h-3.5" />
+                            className="flex items-center gap-1.5 h-7 px-2.5 rounded-lg text-[11px] font-semibold border transition-colors hover:opacity-90"
+                            style={{ borderColor: '#2563EB', color: '#2563EB', backgroundColor: '#EFF6FF' }}>
+                            <Eye className="w-3 h-3" />Preview
                           </button>
                           <button onClick={() => router.push(`/admin/private-templates/${r.id}/edit`)}
                             title="Edit"
@@ -639,9 +639,9 @@ function PrivateTemplatesPageInner() {
                         </button>
                       </>) : (<>
                         <button onClick={() => window.open(`/admin/private-templates/${r.id}/preview`, '_blank')}
-                          title="Preview customer view"
-                          className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#EFF6FF] hover:text-[#2563EB]">
-                          <Eye className="w-3.5 h-3.5" />
+                          className="flex items-center gap-1.5 h-7 px-2.5 rounded-lg text-[11px] font-semibold border transition-colors hover:opacity-90"
+                          style={{ borderColor: '#2563EB', color: '#2563EB', backgroundColor: '#EFF6FF' }}>
+                          <Eye className="w-3 h-3" />Preview
                         </button>
                         <button onClick={() => router.push(`/admin/private-templates/${r.id}/edit`)}
                           title="Edit"
