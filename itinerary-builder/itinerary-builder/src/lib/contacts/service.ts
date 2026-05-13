@@ -181,11 +181,15 @@ function evaluateConditions(contact: Record<string, unknown>, conditions: unknow
   return match === 'AND' ? results.every(Boolean) : results.some(Boolean);
 }
 
-/** Run all active on_create workflows for a newly-created contact (fire-and-forget). */
-async function executeContactWorkflows(contactId: string): Promise<void> {
+/** Run all active workflows matching the given event type for a contact (fire-and-forget). */
+async function executeContactWorkflows(contactId: string, event: 'on_create' | 'on_update' = 'on_create'): Promise<void> {
   try {
     const workflows = await prisma.crmWorkflow.findMany({
-      where: { module: 'contacts', trigger: 'on_create', is_active: true },
+      where: {
+        module: 'contacts',
+        is_active: true,
+        trigger: { in: [event, 'on_create_or_update'] },
+      },
     });
 
     // Fetch the full contact record for condition evaluation
@@ -570,6 +574,10 @@ export async function updateContact(
       });
     }
 
+    return updated;
+  }).then(updated => {
+    // Fire on_update workflows after the transaction commits (non-blocking).
+    void executeContactWorkflows(updated.id, 'on_update');
     return updated;
   });
 }
