@@ -159,20 +159,58 @@ export async function sendWhatsAppText(
 
 // ─── Fetch available approved templates ──────────────────────────────────────
 
-export async function listWhatsAppTemplates(): Promise<GallaboxTemplate[]> {
-  if (!API_KEY || !API_SECRET) return [];
+/** Fallback template shown when the API call fails or returns nothing */
+const FALLBACK_TEMPLATES: GallaboxTemplate[] = [
+  { id: 'itinerary_ready', name: 'itinerary_ready', status: 'APPROVED', category: 'MARKETING', language: 'en' },
+];
 
-  try {
-    const res = await fetch(`${BASE_URL}/whatsappTemplates?status=APPROVED`, {
-      headers: headers(),
-      cache:   'no-store',
-    });
-    if (!res.ok) return [];
-    const data = await res.json() as Record<string, unknown>;
-    // Response is { data: [...] } or just an array
-    const arr = Array.isArray(data) ? data : (data.data as GallaboxTemplate[] ?? []);
-    return arr as GallaboxTemplate[];
-  } catch {
-    return [];
+export async function listWhatsAppTemplates(): Promise<GallaboxTemplate[]> {
+  if (!API_KEY || !API_SECRET) {
+    console.warn('[gallabox/templates] Missing API credentials — returning fallback');
+    return FALLBACK_TEMPLATES;
   }
+
+  // Try both known Gallabox endpoints for listing templates
+  const endpoints = [
+    `${BASE_URL}/whatsappTemplates?status=APPROVED`,
+    `${BASE_URL}/templates`,
+    `${BASE_URL}/whatsappTemplates`,
+  ];
+
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url, { headers: headers(), cache: 'no-store' });
+      const raw = await res.text();
+      console.log(`[gallabox/templates] ${url} → ${res.status}: ${raw.slice(0, 300)}`);
+
+      if (!res.ok) continue;
+
+      const data = JSON.parse(raw) as Record<string, unknown>;
+
+      // Handle multiple known response shapes:
+      // { data: [...] }  |  { entities: [...] }  |  { templates: [...] }  |  direct array
+      let arr: GallaboxTemplate[] = [];
+      if (Array.isArray(data))                                 arr = data as GallaboxTemplate[];
+      else if (Array.isArray(data.data))                       arr = data.data as GallaboxTemplate[];
+      else if (Array.isArray(data.entities))                   arr = data.entities as GallaboxTemplate[];
+      else if (Array.isArray(data.templates))                  arr = data.templates as GallaboxTemplate[];
+      else if (Array.isArray((data as Record<string,unknown[]>).whatsappTemplates)) {
+        arr = (data as Record<string, GallaboxTemplate[]>).whatsappTemplates;
+      }
+
+      // Filter to APPROVED only (some endpoints return all statuses)
+      const approved = arr.filter(t => !t.status || t.status === 'APPROVED');
+      if (approved.length > 0) {
+        console.log(`[gallabox/templates] Returning ${approved.length} approved templates`);
+        return approved;
+      }
+
+      // If endpoint returned data but no approved, keep trying other endpoints
+    } catch (e) {
+      console.warn(`[gallabox/templates] Failed ${url}:`, e);
+    }
+  }
+
+  console.warn('[gallabox/templates] All endpoints failed — returning fallback');
+  return FALLBACK_TEMPLATES;
 }
