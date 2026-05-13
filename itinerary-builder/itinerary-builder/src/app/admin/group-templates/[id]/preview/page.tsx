@@ -84,14 +84,24 @@ export default async function GroupTemplatePreviewPage({ params }: { params: { i
   const exclusions = ((cms.exclusions ?? []) as string[]).filter(Boolean).map((text, i) => ({ id: String(i), text }));
 
   /* ── Hero / state ── */
-  const heroImages = (cms.hero_images ?? []) as string[];
+  // Gallery cover card — independent of the hero banner.
+  // Null when the state card is hidden by the editor.
   const stateHero = cms.state_gallery_hidden === true
     ? null
-    : ((cms.state_gallery_image as string | undefined) ||
-       tpl.hero_image ||
-       heroImages[0] ||
-       tpl.state.hero_image ||
-       null);
+    : ((cms.state_gallery_image as string | undefined) || null);
+
+  // Hero banner slideshow — collect ALL sources, same priority as generateQuoteSnapshot.
+  // Include CMS slideshow images + primary DB hero_image + state hero_image as fallbacks.
+  const cmsHeroImages = (cms.hero_images ?? []) as string[];
+  const heroCandidates = [
+    ...cmsHeroImages,
+    tpl.hero_image,
+    tpl.state.hero_image,
+  ].filter((s): s is string => typeof s === 'string' && s.trim().length > 0);
+  const heroBannerImages = (() => {
+    const seen = new Set<string>();
+    return heroCandidates.filter(s => seen.has(s) ? false : (seen.add(s), true));
+  })();
 
   /* ── Build mock ItineraryData ── */
   const data = {
@@ -118,11 +128,13 @@ export default async function GroupTemplatePreviewPage({ params }: { params: { i
     customer: { name: 'Preview Customer' },
     agent: null,
     state: {
-      name:        tpl.state.name,
-      custom_name: (cms.state_gallery_custom_name as string | undefined) ?? null,
-      description: tpl.state.description ?? null,
-      hero_image:  stateHero,
-      hero_images: heroImages.length > 1 ? heroImages : null,
+      name:            tpl.state.name,
+      custom_name:     (cms.state_gallery_custom_name as string | undefined) ?? null,
+      description:     tpl.state.description ?? null,
+      hero_image:      stateHero,                                         // gallery cover card (null if hidden)
+      hero_images:     heroBannerImages.length > 0 ? heroBannerImages : null, // banner slideshow (1 or more)
+      hero_heading:    (cms.hero_heading    as string | undefined) || null, // "Main Heading" from editor
+      hero_subheading: (cms.hero_subheading as string | undefined) || null, // "Subheading / Tagline" from editor
     },
     quote_options: [],
     group_package_options: groupPackageOptions.length > 0 ? groupPackageOptions : undefined,
