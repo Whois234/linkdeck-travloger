@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   Plus, X, Loader2, Zap, Workflow, ToggleLeft, ToggleRight, Trash2, ChevronDown,
-  Tag as TagIcon, ListPlus, Users, MessageSquare, RotateCcw, Weight, Shield,
+  Tag as TagIcon, ListPlus, Users, MessageSquare, RotateCcw, Weight, Shield, Check, Pencil,
 } from 'lucide-react';
 import { ContactFieldsTab, ContactTagsTab } from './ContactCustomization';
 
@@ -27,6 +27,10 @@ interface CrmWorkflow {
 
 interface User { id: string; name: string; email: string; role: string }
 interface WfUser { user_id: string; name: string; weight?: number }
+
+interface CrmTeamMemberUser { id: string; name: string; email: string; role: string }
+interface CrmTeamMember { id: string; user_id: string; user: CrmTeamMemberUser }
+interface CrmTeam { id: string; name: string; created_at: string; members: CrmTeamMember[] }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -79,7 +83,7 @@ function SelectBox({ value, onChange, children, disabled }: {
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function CrmSettingsPage() {
-  const [tab, setTab]           = useState<'automations' | 'workflows' | 'contact-fields' | 'tags'>('automations');
+  const [tab, setTab]           = useState<'automations' | 'workflows' | 'contact-fields' | 'tags' | 'teams'>('automations');
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [users, setUsers]       = useState<User[]>([]);
   const [automations, setAutomations] = useState<StageAutomation[]>([]);
@@ -94,6 +98,7 @@ export default function CrmSettingsPage() {
     hours_from_now: '24', notification_message: '',
   });
   const [savingAuto, setSavingAuto] = useState(false);
+  const [autoError, setAutoError]   = useState('');
 
   // ── Workflow form ──
   const [showWfForm, setShowWfForm]     = useState(false);
@@ -104,6 +109,26 @@ export default function CrmSettingsPage() {
   const [wfTeamName, setWfTeamName]     = useState('');
   const [wfUsers, setWfUsers]           = useState<WfUser[]>([]);
   const [savingWf, setSavingWf]         = useState(false);
+  const [wfError, setWfError]           = useState('');
+
+  // ── Teams ──
+  const [teams, setTeams]               = useState<CrmTeam[]>([]);
+  const [loadingTeams, setLoadingTeams] = useState(false);
+  const [showTeamForm, setShowTeamForm] = useState(false);
+  const [teamName, setTeamName]         = useState('');
+  const [teamError, setTeamError]       = useState('');
+  const [savingTeam, setSavingTeam]     = useState(false);
+  const [managingTeam, setManagingTeam] = useState<CrmTeam | null>(null);
+  const [teamMemberIds, setTeamMemberIds] = useState<Set<string>>(new Set());
+  const [savingMembers, setSavingMembers] = useState(false);
+
+  const loadTeams = useCallback(async () => {
+    setLoadingTeams(true);
+    const r = await fetch('/api/v1/crm/teams');
+    const d = await r.json();
+    if (d.success) setTeams(d.data ?? []);
+    setLoadingTeams(false);
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -125,6 +150,7 @@ export default function CrmSettingsPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (tab === 'teams') loadTeams(); }, [tab, loadTeams]);
 
   const selectedPipeline = pipelines.find(p => p.id === autoForm.pipeline_id);
 
@@ -132,17 +158,19 @@ export default function CrmSettingsPage() {
 
   async function createAutomation() {
     if (!autoForm.pipeline_id || !autoForm.stage_id) return;
-    setSavingAuto(true);
+    setSavingAuto(true); setAutoError('');
     let action_data: Record<string, unknown> = {};
     if (autoForm.action_type === 'assign_user')       action_data = { user_id: autoForm.user_id };
     if (autoForm.action_type === 'send_whatsapp')     action_data = { template_name: autoForm.whatsapp_template };
     if (autoForm.action_type === 'create_task')       action_data = { task_type: autoForm.task_type, hours_from_now: parseInt(autoForm.hours_from_now) };
     if (autoForm.action_type === 'send_notification') action_data = { message: autoForm.notification_message };
-    await fetch('/api/v1/crm/automations', {
+    const res  = await fetch('/api/v1/crm/automations', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pipeline_id: autoForm.pipeline_id, stage_id: autoForm.stage_id, action_type: autoForm.action_type, action_data }),
     });
+    const data = await res.json();
     setSavingAuto(false);
+    if (!res.ok) { setAutoError(data.error ?? 'Failed to save automation'); return; }
     setShowAutoForm(false);
     load();
   }
@@ -170,7 +198,7 @@ export default function CrmSettingsPage() {
 
   async function createWorkflow() {
     if (!wfName.trim() || wfUsers.length === 0) return;
-    setSavingWf(true);
+    setSavingWf(true); setWfError('');
     const conditions: Record<string, unknown> = { rr_index: 0 };
     if (wfSourceFilter) conditions.source_filter = wfSourceFilter;
     const action: Record<string, unknown> = {
@@ -178,14 +206,16 @@ export default function CrmSettingsPage() {
       users: wfUsers,
     };
     if (wfStrategy === 'team') action.team_name = wfTeamName;
-    await fetch('/api/v1/crm/workflows', {
+    const res  = await fetch('/api/v1/crm/workflows', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: wfName, module: 'contacts', trigger: 'on_create',
         conditions, actions: [action],
       }),
     });
+    const data = await res.json();
     setSavingWf(false);
+    if (!res.ok) { setWfError(data.error ?? 'Failed to save workflow'); return; }
     setShowWfForm(false);
     resetWfForm();
     load();
@@ -216,6 +246,46 @@ export default function CrmSettingsPage() {
 
   function setUserWeight(userId: string, weight: number) {
     setWfUsers(prev => prev.map(u => u.user_id === userId ? { ...u, weight } : u));
+  }
+
+  // ── Teams CRUD ──
+
+  async function createTeam() {
+    if (!teamName.trim()) return;
+    setSavingTeam(true); setTeamError('');
+    const res  = await fetch('/api/v1/crm/teams', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: teamName.trim() }),
+    });
+    const data = await res.json();
+    setSavingTeam(false);
+    if (!res.ok) { setTeamError(data.error ?? 'Failed to create team'); return; }
+    setShowTeamForm(false);
+    setTeamName('');
+    loadTeams();
+  }
+
+  async function deleteTeam(id: string, name: string) {
+    if (!confirm(`Delete team "${name}"? Members will be removed but user accounts will remain.`)) return;
+    await fetch(`/api/v1/crm/teams/${id}`, { method: 'DELETE' });
+    loadTeams();
+  }
+
+  function openManageMembers(team: CrmTeam) {
+    setManagingTeam(team);
+    setTeamMemberIds(new Set(team.members.map(m => m.user_id)));
+  }
+
+  async function saveTeamMembers() {
+    if (!managingTeam) return;
+    setSavingMembers(true);
+    await fetch(`/api/v1/crm/teams/${managingTeam.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_ids: Array.from(teamMemberIds) }),
+    });
+    setSavingMembers(false);
+    setManagingTeam(null);
+    loadTeams();
   }
 
   // ── Display labels ──
@@ -257,12 +327,13 @@ export default function CrmSettingsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 p-1 rounded-xl w-fit" style={{ backgroundColor: '#F1F5F9' }}>
+      <div className="flex gap-1 p-1 rounded-xl w-fit flex-wrap" style={{ backgroundColor: '#F1F5F9' }}>
         {([
           { key: 'automations',    label: 'Stage Automations', icon: Zap },
           { key: 'workflows',      label: 'Workflows',          icon: Workflow },
           { key: 'contact-fields', label: 'Contact Fields',     icon: ListPlus },
           { key: 'tags',           label: 'Tags',               icon: TagIcon },
+          { key: 'teams',          label: 'Teams',              icon: Users },
         ] as const).map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setTab(key)}
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all"
@@ -298,10 +369,14 @@ export default function CrmSettingsPage() {
             <div className="bg-white rounded-2xl p-6 space-y-4" style={{ border: '1px solid #E2E8F0' }}>
               <div className="flex items-center justify-between">
                 <p className="font-semibold" style={{ color: '#0F172A' }}>New Stage Automation</p>
-                <button onClick={() => setShowAutoForm(false)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#F1F5F9]">
+                <button onClick={() => { setShowAutoForm(false); setAutoError(''); }} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#F1F5F9]">
                   <X className="w-4 h-4" style={{ color: '#64748B' }} />
                 </button>
               </div>
+
+              {autoError && (
+                <p className="text-xs px-3 py-2 rounded-lg" style={{ backgroundColor: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>{autoError}</p>
+              )}
 
               {/* Pipeline + Stage */}
               <div className="grid grid-cols-2 gap-4">
@@ -651,6 +726,10 @@ export default function CrmSettingsPage() {
                     </div>
                   )}
 
+                  {wfError && (
+                    <p className="text-xs px-3 py-2 rounded-lg" style={{ backgroundColor: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>{wfError}</p>
+                  )}
+
                   <div className="flex items-center justify-between pt-2">
                     <button onClick={() => setWfStep('basics')}
                       className="px-4 py-2 rounded-lg text-sm font-semibold"
@@ -658,7 +737,7 @@ export default function CrmSettingsPage() {
                       ← Back
                     </button>
                     <div className="flex gap-3">
-                      <button onClick={() => { setShowWfForm(false); resetWfForm(); }}
+                      <button onClick={() => { setShowWfForm(false); resetWfForm(); setWfError(''); }}
                         className="px-4 py-2 rounded-lg text-sm font-semibold"
                         style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>
                         Cancel
@@ -733,6 +812,174 @@ export default function CrmSettingsPage() {
 
       {tab === 'contact-fields' && <ContactFieldsTab />}
       {tab === 'tags'           && <ContactTagsTab />}
+
+      {/* ═══════════════════════════════════════════════════════════════════════
+          Teams — group users into named teams for assignment workflows
+      ══════════════════════════════════════════════════════════════════════════ */}
+      {tab === 'teams' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>Teams</p>
+              <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>Create teams and add users — then reference teams in assignment workflows</p>
+            </div>
+            <button onClick={() => { setShowTeamForm(true); setTeamName(''); setTeamError(''); }}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white"
+              style={{ backgroundColor: T }}>
+              <Plus className="w-4 h-4" /> New Team
+            </button>
+          </div>
+
+          {/* Create team form */}
+          {showTeamForm && (
+            <div className="bg-white rounded-2xl p-6 space-y-4" style={{ border: '1px solid #E2E8F0' }}>
+              <div className="flex items-center justify-between">
+                <p className="font-semibold" style={{ color: '#0F172A' }}>Create New Team</p>
+                <button onClick={() => setShowTeamForm(false)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#F1F5F9]">
+                  <X className="w-4 h-4" style={{ color: '#64748B' }} />
+                </button>
+              </div>
+              {teamError && (
+                <p className="text-xs px-3 py-2 rounded-lg" style={{ backgroundColor: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>{teamError}</p>
+              )}
+              <div>
+                <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Team Name *</label>
+                <input type="text" value={teamName} onChange={e => setTeamName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') createTeam(); }}
+                  placeholder="e.g. Sales Team A"
+                  className="w-full text-sm rounded-lg px-3 py-2.5 outline-none"
+                  style={{ border: '1px solid #D1D5DB' }}
+                  autoFocus />
+              </div>
+              <div className="flex justify-end gap-3">
+                <button onClick={() => setShowTeamForm(false)}
+                  className="px-4 py-2 rounded-lg text-sm font-semibold"
+                  style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>
+                  Cancel
+                </button>
+                <button onClick={createTeam} disabled={savingTeam || !teamName.trim()}
+                  className="px-4 py-2 rounded-lg text-sm font-bold text-white flex items-center gap-2 disabled:opacity-50"
+                  style={{ backgroundColor: T }}>
+                  {savingTeam ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  Create Team
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Teams list */}
+          {loadingTeams ? (
+            <div className="py-12 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto" style={{ color: T }} /></div>
+          ) : teams.length === 0 && !showTeamForm ? (
+            <div className="text-center py-16 bg-white rounded-2xl" style={{ border: '1px solid #E2E8F0' }}>
+              <Users className="w-10 h-10 mx-auto mb-3" style={{ color: '#CBD5E1' }} />
+              <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>No teams yet</p>
+              <p className="text-xs mt-1 max-w-sm mx-auto" style={{ color: '#94A3B8' }}>
+                Create teams to organise your agents, then assign leads to a team in workflows.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {teams.map(team => (
+                <div key={team.id} className="bg-white rounded-xl px-5 py-4" style={{ border: '1px solid #E2E8F0' }}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm" style={{ color: '#0F172A' }}>{team.name}</p>
+                      <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>
+                        {team.members.length === 0 ? 'No members yet' : `${team.members.length} member${team.members.length !== 1 ? 's' : ''}`}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button onClick={() => openManageMembers(team)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors hover:bg-[#F8FAFC]"
+                        style={{ borderColor: '#E2E8F0', color: '#475569' }}>
+                        <Pencil className="w-3 h-3" /> Members
+                      </button>
+                      <button onClick={() => deleteTeam(team.id, team.name)}
+                        className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#FEF2F2] transition-colors"
+                        style={{ color: '#EF4444' }}>
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                  {team.members.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-3">
+                      {team.members.map(m => (
+                        <span key={m.id} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold"
+                          style={{ backgroundColor: `${T}12`, color: T }}>
+                          {m.user.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Manage members modal */}
+          {managingTeam && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setManagingTeam(null)}>
+              <div className="bg-white rounded-2xl w-full max-w-[460px] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between px-6 py-4 flex-shrink-0" style={{ borderBottom: '1px solid #F1F5F9' }}>
+                  <div>
+                    <p className="font-bold" style={{ color: '#0F172A' }}>Manage Members</p>
+                    <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>{managingTeam.name}</p>
+                  </div>
+                  <button onClick={() => setManagingTeam(null)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#F1F5F9]">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-2">
+                  {users.length === 0 && (
+                    <p className="text-sm text-center py-4" style={{ color: '#94A3B8' }}>No users found</p>
+                  )}
+                  {users.map(u => {
+                    const isIn = teamMemberIds.has(u.id);
+                    return (
+                      <div key={u.id}
+                        onClick={() => {
+                          setTeamMemberIds(prev => {
+                            const next = new Set(prev);
+                            if (next.has(u.id)) next.delete(u.id); else next.add(u.id);
+                            return next;
+                          });
+                        }}
+                        className="flex items-center gap-3 px-4 py-3 rounded-xl cursor-pointer transition-colors"
+                        style={{ border: `1px solid ${isIn ? T : '#E2E8F0'}`, backgroundColor: isIn ? `${T}06` : '#fff' }}>
+                        <div className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0"
+                          style={{ border: `2px solid ${isIn ? T : '#D1D5DB'}`, backgroundColor: isIn ? T : '#fff' }}>
+                          {isIn && <Check className="w-3 h-3 text-white" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>{u.name}</p>
+                          <p className="text-[11px]" style={{ color: '#94A3B8' }}>{u.role} · {u.email}</p>
+                        </div>
+                        {isIn && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ backgroundColor: `${T}15`, color: T }}>In team</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="px-6 py-4 flex gap-3 flex-shrink-0" style={{ borderTop: '1px solid #F1F5F9' }}>
+                  <button onClick={() => setManagingTeam(null)}
+                    className="flex-1 h-9 rounded-lg text-sm font-semibold"
+                    style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>
+                    Cancel
+                  </button>
+                  <button onClick={saveTeamMembers} disabled={savingMembers}
+                    className="flex-1 h-9 rounded-lg text-sm font-bold text-white flex items-center justify-center gap-2 disabled:opacity-50"
+                    style={{ backgroundColor: T }}>
+                    {savingMembers ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                    Save Members
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

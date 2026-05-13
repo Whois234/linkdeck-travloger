@@ -45,7 +45,6 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
 
   const existing = await prisma.contactField.findUnique({ where: { id: params.id } });
   if (!existing) return notFound('Contact field');
-  if (existing.is_system) return err('System fields cannot be deleted. You can hide them instead.', 400);
 
   await prisma.contactField.delete({ where: { id: params.id } });
   return ok({ deleted: true });

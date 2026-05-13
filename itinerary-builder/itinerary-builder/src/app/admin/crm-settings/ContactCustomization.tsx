@@ -166,8 +166,10 @@ export function ContactFieldsTab() {
   }
 
   async function del(f: ContactField) {
-    if (f.is_system) { alert('System fields cannot be deleted.'); return; }
-    if (!confirm(`Delete field "${f.label}"? Existing contact data for this field will become inaccessible.`)) return;
+    const warning = f.is_system
+      ? `"${f.label}" is a system field. Deleting it will remove it from all contacts and cannot be undone. Proceed?`
+      : `Delete field "${f.label}"? Existing contact data for this field will become inaccessible.`;
+    if (!confirm(warning)) return;
     await fetch(`/api/v1/crm/contact-fields/${f.id}`, { method: 'DELETE' });
     load();
   }
@@ -258,13 +260,12 @@ export function ContactFieldsTab() {
                     style={{ color: '#94A3B8' }}>
                     <Pencil className="w-3.5 h-3.5" />
                   </button>
-                  {!f.is_system && (
-                    <button onClick={() => del(f)}
-                      className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#FEF2F2]"
-                      style={{ color: '#94A3B8' }}>
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
+                  <button onClick={() => del(f)}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#FEF2F2]"
+                    style={{ color: '#94A3B8' }}
+                    title={f.is_system ? 'Delete system field' : 'Delete field'}>
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               );
             })}

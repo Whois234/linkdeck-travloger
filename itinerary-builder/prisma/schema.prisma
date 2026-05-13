@@ -1033,6 +1033,7 @@ model User {
   contacts            CrmContact[]      @relation("CrmContactOwner")
   assigned_contacts   CrmContact[]      @relation("CrmContactAssignee")
   contact_activities  ContactActivity[] @relation("ContactActivityActor")
+  team_memberships    CrmTeamMember[]
 
   @@index([role])
   @@index([status])
@@ -1365,4 +1366,26 @@ model CrmWorkflow {
   is_active  Boolean  @default(true)
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
+}
+
+// ─── CRM Teams ────────────────────────────────────────────────────────────────
+
+model CrmTeam {
+  id         String          @id @default(cuid())
+  name       String          @unique
+  created_at DateTime        @default(now())
+  members    CrmTeamMember[]
+}
+
+model CrmTeamMember {
+  id      String  @id @default(cuid())
+  team_id String
+  user_id String
+
+  team    CrmTeam @relation(fields: [team_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([team_id, user_id])
+  @@index([team_id])
+  @@index([user_id])
 }
