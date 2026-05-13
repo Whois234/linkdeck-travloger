@@ -8,7 +8,7 @@
  *   GALLABOX_CHANNEL_ID   — your WhatsApp channel ID
  */
 
-const BASE_URL     = 'https://server.gallabox.com/devapi';
+const BASE_URL     = 'https://server.gallabox.com/api';
 const API_KEY      = process.env.GALLABOX_API_KEY      ?? '';
 const API_SECRET   = process.env.GALLABOX_API_SECRET   ?? '';
 const CHANNEL_ID   = process.env.GALLABOX_CHANNEL_ID   ?? '';
