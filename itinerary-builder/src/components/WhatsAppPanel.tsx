@@ -42,18 +42,17 @@ function fmtTime(iso: string) {
 
 function WindowBadge({ w }: { w: WindowStatus | null }) {
   if (!w) return null;
-  const hrs = Math.floor(w.minutesLeft / 60);
-  const mins = w.minutesLeft % 60;
-  const timeStr = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
+  const hrs = Math.round(w.minutesLeft / 60);
+  const timeStr = hrs > 0 ? `${hrs}h` : `${w.minutesLeft}m`;
 
   if (w.status === 'open') return (
     <span className="flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: '#DCFCE7', color: '#166534' }}>
-      <CheckCircle2 className="w-3 h-3" /> Window open · {timeStr} left
+      <CheckCircle2 className="w-3 h-3" /> Window open · {timeStr}
     </span>
   );
   if (w.status === 'expiring') return (
     <span className="flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: '#FEF9C3', color: '#854D0E' }}>
-      <Clock className="w-3 h-3" /> Expiring · {timeStr} left
+      <Clock className="w-3 h-3" /> Expiring · {timeStr}
     </span>
   );
   return (
