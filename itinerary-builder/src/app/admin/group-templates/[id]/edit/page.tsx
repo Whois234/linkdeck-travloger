@@ -861,7 +861,7 @@ export default function GroupTemplateEditPage() {
                     </div>
                   </div>
                 ))}
-                {cms.package_options.length < 3 && (
+                {cms.package_options.length < 15 && (
                   <button onClick={() => updCms('package_options', [...cms.package_options, { tier_name: `Option ${cms.package_options.length + 1}`, display_order: cms.package_options.length + 1, is_most_popular: false, inclusions: [], adult_price: 0, child_price: 0 }])}
                     className="flex-shrink-0 w-12 rounded-xl flex items-center justify-center" style={{ border: '2px dashed #E2E8F0' }}>
                     <Plus className="w-5 h-5 text-[#CBD5E1]" />
