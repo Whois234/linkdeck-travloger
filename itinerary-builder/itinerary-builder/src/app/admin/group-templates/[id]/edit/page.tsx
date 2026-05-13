@@ -1602,7 +1602,7 @@ export default function GroupTemplateEditPage() {
                     {(cms.destination_cards ?? []).map((dc, i) => (
                       <div key={i} className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium text-white" style={{ background: T }}>
                         <MapPin className="w-3 h-3" />
-                        {dc.custom_name || dc.name}
+                        {dc.custom_name || dests.find(d => d.id === dc.destination_id)?.name || dc.destination_id}
                       </div>
                     ))}
                   </div>
