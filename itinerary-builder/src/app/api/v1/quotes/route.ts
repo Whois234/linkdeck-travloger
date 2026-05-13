@@ -6,6 +6,7 @@ import { getAuthUser, requireRole } from '@/lib/auth';
 import { ok, created, err, unauthorized, forbidden } from '@/lib/api-response';
 import { UserRole, QuoteType, QuoteStatus } from '@prisma/client';
 import { generateQuoteNumber } from '@/lib/generate-quote-number';
+import { sendWhatsAppTemplate, normalisePhone } from '@/lib/gallabox';
 
 const QuoteSchema = z.object({
   quote_name: z.string().optional().nullable(),
@@ -128,6 +129,57 @@ export async function POST(req: NextRequest) {
   await prisma.quoteEvent.create({
     data: { quote_id: quote.id, event_type: 'quote_created', metadata: { created_by: user.sub } },
   });
+
+  // ── Auto-send WhatsApp notification to customer ───────────────────────────
+  // Fire-and-forget: never block the quote creation response
+  void (async () => {
+    try {
+      const customer = await prisma.customer.findUnique({
+        where: { id: quote.customer_id },
+        select: { name: true, phone: true },
+      });
+      if (customer?.phone) {
+        const phone = normalisePhone(customer.phone);
+        // Uses the "quote_preparation" template (or whichever is approved in your Gallabox account).
+        // Variables: {{1}} = customer name, {{2}} = quote number
+        // Change GALLABOX_QUOTE_TEMPLATE env var to match your actual approved template name.
+        const templateName = process.env.GALLABOX_QUOTE_TEMPLATE ?? 'quote_preparation';
+        const result = await sendWhatsAppTemplate(
+          phone,
+          templateName,
+          [customer.name, quote.quote_number],
+          customer.name,
+        );
+
+        // Save to GallaboxMessage log
+        const ist = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000);
+        await prisma.gallaboxMessage.create({
+          data: {
+            gallabox_id:   result.messageId,
+            contact_phone: phone,
+            contact_name:  customer.name,
+            direction:     'outgoing',
+            message_type:  'template',
+            content:       `[Template: ${templateName}] ${customer.name} | ${quote.quote_number}`,
+            status:        result.ok ? 'sent' : 'failed',
+            failure_reason: result.ok ? null : (result.error ?? null),
+            event_type:    'Message.Send.Template',
+            raw_payload:   { templateName, quoteId: quote.id, quoteNumber: quote.quote_number },
+            created_at:    ist,
+            updated_at:    ist,
+          },
+        }).catch(e => console.error('[quotes/POST] WhatsApp log failed:', e));
+
+        if (!result.ok) {
+          console.warn('[quotes/POST] WhatsApp auto-send failed:', result.error);
+        } else {
+          console.log('[quotes/POST] WhatsApp sent for quote', quote.quote_number, '→ messageId:', result.messageId);
+        }
+      }
+    } catch (e) {
+      console.error('[quotes/POST] WhatsApp auto-send error:', e);
+    }
+  })();
 
   // ── Auto-link to pipeline lead ────────────────────────────────────────────
   // If lead_id was provided, just log the activity.

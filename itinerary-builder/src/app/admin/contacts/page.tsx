@@ -8,6 +8,7 @@ import {
   Search, Phone, Mail, Plus, X, Calendar, ChevronDown, AlertTriangle,
   Loader2, Edit2, ChevronRight, CheckSquare, Square, ChevronLeft, ExternalLink,
   Save, User, Trash2, Tag as TagIcon, Check, Download, Filter as FilterIcon,
+  MessageCircle,
 } from 'lucide-react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
@@ -15,6 +16,12 @@ import type { ContactFormValue } from './ContactFormModal';
 
 // Lazy-load the full Add/Edit modal — heavy form, not needed on first paint.
 const ContactFormModal = dynamic(() => import('./ContactFormModal'), {
+  ssr: false,
+  loading: () => null,
+});
+
+// Lazy-load WhatsApp modal
+const WhatsAppModal = dynamic(() => import('@/components/WhatsAppModal'), {
   ssr: false,
   loading: () => null,
 });
@@ -854,6 +861,7 @@ export default function ContactsPage() {
   const [selected, setSelected]   = useState<Contact | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [editing,    setEditing]    = useState<Contact | null>(null);
+  const [waContact,  setWaContact]  = useState<{ phone: string; name: string } | null>(null);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [page, setPage]           = useState(1);
   const [allTags, setAllTags]     = useState<ContactTag[]>([]);
@@ -1529,6 +1537,17 @@ export default function ContactsPage() {
                         {/* Actions */}
                         <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center gap-1">
+                            {/* WhatsApp */}
+                            {c.phone && (
+                              <button
+                                onClick={() => setWaContact({ phone: c.phone!, name: c.name })}
+                                className="w-7 h-7 rounded-md flex items-center justify-center transition-colors hover:bg-[#DCFCE7]"
+                                style={{ color: '#16A34A' }}
+                                title="Send WhatsApp"
+                              >
+                                <MessageCircle className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                             <Link href={`/admin/contacts/${c.id}`}
                               className="w-7 h-7 rounded-md flex items-center justify-center transition-colors hover:bg-[#F1F5F9]"
                               style={{ color: '#64748B' }} title="View / Edit">
@@ -1765,6 +1784,15 @@ export default function ContactsPage() {
           onClose={() => setSelected(null)}
           onUpdated={() => qc.invalidateQueries({ queryKey: QK.contacts(contactParams.toString()) })}
           onEditFull={(c) => setEditing(c)}
+        />
+      )}
+
+      {/* WhatsApp send modal */}
+      {waContact && (
+        <WhatsAppModal
+          phone={waContact.phone}
+          contactName={waContact.name}
+          onClose={() => setWaContact(null)}
         />
       )}
     </div>
