@@ -75,13 +75,13 @@ export default async function PrivateTemplatePreviewPage({ params }: { params: {
 
   /* ── Hero image ── */
   const heroImages = (cms.hero_images ?? []) as string[];
-  const stateHero =
-    (cms.state_gallery_hidden === true ? null : null) ||
-    (cms.state_gallery_image as string | undefined) ||
-    tpl.hero_image ||
-    heroImages[0] ||
-    tpl.state.hero_image ||
-    null;
+  const stateHero = cms.state_gallery_hidden === true
+    ? null
+    : ((cms.state_gallery_image as string | undefined) ||
+       tpl.hero_image ||
+       heroImages[0] ||
+       tpl.state.hero_image ||
+       null);
 
   /* ── Build mock ItineraryData ── */
   const data = {
