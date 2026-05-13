@@ -92,19 +92,29 @@ export async function sendWhatsAppTemplate(
       body:    JSON.stringify(payload),
     });
 
+    // Always check HTTP status BEFORE parsing — Gallabox can return HTML error pages
+    if (!res.ok) {
+      let errMsg = `Gallabox API error (${res.status} ${res.statusText})`;
+      try {
+        const ct = res.headers.get('content-type') ?? '';
+        if (ct.includes('application/json')) {
+          const d = await res.json() as Record<string, unknown>;
+          errMsg = (d.message ?? d.error ?? errMsg) as string;
+        }
+      } catch { /* ignore parse failure on error body */ }
+      console.error('[gallabox/send-template] API error:', errMsg);
+      return { ok: false, error: errMsg };
+    }
+
     const data = await res.json() as Record<string, unknown>;
     console.log('[gallabox/send-template] response:', JSON.stringify(data));
-
-    if (!res.ok) {
-      return { ok: false, error: (data.message ?? data.error ?? res.statusText) as string };
-    }
 
     const msgId = (data.id ?? data.messageId ?? (data.data as Record<string,unknown>)?.id) as string | undefined;
     return { ok: true, messageId: msgId };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error('[gallabox/send-template] fetch error:', msg);
-    return { ok: false, error: msg };
+    return { ok: false, error: `Failed to reach Gallabox: ${msg}` };
   }
 }
 
@@ -141,19 +151,29 @@ export async function sendWhatsAppText(
       body:    JSON.stringify(payload),
     });
 
+    // Always check HTTP status BEFORE parsing — Gallabox can return HTML error pages
+    if (!res.ok) {
+      let errMsg = `Gallabox API error (${res.status} ${res.statusText})`;
+      try {
+        const ct = res.headers.get('content-type') ?? '';
+        if (ct.includes('application/json')) {
+          const d = await res.json() as Record<string, unknown>;
+          errMsg = (d.message ?? d.error ?? errMsg) as string;
+        }
+      } catch { /* ignore parse failure on error body */ }
+      console.error('[gallabox/send-text] API error:', errMsg);
+      return { ok: false, error: errMsg };
+    }
+
     const data = await res.json() as Record<string, unknown>;
     console.log('[gallabox/send-text] response:', JSON.stringify(data));
-
-    if (!res.ok) {
-      return { ok: false, error: (data.message ?? data.error ?? res.statusText) as string };
-    }
 
     const msgId = (data.id ?? data.messageId ?? (data.data as Record<string,unknown>)?.id) as string | undefined;
     return { ok: true, messageId: msgId };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error('[gallabox/send-text] fetch error:', msg);
-    return { ok: false, error: msg };
+    return { ok: false, error: `Failed to reach Gallabox: ${msg}` };
   }
 }
 

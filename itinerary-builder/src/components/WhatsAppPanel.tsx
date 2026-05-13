@@ -84,27 +84,43 @@ export default function WhatsAppPanel({ phone, contactName, onClose }: Props) {
 
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // Safely parse JSON — returns null if response is not JSON (e.g. HTML error page)
+  async function safeJson<T>(res: Response): Promise<T | null> {
+    try {
+      const ct = res.headers.get('content-type') ?? '';
+      if (!ct.includes('application/json')) return null;
+      return await res.json() as T;
+    } catch {
+      return null;
+    }
+  }
+
   // Fetch conversation + window status
   const loadConversation = useCallback(async () => {
     setLoadingMsg(true);
-    const [msgRes, winRes] = await Promise.all([
-      fetch(`/api/gallabox/conversation?phone=${digits}`),
-      fetch('/api/gallabox/window', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phones: [digits] }),
-      }),
-    ]);
-    const msgData = await msgRes.json() as { ok: boolean; data?: Message[] };
-    const winData = await winRes.json() as { ok: boolean; data?: Record<string, WindowStatus> };
-    if (msgData.ok) setMessages(msgData.data ?? []);
-    if (winData.ok) {
-      const w = winData.data?.[digits] ?? null;
-      setWinStatus(w);
-      // Auto-switch to template if window closed
-      if (w?.status === 'closed') setMode('template');
+    try {
+      const [msgRes, winRes] = await Promise.all([
+        fetch(`/api/gallabox/conversation?phone=${digits}`),
+        fetch('/api/gallabox/window', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phones: [digits] }),
+        }),
+      ]);
+      const msgData = await safeJson<{ ok: boolean; data?: Message[] }>(msgRes);
+      const winData = await safeJson<{ ok: boolean; data?: Record<string, WindowStatus> }>(winRes);
+      if (msgData?.ok) setMessages(msgData.data ?? []);
+      if (winData?.ok) {
+        const w = winData.data?.[digits] ?? null;
+        setWinStatus(w);
+        // Auto-switch to template if window closed
+        if (w?.status === 'closed') setMode('template');
+      }
+    } catch (e) {
+      console.error('[WhatsAppPanel] loadConversation error:', e);
+    } finally {
+      setLoadingMsg(false);
     }
-    setLoadingMsg(false);
   }, [digits]);
 
   // Fetch templates
@@ -150,15 +166,24 @@ export default function WhatsAppPanel({ phone, contactName, onClose }: Props) {
       const res  = await fetch('/api/gallabox/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
       });
+
+      // Guard against HTML error pages from the API layer
+      const ct = res.headers.get('content-type') ?? '';
+      if (!ct.includes('application/json')) {
+        setSendErr(`Server error (${res.status}) — check Gallabox API credentials`);
+        return;
+      }
+
       const data = await res.json() as { ok: boolean; error?: string };
       if (data.ok) {
         setText(''); setTpl(''); setVars(['', '', '', '', '']);
-        await loadConversation();   // refresh conversation
+        // Refresh conversation — errors here must NOT surface as a send error
+        loadConversation().catch(e => console.error('[WhatsAppPanel] refresh error:', e));
       } else {
         setSendErr(data.error ?? 'Send failed');
       }
-    } catch {
-      setSendErr('Network error');
+    } catch (e) {
+      setSendErr(e instanceof Error ? e.message : 'Network error — could not reach server');
     } finally {
       setSending(false);
     }
