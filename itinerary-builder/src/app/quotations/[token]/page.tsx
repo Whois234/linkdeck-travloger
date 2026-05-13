@@ -12,7 +12,6 @@ import { ItineraryClient } from '@/app/itinerary/[token]/ItineraryClient';
 import QuotationTracker from './QuotationTracker';
 import SnapshotPending from './SnapshotPending';
 import { prisma } from '@/lib/prisma';
-import { QuoteStatus } from '@prisma/client';
 
 const PHONE    = '6281392007';
 const WA_BASE  = `https://wa.me/91${PHONE}`;
@@ -33,10 +32,6 @@ const getItinerary = cache(async (token: string) => {
   if (!quote || quote.snapshots.length === 0) return null;
   // Don't block here — deactivated is handled in the page component
   if ((quote as unknown as { link_active: boolean }).link_active === false) return null;
-
-  if (quote.status === QuoteStatus.SENT) {
-    prisma.quote.update({ where: { id: quote.id }, data: { status: QuoteStatus.VIEWED } }).catch(() => {});
-  }
 
   const snapshotJson = quote.snapshots[0].snapshot_json as Record<string, unknown>;
 

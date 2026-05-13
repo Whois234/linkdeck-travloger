@@ -7,7 +7,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { ok, notFound } from '@/lib/api-response';
-import { QuoteEventType, Prisma } from '@prisma/client';
+import { QuoteEventType, QuoteStatus, Prisma } from '@prisma/client';
 
 const ALLOWED_EVENTS: QuoteEventType[] = [
   'quote_viewed',
@@ -106,6 +106,18 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
       metadata:   enrichedMeta as Prisma.NullableJsonNullValueInput | Prisma.InputJsonValue,
     },
   });
+
+  // Mark quote as VIEWED only when customer actually spent ≥ 2 seconds on the page
+  // (ensures bots, link previews, and accidental taps don't flip the status)
+  if (eventType === 'quote_viewed' && quote.status === QuoteStatus.SENT) {
+    const timeSpent = Number(body.metadata?.time_spent_seconds ?? 0);
+    if (timeSpent >= 2) {
+      await prisma.quote.update({
+        where: { id: quote.id },
+        data:  { status: QuoteStatus.VIEWED },
+      }).catch(() => {});
+    }
+  }
 
   // Auto-update CRM contact with geo + device info from this view event
   if (quote.lead?.crm_contact_id && eventType === 'quote_viewed') {
