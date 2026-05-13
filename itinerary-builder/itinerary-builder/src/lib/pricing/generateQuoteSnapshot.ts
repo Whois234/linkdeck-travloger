@@ -308,6 +308,17 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
         ((templateCmsData as Record<string,unknown>)?.state_gallery_custom_name as string | undefined || null)
         ?? ((groupCms as Record<string,unknown>)?.state_gallery_custom_name as string | undefined || null)
         ?? null,
+      // Hero banner heading — overrides the default state.name in the hero title.
+      // Set from the "Main Heading" CMS field; group template CMS takes priority over private.
+      hero_heading:
+        ((groupCms        as Record<string,unknown>)?.hero_heading as string | undefined || null)
+        ?? ((templateCmsData as Record<string,unknown>)?.hero_heading as string | undefined || null)
+        ?? null,
+      // Hero sub-heading shown below the title on the banner.
+      hero_subheading:
+        ((groupCms        as Record<string,unknown>)?.hero_subheading as string | undefined || null)
+        ?? ((templateCmsData as Record<string,unknown>)?.hero_subheading as string | undefined || null)
+        ?? null,
     },
     quote_options:         enrichedOptions,
     group_package_options: groupPackageOptions,

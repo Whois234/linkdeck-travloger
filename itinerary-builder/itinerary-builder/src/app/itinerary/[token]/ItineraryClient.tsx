@@ -112,7 +112,7 @@ interface ItineraryData {
     speciality?: string | null;
     available_hours?: string | null;
   } | null;
-  state: { name: string; custom_name?: string | null; description?: string | null; hero_image?: string | null; hero_images?: string[] | null };
+  state: { name: string; custom_name?: string | null; description?: string | null; hero_image?: string | null; hero_images?: string[] | null; hero_heading?: string | null; hero_subheading?: string | null };
   quote_options: QuoteOption[];
   group_package_options?: GroupPackageOption[];
   group_pricing_mode?: 'date_based' | 'package_based';
@@ -202,17 +202,18 @@ function Hero({ data }: { data: ItineraryData }) {
   const endFmt = fmtShortDate(quote.end_date);
   const dateRange = `${startFmt} – ${endFmt}`;
 
-  // Hero title priority: quote_name > state.name
-  const heroTitle = quote.quote_name?.trim() || state.name;
-  // Sub-line: destination list if available, else state description
-  const heroSub = destNames.length > 1
-    ? destNames.join(' · ')
-    : (state.description ?? null);
+  // Hero title priority: state.hero_heading (CMS "Main Heading") > quote_name > state.name
+  const heroTitle = state.hero_heading?.trim() || quote.quote_name?.trim() || state.name;
+  // Sub-line: hero_subheading (CMS) > destination list > state description
+  const heroSub = state.hero_subheading?.trim()
+    || (destNames.length > 1 ? destNames.join(' · ') : null)
+    || (state.description ?? null);
 
-  // Slideshow: use hero_images if multiple, else fall back to single hero_image
-  const slides = (state.hero_images && state.hero_images.length > 1)
-    ? state.hero_images
-    : (state.hero_image ? [state.hero_image] : []);
+  // Hero banner slideshow — uses ONLY hero_images (the dedicated hero CMS field).
+  // Never falls back to state.hero_image which is the gallery cover card (separate concern).
+  const slides = (state.hero_images && state.hero_images.length > 0)
+    ? state.hero_images.filter(Boolean)
+    : [];
 
   const [activeSlide, setActiveSlide] = useState(0);
   useEffect(() => {

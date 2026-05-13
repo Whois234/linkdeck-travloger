@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
-import { Plus, Pencil, Trash2, Search, Users, ChevronRight, LayoutGrid, List, ArrowUpDown, CheckCircle2, SlidersHorizontal, X, RotateCcw, AlertTriangle, Eye } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, Users, ChevronRight, LayoutGrid, List, ArrowUpDown, CheckCircle2, SlidersHorizontal, X, RotateCcw, AlertTriangle, Eye, Copy } from 'lucide-react';
 
 type SortKey = 'name_asc' | 'name_desc' | 'nights_asc' | 'nights_desc' | 'batches_desc' | 'state_asc';
 type StatusTab = 'all' | 'live' | 'draft' | 'deleted';
@@ -76,9 +76,10 @@ function GroupTemplatesPageInner() {
   const [showSetup, setShowSetup] = useState(false);
   const [saving, setSaving]   = useState(false);
   const [err, setErr]         = useState('');
-  const [deleting, setDeleting]     = useState<string | null>(null);
-  const [restoring, setRestoring]   = useState<string | null>(null);
+  const [deleting, setDeleting]       = useState<string | null>(null);
+  const [restoring, setRestoring]     = useState<string | null>(null);
   const [permDeleting, setPermDeleting] = useState<string | null>(null);
+  const [duplicating, setDuplicating] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   // ── Selection ──
@@ -199,6 +200,16 @@ function GroupTemplatesPageInner() {
       setRows(prev => prev.filter(r => r.id !== id));
       showToast('Permanently deleted');
     } else { alert('Delete failed.'); }
+  }
+
+  async function duplicate(id: string) {
+    setDuplicating(id);
+    const res = await fetch(`/api/v1/group-templates/${id}/duplicate`, { method: 'POST' });
+    setDuplicating(null);
+    if (!res.ok) { alert('Duplicate failed. Please try again.'); return; }
+    const d = await res.json();
+    showToast('Template duplicated as Draft');
+    router.push(`/admin/group-templates/${d.data.id}/edit`);
   }
 
   async function handleBulkDelete() {
@@ -533,6 +544,11 @@ function GroupTemplatesPageInner() {
                             style={{ borderColor: '#2563EB', color: '#2563EB', backgroundColor: '#EFF6FF' }}>
                             <Eye className="w-3 h-3" />Preview
                           </button>
+                          <button onClick={() => duplicate(r.id)} disabled={duplicating === r.id}
+                            className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#EEF7F9] hover:text-[#134956] disabled:opacity-40"
+                            title="Duplicate template">
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
                           <button onClick={() => router.push(`/admin/group-templates/${r.id}/edit`)}
                             className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#F1F5F9] hover:text-[#134956]">
                             <Pencil className="w-3.5 h-3.5" />
@@ -614,6 +630,11 @@ function GroupTemplatesPageInner() {
                           className="flex items-center gap-1.5 h-7 px-2.5 rounded-lg text-[11px] font-semibold border transition-colors hover:opacity-90"
                           style={{ borderColor: '#2563EB', color: '#2563EB', backgroundColor: '#EFF6FF' }}>
                           <Eye className="w-3 h-3" />Preview
+                        </button>
+                        <button onClick={() => duplicate(r.id)} disabled={duplicating === r.id}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#EEF7F9] hover:text-[#134956] disabled:opacity-40"
+                          title="Duplicate template">
+                          <Copy className="w-3.5 h-3.5" />
                         </button>
                         <button onClick={() => router.push(`/admin/group-templates/${r.id}/edit`)}
                           className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#F1F5F9] hover:text-[#134956]">
