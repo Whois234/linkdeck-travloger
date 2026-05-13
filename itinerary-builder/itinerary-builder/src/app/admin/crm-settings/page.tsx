@@ -141,8 +141,9 @@ export default function CrmSettingsPage() {
     const [pData, uData, autoData, wfData] = await Promise.all([
       pRes.json(), uRes.json(), autoRes.json(), wfRes.json(),
     ]);
-    if (pData.success)    setPipelines(pData.data ?? []);
-    if (uData.success)    setUsers((uData.data ?? uData.items ?? []) as User[]);
+    if (pData.success)    setPipelines(Array.isArray(pData.data) ? pData.data : []);
+    // /api/v1/users returns a paginated object: { data: { items: [], total, ... } }
+    if (uData.success) setUsers((Array.isArray(uData.data) ? uData.data : (uData.data?.items ?? uData.items ?? [])) as User[]);
     else if (Array.isArray(uData)) setUsers(uData);
     if (autoData.success) setAutomations(autoData.data ?? []);
     if (wfData.success)   setWorkflows(wfData.data ?? []);
