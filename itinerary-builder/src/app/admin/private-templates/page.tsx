@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
 import MultiStateSelect from '@/components/MultiStateSelect';
-import { Plus, Search, Pencil, Trash2, FileText, Map, ChevronRight, LayoutGrid, List, ArrowUpDown, CheckCircle2, SlidersHorizontal, X, Copy, RotateCcw, AlertTriangle } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, FileText, Map, ChevronRight, LayoutGrid, List, ArrowUpDown, CheckCircle2, SlidersHorizontal, X, Copy, RotateCcw, AlertTriangle, Eye } from 'lucide-react';
 
 type SortKey = 'name_asc' | 'name_desc' | 'state_asc' | 'nights_asc' | 'nights_desc' | 'days_desc' | 'newest' | 'oldest';
 type StatusTab = 'all' | 'live' | 'draft' | 'deleted';
@@ -554,6 +554,11 @@ function PrivateTemplatesPageInner() {
                             return <span className="text-[10px] font-semibold ml-1" style={{ color: days <= 7 ? '#DC2626' : '#94A3B8' }}>{days}d left</span>;
                           })()}
                         </>) : (<>
+                          <button onClick={() => window.open(`/admin/private-templates/${r.id}/preview`, '_blank')}
+                            title="Preview customer view"
+                            className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#EFF6FF] hover:text-[#2563EB]">
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
                           <button onClick={() => router.push(`/admin/private-templates/${r.id}/edit`)}
                             title="Edit"
                             className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#F1F5F9] hover:text-[#134956]">
@@ -633,6 +638,11 @@ function PrivateTemplatesPageInner() {
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </>) : (<>
+                        <button onClick={() => window.open(`/admin/private-templates/${r.id}/preview`, '_blank')}
+                          title="Preview customer view"
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#EFF6FF] hover:text-[#2563EB]">
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
                         <button onClick={() => router.push(`/admin/private-templates/${r.id}/edit`)}
                           title="Edit"
                           className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#F1F5F9] hover:text-[#134956]">
