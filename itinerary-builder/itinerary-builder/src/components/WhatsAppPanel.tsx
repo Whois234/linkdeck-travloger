@@ -25,7 +25,13 @@ interface WindowStatus {
   lastMessageAt: string | null;
 }
 
-interface Template { id: string; name: string; language: string }
+interface Template {
+  id:           string;
+  name:         string;
+  language:     string;
+  bodyVarCount: number;   // number of {{n}} vars in body
+  hasUrlButton: boolean;  // has a dynamic URL button
+}
 
 interface Props {
   phone:       string;
@@ -77,7 +83,9 @@ export default function WhatsAppPanel({ phone, contactName, onClose }: Props) {
   const [mode,        setMode]       = useState<'text' | 'template'>('text');
   const [text,        setText]       = useState('');
   const [tpl,         setTpl]        = useState('');
-  const [vars,        setVars]       = useState<string[]>(['', '', '', '', '']);
+  const [selTpl,      setSelTpl]     = useState<Template | null>(null);
+  const [vars,        setVars]       = useState<string[]>([]);
+  const [buttonUrl,   setButtonUrl]  = useState('');
   const [sending,     setSending]    = useState(false);
   const [sendErr,     setSendErr]    = useState('');
 
@@ -155,6 +163,7 @@ export default function WhatsAppPanel({ phone, contactName, onClose }: Props) {
       if (!tpl) { setSendErr('Select a template'); return; }
       body.templateName = tpl;
       body.variables    = vars.filter(v => v.trim());
+      if (buttonUrl.trim()) body.buttonUrl = buttonUrl.trim();
     } else {
       if (!text.trim()) { setSendErr('Enter a message'); return; }
       body.messageText = text.trim();
@@ -175,7 +184,7 @@ export default function WhatsAppPanel({ phone, contactName, onClose }: Props) {
 
       const data = await res.json() as { ok: boolean; error?: string };
       if (data.ok) {
-        setText(''); setTpl(''); setVars(['', '', '', '', '']);
+        setText(''); setTpl(''); setSelTpl(null); setVars([]); setButtonUrl('');
         // Refresh conversation — errors here must NOT surface as a send error
         loadConversation().catch(e => console.error('[WhatsAppPanel] refresh error:', e));
       } else {
@@ -324,7 +333,14 @@ export default function WhatsAppPanel({ phone, contactName, onClose }: Props) {
                 <div className="relative">
                   <select
                     value={tpl}
-                    onChange={e => setTpl(e.target.value)}
+                    onChange={e => {
+                      const chosen = templates.find(t => t.name === e.target.value) ?? null;
+                      setTpl(e.target.value);
+                      setSelTpl(chosen);
+                      setVars(Array(chosen?.bodyVarCount ?? 0).fill(''));
+                      setButtonUrl('');
+                      setSendErr('');
+                    }}
                     className="w-full appearance-none border border-[#E2E8F0] rounded-lg px-3 py-2 text-sm text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#0F4C75]/30 bg-white pr-8"
                   >
                     <option value="">Select template…</option>
@@ -335,10 +351,11 @@ export default function WhatsAppPanel({ phone, contactName, onClose }: Props) {
                   <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8] pointer-events-none" />
                 </div>
               )}
-              {/* Variable inputs */}
-              {tpl && (
+
+              {/* Body variable inputs — only shown when template has {{n}} in body */}
+              {tpl && selTpl && selTpl.bodyVarCount > 0 && (
                 <div className="flex flex-col gap-1.5">
-                  {vars.slice(0, 5).map((v, i) => (
+                  {vars.map((v, i) => (
                     <div key={i} className="flex items-center gap-2">
                       <span className="text-[10px] text-[#94A3B8] w-7 text-right shrink-0">{`{{${i + 1}}}`}</span>
                       <input
@@ -352,6 +369,26 @@ export default function WhatsAppPanel({ phone, contactName, onClose }: Props) {
                   ))}
                 </div>
               )}
+
+              {/* URL button input — shown when template has a dynamic URL button */}
+              {tpl && selTpl?.hasUrlButton && (
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-[#94A3B8] shrink-0">🔗 Link</span>
+                  <input
+                    type="url"
+                    value={buttonUrl}
+                    placeholder="https://link.travloger.in/itinerary/TOKEN"
+                    onChange={e => setButtonUrl(e.target.value)}
+                    className="flex-1 border border-[#E2E8F0] rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#0F4C75]/30"
+                  />
+                </div>
+              )}
+
+              {/* No inputs needed — static template */}
+              {tpl && selTpl && selTpl.bodyVarCount === 0 && !selTpl.hasUrlButton && (
+                <p className="text-[11px] text-[#94A3B8] text-center">This template has no variables — ready to send.</p>
+              )}
+
               <button
                 onClick={handleSend}
                 disabled={sending || !tpl}

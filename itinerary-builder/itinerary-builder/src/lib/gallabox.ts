@@ -35,13 +35,30 @@ export interface TemplateVariable {
   text:  string;
 }
 
+interface TemplateButton {
+  type: string;   // URL | PHONE_NUMBER | QUICK_REPLY
+  text?: string;
+  url?:  string;
+}
+
+interface TemplateComponent {
+  type:     string;   // HEADER | BODY | FOOTER | BUTTONS
+  text?:    string;
+  format?:  string;
+  buttons?: TemplateButton[];
+}
+
 export interface GallaboxTemplate {
-  id:           string;
-  name:         string;
-  status:       string;   // APPROVED | PENDING | REJECTED
-  category:     string;
-  language:     string;
-  components?:  unknown[];
+  id:            string;
+  name:          string;
+  status:        string;   // APPROVED | active | ACTIVE | PENDING | REJECTED
+  category:      string;
+  language:      string;
+  components?:   TemplateComponent[];
+  /** Number of {{n}} placeholders found in the BODY component */
+  bodyVarCount:  number;
+  /** True when a URL button has a dynamic {{1}} suffix */
+  hasUrlButton:  boolean;
 }
 
 export interface SendResult {
@@ -50,37 +67,66 @@ export interface SendResult {
   error?:  string;
 }
 
+// ─── Template parser ──────────────────────────────────────────────────────────
+
+function parseTemplate(raw: Record<string, unknown>): GallaboxTemplate {
+  const components = ((raw.components ?? []) as TemplateComponent[]).map(c => ({
+    ...c,
+    type: (c.type ?? '').toUpperCase(),
+    buttons: (c.buttons ?? []).map(b => ({ ...b, type: (b.type ?? '').toUpperCase() })),
+  }));
+
+  const body       = components.find(c => c.type === 'BODY');
+  const bodyText   = body?.text ?? '';
+  const bodyVarCount = new Set((bodyText.match(/\{\{\d+\}\}/g) ?? [])).size;
+
+  const buttonsComp = components.find(c => c.type === 'BUTTONS');
+  const hasUrlButton = (buttonsComp?.buttons ?? []).some(
+    b => b.type === 'URL' && (b.url ?? '').includes('{{'),
+  );
+
+  return {
+    id:           String(raw.id   ?? raw._id ?? ''),
+    name:         String(raw.name ?? ''),
+    status:       String(raw.status   ?? ''),
+    category:     String(raw.category ?? ''),
+    language:     String(raw.language ?? 'en'),
+    components,
+    bodyVarCount,
+    hasUrlButton,
+  };
+}
+
 // ─── Send template message ────────────────────────────────────────────────────
 
 export async function sendWhatsAppTemplate(
-  phone:        string,
-  templateName: string,
-  variables:    string[],          // ordered list of variable values
-  contactName:  string,
-  language =    'en',
+  phone:         string,
+  templateName:  string,
+  variables:     string[],   // body {{n}} values
+  contactName:   string,
+  language =     'en',
+  buttonValues:  string[] = [], // URL button dynamic suffix(es)
 ): Promise<SendResult> {
   if (!API_KEY || !API_SECRET || !CHANNEL_ID) {
-    return { ok: false, error: 'Gallabox env vars not configured' };
+    return { ok: false, error: 'Gallabox env vars not configured — check GALLABOX_API_KEY, GALLABOX_API_SECRET, GALLABOX_CHANNEL_ID in Vercel' };
   }
 
   const digits = normalisePhone(phone);
 
-  // Build components.body.parameters from variables array
-  const bodyParams = variables.map(v => ({ type: 'text', text: v }));
-
   const payload = {
-    channelId: CHANNEL_ID,
+    channelId:   CHANNEL_ID,
     channelType: 'whatsapp',
     contact: {
-      phone:  digits,
-      name:   contactName || 'Customer',
+      phone:       digits,
+      name:        contactName || 'Customer',
       countryCode: digits.startsWith('91') ? '+91' : undefined,
     },
     whatsapp: {
       type: 'template',
       template: {
-        templateName: templateName,
-        bodyValues:   variables,        // simple array form (Gallabox accepts both)
+        templateName,
+        ...(variables.length    > 0 ? { bodyValues:   variables    } : {}),
+        ...(buttonValues.length > 0 ? { buttonValues: buttonValues } : {}),
       },
     },
   };
@@ -94,12 +140,15 @@ export async function sendWhatsAppTemplate(
 
     // Always check HTTP status BEFORE parsing — Gallabox can return HTML error pages
     if (!res.ok) {
-      let errMsg = `Gallabox API error (${res.status} ${res.statusText})`;
+      let errMsg = `Gallabox API error (${res.status})`;
+      if (res.status === 404) errMsg = 'Gallabox channel not found (404) — verify GALLABOX_CHANNEL_ID in Vercel env vars';
+      if (res.status === 401) errMsg = 'Gallabox unauthorised (401) — verify GALLABOX_API_KEY and GALLABOX_API_SECRET';
       try {
         const ct = res.headers.get('content-type') ?? '';
         if (ct.includes('application/json')) {
           const d = await res.json() as Record<string, unknown>;
-          errMsg = (d.message ?? d.error ?? errMsg) as string;
+          const apiMsg = (d.message ?? d.error ?? '') as string;
+          if (apiMsg) errMsg = apiMsg;
         }
       } catch { /* ignore parse failure on error body */ }
       console.error('[gallabox/send-template] API error:', errMsg);
@@ -153,12 +202,15 @@ export async function sendWhatsAppText(
 
     // Always check HTTP status BEFORE parsing — Gallabox can return HTML error pages
     if (!res.ok) {
-      let errMsg = `Gallabox API error (${res.status} ${res.statusText})`;
+      let errMsg = `Gallabox API error (${res.status})`;
+      if (res.status === 404) errMsg = 'Gallabox channel not found (404) — verify GALLABOX_CHANNEL_ID in Vercel env vars';
+      if (res.status === 401) errMsg = 'Gallabox unauthorised (401) — verify GALLABOX_API_KEY and GALLABOX_API_SECRET';
       try {
         const ct = res.headers.get('content-type') ?? '';
         if (ct.includes('application/json')) {
           const d = await res.json() as Record<string, unknown>;
-          errMsg = (d.message ?? d.error ?? errMsg) as string;
+          const apiMsg = (d.message ?? d.error ?? '') as string;
+          if (apiMsg) errMsg = apiMsg;
         }
       } catch { /* ignore parse failure on error body */ }
       console.error('[gallabox/send-text] API error:', errMsg);
@@ -181,7 +233,11 @@ export async function sendWhatsAppText(
 
 /** Fallback template shown when the API call fails or returns nothing */
 const FALLBACK_TEMPLATES: GallaboxTemplate[] = [
-  { id: 'itinerary_ready', name: 'itinerary_ready', status: 'APPROVED', category: 'MARKETING', language: 'en' },
+  {
+    id: 'itinerary_ready', name: 'itinerary_ready', status: 'APPROVED',
+    category: 'UTILITY', language: 'en',
+    bodyVarCount: 0, hasUrlButton: true,   // static body + URL button
+  },
 ];
 
 export async function listWhatsAppTemplates(): Promise<GallaboxTemplate[]> {
@@ -231,7 +287,10 @@ export async function listWhatsAppTemplates(): Promise<GallaboxTemplate[]> {
       }
 
       // Accept templates whose status is APPROVED, active, ACTIVE, or missing
-      const active = arr.filter(t => isActive(t.status));
+      // Then parse each one so bodyVarCount and hasUrlButton are populated
+      const active = arr
+        .filter(t => isActive(t.status))
+        .map(t => parseTemplate(t as unknown as Record<string, unknown>));
       if (active.length > 0) {
         console.log(`[gallabox/templates] Returning ${active.length} active templates from ${url}`);
         return active;

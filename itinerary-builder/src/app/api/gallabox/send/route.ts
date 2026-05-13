@@ -27,10 +27,11 @@ export async function POST(req: NextRequest) {
       contactName?:  string;
       templateName?: string;
       variables?:    string[];
+      buttonUrl?:    string;   // URL button dynamic parameter
       messageText?:  string;
     };
 
-    const { phone, contactName = 'Customer', templateName, variables = [], messageText } = body;
+    const { phone, contactName = 'Customer', templateName, variables = [], buttonUrl, messageText } = body;
 
     if (!phone) {
       return NextResponse.json({ ok: false, error: 'phone is required' }, { status: 400 });
@@ -46,8 +47,9 @@ export async function POST(req: NextRequest) {
     let sentContent: string;
 
     if (templateName) {
-      result      = await sendWhatsAppTemplate(digits, templateName, variables, contactName);
-      sentContent = `[Template: ${templateName}] ${variables.join(' | ')}`;
+      const buttonValues = buttonUrl ? [buttonUrl] : [];
+      result      = await sendWhatsAppTemplate(digits, templateName, variables, contactName, 'en', buttonValues);
+      sentContent = `[Template: ${templateName}] ${[...variables, ...(buttonUrl ? [`URL:${buttonUrl}`] : [])].join(' | ')}`;
     } else {
       result      = await sendWhatsAppText(digits, messageText!, contactName);
       sentContent = messageText!;
