@@ -190,42 +190,57 @@ export async function listWhatsAppTemplates(): Promise<GallaboxTemplate[]> {
     return FALLBACK_TEMPLATES;
   }
 
-  // Try both known Gallabox endpoints for listing templates
+  // Try known Gallabox endpoints — with and without channelId filter
+  const channelParam = CHANNEL_ID ? `&channelId=${CHANNEL_ID}` : '';
   const endpoints = [
-    `${BASE_URL}/whatsappTemplates?status=APPROVED`,
+    `${BASE_URL}/whatsappTemplates?${channelParam}`,
+    `${BASE_URL}/whatsappTemplates?status=APPROVED${channelParam}`,
     `${BASE_URL}/templates`,
     `${BASE_URL}/whatsappTemplates`,
   ];
+
+  /** Gallabox uses both "APPROVED" and "active"/"ACTIVE" to mean "usable" */
+  function isActive(status: string | undefined) {
+    if (!status) return true;
+    const s = status.toLowerCase();
+    return s === 'approved' || s === 'active';
+  }
 
   for (const url of endpoints) {
     try {
       const res = await fetch(url, { headers: headers(), cache: 'no-store' });
       const raw = await res.text();
-      console.log(`[gallabox/templates] ${url} → ${res.status}: ${raw.slice(0, 300)}`);
+      console.log(`[gallabox/templates] ${url} → ${res.status}: ${raw.slice(0, 400)}`);
 
       if (!res.ok) continue;
 
-      const data = JSON.parse(raw) as Record<string, unknown>;
+      let data: unknown;
+      try { data = JSON.parse(raw); } catch { continue; }
 
       // Handle multiple known response shapes:
-      // { data: [...] }  |  { entities: [...] }  |  { templates: [...] }  |  direct array
+      // { data: [...] }  |  { entities: [...] }  |  { templates: [...] }  |
+      // { whatsappTemplates: [...] }  |  direct array
       let arr: GallaboxTemplate[] = [];
-      if (Array.isArray(data))                                 arr = data as GallaboxTemplate[];
-      else if (Array.isArray(data.data))                       arr = data.data as GallaboxTemplate[];
-      else if (Array.isArray(data.entities))                   arr = data.entities as GallaboxTemplate[];
-      else if (Array.isArray(data.templates))                  arr = data.templates as GallaboxTemplate[];
-      else if (Array.isArray((data as Record<string,unknown[]>).whatsappTemplates)) {
-        arr = (data as Record<string, GallaboxTemplate[]>).whatsappTemplates;
+      if (Array.isArray(data))                                         arr = data as GallaboxTemplate[];
+      else if (data && typeof data === 'object') {
+        const d = data as Record<string, unknown>;
+        if (Array.isArray(d.data))                                     arr = d.data as GallaboxTemplate[];
+        else if (Array.isArray(d.entities))                            arr = d.entities as GallaboxTemplate[];
+        else if (Array.isArray(d.templates))                           arr = d.templates as GallaboxTemplate[];
+        else if (Array.isArray(d.whatsappTemplates))                   arr = d.whatsappTemplates as GallaboxTemplate[];
       }
 
-      // Filter to APPROVED only (some endpoints return all statuses)
-      const approved = arr.filter(t => !t.status || t.status === 'APPROVED');
-      if (approved.length > 0) {
-        console.log(`[gallabox/templates] Returning ${approved.length} approved templates`);
-        return approved;
+      // Accept templates whose status is APPROVED, active, ACTIVE, or missing
+      const active = arr.filter(t => isActive(t.status));
+      if (active.length > 0) {
+        console.log(`[gallabox/templates] Returning ${active.length} active templates from ${url}`);
+        return active;
       }
 
-      // If endpoint returned data but no approved, keep trying other endpoints
+      // If endpoint returned data but nothing active, keep trying
+      if (arr.length > 0) {
+        console.warn(`[gallabox/templates] ${url} returned ${arr.length} templates but none are active — statuses: ${arr.map(t => t.status).join(', ')}`);
+      }
     } catch (e) {
       console.warn(`[gallabox/templates] Failed ${url}:`, e);
     }
