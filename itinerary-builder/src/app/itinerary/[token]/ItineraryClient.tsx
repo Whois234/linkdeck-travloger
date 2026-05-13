@@ -209,10 +209,11 @@ function Hero({ data }: { data: ItineraryData }) {
     ? destNames.join(' · ')
     : (state.description ?? null);
 
-  // Slideshow: use hero_images if multiple, else fall back to single hero_image
-  const slides = (state.hero_images && state.hero_images.length > 1)
-    ? state.hero_images
-    : (state.hero_image ? [state.hero_image] : []);
+  // Hero banner slideshow — uses ONLY hero_images (the dedicated hero CMS field).
+  // Never falls back to state.hero_image which is the gallery cover card (separate concern).
+  const slides = (state.hero_images && state.hero_images.length > 0)
+    ? state.hero_images.filter(Boolean)
+    : [];
 
   const [activeSlide, setActiveSlide] = useState(0);
   useEffect(() => {

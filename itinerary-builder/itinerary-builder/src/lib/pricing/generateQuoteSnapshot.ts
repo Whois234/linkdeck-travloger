@@ -268,20 +268,41 @@ export async function generateQuoteSnapshot(quote_id: string, published_by: stri
     agent: resolvedAgent,
     state: {
       ...quote.state,
+      // hero_image = GALLERY COVER CARD only (state card in destination gallery).
+      // Completely independent of the hero banner images.
+      // Null when hidden so the state card is excluded from the gallery grid.
       hero_image:
-        // If the template admin hid the state gallery card, exclude it from the gallery
         (templateCmsData as Record<string,unknown>)?.state_gallery_hidden === true ||
         (groupCms as Record<string,unknown>)?.state_gallery_hidden === true
           ? null
           : (((groupCms as Record<string,unknown>)?.state_gallery_image as string | undefined || null)
             ?? ((templateCmsData as Record<string,unknown>)?.state_gallery_image as string | undefined || null)
-            ?? groupTemplate?.hero_image ?? privateTemplateHero ?? quote.state.hero_image ?? firstDestHero ?? null),
-      hero_images:
-        (Array.isArray((templateCmsData as Record<string,unknown>)?.hero_images) && ((templateCmsData as Record<string,unknown>).hero_images as string[]).filter(Boolean).length > 1)
-          ? ((templateCmsData as Record<string,unknown>).hero_images as string[]).filter(Boolean)
-          : (Array.isArray((groupCms as Record<string,unknown>)?.hero_images) && ((groupCms as Record<string,unknown>).hero_images as string[]).filter(Boolean).length > 1)
-            ? ((groupCms as Record<string,unknown>).hero_images as string[]).filter(Boolean)
-            : null,
+            ?? null),   // ← no longer falls back to hero_image/hero_tags. Gallery card only.
+
+      // hero_images = HERO BANNER SLIDESHOW. Completely independent of the gallery cover card.
+      // Resolved from CMS hero_images / hero_tags[0] / template DB hero_image column.
+      // Minimum 1 image so ItineraryClient never needs to fall back to state.hero_image.
+      hero_images: (() => {
+        // Priority: templateCmsData.hero_images → groupCms.hero_images → hero_tags[0] → DB hero_image column → private template hero → state.hero_image → firstDestHero
+        const tplImgs   = (templateCmsData as Record<string,unknown>)?.hero_images as string[] | undefined;
+        const grpImgs   = (groupCms        as Record<string,unknown>)?.hero_images as string[] | undefined;
+        const tplTag0   = ((templateCmsData as Record<string,unknown>)?.hero_tags as string[] | undefined)?.[0];
+        const grpTag0   = ((groupCms        as Record<string,unknown>)?.hero_tags as string[] | undefined)?.[0];
+        const candidates = [
+          ...(Array.isArray(tplImgs) ? tplImgs : []),
+          ...(Array.isArray(grpImgs) ? grpImgs : []),
+          tplTag0,
+          grpTag0,
+          groupTemplate?.hero_image,
+          privateTemplateHero,
+          quote.state.hero_image,
+          firstDestHero,
+        ].filter((s): s is string => typeof s === 'string' && s.trim().length > 0);
+        // Deduplicate, preserve order
+        const seen = new Set<string>();
+        const unique = candidates.filter(s => seen.has(s) ? false : (seen.add(s), true));
+        return unique.length > 0 ? unique : null;
+      })(),
       // Custom label for the gallery cover (state) card — overrides state.name on the itinerary
       custom_name:
         ((templateCmsData as Record<string,unknown>)?.state_gallery_custom_name as string | undefined || null)
