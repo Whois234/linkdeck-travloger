@@ -1,45 +1,38 @@
 /**
  * POST /api/webhooks/gallabox
  *
- * Receives signed webhook events from Gallabox and persists them to the DB.
- * Signature verification: HMAC-SHA256(secret, rawBody) must equal the value
- * in the x-gallabox-signature header (hex-encoded).
+ * Gallabox sends a FLAT payload (no `event` field in body, no `data` wrapper).
+ * The event type comes from the x-gallabox-event header.
+ * Signature is HMAC-SHA256(secret, rawBody) encoded as Base64 in x-gallabox-signature.
  *
- * Handled events:
- *   Message.Received              → gallabox_messages (direction=incoming)
- *   Message.Send                  → gallabox_messages (direction=outgoing)
- *   Contact.Created               → upsert CrmContact via gallabox_contact_id
- *   Contact.Updated               → upsert CrmContact via gallabox_contact_id
- *   Conversation.Create           → upsert gallabox_conversations
- *   Conversation.Update           → upsert gallabox_conversations
- *   Broadcast.WA.Message.Status.Received → update status on gallabox_messages
- *   Broadcast.WA.Message.Failed   → log failure reason on gallabox_messages
- *   Template.Status               → upsert gallabox_templates
+ * Actual payload shape (Message.Received example):
+ * {
+ *   "id": "<message_id>",
+ *   "conversationId": "<conv_id>",
+ *   "contactId": "<contact_id>",
+ *   "whatsapp": { "from": "919...", "type": "text", "text": { "body": "..." } },
+ *   "contact": { "id": "...", "name": "..." },
+ *   "channelId": "..."
+ * }
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { prisma } from '@/lib/prisma';
+import type { Prisma } from '@prisma/client';
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
-// Hardcoded fallback ensures it works even if env var is not set in Vercel yet.
-// After confirming data flows, set GALLABOX_WEBHOOK_SECRET in Vercel env and remove the fallback.
 const WEBHOOK_SECRET = process.env.GALLABOX_WEBHOOK_SECRET ?? 'travloger2026secret';
 
 // ─── Signature verification ───────────────────────────────────────────────────
 
 function verifySignature(rawBody: string, header: string | null): boolean {
   if (!header) return false;
-  // Strip "sha256=" prefix if present
   const incoming = header.startsWith('sha256=') ? header.slice(7) : header;
-
-  // Gallabox encodes the HMAC-SHA256 digest as Base64 (not hex).
-  // Example header value: "0bXiIAwZFpXfPPka/hb80IPps8n/ijycougsRbqV2y4="
   const expectedBase64 = createHmac('sha256', WEBHOOK_SECRET)
     .update(rawBody, 'utf8')
     .digest('base64');
-
   try {
     return timingSafeEqual(
       Buffer.from(incoming,       'base64'),
@@ -52,34 +45,42 @@ function verifySignature(rawBody: string, header: string | null): boolean {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function extractText(message: Record<string, unknown>): string | null {
-  if (message.text && typeof (message.text as Record<string, unknown>).body === 'string') {
-    return (message.text as Record<string, unknown>).body as string;
+/** Extract plain text from a Gallabox message object (whatsapp sub-object). */
+function extractText(msg: Record<string, unknown>): string | null {
+  // whatsapp.text.body  (text messages)
+  const text = msg.text as Record<string, unknown> | undefined;
+  if (typeof text?.body === 'string') return text.body;
+  // whatsapp.caption  (image/video captions)
+  if (typeof msg.caption === 'string') return msg.caption;
+  // whatsapp.body  (some template messages)
+  if (typeof msg.body === 'string') return msg.body;
+  // interactive reply label
+  const interactive = msg.interactive as Record<string, unknown> | undefined;
+  if (interactive) {
+    const reply = (interactive.button_reply ?? interactive.list_reply) as Record<string, unknown> | undefined;
+    if (typeof reply?.title === 'string') return reply.title;
   }
-  if (typeof message.body === 'string') return message.body;
-  if (typeof message.caption === 'string') return message.caption;
   return null;
 }
 
-function extractMediaUrl(message: Record<string, unknown>): string | null {
+/** Extract media URL from a Gallabox whatsapp message object. */
+function extractMediaUrl(msg: Record<string, unknown>): string | null {
   for (const key of ['image', 'video', 'audio', 'document', 'sticker']) {
-    const media = message[key] as Record<string, unknown> | undefined;
-    if (media?.link) return media.link as string;
-    if (media?.url) return media.url as string;
+    const media = msg[key] as Record<string, unknown> | undefined;
+    if (typeof media?.link === 'string') return media.link;
+    if (typeof media?.url  === 'string') return media.url;
   }
   return null;
 }
 
-/** Normalise a phone number to E.164-ish (strip leading country code extras but keep digits). */
-function normalisePhone(raw: string | undefined | null): string | null {
-  if (!raw) return null;
+/** Strip non-digits; return null if empty. */
+function normalisePhone(raw: unknown): string | null {
+  if (!raw || typeof raw !== 'string') return null;
   const digits = raw.replace(/\D/g, '');
-  if (!digits) return null;
-  // Return as-is; CrmContact.phone is stored without formatting in this codebase
-  return digits;
+  return digits || null;
 }
 
-/** Find the first ADMIN user to act as default owner for webhook-created contacts. */
+/** Find the oldest ADMIN to use as default owner for webhook-created contacts. */
 async function defaultOwnerId(): Promise<string | null> {
   const admin = await prisma.user.findFirst({
     where: { role: 'ADMIN' },
@@ -92,17 +93,22 @@ async function defaultOwnerId(): Promise<string | null> {
 // ─── Handler ─────────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
-  // 1. Read raw body text (needed for HMAC before parsing JSON)
+  // 1. Read raw body (must happen before any parsing for HMAC)
   const rawBody = await req.text();
   const sig     = req.headers.get('x-gallabox-signature');
 
-  // 2. Verify signature — return 401 on mismatch
+  // 2. Log ALL incoming headers so we can see exactly what Gallabox sends
+  const headerDump: Record<string, string> = {};
+  req.headers.forEach((v, k) => { headerDump[k] = v; });
+  console.log('[gallabox-webhook] headers:', JSON.stringify(headerDump));
+
+  // 3. Verify signature
   if (!verifySignature(rawBody, sig)) {
-    console.warn('[gallabox-webhook] Signature verification failed');
+    console.warn('[gallabox-webhook] Signature verification failed. sig=', sig);
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
   }
 
-  // 3. Parse body
+  // 4. Parse body
   let payload: Record<string, unknown>;
   try {
     payload = JSON.parse(rawBody) as Record<string, unknown>;
@@ -110,23 +116,35 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const event = (payload.event ?? payload.type ?? '') as string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const data  = (payload.data ?? payload) as Record<string, any>;
+  // 5. Resolve event type — Gallabox puts it in a header, NOT the body
+  const event = (
+    req.headers.get('x-gallabox-event')      ??
+    req.headers.get('x-gallabox-event-type') ??
+    req.headers.get('x-gallabox-topic')      ??
+    (payload.event as string | undefined)    ??
+    (payload.type  as string | undefined)    ??
+    'unknown'
+  );
 
-  console.log(`[gallabox-webhook] event=${event}`);
+  console.log('[gallabox-webhook] event=', event, '| payload keys:', Object.keys(payload).join(', '));
+  console.log('[gallabox-webhook] full payload:', JSON.stringify(payload));
 
   try {
-    // ── Message.Received ───────────────────────────────────────────────────
-    if (event === 'Message.Received') {
-      const msg     = (data.message ?? {}) as Record<string, unknown>;
-      const contact = (data.contact ?? {}) as Record<string, unknown>;
-      const conv    = (data.conversation ?? {}) as Record<string, unknown>;
 
-      const gallaboxId    = (msg.id ?? msg.messageId) as string | undefined;
-      const conversationId = (conv.id ?? data.conversationId) as string | undefined;
-      const phone         = normalisePhone((contact.phone ?? msg.from) as string);
-      const name          = (contact.name ?? contact.displayName) as string | undefined;
+    // ── Message.Received ─────────────────────────────────────────────────────
+    // Payload shape (FLAT — no data wrapper):
+    //   { id, conversationId, contactId, whatsapp: { from, type, text:{body} }, contact: { id, name } }
+    if (event === 'Message.Received') {
+      const wa      = (payload.whatsapp  ?? {}) as Record<string, unknown>;
+      const contact = (payload.contact   ?? {}) as Record<string, unknown>;
+
+      const gallaboxId     = payload.id           as string | undefined;
+      const conversationId = payload.conversationId as string | undefined;
+      const phone          = normalisePhone(wa.from ?? contact.phone);
+      const name           = (contact.name ?? contact.displayName) as string | undefined;
+      const msgType        = (wa.type ?? wa.messageType) as string | undefined;
+
+      console.log('[gallabox-webhook] Message.Received gallaboxId=', gallaboxId, 'phone=', phone);
 
       await prisma.gallaboxMessage.upsert({
         where:  { gallabox_id: gallaboxId ?? `recv_${Date.now()}` },
@@ -137,51 +155,59 @@ export async function POST(req: NextRequest) {
           contact_phone:   phone,
           contact_name:    name,
           direction:       'incoming',
-          message_type:    (msg.type ?? msg.messageType) as string | undefined,
-          content:         extractText(msg),
-          media_url:       extractMediaUrl(msg),
+          message_type:    msgType,
+          content:         extractText(wa),
+          media_url:       extractMediaUrl(wa),
           status:          'received',
           event_type:      event,
-          raw_payload:     payload as import("@prisma/client").Prisma.InputJsonValue,
+          raw_payload:     payload as Prisma.InputJsonValue,
         },
       });
+
+      console.log('[gallabox-webhook] Message.Received saved OK');
     }
 
-    // ── Message.Send ───────────────────────────────────────────────────────
+    // ── Message.Send ─────────────────────────────────────────────────────────
     else if (event === 'Message.Send') {
-      const msg  = (data.message ?? {}) as Record<string, unknown>;
-      const gallaboxId = (msg.id ?? msg.messageId) as string | undefined;
-      const toPhone    = normalisePhone((msg.to ?? data.to) as string);
+      const wa = (payload.whatsapp ?? payload.message ?? {}) as Record<string, unknown>;
+
+      const gallaboxId     = payload.id           as string | undefined;
+      const conversationId = payload.conversationId as string | undefined;
+      const contact        = (payload.contact ?? {}) as Record<string, unknown>;
+      const toPhone        = normalisePhone((wa.to ?? contact.phone ?? payload.to));
+      const msgType        = (wa.type ?? wa.messageType) as string | undefined;
 
       await prisma.gallaboxMessage.upsert({
         where:  { gallabox_id: gallaboxId ?? `send_${Date.now()}` },
         update: { status: 'sent', updated_at: new Date() },
         create: {
           gallabox_id:     gallaboxId,
-          conversation_id: (data.conversationId ?? data.conversation?.id) as string | undefined,
+          conversation_id: conversationId,
           contact_phone:   toPhone,
-          contact_name:    (data.contact?.name ?? data.recipientName) as string | undefined,
+          contact_name:    (contact.name ?? contact.displayName) as string | undefined,
           direction:       'outgoing',
-          message_type:    (msg.type ?? msg.messageType) as string | undefined,
-          content:         extractText(msg),
-          media_url:       extractMediaUrl(msg),
+          message_type:    msgType,
+          content:         extractText(wa),
+          media_url:       extractMediaUrl(wa),
           status:          'sent',
           event_type:      event,
-          raw_payload:     payload as import("@prisma/client").Prisma.InputJsonValue,
+          raw_payload:     payload as Prisma.InputJsonValue,
         },
       });
     }
 
-    // ── Contact.Created / Contact.Updated ──────────────────────────────────
+    // ── Contact.Created / Contact.Updated ────────────────────────────────────
     else if (event === 'Contact.Created' || event === 'Contact.Updated') {
-      const contact = (data.contact ?? data) as Record<string, unknown>;
+      // May be flat or nested under payload.contact
+      const contact = (payload.contact ?? payload) as Record<string, unknown>;
       const gallaboxContactId = (contact.id ?? contact.contactId) as string | undefined;
-      const phone    = normalisePhone((contact.phone ?? contact.phoneNumber) as string);
-      const name     = (contact.name ?? contact.displayName ?? 'Unknown') as string;
-      const email    = (contact.email ?? null) as string | null;
+      const phone  = normalisePhone(contact.phone ?? contact.phoneNumber);
+      const name   = (contact.name ?? contact.displayName ?? 'Unknown') as string;
+      const email  = (contact.email ?? null) as string | null;
+
+      console.log('[gallabox-webhook] Contact event phone=', phone, 'gallaboxContactId=', gallaboxContactId);
 
       if (phone) {
-        // Upsert into CrmContact by gallabox_contact_id first, then by phone
         const existing = await prisma.crmContact.findFirst({
           where: {
             OR: [
@@ -193,18 +219,16 @@ export async function POST(req: NextRequest) {
         });
 
         if (existing) {
-          // Update existing contact
           await prisma.crmContact.update({
             where: { id: existing.id },
             data: {
               name,
               ...(email ? { email } : {}),
               gallabox_contact_id: gallaboxContactId,
-              lead_source: 'WHATSAPP' as string,
+              lead_source: 'WHATSAPP',
             },
           });
         } else {
-          // Create new contact — need a default owner
           const ownerId = await defaultOwnerId();
           if (ownerId) {
             await prisma.crmContact.create({
@@ -212,10 +236,10 @@ export async function POST(req: NextRequest) {
                 name,
                 phone,
                 email,
-                owner_id:           ownerId,
+                owner_id:            ownerId,
                 gallabox_contact_id: gallaboxContactId,
-                lead_source:        'WHATSAPP' as string,
-                source:             'gallabox',
+                lead_source:         'WHATSAPP',
+                source:              'gallabox',
               },
             });
           }
@@ -223,45 +247,43 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── Conversation.Create / Conversation.Update ──────────────────────────
+    // ── Conversation.Create / Conversation.Update ─────────────────────────────
     else if (event === 'Conversation.Create' || event === 'Conversation.Update') {
-      const conv    = (data.conversation ?? data) as Record<string, unknown>;
-      const convId  = (conv.id ?? conv.conversationId) as string;
-      const contact = (conv.contact ?? data.contact ?? {}) as Record<string, unknown>;
-      const phone   = normalisePhone((contact.phone ?? conv.phone) as string);
+      // May be flat or nested
+      const convId  = (payload.id ?? payload.conversationId) as string | undefined;
+      const contact = (payload.contact ?? {}) as Record<string, unknown>;
+      const phone   = normalisePhone(contact.phone ?? payload.phone);
 
       if (convId) {
         await prisma.gallaboxConversation.upsert({
           where:  { gallabox_id: convId },
           update: {
-            status:       (conv.status ?? conv.state) as string | undefined,
-            assigned_to:  (conv.assignedTo ?? conv.agent ?? conv.agentName) as string | undefined,
+            status:       (payload.status ?? payload.state) as string | undefined,
+            assigned_to:  (payload.assignedTo ?? payload.agent) as string | undefined,
             contact_name: (contact.name ?? contact.displayName) as string | undefined,
             ...(phone ? { contact_phone: phone } : {}),
-            raw_payload:  payload as import("@prisma/client").Prisma.InputJsonValue,
+            raw_payload:  payload as Prisma.InputJsonValue,
             updated_at:   new Date(),
           },
           create: {
-            gallabox_id:  convId,
+            gallabox_id:   convId,
             contact_phone: phone,
-            contact_name: (contact.name ?? contact.displayName) as string | undefined,
-            status:       (conv.status ?? conv.state) as string | undefined,
-            channel:      (conv.channel ?? conv.channelType) as string | undefined,
-            assigned_to:  (conv.assignedTo ?? conv.agent ?? conv.agentName) as string | undefined,
-            raw_payload:  payload as import("@prisma/client").Prisma.InputJsonValue,
+            contact_name:  (contact.name ?? contact.displayName) as string | undefined,
+            status:        (payload.status ?? payload.state) as string | undefined,
+            channel:       (payload.channel ?? payload.channelId) as string | undefined,
+            assigned_to:   (payload.assignedTo ?? payload.agent) as string | undefined,
+            raw_payload:   payload as Prisma.InputJsonValue,
           },
         });
       }
     }
 
-    // ── Broadcast.WA.Message.Status.Received ──────────────────────────────
+    // ── Broadcast.WA.Message.Status.Received ─────────────────────────────────
     else if (event === 'Broadcast.WA.Message.Status.Received') {
-      const msg    = (data.message ?? data) as Record<string, unknown>;
-      const msgId  = (msg.id ?? msg.messageId ?? data.messageId) as string | undefined;
-      const status = (msg.status ?? data.status) as string | undefined;
+      const msgId  = (payload.id ?? payload.messageId) as string | undefined;
+      const status = (payload.status ?? payload.deliveryStatus) as string | undefined;
 
       if (msgId && status) {
-        // Update by gallabox_id; create a stub row if not seen before
         await prisma.gallaboxMessage.upsert({
           where:  { gallabox_id: msgId },
           update: { status, updated_at: new Date() },
@@ -270,17 +292,16 @@ export async function POST(req: NextRequest) {
             direction:     'outgoing',
             status,
             event_type:    event,
-            raw_payload:   payload as import("@prisma/client").Prisma.InputJsonValue,
+            raw_payload:   payload as Prisma.InputJsonValue,
           },
         });
       }
     }
 
-    // ── Broadcast.WA.Message.Failed ────────────────────────────────────────
+    // ── Broadcast.WA.Message.Failed ──────────────────────────────────────────
     else if (event === 'Broadcast.WA.Message.Failed') {
-      const msg    = (data.message ?? data) as Record<string, unknown>;
-      const msgId  = (msg.id ?? msg.messageId ?? data.messageId) as string | undefined;
-      const reason = (data.reason ?? data.errorMessage ?? data.error ?? msg.failureReason) as string | undefined;
+      const msgId  = (payload.id ?? payload.messageId) as string | undefined;
+      const reason = (payload.reason ?? payload.errorMessage ?? payload.error) as string | undefined;
 
       if (msgId) {
         await prisma.gallaboxMessage.upsert({
@@ -292,47 +313,57 @@ export async function POST(req: NextRequest) {
             status:         'failed',
             failure_reason: reason,
             event_type:     event,
-            raw_payload:    payload as import('@prisma/client').Prisma.InputJsonValue,
+            raw_payload:    payload as Prisma.InputJsonValue,
           },
         });
       }
     }
 
-    // ── Template.Status ────────────────────────────────────────────────────
+    // ── Template.Status ──────────────────────────────────────────────────────
     else if (event === 'Template.Status') {
-      const tpl    = (data.template ?? data) as Record<string, unknown>;
-      const tplId  = (tpl.id ?? tpl.templateId) as string | undefined;
-      const status = (tpl.status ?? data.status) as string | undefined;
+      const tplId  = (payload.id ?? payload.templateId) as string | undefined;
+      const status = (payload.status) as string | undefined;
 
       await prisma.gallaboxTemplate.upsert({
         where:  { gallabox_id: tplId ?? `tpl_${Date.now()}` },
         update: {
           status,
-          rejection_reason: (tpl.rejectionReason ?? tpl.reason ?? data.reason) as string | undefined,
-          raw_payload:      payload as import('@prisma/client').Prisma.InputJsonValue,
+          rejection_reason: (payload.rejectionReason ?? payload.reason) as string | undefined,
+          raw_payload:      payload as Prisma.InputJsonValue,
           updated_at:       new Date(),
         },
         create: {
           gallabox_id:      tplId,
-          template_name:    (tpl.name ?? tpl.templateName) as string | undefined,
+          template_name:    (payload.name ?? payload.templateName) as string | undefined,
           status,
-          category:         (tpl.category) as string | undefined,
-          language:         (tpl.language ?? tpl.languageCode) as string | undefined,
-          rejection_reason: (tpl.rejectionReason ?? tpl.reason ?? data.reason) as string | undefined,
-          raw_payload:      payload as import('@prisma/client').Prisma.InputJsonValue,
+          category:         payload.category as string | undefined,
+          language:         (payload.language ?? payload.languageCode) as string | undefined,
+          rejection_reason: (payload.rejectionReason ?? payload.reason) as string | undefined,
+          raw_payload:      payload as Prisma.InputJsonValue,
         },
       });
     }
 
+    // ── Unknown / catch-all ──────────────────────────────────────────────────
+    // Save everything to GallaboxMessage with direction=unknown so nothing is ever lost.
     else {
-      // Unknown event — log and acknowledge so Gallabox doesn't retry
-      console.log(`[gallabox-webhook] unhandled event: ${event}`);
+      console.log('[gallabox-webhook] unhandled event type:', event, '— saving raw payload');
+      const gallaboxId = payload.id as string | undefined;
+      await prisma.gallaboxMessage.create({
+        data: {
+          gallabox_id:     gallaboxId ? `${gallaboxId}_${event}` : undefined,
+          conversation_id: payload.conversationId as string | undefined,
+          direction:       'unknown',
+          event_type:      event,
+          raw_payload:     payload as Prisma.InputJsonValue,
+        },
+      });
     }
 
   } catch (err) {
-    console.error('[gallabox-webhook] DB error:', err);
-    // Return 200 anyway to prevent Gallabox retry storms; errors are logged
-    return NextResponse.json({ ok: false, error: 'Internal error — logged' }, { status: 200 });
+    console.error('[gallabox-webhook] DB insert error:', err);
+    // Still return 200 so Gallabox doesn't retry and flood logs
+    return NextResponse.json({ ok: false, event, error: String(err) }, { status: 200 });
   }
 
   return NextResponse.json({ ok: true, event }, { status: 200 });
