@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   Plus, X, Loader2, Zap, Workflow, ToggleLeft, ToggleRight, Trash2, ChevronDown,
   Tag as TagIcon, ListPlus, Users, MessageSquare, RotateCcw, Weight, Shield, Check, Pencil,
+  UserPlus, RefreshCw, Bell, GitBranch, ArrowRight,
 } from 'lucide-react';
 import { ContactFieldsTab, ContactTagsTab } from './ContactCustomization';
 
@@ -612,13 +613,18 @@ export default function CrmSettingsPage() {
               onClick={e => { if (e.target === e.currentTarget) { setShowWfForm(false); resetWfForm(); } }}>
               <div className="bg-white rounded-2xl shadow-2xl w-full overflow-hidden flex flex-col" style={{ maxWidth: '640px', maxHeight: '90vh', border: '1px solid #E2E8F0' }}>
               {/* Header */}
-              <div className="flex items-center justify-between px-6 py-4 flex-shrink-0" style={{ borderBottom: '1px solid #F1F5F9' }}>
-                <div>
-                  <p className="font-bold text-sm" style={{ color: '#0F172A' }}>New Workflow</p>
-                  <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>Configure name, trigger, conditions and actions</p>
+              <div className="flex items-center justify-between px-6 py-5 flex-shrink-0" style={{ borderBottom: '1px solid #F1F5F9' }}>
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${T}12` }}>
+                    <Zap className="w-4 h-4" style={{ color: T }} />
+                  </div>
+                  <div>
+                    <p className="font-bold text-[15px]" style={{ color: '#0F172A' }}>New Workflow</p>
+                    <p className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>Automate actions when contacts are created or updated</p>
+                  </div>
                 </div>
-                <button onClick={() => { setShowWfForm(false); resetWfForm(); }} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#F1F5F9]">
-                  <X className="w-4 h-4" style={{ color: '#64748B' }} />
+                <button onClick={() => { setShowWfForm(false); resetWfForm(); }} className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors hover:bg-[#F1F5F9]">
+                  <X className="w-4 h-4" style={{ color: '#94A3B8' }} />
                 </button>
               </div>
 
@@ -626,46 +632,60 @@ export default function CrmSettingsPage() {
                 {wfError && <p className="text-xs px-3 py-2 rounded-lg" style={{ backgroundColor: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>{wfError}</p>}
 
                 {/* ── 1. Name + Trigger ── */}
-                <div className="space-y-3">
-                  <p className="text-xs font-bold uppercase tracking-wider" style={{ color: '#64748B' }}>1 · Name</p>
-                  <input type="text" value={wfName} onChange={e => setWfName(e.target.value)}
-                    placeholder="e.g. Assign Google Ads leads to Priya"
-                    className="w-full text-sm rounded-lg px-3 py-2.5 outline-none"
-                    style={{ border: '1px solid #D1D5DB' }} autoFocus />
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider mb-1.5" style={{ color: '#94A3B8' }}>Workflow Name</label>
+                    <input type="text" value={wfName} onChange={e => setWfName(e.target.value)}
+                      placeholder="e.g. Assign Google Ads leads to Priya"
+                      className="w-full text-sm rounded-xl px-4 py-3 outline-none font-medium"
+                      style={{ border: '1.5px solid #E2E8F0', backgroundColor: '#FAFBFC' }} autoFocus />
+                  </div>
 
                   {/* Trigger selector */}
                   <div>
-                    <p className="text-[11px] font-semibold mb-2" style={{ color: '#374151' }}>Trigger — run this workflow when a contact is…</p>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: '#94A3B8' }}>Trigger</label>
                     <div className="grid grid-cols-3 gap-2">
                       {([
-                        { value: 'on_create',           label: 'Created',          desc: 'Only when a new contact is added',        icon: '✨' },
-                        { value: 'on_update',           label: 'Updated',          desc: 'Only when an existing contact is edited',  icon: '✏️' },
-                        { value: 'on_create_or_update', label: 'Created or Updated', desc: 'Both new and edited contacts',           icon: '⚡' },
-                      ] as const).map(opt => (
-                        <button key={opt.value} onClick={() => setWfTrigger(opt.value)}
-                          className="flex flex-col items-start gap-1 px-3 py-2.5 rounded-xl border text-left transition-all"
-                          style={{
-                            borderColor:     wfTrigger === opt.value ? T : '#E2E8F0',
-                            backgroundColor: wfTrigger === opt.value ? `${T}08` : '#FAFAFA',
-                          }}>
-                          <div className="flex items-center gap-1.5 w-full">
-                            <span className="text-base leading-none">{opt.icon}</span>
-                            <span className="text-xs font-bold" style={{ color: wfTrigger === opt.value ? T : '#0F172A' }}>{opt.label}</span>
-                            {wfTrigger === opt.value && <Check className="w-3 h-3 ml-auto flex-shrink-0" style={{ color: T }} />}
-                          </div>
-                          <p className="text-[10px] leading-relaxed" style={{ color: '#94A3B8' }}>{opt.desc}</p>
-                        </button>
-                      ))}
+                        { value: 'on_create',           label: 'Contact Created',  desc: 'Fires when a new contact is added',       Icon: UserPlus   },
+                        { value: 'on_update',           label: 'Contact Updated',  desc: 'Fires when an existing contact is edited', Icon: RefreshCw  },
+                        { value: 'on_create_or_update', label: 'Created or Edited', desc: 'Fires on both new and edited contacts',   Icon: GitBranch  },
+                      ] as const).map(opt => {
+                        const active = wfTrigger === opt.value;
+                        return (
+                          <button key={opt.value} onClick={() => setWfTrigger(opt.value)}
+                            className="flex flex-col gap-2 p-3 rounded-xl border text-left transition-all"
+                            style={{
+                              borderColor:     active ? T : '#E2E8F0',
+                              backgroundColor: active ? `${T}0A` : '#fff',
+                              boxShadow:       active ? `0 0 0 2px ${T}20` : 'none',
+                            }}>
+                            <div className="flex items-center justify-between w-full">
+                              <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: active ? `${T}15` : '#F1F5F9' }}>
+                                <opt.Icon className="w-3.5 h-3.5" style={{ color: active ? T : '#94A3B8' }} />
+                              </div>
+                              {active && (
+                                <div className="w-4 h-4 rounded-full flex items-center justify-center" style={{ backgroundColor: T }}>
+                                  <Check className="w-2.5 h-2.5 text-white" />
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <p className="text-[11px] font-bold leading-tight" style={{ color: active ? T : '#0F172A' }}>{opt.label}</p>
+                              <p className="text-[10px] mt-0.5 leading-snug" style={{ color: '#94A3B8' }}>{opt.desc}</p>
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
 
-                <div style={{ borderTop: '1px solid #F1F5F9' }} />
+                <div style={{ height: '1px', backgroundColor: '#F1F5F9' }} />
 
                 {/* ── 2. Conditions ── */}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <p className="text-xs font-bold uppercase tracking-wider" style={{ color: '#64748B' }}>2 · Conditions <span className="normal-case font-normal text-[#94A3B8]">(optional)</span></p>
+                    <label className="text-[11px] font-bold uppercase tracking-wider" style={{ color: '#94A3B8' }}>Conditions <span className="normal-case font-normal" style={{ color: '#CBD5E1' }}>— optional</span></label>
                     {wfRules.length > 1 && (
                       <div className="flex items-center gap-1.5">
                         <span className="text-xs font-semibold" style={{ color: '#374151' }}>Match</span>
@@ -685,7 +705,7 @@ export default function CrmSettingsPage() {
                   </div>
 
                   {wfRules.length === 0 && (
-                    <p className="text-xs italic" style={{ color: '#94A3B8' }}>No conditions — runs for every new contact.</p>
+                    <p className="text-xs" style={{ color: '#CBD5E1' }}>No conditions set — workflow runs for every matching contact.</p>
                   )}
 
                   <div className="space-y-2">
@@ -750,11 +770,11 @@ export default function CrmSettingsPage() {
                   </button>
                 </div>
 
-                <div style={{ borderTop: '1px solid #F1F5F9' }} />
+                <div style={{ height: '1px', backgroundColor: '#F1F5F9' }} />
 
                 {/* ── 3. Actions ── */}
                 <div className="space-y-3">
-                  <p className="text-xs font-bold uppercase tracking-wider" style={{ color: '#64748B' }}>3 · Actions</p>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider" style={{ color: '#94A3B8' }}>Actions</label>
                   <div className="space-y-3">
                     {wfActions.map((action, idx) => {
                       const selectedUsers = action.users ?? [];
@@ -762,7 +782,7 @@ export default function CrmSettingsPage() {
                       const isMultiUser = selectedUsers.length > 1;
 
                       return (
-                        <div key={idx} className="rounded-xl space-y-3 p-4" style={{ border: '1px solid #E2E8F0', backgroundColor: '#FAFAFA' }}>
+                        <div key={idx} className="rounded-xl space-y-3 p-4" style={{ border: '1px solid #E9EDF2', backgroundColor: '#FAFBFC', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
                           {/* Action header row */}
                           <div className="flex items-center gap-2">
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded flex-shrink-0" style={{ backgroundColor: `${T}15`, color: T }}>
@@ -848,31 +868,33 @@ export default function CrmSettingsPage() {
 
                               {/* Strategy picker — only when 2+ users */}
                               {isMultiUser && (
-                                <div className="space-y-2 pt-1">
-                                  <p className="text-[11px] font-semibold" style={{ color: '#374151' }}>Distribution strategy</p>
-                                  <div className="flex gap-2">
+                                <div className="space-y-2.5 pt-1">
+                                  <p className="text-[11px] font-semibold" style={{ color: '#64748B' }}>Distribution</p>
+                                  {/* Pill toggle */}
+                                  <div className="flex p-1 rounded-xl gap-1" style={{ backgroundColor: '#F1F5F9' }}>
                                     {([
-                                      { value: 'round_robin', label: 'Round Robin', desc: 'Equal rotation', icon: RotateCcw },
-                                      { value: 'weighted',    label: 'Weighted',    desc: 'Custom %',       icon: Weight },
-                                    ] as const).map(s => (
-                                      <button key={s.value}
-                                        onClick={() => {
-                                          const newActions = [...wfActions];
-                                          newActions[idx] = { ...newActions[idx], strategy: s.value };
-                                          setWfActions(newActions);
-                                        }}
-                                        className="flex-1 flex items-center gap-2 px-3 py-2 rounded-xl border text-left transition-all"
-                                        style={{
-                                          borderColor:     action.strategy === s.value ? T : '#E2E8F0',
-                                          backgroundColor: action.strategy === s.value ? `${T}08` : '#fff',
-                                        }}>
-                                        <s.icon className="w-4 h-4 flex-shrink-0" style={{ color: action.strategy === s.value ? T : '#94A3B8' }} />
-                                        <div>
-                                          <p className="text-xs font-bold" style={{ color: action.strategy === s.value ? T : '#0F172A' }}>{s.label}</p>
-                                          <p className="text-[10px]" style={{ color: '#94A3B8' }}>{s.desc}</p>
-                                        </div>
-                                      </button>
-                                    ))}
+                                      { value: 'round_robin', label: 'Round Robin', Icon: RotateCcw },
+                                      { value: 'weighted',    label: 'Weighted %',  Icon: Weight },
+                                    ] as const).map(s => {
+                                      const active = action.strategy === s.value;
+                                      return (
+                                        <button key={s.value}
+                                          onClick={() => {
+                                            const newActions = [...wfActions];
+                                            newActions[idx] = { ...newActions[idx], strategy: s.value };
+                                            setWfActions(newActions);
+                                          }}
+                                          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                                          style={{
+                                            backgroundColor: active ? '#fff' : 'transparent',
+                                            color:           active ? T : '#94A3B8',
+                                            boxShadow:       active ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                                          }}>
+                                          <s.Icon className="w-3.5 h-3.5" />
+                                          {s.label}
+                                        </button>
+                                      );
+                                    })}
                                   </div>
 
                                   {/* Weighted inputs */}
@@ -995,11 +1017,14 @@ export default function CrmSettingsPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>{wf.name}</p>
-                      <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>
-                        <span className="inline-flex items-center gap-1 mr-1.5 px-1.5 py-0.5 rounded font-semibold text-[10px]" style={{ backgroundColor: '#F0FDF4', color: '#15803D' }}>
-                          {wf.trigger === 'on_update' ? '✏️ Updated' : wf.trigger === 'on_create_or_update' ? '⚡ Created/Updated' : '✨ Created'}
+                      <p className="text-xs mt-1 flex items-center gap-1.5 flex-wrap" style={{ color: '#64748B' }}>
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-semibold text-[10px]" style={{ backgroundColor: '#EFF6FF', color: '#2563EB', border: '1px solid #BFDBFE' }}>
+                          {wf.trigger === 'on_update' ? <><RefreshCw className="w-2.5 h-2.5" /> Updated</> : wf.trigger === 'on_create_or_update' ? <><GitBranch className="w-2.5 h-2.5" /> Created/Updated</> : <><UserPlus className="w-2.5 h-2.5" /> Created</>}
                         </span>
-                        {wfConditionLabel(wf)} → {wfActionLabel(wf)}
+                        <ArrowRight className="w-3 h-3 flex-shrink-0" style={{ color: '#CBD5E1' }} />
+                        <span>{wfConditionLabel(wf)}</span>
+                        <ArrowRight className="w-3 h-3 flex-shrink-0" style={{ color: '#CBD5E1' }} />
+                        <span>{wfActionLabel(wf)}</span>
                       </p>
                     </div>
                     <Toggle on={wf.is_active} onToggle={() => toggleWorkflow(wf.id, !wf.is_active)} />
