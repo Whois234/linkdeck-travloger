@@ -23,19 +23,28 @@ import { prisma } from '@/lib/prisma';
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
+// Hardcoded fallback ensures it works even if env var is not set in Vercel yet.
+// After confirming data flows, set GALLABOX_WEBHOOK_SECRET in Vercel env and remove the fallback.
 const WEBHOOK_SECRET = process.env.GALLABOX_WEBHOOK_SECRET ?? 'travloger2026secret';
 
 // ─── Signature verification ───────────────────────────────────────────────────
 
 function verifySignature(rawBody: string, header: string | null): boolean {
   if (!header) return false;
-  // Gallabox may prefix the header value with "sha256=" — strip it if present
+  // Strip "sha256=" prefix if present
   const incoming = header.startsWith('sha256=') ? header.slice(7) : header;
-  const expected = createHmac('sha256', WEBHOOK_SECRET)
+
+  // Gallabox encodes the HMAC-SHA256 digest as Base64 (not hex).
+  // Example header value: "0bXiIAwZFpXfPPka/hb80IPps8n/ijycougsRbqV2y4="
+  const expectedBase64 = createHmac('sha256', WEBHOOK_SECRET)
     .update(rawBody, 'utf8')
-    .digest('hex');
+    .digest('base64');
+
   try {
-    return timingSafeEqual(Buffer.from(incoming, 'hex'), Buffer.from(expected, 'hex'));
+    return timingSafeEqual(
+      Buffer.from(incoming,       'base64'),
+      Buffer.from(expectedBase64, 'base64'),
+    );
   } catch {
     return false;
   }
