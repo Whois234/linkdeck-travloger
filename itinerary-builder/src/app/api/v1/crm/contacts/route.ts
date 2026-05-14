@@ -140,10 +140,12 @@ export async function GET(req: NextRequest) {
   const typeList   = enumList(tripType);
 
   // ── Role-based data isolation ─────────────────────────────────────────────
-  // Privileged roles (ADMIN, MANAGER, FINANCE, OPS) see all contacts.
-  // SALES users only see contacts they own.
+  // ADMIN / MANAGER / FINANCE / OPS → see all contacts.
+  // SALES / OPS → see only contacts ASSIGNED to them (not just owned).
+  //   Gallabox contacts are owned by ADMIN but workflow-assigned to SALES agents,
+  //   so filtering by owner_id would show 0 contacts to agents.
   const isPrivileged = requireRole(user, UserRole.ADMIN, UserRole.MANAGER, UserRole.FINANCE, UserRole.OPS);
-  const ownerScope = isPrivileged ? {} : { owner_id: user.sub };
+  const ownerScope = isPrivileged ? {} : { assigned_to_id: user.sub };
 
   const where = {
     ...ownerScope,
