@@ -14,6 +14,7 @@ interface User {
   phone: string | null;
   gender: string | null;
   status: boolean;
+  is_available: boolean;
   last_login: string | null;
   created_at: string;
   module_access: Array<{ key: string; perm: 'view' | 'edit' }> | null;
@@ -723,13 +724,28 @@ export default function UsersPage() {
                         </div>
                       )}
                     </td>
-                    {/* Status */}
+                    {/* Status + Availability */}
                     <td className="px-5 py-3.5">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold"
-                        style={{ backgroundColor: u.status ? '#DCFCE7' : '#FEF2F2', color: u.status ? '#15803D' : '#DC2626' }}>
-                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: u.status ? '#22C55E' : '#EF4444' }} />
-                        {u.status ? 'Active' : 'Inactive'}
-                      </span>
+                      <div className="flex flex-col gap-1">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold w-fit"
+                          style={{ backgroundColor: u.status ? '#DCFCE7' : '#FEF2F2', color: u.status ? '#15803D' : '#DC2626' }}>
+                          <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: u.status ? '#22C55E' : '#EF4444' }} />
+                          {u.status ? 'Active' : 'Inactive'}
+                        </span>
+                        <button
+                          onClick={async () => {
+                            await fetch(`/api/v1/users/${u.id}`, {
+                              method: 'PATCH',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ is_available: !u.is_available }),
+                            });
+                            load();
+                          }}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold w-fit cursor-pointer transition-all hover:opacity-80"
+                          style={{ backgroundColor: u.is_available ? '#D1FAE5' : '#FEE2E2', color: u.is_available ? '#065F46' : '#991B1B' }}>
+                          {u.is_available ? '🟢 Online' : '🔴 Offline'}
+                        </button>
+                      </div>
                     </td>
                     {/* Last Login */}
                     <td className="px-5 py-3.5">

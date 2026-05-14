@@ -100,10 +100,28 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    // Sort by last_message_at desc
-    conversations.sort((a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime());
+    // ── Agent filter: non-admin/manager users see only their assigned contacts ──
+    const isAdmin = user.role === 'ADMIN' || user.role === 'MANAGER';
+    let filtered = conversations;
 
-    return NextResponse.json({ ok: true, data: conversations });
+    if (!isAdmin) {
+      const myContacts = await prisma.crmContact.findMany({
+        where:  { assigned_to_id: user.sub, deleted_at: null },
+        select: { phone: true },
+      });
+      const myPhones = new Set(myContacts.map(c => c.phone));
+      filtered = conversations.filter(c => myPhones.has(c.contact_phone));
+    }
+
+    // Sort: open-window contacts first, then by last_message_at desc
+    filtered.sort((a, b) => {
+      const aOpen = a.window_status === 'open' ? 0 : a.window_status === 'expiring' ? 1 : 2;
+      const bOpen = b.window_status === 'open' ? 0 : b.window_status === 'expiring' ? 1 : 2;
+      if (aOpen !== bOpen) return aOpen - bOpen;
+      return new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime();
+    });
+
+    return NextResponse.json({ ok: true, data: filtered });
   } catch (err) {
     console.error('[gallabox/inbox]', err);
     return NextResponse.json({ ok: false, error: String(err) }, { status: 500 });

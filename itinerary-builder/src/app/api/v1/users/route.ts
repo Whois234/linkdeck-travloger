@@ -43,6 +43,7 @@ export async function GET(req: NextRequest) {
         phone: true,
         gender: true,
         status: true,
+        is_available: true,
         last_login: true,
         created_at: true,
         module_access: true,
@@ -96,7 +97,7 @@ export async function POST(req: NextRequest) {
 
   const newUser = await prisma.user.create({
     data: { name, email, password: hashed, role, agent_id: agent_id ?? null, phone: phone ?? null, gender: gender ?? null, status },
-    select: { id: true, name: true, email: true, role: true, agent_id: true, phone: true, gender: true, status: true, created_at: true },
+    select: { id: true, name: true, email: true, role: true, agent_id: true, phone: true, gender: true, status: true, is_available: true, created_at: true },
   });
 
   return created(newUser);

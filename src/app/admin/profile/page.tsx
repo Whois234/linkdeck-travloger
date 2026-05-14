@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { User, Mail, Shield, KeyRound, Check, Eye, EyeOff, Phone } from 'lucide-react';
 
-interface AuthUser { id: string; name: string; email: string; role: string; phone?: string | null; gender?: string | null }
+interface AuthUser { id: string; name: string; email: string; role: string; phone?: string | null; gender?: string | null; is_available?: boolean }
 
 const inp = 'w-full h-10 px-3 rounded-lg border text-sm placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white transition-colors';
 const inpStyle = { borderColor: '#E2E8F0' };
@@ -115,12 +115,32 @@ export default function ProfilePage() {
             <div className="w-16 h-16 rounded-full flex items-center justify-center text-white text-xl font-bold flex-shrink-0" style={{ backgroundColor: '#134956' }}>
               {initials}
             </div>
-            <div>
+            <div className="flex-1">
               <p className="text-lg font-bold" style={{ color: '#0F172A' }}>{user?.name ?? 'Admin User'}</p>
               <p className="text-sm" style={{ color: '#64748B' }}>{user?.email}</p>
-              <span className="inline-flex items-center gap-1.5 mt-2 px-2.5 py-1 rounded-md text-xs font-semibold" style={{ backgroundColor: '#DBEAFE', color: '#1D4ED8' }}>
-                <Shield className="w-3 h-3" /> {user?.role ?? 'ADMIN'}
-              </span>
+              <div className="flex items-center gap-2 mt-2 flex-wrap">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold" style={{ backgroundColor: '#DBEAFE', color: '#1D4ED8' }}>
+                  <Shield className="w-3 h-3" /> {user?.role ?? 'ADMIN'}
+                </span>
+                {/* Availability toggle — any user can set themselves online/offline */}
+                <button
+                  onClick={async () => {
+                    if (!user) return;
+                    const newVal = !(user.is_available ?? true);
+                    const res = await fetch(`/api/v1/users/${user.id}`, {
+                      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ is_available: newVal }),
+                    });
+                    if (res.ok) setUser(prev => prev ? { ...prev, is_available: newVal } : prev);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold cursor-pointer transition-all hover:opacity-80"
+                  style={{
+                    backgroundColor: (user?.is_available ?? true) ? '#D1FAE5' : '#FEE2E2',
+                    color: (user?.is_available ?? true) ? '#065F46' : '#991B1B',
+                  }}>
+                  {(user?.is_available ?? true) ? '🟢 Available for leads' : '🔴 Unavailable (leads skip me)'}
+                </button>
+              </div>
             </div>
           </div>
 

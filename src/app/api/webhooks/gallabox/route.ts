@@ -17,6 +17,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { prisma } from '@/lib/prisma';
 import type { Prisma } from '@prisma/client';
+import { createContact, updateContact } from '@/lib/contacts/service';
 
 const WEBHOOK_SECRET = process.env.GALLABOX_WEBHOOK_SECRET ?? 'travloger2026secret';
 
@@ -181,5 +182,121 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: String(err) }, { status: 200 });
   }
 
+  // Auto-create/update CrmContact for every incoming message from a new number
+  if (direction === 'incoming' && phone) {
+    void autoCreateContactFromGallabox(phone, name, payload);
+  }
+
   return NextResponse.json({ ok: true, eventType }, { status: 200 });
+}
+
+// ─── Auto-create CrmContact + Lead from incoming Gallabox message ─────────────
+
+async function autoCreateContactFromGallabox(
+  phone: string,
+  name: string | null,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const wa       = (payload.whatsapp  ?? {}) as Record<string, unknown>;
+    const referral = (wa.referral       ?? {}) as Record<string, unknown>;
+
+    // Extract Gallabox-specific enrichment fields
+    const botFlowId     = (payload.botFlowId ?? payload.flowId ?? referral.source_id_type ?? null) as string | null;
+    const adId          = (referral.source_id   ?? null) as string | null;
+    const adHeadline    = (referral.headline     ?? null) as string | null;
+    const gallaboxSource = adId ? 'whatsapp_ad' : 'organic';
+
+    // Check if contact already exists
+    const existing = await prisma.crmContact.findUnique({ where: { phone } });
+
+    if (existing) {
+      // Update custom_fields with gallabox info if not already set
+      const cf = (existing.custom_fields ?? {}) as Record<string, unknown>;
+      const needsUpdate =
+        (!cf.gallabox_bot_flow_id && botFlowId)  ||
+        (!cf.gallabox_ad_id       && adId)        ||
+        (!cf.gallabox_source      && gallaboxSource);
+
+      if (needsUpdate) {
+        await updateContact(
+          existing.id,
+          {
+            custom_fields: {
+              ...cf,
+              ...(botFlowId    && !cf.gallabox_bot_flow_id ? { gallabox_bot_flow_id: botFlowId }    : {}),
+              ...(adId         && !cf.gallabox_ad_id       ? { gallabox_ad_id: adId }               : {}),
+              ...(adHeadline   && !cf.gallabox_ad_headline ? { gallabox_ad_headline: adHeadline }   : {}),
+              ...(!cf.gallabox_source                      ? { gallabox_source: gallaboxSource }     : {}),
+            },
+          },
+          null,
+        );
+      }
+      return;
+    }
+
+    // Find default owner (first ADMIN)
+    const admin = await prisma.user.findFirst({
+      where:  { role: 'ADMIN', status: true },
+      select: { id: true },
+    });
+    if (!admin) {
+      console.warn('[gallabox/auto-contact] No ADMIN user found — cannot create contact');
+      return;
+    }
+
+    // Create CrmContact — triggers on_create workflows (which handle assignment)
+    const contact = await createContact(
+      {
+        phone,
+        name:         name?.trim() || 'WhatsApp Lead',
+        lead_source:  gallaboxSource,
+        platform:     'WHATSAPP',
+        custom_fields: {
+          ...(botFlowId  ? { gallabox_bot_flow_id: botFlowId }   : {}),
+          ...(adId       ? { gallabox_ad_id: adId }              : {}),
+          ...(adHeadline ? { gallabox_ad_headline: adHeadline }  : {}),
+          gallabox_source: gallaboxSource,
+        },
+        owner_id: admin.id,
+      },
+      null,
+    );
+
+    console.log('[gallabox/auto-contact] Created CrmContact:', contact.id, 'phone:', phone);
+
+    // Auto-create a Lead in the default pipeline
+    const defaultPipeline = await prisma.pipeline.findFirst({
+      where:   { is_default: true, status: true },
+      include: { stages: { where: { status: true }, orderBy: { order: 'asc' }, take: 1 } },
+    });
+
+    if (defaultPipeline?.stages[0]) {
+      // Fetch updated contact to get assigned_to_id after workflow ran
+      const updatedContact = await prisma.crmContact.findUnique({
+        where:  { id: contact.id },
+        select: { assigned_to_id: true },
+      });
+
+      await prisma.lead.create({
+        data: {
+          name:              `${name ?? 'Lead'} — WhatsApp`,
+          phone,
+          pipeline_id:       defaultPipeline.id,
+          stage_id:          defaultPipeline.stages[0].id,
+          owner_id:          admin.id,
+          assigned_agent_id: updatedContact?.assigned_to_id ?? admin.id,
+          source:            gallaboxSource,
+          crm_contact_id:    contact.id,
+          status:            'NEW',
+        },
+      });
+
+      console.log('[gallabox/auto-contact] Created Lead in pipeline:', defaultPipeline.id);
+    }
+  } catch (e) {
+    // Non-critical — log but don't fail the webhook
+    console.error('[gallabox/auto-contact] Failed:', e);
+  }
 }

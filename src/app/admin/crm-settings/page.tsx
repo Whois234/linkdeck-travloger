@@ -72,14 +72,19 @@ const LEAD_SOURCES = ['GOOGLE_ADS', 'META_ADS', 'CTWA', 'ORGANIC', 'REFERRAL', '
 const LEAD_STAGES_LIST = ['NEW', 'CONTACTED', 'ENGAGED', 'FOLLOW_UP_REQUIRED', 'QUOTE_SENT', 'WON', 'LOST'];
 
 const WF_CONDITION_FIELDS = [
-  { value: 'lead_source',            label: 'Lead Source',   type: 'leadSource' },
-  { value: 'interested_destination', label: 'Destination',   type: 'text' },
-  { value: 'trip_type',              label: 'Trip Type',     type: 'text' },
-  { value: 'city',                   label: 'City',          type: 'text' },
-  { value: 'tags',                   label: 'Tag',           type: 'tag' },
-  { value: 'campaign_name',          label: 'Campaign Name', type: 'text' },
-  { value: 'notes',                  label: 'Notes',         type: 'text' },
-  { value: 'special_requirements',   label: 'Requirements',  type: 'text' },
+  { value: 'lead_source',            label: 'Lead Source',      type: 'leadSource' },
+  { value: 'interested_destination', label: 'Destination',      type: 'text' },
+  { value: 'trip_type',              label: 'Trip Type',        type: 'text' },
+  { value: 'city',                   label: 'City',             type: 'text' },
+  { value: 'tags',                   label: 'Tag',              type: 'tag' },
+  { value: 'campaign_name',          label: 'Campaign Name',    type: 'text' },
+  { value: 'notes',                  label: 'Notes',            type: 'text' },
+  { value: 'special_requirements',   label: 'Requirements',     type: 'text' },
+  // Gallabox enrichment fields (stored in custom_fields JSON)
+  { value: 'gallabox_bot_flow_id',   label: 'Bot Flow ID',      type: 'text' },
+  { value: 'gallabox_ad_id',         label: 'Ad ID (CTWA)',     type: 'text' },
+  { value: 'gallabox_source',        label: 'Gallabox Source',  type: 'text' },
+  { value: 'gallabox_ad_headline',   label: 'Ad Headline',      type: 'text' },
 ];
 
 const TEXT_OPERATORS = [
@@ -99,6 +104,8 @@ const WF_ACTION_TYPES = [
   { value: 'set_follow_up',     label: 'Set Follow-up Date' },
   { value: 'send_notification', label: 'Send Notification' },
   { value: 'update_lead_stage', label: 'Update Lead Stage' },
+  { value: 'send_whatsapp',     label: 'Send WhatsApp Template' },
+  { value: 'create_task',       label: 'Create Task' },
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
