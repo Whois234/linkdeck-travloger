@@ -205,6 +205,10 @@ function evaluateConditions(
     } else if (GALLABOX_CUSTOM_KEYS.includes(rule.field)) {
       const cf = contact.custom_fields as Record<string, unknown> | null | undefined;
       raw = cf?.[rule.field];
+      // Alias: older contacts stored source_id as 'gallabox_source_id' before we renamed to 'gallabox_ad_id'
+      if ((raw === undefined || raw === null || raw === '') && rule.field === 'gallabox_ad_id') {
+        raw = cf?.gallabox_source_id;
+      }
       // Fallback: older contacts may have these stored in other_ad_details instead
       if (raw === undefined || raw === null || raw === '') {
         const oad = contact.other_ad_details as Record<string, unknown> | null | undefined;
@@ -390,7 +394,7 @@ async function executeStageAutomations(contactId: string, stageName: string): Pr
 }
 
 /** Run all active workflows matching the given event type for a contact (fire-and-forget). */
-async function executeContactWorkflows(contactId: string, event: 'on_create' | 'on_update' = 'on_create'): Promise<void> {
+export async function executeContactWorkflows(contactId: string, event: 'on_create' | 'on_update' = 'on_create'): Promise<void> {
   try {
     console.log(`=== CHECKING WORKFLOWS for contact === id:${contactId} event:${event}`);
 
