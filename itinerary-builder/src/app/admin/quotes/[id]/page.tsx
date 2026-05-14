@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/admin/PageHeader';
-import { ArrowLeft, Calendar, Users, MapPin, Phone, Mail, Clock, Edit2, Check, X, ExternalLink, BarChart2, Eye, MessageCircle, Package, ThumbsUp, RefreshCw, Trash2, LinkIcon, Link2Off, ChevronDown, ChevronUp, Hotel, Car, TrendingUp, Receipt, Star, CalendarCheck } from 'lucide-react';
+import { ArrowLeft, Calendar, Users, MapPin, Phone, Mail, Clock, Edit2, Check, X, ExternalLink, BarChart2, Eye, MessageCircle, Package, ThumbsUp, RefreshCw, Trash2, LinkIcon, Link2Off, ChevronDown, ChevronUp, Hotel, Car, TrendingUp, Receipt, Star, CalendarCheck, Send } from 'lucide-react';
 
 const T = '#134956';
 const STATUS_BADGE: Record<string, { bg: string; text: string }> = {
@@ -684,6 +684,8 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
   const [republishMsg, setRepublishMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [sendingWa, setSendingWa] = useState(false);
   const [waMsg, setWaMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [sendingTemplate, setSendingTemplate] = useState(false);
+  const [templateMsg, setTemplateMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [togglingLink, setTogglingLink] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -730,6 +732,28 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
       else setWaMsg({ ok: false, text: data.error ?? 'Failed to send WhatsApp' });
     } catch { setWaMsg({ ok: false, text: 'Network error. Try again.' }); }
     finally { setSendingWa(false); setTimeout(() => setWaMsg(null), 6000); }
+  }
+
+  async function sendGallaboxTemplate() {
+    if (!quote || sendingTemplate) return;
+    setSendingTemplate(true); setTemplateMsg(null);
+    try {
+      const res = await fetch('/api/gallabox/send', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone:        quote.customer.phone,
+          contactName:  quote.customer.name,
+          templateName: 'itinerary_ready',
+          // {{1}} in the template URL = public_token (the dynamic URL suffix)
+          buttonUrl:    quote.public_token,
+        }),
+      });
+      const data = await res.json() as { ok: boolean; error?: string };
+      if (data.ok) setTemplateMsg({ ok: true,  text: 'Template sent via Gallabox ✅' });
+      else         setTemplateMsg({ ok: false, text: data.error ?? 'Failed to send template' });
+    } catch { setTemplateMsg({ ok: false, text: 'Network error. Try again.' }); }
+    finally { setSendingTemplate(false); setTimeout(() => setTemplateMsg(null), 6000); }
   }
 
   async function handleToggleLink() {
@@ -833,6 +857,11 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
                 {waMsg.text}
               </span>
             )}
+            {templateMsg && (
+              <span className="text-xs font-medium px-3 py-1.5 rounded-lg" style={templateMsg.ok ? { backgroundColor: '#DCFCE7', color: '#15803D' } : { backgroundColor: '#FEF2F2', color: '#DC2626' }}>
+                {templateMsg.text}
+              </span>
+            )}
             {republishMsg && (
               <span className="text-xs font-medium px-3 py-1.5 rounded-lg" style={republishMsg.ok ? { backgroundColor: '#DCFCE7', color: '#15803D' } : { backgroundColor: '#FEF2F2', color: '#DC2626' }}>
                 {republishMsg.text}
@@ -843,6 +872,12 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
               style={{ backgroundColor: '#134956' }}>
               <MessageCircle className={`w-4 h-4 ${sendingWa ? 'animate-pulse' : ''}`} />
               {sendingWa ? 'Sending…' : 'Send via WhatsApp'}
+            </button>
+            <button onClick={sendGallaboxTemplate} disabled={sendingTemplate}
+              className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
+              style={{ backgroundColor: '#25D366' }}>
+              <Send className={`w-4 h-4 ${sendingTemplate ? 'animate-pulse' : ''}`} />
+              {sendingTemplate ? 'Sending…' : 'Send Itinerary Template'}
             </button>
             <button onClick={handleRepublish} disabled={republishing}
               className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
