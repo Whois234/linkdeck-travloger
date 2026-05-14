@@ -188,7 +188,7 @@ export function QuotesTable({ quotes, statusFilter, isPrivileged }: { quotes: Qu
                   <input type="checkbox" checked={allChecked} onChange={toggleAll}
                     className="w-4 h-4 rounded" style={{ accentColor: T, cursor: 'pointer' }} />
                 </th>
-                {['Quote #', 'Customer', 'Destination', 'Type', 'Date', 'Pax', 'Price', 'Status', ...(isPrivileged ? ['Created By', 'Agent'] : []), ''].map(h => (
+                {['Quote #', 'Customer', 'Destination', 'Type', 'Trip Date', 'Pax', 'Price', 'Status', ...(isPrivileged ? ['Created By', 'Agent'] : []), 'Created', ''].map(h => (
                   <th key={h} className="px-5 py-3.5 text-left text-[11px] font-semibold uppercase tracking-wider whitespace-nowrap" style={{ color: '#64748B' }}>{h}</th>
                 ))}
               </tr>
@@ -247,6 +247,15 @@ export function QuotesTable({ quotes, statusFilter, isPrivileged }: { quotes: Qu
                     {isPrivileged && (
                       <td className="px-5 py-0 text-sm" style={{ color: '#64748B' }}>{q.assigned_agent?.name ?? '—'}</td>
                     )}
+                    {/* Created At — date + time */}
+                    <td className="px-5 py-0 whitespace-nowrap">
+                      <div className="text-xs font-medium" style={{ color: '#0F172A' }}>
+                        {new Date(q.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </div>
+                      <div className="text-[10px] mt-0.5" style={{ color: '#94A3B8' }}>
+                        {new Date(q.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                      </div>
+                    </td>
                     <td className="px-5 py-0">
                       <div className="flex items-center justify-end gap-2">
                         <Link href={`/admin/quotes/${q.id}`} className="text-xs font-semibold" style={{ color: T }}>View</Link>

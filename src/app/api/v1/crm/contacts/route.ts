@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getAuthUser } from '@/lib/auth';
+import { getAuthUser, requireRole } from '@/lib/auth';
 import { ok, created, err, unauthorized } from '@/lib/api-response';
 import { z } from 'zod';
 import {
@@ -9,10 +9,8 @@ import {
 } from '@/lib/contacts/service';
 import {
   LeadStage,
-  LeadSource,
-  Platform,
-  TripType,
   DevicePlatform,
+  UserRole,
 } from '@prisma/client';
 
 // Light-weight sanitisation. We don't render user-supplied content as HTML
@@ -39,13 +37,13 @@ const createSchema = z.object({
   // Travel interest
   interested_destination: optionalString(120),
   number_of_travellers:   z.number().int().min(1).max(999).nullable().optional(),
-  trip_type:              z.nativeEnum(TripType).nullable().optional(),
+  trip_type:              z.string().max(100).nullable().optional(),
   special_requirements:   optionalString(2000),
   budget_per_person:      z.union([z.number(), z.string()]).nullable().optional(),
 
   // Lead source & ad attribution
-  lead_source:         z.nativeEnum(LeadSource).nullable().optional(),
-  platform:            z.nativeEnum(Platform).nullable().optional(),
+  lead_source:         z.string().max(100).nullable().optional(),
+  platform:            z.string().max(100).nullable().optional(),
   campaign_name:       optionalString(200),
   ad_set_name:         optionalString(200),
   ad_name:             optionalString(200),
@@ -123,6 +121,15 @@ export async function GET(req: NextRequest) {
   const tripType      = searchParams.get('trip_type');
   const doNotContact  = searchParams.get('do_not_contact'); // 'true' | 'false'
   const includeDeleted = searchParams.get('include_deleted') === 'true';
+  const deletedOnly    = searchParams.get('deleted_only') === 'true';
+  const hasPipeline    = searchParams.get('has_pipeline'); // 'true' | 'false' | null
+  const untouched      = searchParams.get('untouched');    // 'true' = no calls/notes on any lead
+
+  // Auto-purge contacts soft-deleted more than 30 days ago (run opportunistically on deleted_only fetch)
+  if (deletedOnly) {
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    await prisma.crmContact.deleteMany({ where: { deleted_at: { not: null, lt: cutoff } } }).catch(() => {});
+  }
 
   const dateFilter = buildDateFilter(dateRange, dateFrom, dateTo);
   const tagList    = tagsParam ? tagsParam.split(',').map(t => t.trim()).filter(Boolean) : [];
@@ -132,8 +139,16 @@ export async function GET(req: NextRequest) {
   const sourceList = enumList(leadSource);
   const typeList   = enumList(tripType);
 
+  // ── Role-based data isolation ─────────────────────────────────────────────
+  // Privileged roles (ADMIN, MANAGER, FINANCE, OPS) see all contacts.
+  // SALES users only see contacts they own.
+  const isPrivileged = requireRole(user, UserRole.ADMIN, UserRole.MANAGER, UserRole.FINANCE, UserRole.OPS);
+  const ownerScope = isPrivileged ? {} : { owner_id: user.sub };
+
   const where = {
-    ...(includeDeleted ? {} : { deleted_at: null }),
+    ...ownerScope,
+    // deleted_only → show ONLY soft-deleted; includeDeleted → show all; default → exclude deleted
+    ...(deletedOnly ? { deleted_at: { not: null } } : includeDeleted ? {} : { deleted_at: null }),
     ...(search ? {
       OR: [
         { name:  { contains: search, mode: 'insensitive' as const } },
@@ -146,14 +161,19 @@ export async function GET(req: NextRequest) {
     ...(dateFilter ? { created_at: dateFilter } : {}),
     ...(tagList.length ? { tags: { hasEvery: tagList } } : {}),
     ...(stageList.length  ? { lead_stage:  { in: stageList  as LeadStage[]  } } : {}),
-    ...(sourceList.length ? { lead_source: { in: sourceList as LeadSource[] } } : {}),
-    ...(typeList.length   ? { trip_type:   { in: typeList   as TripType[]   } } : {}),
+    ...(sourceList.length ? { lead_source: { in: sourceList as string[] } } : {}),
+    ...(typeList.length   ? { trip_type:   { in: typeList   as string[]   } } : {}),
     ...(assignedToId === 'unassigned' ? { assigned_to_id: null }
        : assignedToId                  ? { assigned_to_id: assignedToId }
        : {}),
     ...(destination ? { interested_destination: { contains: destination, mode: 'insensitive' as const } } : {}),
     ...(doNotContact === 'true'  ? { do_not_contact: true  } : {}),
     ...(doNotContact === 'false' ? { do_not_contact: false } : {}),
+    // Pipeline presence filter
+    ...(hasPipeline === 'true'  ? { leads: { some: { pipeline_id: { not: null } } } } : {}),
+    ...(hasPipeline === 'false' ? { NOT: { leads: { some: { pipeline_id: { not: null } } } } } : {}),
+    // Untouched filter: contacts with no leads that have call logs or lead notes
+    ...(untouched === 'true' ? { NOT: { leads: { some: { OR: [{ call_logs: { some: {} } }, { lead_notes: { some: {} } }] } } } } : {}),
   };
 
   // Sort
@@ -196,10 +216,26 @@ export async function GET(req: NextRequest) {
     }),
   ]);
 
+  // Enrich with nationality + quotes_count from Customer table (merged module)
+  const phones = contacts.map(c => c.phone).filter(Boolean);
+  const customers = phones.length
+    ? await prisma.customer.findMany({
+        where: { phone: { in: phones } },
+        select: { phone: true, nationality: true, _count: { select: { quotes: true } } },
+      })
+    : [];
+  const custByPhone = Object.fromEntries(customers.map(c => [c.phone, c]));
+
+  const enriched = contacts.map(c => ({
+    ...c,
+    nationality:  custByPhone[c.phone]?.nationality ?? null,
+    quotes_count: custByPhone[c.phone]?._count?.quotes ?? 0,
+  }));
+
   // Both naming conventions for backward + spec compat.
   return ok({
-    items: contacts,
-    contacts,
+    items: enriched,
+    contacts: enriched,
     total,
     totalCount: total,
     page,

@@ -37,10 +37,23 @@ export async function GET(req: NextRequest) {
     where: q
       ? { AND: [ownerFilter, { OR: [{ name: { contains: q, mode: 'insensitive' } }, { phone: { contains: q } }] }] }
       : ownerFilter,
-    orderBy: { name: 'asc' },
-    take: 100,
+    orderBy: { created_at: 'desc' },
+    take: 200,
   });
-  return ok(customers);
+
+  // Resolve creator names
+  const creatorIds = Array.from(new Set(customers.map(c => c.created_by).filter((v): v is string => !!v)));
+  const creators = creatorIds.length
+    ? await prisma.user.findMany({ where: { id: { in: creatorIds } }, select: { id: true, name: true } })
+    : [];
+  const creatorById = Object.fromEntries(creators.map(u => [u.id, u.name]));
+
+  const enriched = customers.map(c => ({
+    ...c,
+    created_by_name: c.created_by ? (creatorById[c.created_by] ?? 'Unknown') : null,
+  }));
+
+  return ok(enriched);
 }
 
 export async function POST(req: NextRequest) {

@@ -33,13 +33,15 @@ export async function GET(req: NextRequest) {
   const limit       = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') ?? '50')));
   const skip        = (page - 1) * limit;
 
-  const isLimitedSales = requireRole(user, UserRole.SALES);
-  const agentFilter = isLimitedSales
-    ? { assigned_agent_id: user.agent_id ?? undefined }
-    : agent_id ? { assigned_agent_id: agent_id } : {};
+  // SALES users see only leads they own (owner_id = their user ID).
+  // Privileged roles see all leads, optionally filtered by assigned_agent_id.
+  const isPrivileged = requireRole(user, UserRole.ADMIN, UserRole.MANAGER, UserRole.FINANCE, UserRole.OPS);
+  const ownerFilter = isPrivileged
+    ? (agent_id ? { assigned_agent_id: agent_id } : {})
+    : { owner_id: user.sub };
 
   const where = {
-    ...agentFilter,
+    ...ownerFilter,
     ...(status ? { status } : {}),
     ...(pipeline_id ? { pipeline_id } : {}),
   };
@@ -152,6 +154,28 @@ export async function POST(req: NextRequest) {
   await prisma.leadActivity.create({
     data: { lead_id: record.id, type: 'created', metadata: { name: record.name }, created_by: user.sub },
   }).catch(() => {});
+
+  // ── Ensure Customer record exists for this lead ───────────────────────────
+  // Every lead should also appear in the Customers table so agents have
+  // a single unified customer view.
+  try {
+    const existingCustomer = await prisma.customer.findFirst({
+      where: { OR: [{ phone: normalizedPhone }, { phone: rest.phone }] },
+    });
+    if (!existingCustomer) {
+      await prisma.customer.create({
+        data: {
+          name:       rest.name,
+          phone:      normalizedPhone,
+          email:      rest.email ?? null,
+          lead_id:    record.id,
+          created_by: user.sub,
+        },
+      });
+    } else if (!existingCustomer.lead_id) {
+      await prisma.customer.update({ where: { id: existingCustomer.id }, data: { lead_id: record.id } });
+    }
+  } catch { /* non-blocking */ }
 
   return created(record);
 }

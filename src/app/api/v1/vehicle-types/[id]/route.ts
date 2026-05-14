@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { getAuthUser, requireRole } from '@/lib/auth';
 import { ok, err, unauthorized, forbidden, notFound } from '@/lib/api-response';
 import { UserRole } from '@prisma/client';
+import { revalidateTag } from 'next/cache';
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   const user = await getAuthUser(req);
@@ -51,6 +52,17 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   const record = await prisma.vehicleType.findUnique({ where: { id: params.id } });
   if (!record) return notFound('Vehicle Type');
 
-  await prisma.vehicleType.update({ where: { id: params.id }, data: { status: false } });
-  return ok({ message: 'Vehicle Type deactivated' });
+  // Hard-delete in a transaction:
+  // 1. Null out vehicle_type_id on any QuoteOptions that reference this type
+  // 2. Delete dependent VehiclePackageRates and Transfers
+  // 3. Permanently delete the VehicleType row
+  await prisma.$transaction([
+    prisma.quoteOption.updateMany({ where: { vehicle_type_id: params.id }, data: { vehicle_type_id: null } }),
+    prisma.vehiclePackageRate.deleteMany({ where: { vehicle_type_id: params.id } }),
+    prisma.transfer.deleteMany({ where: { vehicle_type_id: params.id } }),
+    prisma.vehicleType.delete({ where: { id: params.id } }),
+  ]);
+
+  revalidateTag('master-vehicle-types'); // bust cached vehicle-type list
+  return ok({ message: 'Vehicle Type permanently deleted' });
 }

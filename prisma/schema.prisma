@@ -628,6 +628,7 @@ model PrivateTemplate {
   hero_image              String?
   cms_data                Json?
   status                  Boolean       @default(true)
+  deleted_at              DateTime?
   created_by              String?
   created_at              DateTime      @default(now())
   updated_at              DateTime      @updatedAt
@@ -638,6 +639,7 @@ model PrivateTemplate {
 
   @@index([state_id])
   @@index([status])
+  @@index([deleted_at])
 }
 
 model TemplateDay {
@@ -693,7 +695,10 @@ model GroupTemplate {
   hero_image            String?
   gallery_images        Json?
   cms_data              Json?
+  tab_title             String?
   status                Boolean            @default(true)
+  deleted_at            DateTime?
+  created_by            String?
   created_at            DateTime           @default(now())
   updated_at            DateTime           @updatedAt
 
@@ -703,6 +708,8 @@ model GroupTemplate {
 
   @@index([state_id])
   @@index([status])
+  @@index([deleted_at])
+  @@index([created_by])
 }
 
 model GroupTemplateDay {
@@ -1026,6 +1033,7 @@ model User {
   contacts            CrmContact[]      @relation("CrmContactOwner")
   assigned_contacts   CrmContact[]      @relation("CrmContactAssignee")
   contact_activities  ContactActivity[] @relation("ContactActivityActor")
+  team_memberships    CrmTeamMember[]
 
   @@index([role])
   @@index([status])
@@ -1072,13 +1080,13 @@ model CrmContact {
   // ── Travel interest ────────────────────────────────────────────────────────
   interested_destination String?
   number_of_travellers   Int?
-  trip_type              TripType?
+  trip_type              String?
   special_requirements   String?
   budget_per_person      Decimal?  @db.Decimal(12, 2)
 
   // ── Lead source & ad attribution ───────────────────────────────────────────
-  lead_source       LeadSource?
-  platform          Platform?
+  lead_source       String?
+  platform          String?
   campaign_name     String?
   ad_set_name       String?
   ad_name           String?
@@ -1358,4 +1366,84 @@ model CrmWorkflow {
   is_active  Boolean  @default(true)
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
+}
+
+// ─── Gallabox integration ─────────────────────────────────────────────────────
+
+model GallaboxMessage {
+  id              String   @id @default(cuid())
+  gallabox_id     String?  @unique          // Gallabox message ID (for dedup + status updates)
+  conversation_id String?                   // Gallabox conversation ID
+  contact_phone   String?
+  contact_name    String?
+  direction       String   @default("incoming")  // 'incoming' | 'outgoing'
+  message_type    String?                   // 'text', 'image', 'template', etc.
+  content         String?                   // extracted message text
+  media_url       String?
+  status          String?                   // 'sent', 'delivered', 'read', 'failed'
+  failure_reason  String?
+  event_type      String?                   // original Gallabox event name
+  raw_payload     Json?                     // full raw event for debugging
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  @@index([gallabox_id])
+  @@index([conversation_id])
+  @@index([contact_phone])
+  @@index([created_at])
+}
+
+model GallaboxConversation {
+  id            String   @id @default(cuid())
+  gallabox_id   String   @unique            // Gallabox conversation ID
+  contact_phone String?
+  contact_name  String?
+  status        String?                     // 'open', 'closed', 'pending'
+  channel       String?
+  assigned_to   String?                     // agent name or ID
+  raw_payload   Json?
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  @@index([gallabox_id])
+  @@index([contact_phone])
+  @@index([status])
+}
+
+model GallaboxTemplate {
+  id               String   @id @default(cuid())
+  gallabox_id      String?  @unique         // Gallabox template ID
+  template_name    String?
+  status           String?                  // 'APPROVED', 'REJECTED', 'PENDING'
+  category         String?
+  language         String?
+  rejection_reason String?
+  raw_payload      Json?
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  @@index([gallabox_id])
+  @@index([status])
+}
+
+// ─── CRM Teams ────────────────────────────────────────────────────────────────
+
+model CrmTeam {
+  id         String          @id @default(cuid())
+  name       String          @unique
+  created_at DateTime        @default(now())
+  members    CrmTeamMember[]
+}
+
+model CrmTeamMember {
+  id      String  @id @default(cuid())
+  team_id String
+  user_id String
+
+  team    CrmTeam @relation(fields: [team_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([team_id, user_id])
+  @@index([team_id])
+  @@index([user_id])
 }

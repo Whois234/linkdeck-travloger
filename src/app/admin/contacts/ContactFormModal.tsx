@@ -50,6 +50,28 @@ const PLATFORMS: { value: Platform; label: string }[] = [
   { value: 'WHATSAPP',  label: 'WhatsApp' },
 ];
 
+// Fallback arrays of raw values (used when API hasn't loaded yet)
+const TRIP_TYPE_VALS = ['HONEYMOON','FAMILY','FRIENDS','SOLO','GROUP','CORPORATE','PILGRIMAGE','ADVENTURE','PRIVATE','OTHER'];
+
+// Display label maps for known enum values
+const SOURCE_LABEL: Record<string, string> = {
+  CTWA: 'CTWA (Click-to-WhatsApp)',
+  META_LEAD_FORM: 'Meta Lead Form',
+  GOOGLE_ADS: 'Google Ads',
+  WEBSITE: 'Website',
+  WALK_IN: 'Walk-in',
+  REFERRAL: 'Referral',
+};
+const TRIP_LABEL: Record<string, string> = {
+  HONEYMOON: 'Honeymoon', FAMILY: 'Family', FRIENDS: 'Friends', SOLO: 'Solo',
+  GROUP: 'Group', CORPORATE: 'Corporate', PILGRIMAGE: 'Pilgrimage',
+  ADVENTURE: 'Adventure', PRIVATE: 'Private', OTHER: 'Other',
+};
+const PLATFORM_LABEL: Record<string, string> = {
+  FACEBOOK: 'Facebook', INSTAGRAM: 'Instagram', GOOGLE: 'Google',
+  YOUTUBE: 'YouTube', WEBSITE: 'Website', WHATSAPP: 'WhatsApp',
+};
+
 export interface ContactFormValue {
   id?: string;
   // Basic
@@ -138,6 +160,24 @@ export default function ContactFormModal({ open, mode, initial, users, tags, onC
   const [errors,  setErrors]  = useState<Record<string, string>>({});
   const [showOtherAd, setShowOtherAd] = useState(false);
   const [tagInput, setTagInput] = useState('');
+  const [fieldOptions, setFieldOptions] = useState<Record<string, string[]>>({});
+
+  useEffect(() => {
+    fetch('/api/v1/crm/contact-fields')
+      .then(r => r.json())
+      .then(d => {
+        if (d.success && Array.isArray(d.data)) {
+          const map: Record<string, string[]> = {};
+          d.data.forEach((f: { key: string; type: string; options: string[] | null }) => {
+            if ((f.type === 'select' || f.type === 'multiselect') && f.options?.length) {
+              map[f.key] = f.options;
+            }
+          });
+          setFieldOptions(map);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Reset whenever the modal opens or the initial subject changes.
   useEffect(() => {
@@ -304,7 +344,7 @@ export default function ContactFormModal({ open, mode, initial, users, tags, onC
         </div>
 
         {/* Body — scrolls */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 space-y-6">
 
           {/* SECTION 1 — Basic Info */}
           <Section title="Basic Info">
@@ -344,16 +384,9 @@ export default function ContactFormModal({ open, mode, initial, users, tags, onC
                   <select className={selectCls} style={borderStyle}
                     value={form.trip_type} onChange={e => update('trip_type', e.target.value as TripType | '')}>
                     <option value="">—</option>
-                    <option value="HONEYMOON">Honeymoon</option>
-                    <option value="FAMILY">Family</option>
-                    <option value="FRIENDS">Friends</option>
-                    <option value="SOLO">Solo</option>
-                    <option value="GROUP">Group</option>
-                    <option value="CORPORATE">Corporate</option>
-                    <option value="PILGRIMAGE">Pilgrimage</option>
-                    <option value="ADVENTURE">Adventure</option>
-                    <option value="PRIVATE">Private</option>
-                    <option value="OTHER">Other</option>
+                    {(fieldOptions['trip_type'] ?? TRIP_TYPE_VALS).map(v => (
+                      <option key={v} value={v}>{TRIP_LABEL[v] ?? v}</option>
+                    ))}
                   </select>
                 </SelectChevron>
               </Field>
@@ -380,7 +413,9 @@ export default function ContactFormModal({ open, mode, initial, users, tags, onC
                   <select className={selectCls} style={borderStyle}
                     value={form.lead_source} onChange={e => update('lead_source', e.target.value as LeadSource | '')}>
                     <option value="">—</option>
-                    {SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                    {(fieldOptions['source'] ?? SOURCES.map(s => s.value)).map(v => (
+                      <option key={v} value={v}>{SOURCE_LABEL[v] ?? v}</option>
+                    ))}
                   </select>
                 </SelectChevron>
               </Field>
@@ -389,7 +424,9 @@ export default function ContactFormModal({ open, mode, initial, users, tags, onC
                   <select className={selectCls} style={borderStyle}
                     value={form.platform} onChange={e => update('platform', e.target.value as Platform | '')}>
                     <option value="">—</option>
-                    {PLATFORMS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                    {(fieldOptions['platform'] ?? PLATFORMS.map(p => p.value)).map(v => (
+                      <option key={v} value={v}>{PLATFORM_LABEL[v] ?? v}</option>
+                    ))}
                   </select>
                 </SelectChevron>
               </Field>

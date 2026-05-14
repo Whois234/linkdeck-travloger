@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { Suspense } from 'react';
-import { FileText, Building2, Layout, CalendarDays, ArrowRight, TrendingUp, Plus } from 'lucide-react';
+import { FileText, Building2, Layout, ArrowRight, TrendingUp, Plus } from 'lucide-react';
 import { prisma } from '@/lib/prisma';
 import { getServerUser } from '@/lib/auth-server';
 
@@ -21,7 +21,6 @@ const QUICK_ACTIONS = [
   { label: 'Create Private Quote', desc: 'Build a custom FIT itinerary', href: '/admin/quotes/create', icon: FileText, color: '#134956' },
   { label: 'Add New Hotel',        desc: 'Add hotel to inventory',        href: '/admin/hotels',         icon: Building2, color: '#3B82F6' },
   { label: 'Add Template',         desc: 'New private itinerary template', href: '/admin/private-templates', icon: Layout,    color: '#10B981' },
-  { label: 'Group Batches',        desc: 'Manage fixed departures',        href: '/admin/group-batches',  icon: CalendarDays, color: '#F59E0B' },
 ];
 
 // ── Skeleton for stat cards + recent quotes ──────────────────────────────────
@@ -52,7 +51,7 @@ function DashboardSkeleton() {
 
 // ── Async component — streams in after shell ──────────────────────────────────
 async function DashboardData() {
-  const [recentQuotes, totalQuotes, totalHotels, totalTemplates, totalBatches] = await Promise.all([
+  const [recentQuotes, totalQuotes, totalHotels, totalTemplates] = await Promise.all([
     prisma.quote.findMany({
       take: 5,
       orderBy: { created_at: 'desc' },
@@ -65,14 +64,12 @@ async function DashboardData() {
     prisma.quote.count(),
     prisma.hotel.count({ where: { status: true } }),
     prisma.privateTemplate.count(),
-    prisma.groupBatch.count(),
   ]);
 
   const STAT_CARDS = [
     { label: 'Total Quotes',  value: totalQuotes,    icon: FileText,     accent: '#134956', iconBg: '#E8F4F6' },
     { label: 'Active Hotels', value: totalHotels,    icon: Building2,    accent: '#3B82F6', iconBg: '#EFF6FF' },
     { label: 'Templates',     value: totalTemplates, icon: Layout,       accent: '#10B981', iconBg: '#ECFDF5' },
-    { label: 'Group Batches', value: totalBatches,   icon: CalendarDays, accent: '#F59E0B', iconBg: '#FFFBEB' },
   ];
 
   return (

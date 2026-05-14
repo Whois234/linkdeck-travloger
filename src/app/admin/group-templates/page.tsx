@@ -3,9 +3,10 @@ import { useState, useEffect, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Modal } from '@/components/admin/Modal';
-import { Plus, Pencil, Trash2, Search, Users, ChevronRight, LayoutGrid, List, ArrowUpDown, CheckCircle2, SlidersHorizontal, X } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, Users, ChevronRight, LayoutGrid, List, ArrowUpDown, CheckCircle2, SlidersHorizontal, X, RotateCcw, AlertTriangle, Eye, Copy } from 'lucide-react';
 
 type SortKey = 'name_asc' | 'name_desc' | 'nights_asc' | 'nights_desc' | 'batches_desc' | 'state_asc';
+type StatusTab = 'all' | 'live' | 'draft' | 'deleted';
 const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: 'name_asc',     label: 'Name A → Z' },
   { value: 'name_desc',    label: 'Name Z → A' },
@@ -24,6 +25,8 @@ interface GT {
   group_template_days: { id: string }[];
   group_batches: { id: string }[];
   hero_image?: string | null; status: boolean;
+  created_at: string; deleted_at?: string | null;
+  created_by_name?: string | null;
 }
 
 const inp   = 'w-full h-9 px-3 rounded-lg border text-sm placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white';
@@ -67,12 +70,17 @@ function GroupTemplatesPageInner() {
   const [filterNights, setFilterNights] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const [statusTab, setStatusTab] = useState<StatusTab>('all');
   const [sortKey, setSortKey]   = useState<SortKey>('name_asc');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [showSetup, setShowSetup] = useState(false);
   const [saving, setSaving]   = useState(false);
   const [err, setErr]         = useState('');
-  const [deleting, setDeleting] = useState<string | null>(null);
+  const [deleting, setDeleting]       = useState<string | null>(null);
+  const [restoring, setRestoring]     = useState<string | null>(null);
+  const [permDeleting, setPermDeleting] = useState<string | null>(null);
+  const [duplicating, setDuplicating] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   // ── Selection ──
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -84,10 +92,12 @@ function GroupTemplatesPageInner() {
     destination_ids: [] as string[],
   });
 
-  async function load() {
+  async function load(tab?: StatusTab) {
     setLoading(true);
+    const activeTab = tab ?? statusTab;
+    const statusParam = activeTab === 'deleted' ? '?status=deleted' : '';
     const [tr, sr, dr] = await Promise.all([
-      fetch('/api/v1/group-templates'),
+      fetch(`/api/v1/group-templates${statusParam}`),  // deleted tab fetches trash; others fetch active
       fetch('/api/v1/states'),
       fetch('/api/v1/destinations'),
     ]);
@@ -153,21 +163,70 @@ function GroupTemplatesPageInner() {
     router.push(`/admin/group-templates/${d.data.id}/edit`);
   }
 
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3500);
+  }
+
   async function del(id: string) {
-    if (!confirm('Deactivate this group template?')) return;
+    if (!confirm('Move this template to trash? You can restore it within 30 days.')) return;
     setDeleting(id);
-    await fetch(`/api/v1/group-templates/${id}`, { method: 'DELETE' });
-    setDeleting(null); load();
+    const res = await fetch(`/api/v1/group-templates/${id}`, { method: 'DELETE' });
+    setDeleting(null);
+    if (res.ok) {
+      setRows(prev => prev.filter(r => r.id !== id));
+      showToast('Moved to Recently Deleted');
+    } else {
+      alert('Delete failed. Please try again.');
+    }
+  }
+
+  async function restore(id: string) {
+    setRestoring(id);
+    const res = await fetch(`/api/v1/group-templates/${id}/restore`, { method: 'POST' });
+    setRestoring(null);
+    if (res.ok) {
+      setRows(prev => prev.filter(r => r.id !== id));
+      showToast('Template restored to Draft');
+    } else { alert('Restore failed.'); }
+  }
+
+  async function permanentDelete(id: string, name: string) {
+    if (!confirm(`Permanently delete "${name}"? This CANNOT be undone.`)) return;
+    setPermDeleting(id);
+    const res = await fetch(`/api/v1/group-templates/${id}?permanent=1`, { method: 'DELETE' });
+    setPermDeleting(null);
+    if (res.ok) {
+      setRows(prev => prev.filter(r => r.id !== id));
+      showToast('Permanently deleted');
+    } else { alert('Delete failed.'); }
+  }
+
+  async function duplicate(id: string) {
+    setDuplicating(id);
+    const res = await fetch(`/api/v1/group-templates/${id}/duplicate`, { method: 'POST' });
+    setDuplicating(null);
+    if (!res.ok) { alert('Duplicate failed. Please try again.'); return; }
+    const d = await res.json();
+    showToast('Template duplicated as Draft');
+    router.push(`/admin/group-templates/${d.data.id}/edit`);
   }
 
   async function handleBulkDelete() {
     if (!selected.size) return;
-    if (!confirm(`Deactivate ${selected.size} template${selected.size !== 1 ? 's' : ''}? This cannot be undone.`)) return;
+    const isDeletedTab = statusTab === 'deleted';
+    const msg = isDeletedTab
+      ? `Permanently delete ${selected.size} template${selected.size !== 1 ? 's' : ''}? This CANNOT be undone.`
+      : `Move ${selected.size} template${selected.size !== 1 ? 's' : ''} to trash?`;
+    if (!confirm(msg)) return;
     setBulkDeleting(true);
-    await Promise.all(Array.from(selected).map(id => fetch(`/api/v1/group-templates/${id}`, { method: 'DELETE' })));
+    const ids = Array.from(selected);
+    const url = (id: string) => isDeletedTab ? `/api/v1/group-templates/${id}?permanent=1` : `/api/v1/group-templates/${id}`;
+    await Promise.all(ids.map(id => fetch(url(id), { method: 'DELETE' })));
     setBulkDeleting(false);
     setSelected(new Set());
-    load();
+    setRows(prev => prev.filter(r => !ids.includes(r.id)));
+    showToast(isDeletedTab ? `${ids.length} permanently deleted` : `${ids.length} moved to trash`);
   }
 
   function toggleSelect(id: string) {
@@ -185,6 +244,9 @@ function GroupTemplatesPageInner() {
       .map(n => ({ value: String(n), label: `${n} Nights` }))
   , [rows]);
 
+  const liveCount  = useMemo(() => rows.filter(r => r.status).length,  [rows]);
+  const draftCount = useMemo(() => rows.filter(r => !r.status).length, [rows]);
+
   const filtered = useMemo(() => {
     let list = rows.filter(r => {
       const q = search.toLowerCase();
@@ -193,6 +255,8 @@ function GroupTemplatesPageInner() {
       if (filterTheme && (r.theme ?? '') !== filterTheme) return false;
       if (filterNights && r.duration_nights !== Number(filterNights)) return false;
       if (filterStatus && (filterStatus === 'active' ? !r.status : r.status)) return false;
+      const tab = statusTab === 'all' || (statusTab === 'live' ? r.status : !r.status);
+      if (!tab) return false;
       return true;
     });
     list = [...list].sort((a, b) => {
@@ -207,7 +271,7 @@ function GroupTemplatesPageInner() {
       }
     });
     return list;
-  }, [rows, search, stateFilter, filterTheme, filterNights, filterStatus, sortKey]);
+  }, [rows, search, stateFilter, filterTheme, filterNights, filterStatus, statusTab, sortKey]);
 
   const allSelected = filtered.length > 0 && filtered.every(r => selected.has(r.id));
 
@@ -224,6 +288,18 @@ function GroupTemplatesPageInner() {
 
   return (
     <div className="max-w-[1400px]">
+      {/* Success toast */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-xl shadow-xl text-sm font-semibold"
+          style={{ backgroundColor: '#134956', color: 'white', minWidth: 260 }}>
+          <CheckCircle2 className="w-4 h-4 text-green-300 flex-shrink-0" />
+          {toast}
+          <button onClick={() => setToast(null)} className="ml-auto opacity-70 hover:opacity-100">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       <PageHeader
         title="Group Templates"
         subtitle="Build and manage itinerary templates for fixed-departure group tours"
@@ -241,6 +317,46 @@ function GroupTemplatesPageInner() {
         <div className="flex items-center gap-3 px-4 py-3 mb-5 rounded-xl text-sm font-medium" style={{ backgroundColor: '#DCFCE7', color: '#166534', border: '1px solid #BBF7D0' }}>
           <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
           Group template published successfully!
+        </div>
+      )}
+
+      {/* All / Live / Draft / Recently Deleted tabs */}
+      <div className="flex items-center gap-1 mb-4 p-1 rounded-xl w-fit" style={{ backgroundColor: '#F1F5F9' }}>
+        {([
+          { key: 'all',     label: 'All',              count: rows.length, activeBg: '#E2E8F0', activeColor: '#64748B' },
+          { key: 'live',    label: 'Live',             count: liveCount,   activeBg: '#DCFCE7', activeColor: '#16A34A' },
+          { key: 'draft',   label: 'Draft',            count: draftCount,  activeBg: '#FEF9C3', activeColor: '#A16207' },
+          { key: 'deleted', label: 'Recently Deleted', count: statusTab === 'deleted' ? rows.length : null,
+            activeBg: '#FEE2E2', activeColor: '#DC2626' },
+        ] as { key: StatusTab; label: string; count: number | null; activeBg: string; activeColor: string }[]).map(tab => (
+          <button key={tab.key} onClick={() => {
+            setStatusTab(tab.key);
+            setRows([]);
+            load(tab.key);
+          }}
+            className="flex items-center gap-2 h-8 px-4 rounded-lg text-sm font-semibold transition-all"
+            style={statusTab === tab.key
+              ? { backgroundColor: 'white', color: tab.key === 'deleted' ? '#DC2626' : T, boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }
+              : { color: tab.key === 'deleted' ? '#EF4444' : '#64748B' }}>
+            {tab.key === 'deleted' && <Trash2 className="w-3 h-3" />}
+            {tab.label}
+            {tab.count !== null && (
+              <span className="text-[11px] px-1.5 py-0.5 rounded-md font-bold"
+                style={statusTab === tab.key
+                  ? { backgroundColor: tab.activeBg, color: tab.activeColor }
+                  : { backgroundColor: '#E2E8F0', color: '#94A3B8' }}>
+                {tab.count}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Recently Deleted info banner */}
+      {statusTab === 'deleted' && (
+        <div className="flex items-start gap-3 mb-4 px-4 py-3 rounded-xl text-sm" style={{ backgroundColor: '#FFF7ED', border: '1px solid #FED7AA', color: '#C2410C' }}>
+          <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <span>Templates in trash are <strong>permanently deleted after 30 days</strong>. Restore a template to move it back to Draft.</span>
         </div>
       )}
 
@@ -356,6 +472,8 @@ function GroupTemplatesPageInner() {
                 <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Theme</th>
                 <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Days</th>
                 <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Departures</th>
+                <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Created By</th>
+                <th className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Created At</th>
                 <th className="text-right px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Actions</th>
               </tr>
             </thead>
@@ -378,19 +496,68 @@ function GroupTemplatesPageInner() {
                     <td className="px-4 py-3.5 text-[#64748B]">{r.group_template_days.length}</td>
                     <td className="px-4 py-3.5">
                       {(r.group_batches?.length ?? 0) > 0
-                        ? <span className="text-[11px] font-bold px-2 py-0.5 rounded-md" style={{ backgroundColor: '#DCFCE7', color: '#166534' }}>{r.group_batches.length} batch{r.group_batches.length !== 1 ? 'es' : ''}</span>
+                        ? <span className="text-[11px] font-bold px-2 py-0.5 rounded-md" style={{ backgroundColor: '#DCFCE7', color: '#166634' }}>{r.group_batches.length} batch{r.group_batches.length !== 1 ? 'es' : ''}</span>
                         : <span className="text-[#CBD5E1] text-xs">—</span>}
+                    </td>
+                    {/* Created By */}
+                    <td className="px-4 py-3.5">
+                      {r.created_by_name ? (
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0" style={{ backgroundColor: '#134956' }}>
+                            {r.created_by_name.charAt(0).toUpperCase()}
+                          </div>
+                          <span className="text-xs font-medium text-[#0F172A]">{r.created_by_name}</span>
+                        </div>
+                      ) : <span className="text-xs text-[#CBD5E1]">—</span>}
+                    </td>
+                    {/* Created At */}
+                    <td className="px-4 py-3.5 whitespace-nowrap">
+                      <div className="text-xs font-medium text-[#0F172A]">
+                        {r.created_at ? new Date(r.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                      </div>
+                      {r.created_at && (
+                        <div className="text-[10px] text-[#94A3B8] mt-0.5">
+                          {new Date(r.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                        </div>
+                      )}
                     </td>
                     <td className="px-5 py-3.5" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
-                        <button onClick={() => router.push(`/admin/group-templates/${r.id}/edit`)}
-                          className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#F1F5F9] hover:text-[#134956]">
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                        <button onClick={() => del(r.id)} disabled={deleting === r.id}
-                          className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#FEF2F2] hover:text-[#DC2626] disabled:opacity-40">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {statusTab === 'deleted' ? (<>
+                          <button onClick={() => restore(r.id)} disabled={restoring === r.id}
+                            className="flex items-center gap-1.5 h-7 px-2.5 rounded-lg text-xs font-semibold disabled:opacity-40"
+                            style={{ backgroundColor: '#DCFCE7', color: '#16A34A' }}>
+                            <RotateCcw className="w-3 h-3" /> Restore
+                          </button>
+                          <button onClick={() => permanentDelete(r.id, r.group_template_name)} disabled={permDeleting === r.id}
+                            className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-[#FEF2F2] hover:text-[#DC2626] disabled:opacity-40"
+                            style={{ color: '#94A3B8' }}>
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                          {r.deleted_at && (() => {
+                            const days = 30 - Math.floor((Date.now() - new Date(r.deleted_at!).getTime()) / 86400000);
+                            return <span className="text-[10px] font-semibold ml-1" style={{ color: days <= 7 ? '#DC2626' : '#94A3B8' }}>{days}d left</span>;
+                          })()}
+                        </>) : (<>
+                          <button onClick={() => window.open(`/admin/group-templates/${r.id}/preview`, '_blank')}
+                            className="flex items-center gap-1.5 h-7 px-2.5 rounded-lg text-[11px] font-semibold border transition-colors hover:opacity-90"
+                            style={{ borderColor: '#2563EB', color: '#2563EB', backgroundColor: '#EFF6FF' }}>
+                            <Eye className="w-3 h-3" />Preview
+                          </button>
+                          <button onClick={() => duplicate(r.id)} disabled={duplicating === r.id}
+                            className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#EEF7F9] hover:text-[#134956] disabled:opacity-40"
+                            title="Duplicate template">
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                          <button onClick={() => router.push(`/admin/group-templates/${r.id}/edit`)}
+                            className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#F1F5F9] hover:text-[#134956]">
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button onClick={() => del(r.id)} disabled={deleting === r.id}
+                            className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#FEF2F2] hover:text-[#DC2626] disabled:opacity-40">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </>)}
                       </div>
                     </td>
                   </tr>
@@ -434,20 +601,50 @@ function GroupTemplatesPageInner() {
                     <p className="font-semibold text-sm text-[#0F172A] leading-tight">{r.group_template_name}</p>
                     <ChevronRight className="w-4 h-4 text-[#CBD5E1] group-hover:text-[#134956] transition-colors flex-shrink-0 mt-0.5" />
                   </div>
-                  <p className="text-xs text-[#94A3B8] mb-3">{r.duration_nights}N/{r.duration_days}D · {r.theme ?? 'Group Tour'}{r.start_city ? ` · ${r.start_city}` : ''}</p>
+                  <p className="text-xs text-[#94A3B8] mb-2">{r.duration_nights}N/{r.duration_days}D · {r.theme ?? 'Group Tour'}{r.start_city ? ` · ${r.start_city}` : ''}</p>
+                  {(r.created_by_name || r.created_at) && (
+                    <p className="text-[10px] text-[#CBD5E1] mb-2">
+                      {r.created_by_name ? `By ${r.created_by_name}` : ''}
+                      {r.created_by_name && r.created_at ? ' · ' : ''}
+                      {r.created_at ? new Date(r.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
+                    </p>
+                  )}
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-medium text-[#64748B]">
                       {r.group_template_days.length} day{r.group_template_days.length !== 1 ? 's' : ''} · {r.group_batches?.length ?? 0} departure{(r.group_batches?.length ?? 0) !== 1 ? 's' : ''}
                     </span>
                     <div className="flex gap-1" onClick={e => e.stopPropagation()}>
-                      <button onClick={() => router.push(`/admin/group-templates/${r.id}/edit`)}
-                        className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#F1F5F9] hover:text-[#134956]">
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <button onClick={() => del(r.id)} disabled={deleting === r.id}
-                        className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#FEF2F2] hover:text-[#DC2626] disabled:opacity-40">
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      {statusTab === 'deleted' ? (<>
+                        <button onClick={() => restore(r.id)} disabled={restoring === r.id}
+                          className="flex items-center gap-1 h-7 px-2 rounded-lg text-xs font-semibold disabled:opacity-40"
+                          style={{ backgroundColor: '#DCFCE7', color: '#16A34A' }}>
+                          <RotateCcw className="w-3 h-3" /> Restore
+                        </button>
+                        <button onClick={() => permanentDelete(r.id, r.group_template_name)} disabled={permDeleting === r.id}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-[#FEF2F2] hover:text-[#DC2626]"
+                          style={{ color: '#94A3B8' }}>
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </>) : (<>
+                        <button onClick={() => window.open(`/admin/group-templates/${r.id}/preview`, '_blank')}
+                          className="flex items-center gap-1.5 h-7 px-2.5 rounded-lg text-[11px] font-semibold border transition-colors hover:opacity-90"
+                          style={{ borderColor: '#2563EB', color: '#2563EB', backgroundColor: '#EFF6FF' }}>
+                          <Eye className="w-3 h-3" />Preview
+                        </button>
+                        <button onClick={() => duplicate(r.id)} disabled={duplicating === r.id}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#EEF7F9] hover:text-[#134956] disabled:opacity-40"
+                          title="Duplicate template">
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={() => router.push(`/admin/group-templates/${r.id}/edit`)}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#F1F5F9] hover:text-[#134956]">
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={() => del(r.id)} disabled={deleting === r.id}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#FEF2F2] hover:text-[#DC2626] disabled:opacity-40">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </>)}
                     </div>
                   </div>
                 </div>
