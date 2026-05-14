@@ -8,7 +8,7 @@ import {
   LayoutDashboard, MapPin, Map, Building2, Car, Activity, BookOpen,
   ScrollText, Users,
   Layout, CalendarDays, Layers, FileText, Menu, LogOut,
-  Bell, ChevronDown, Tag, Settings, User, X, Kanban, SlidersHorizontal, UserCheck, Cog, CheckSquare,
+  Bell, ChevronDown, Tag, Settings, User, X, Kanban, SlidersHorizontal, UserCheck, Cog, CheckSquare, MessageCircle, Zap,
 } from 'lucide-react';
 
 // Roles that can see each nav group/item. Empty = all roles.
@@ -40,7 +40,6 @@ const ALL_NAV: NavGroup[] = [
     items: [
       { label: 'Private Templates', href: '/admin/private-templates', icon: Layout    },
       { label: 'Group Templates',   href: '/admin/group-templates',   icon: Layers    },
-      { label: 'Group Batches',     href: '/admin/group-batches',     icon: CalendarDays },
     ],
   },
   {
@@ -61,8 +60,9 @@ const ALL_NAV: NavGroup[] = [
       { label: 'Pipelines',           href: '/admin/pipelines',           icon: Kanban           },
       { label: 'Pipeline Config',     href: '/admin/pipelines/config',    icon: SlidersHorizontal, roles: ['ADMIN', 'MANAGER'] },
       { label: 'Contacts',            href: '/admin/contacts',            icon: Users            },
-      { label: 'All Customers',       href: '/admin/customers',           icon: Users            },
+      { label: 'WhatsApp Inbox',      href: '/admin/whatsapp',            icon: MessageCircle    },
       { label: 'Converted Customers', href: '/admin/converted-customers', icon: UserCheck        },
+      { label: 'Workflows',            href: '/admin/workflows',           icon: Zap,               roles: ['ADMIN', 'MANAGER'] },
       { label: 'CRM Settings',        href: '/admin/crm-settings',        icon: Cog,               roles: ['ADMIN', 'MANAGER'] },
     ],
   },

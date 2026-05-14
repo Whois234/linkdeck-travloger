@@ -52,6 +52,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   if (body.budget_range !== undefined) data.budget_range = body.budget_range;
   if (body.status !== undefined) data.status = body.status;
   if (body.assigned_agent_id !== undefined) data.assigned_agent_id = body.assigned_agent_id;
+  if (body.owner_id !== undefined) data.owner_id = body.owner_id;
   if (body.notes !== undefined) data.notes = body.notes;
   if (body.pipeline_id !== undefined) data.pipeline_id = body.pipeline_id;
   if (body.stage_id !== undefined) data.stage_id = body.stage_id;
@@ -69,10 +70,49 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   const user = await getAuthUser(req);
   if (!user) return unauthorized();
-  if (!requireRole(user, UserRole.ADMIN, UserRole.MANAGER)) return forbidden();
 
   const record = await prisma.lead.findUnique({ where: { id: params.id } });
   if (!record) return notFound('Lead');
+
+  // ADMIN + MANAGER can delete any lead.
+  // SALES can delete only leads they own.
+  const isPrivileged = requireRole(user, UserRole.ADMIN, UserRole.MANAGER);
+  if (!isPrivileged && record.owner_id !== user.sub) return forbidden();
+
+  // ── Snapshot all lead activity into the CrmContact before deleting ──────────
+  if (record.crm_contact_id) {
+    try {
+      const [notes, calls, tasks, activities] = await Promise.all([
+        prisma.leadNote.findMany({ where: { lead_id: params.id }, orderBy: { created_at: 'asc' } }),
+        prisma.callLog.findMany({ where: { lead_id: params.id }, orderBy: { created_at: 'asc' } }),
+        prisma.leadTask.findMany({ where: { lead_id: params.id }, orderBy: { due_time: 'asc' } }),
+        prisma.leadActivity.findMany({ where: { lead_id: params.id }, orderBy: { created_at: 'asc' } }),
+      ]);
+
+      // Write a single FIELD_UPDATE activity on the contact with full history in metadata
+      await prisma.contactActivity.create({
+        data: {
+          contact_id:      record.crm_contact_id,
+          type:            'FIELD_UPDATE',
+          description:     `Pipeline lead deleted — ${notes.length} note(s), ${calls.length} call(s), ${tasks.length} task(s) archived`,
+          metadata:        {
+            lead_id:    params.id,
+            lead_name:  record.name,
+            pipeline:   record.pipeline_id,
+            stage:      record.stage_id,
+            deleted_by: user.sub,
+            notes:      notes.map(n => ({ content: n.content, created_at: n.created_at })),
+            calls:      calls.map(c => ({ duration: c.duration, outcome: c.outcome, notes: c.notes, created_at: c.created_at })),
+            tasks:      tasks.map(t => ({ type: t.type, status: t.status, due_time: t.due_time, notes: t.notes })),
+            activities: activities.map(a => ({ type: a.type, metadata: a.metadata, created_at: a.created_at })),
+          } as Parameters<typeof prisma.contactActivity.create>[0]['data']['metadata'],
+          performed_by_id: user.sub,
+        },
+      });
+    } catch (e) {
+      console.error('[lead/DELETE] activity snapshot failed:', e);
+    }
+  }
 
   await prisma.lead.delete({ where: { id: params.id } });
   return ok({ message: 'Lead deleted' });

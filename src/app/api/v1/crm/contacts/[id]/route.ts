@@ -6,9 +6,6 @@ import { z } from 'zod';
 import {
   UserRole,
   LeadStage,
-  LeadSource,
-  Platform,
-  TripType,
   DevicePlatform,
 } from '@prisma/client';
 import {
@@ -36,13 +33,13 @@ const patchSchema = z.object({
   // Travel
   interested_destination: optionalString(120),
   number_of_travellers:   z.number().int().min(1).max(999).nullable().optional(),
-  trip_type:              z.nativeEnum(TripType).nullable().optional(),
+  trip_type:              z.string().max(100).nullable().optional(),
   special_requirements:   optionalString(2000),
   budget_per_person:      z.union([z.number(), z.string()]).nullable().optional(),
 
   // Ad attribution
-  lead_source:         z.nativeEnum(LeadSource).nullable().optional(),
-  platform:            z.nativeEnum(Platform).nullable().optional(),
+  lead_source:         z.string().max(100).nullable().optional(),
+  platform:            z.string().max(100).nullable().optional(),
   campaign_name:       optionalString(200),
   ad_set_name:         optionalString(200),
   ad_name:             optionalString(200),
@@ -136,14 +133,26 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!user) return unauthorized();
 
   const existing = await prisma.crmContact.findUnique({ where: { id: params.id } });
-  if (!existing || existing.deleted_at) return notFound('Contact');
+  if (!existing) return notFound('Contact');
+
+  // ── Restore a soft-deleted contact ──────────────────────────────────────────
+  const rawBody = await req.json().catch(() => ({}));
+  if (rawBody.restore === true) {
+    if (!requireRole(user, UserRole.ADMIN, UserRole.MANAGER) && existing.owner_id !== user.sub) return forbidden();
+    const restored = await prisma.crmContact.update({
+      where: { id: params.id },
+      data:  { deleted_at: null },
+    });
+    return ok(restored);
+  }
+
+  if (existing.deleted_at) return notFound('Contact');
 
   const isOwner = existing.owner_id === user.sub;
   const isAdmin = requireRole(user, UserRole.ADMIN, UserRole.MANAGER);
   if (!isOwner && !isAdmin) return forbidden();
 
-  const body   = await req.json().catch(() => ({}));
-  const parsed = patchSchema.safeParse(body);
+  const parsed = patchSchema.safeParse(rawBody);
   if (!parsed.success) return err('Validation failed', 400, parsed.error.flatten());
 
   // Only admin/manager can reassign owner.

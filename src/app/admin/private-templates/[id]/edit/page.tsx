@@ -7,7 +7,7 @@ import { RichTextEditor } from '@/components/admin/RichTextEditor';
 import {
   ChevronDown, ChevronRight, Plus, Trash2, Check,
   Save, Star, Image as ImgIcon, FileText, LayoutList,
-  MapPin, Shield, HelpCircle, BookOpen, ListPlus, Settings,
+  MapPin, Shield, HelpCircle, BookOpen, ListPlus, Settings, GripVertical, Eye, X,
 } from 'lucide-react';
 
 /* ── Shared style tokens ── */
@@ -43,6 +43,7 @@ interface CmsData {
   hero_images: string[];
   state_gallery_image: string;
   state_gallery_hidden?: boolean;
+  state_gallery_custom_name?: string | null;
   destination_cards: Array<{ destination_id: string; custom_name: string | null; description: string; image_url: string; hidden?: boolean }>;
   package_options: CmsOption[];
   why_choose: (string | WhyItem)[];
@@ -140,9 +141,12 @@ export default function TemplateEditPage() {
   const [loading,  setLoading]  = useState(true);
   const [saving,   setSaving]   = useState(false);
   const [saved,    setSaved]    = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [activeSection, setActiveSection] = useState('settings');
   const [expandedDays, setExpandedDays]   = useState<Set<number>>(new Set([1]));
   const [selectedPolicies, setSelectedPolicies] = useState<string[]>([]);
+  const [newCardName, setNewCardName]       = useState('');
+  const [showPreview, setShowPreview]       = useState(false);
 
   // ── Editable template settings (mirrors the create-modal fields) ──
   const [tplSettings, setTplSettings] = useState({
@@ -311,6 +315,17 @@ export default function TemplateEditPage() {
     }
   }, [id, cms, days, tiers, selectedPolicies, tplSettings, router]);
 
+  async function deleteTemplate() {
+    if (!confirm('Move this template to Recently Deleted? You can restore it within 30 days.')) return;
+    setDeleting(true);
+    try {
+      await fetch(`/api/v1/private-templates/${id}`, { method: 'DELETE' });
+      router.push('/admin/private-templates');
+    } catch {
+      setDeleting(false);
+    }
+  }
+
   /* ── Helpers ── */
   function updCms<K extends keyof CmsData>(key: K, val: CmsData[K]) {
     setCms(p => ({ ...p, [key]: val }));
@@ -330,6 +345,31 @@ export default function TemplateEditPage() {
   }
   function tiersForOption(optName: string) {
     return tiers.filter(t => t.tier_name === optName);
+  }
+
+  /* ── Destination drag-and-drop (hotel selections) ── */
+  const dragSrcId = useRef<string | null>(null);
+  const dragOverId = useRef<string | null>(null);
+  function handleDestDragStart(did: string) { dragSrcId.current = did; }
+  function handleDestDragOver(e: React.DragEvent, did: string) {
+    e.preventDefault();
+    dragOverId.current = did;
+  }
+  function handleDestDrop() {
+    const src = dragSrcId.current;
+    const over = dragOverId.current;
+    if (!src || !over || src === over) return;
+    setTplSettings(p => {
+      const ids = [...p.destination_ids];
+      const fromIdx = ids.indexOf(src);
+      const toIdx   = ids.indexOf(over);
+      if (fromIdx === -1 || toIdx === -1) return p;
+      ids.splice(fromIdx, 1);
+      ids.splice(toIdx, 0, src);
+      return { ...p, destination_ids: ids };
+    });
+    dragSrcId.current  = null;
+    dragOverId.current = null;
   }
   function hotelsForDest(destId: string) {
     return hotels.filter(h => h.destination_id === destId);
@@ -352,7 +392,10 @@ export default function TemplateEditPage() {
   );
   if (!tpl) return <div className="py-20 text-center text-sm text-[#64748B]">Template not found.</div>;
 
-  const destList = (tpl.destinations ?? []) as string[];
+  // For hotel sections: only show destinations already saved in the DB, in the current drag order.
+  // tplSettings.destination_ids may contain unsaved additions (which would inflate night counts).
+  const _savedDestSet = new Set((tpl.destinations as string[]) ?? []);
+  const destList = tplSettings.destination_ids.filter(id => _savedDestSet.has(id));
 
   return (
     <div className="max-w-[1200px]">
@@ -399,6 +442,18 @@ export default function TemplateEditPage() {
           </p>
         </div>
         <div className="flex gap-2 flex-shrink-0 ml-4">
+          <button onClick={() => setShowPreview(true)}
+            className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold border hover:bg-slate-50 transition-colors"
+            style={{ borderColor: '#E2E8F0', color: '#64748B' }}>
+            <Eye className="w-4 h-4" /> Preview
+          </button>
+          <button onClick={deleteTemplate} disabled={deleting || saving}
+            className="flex items-center gap-2 h-9 px-3 rounded-lg text-sm font-semibold disabled:opacity-50 hover:opacity-90 transition-colors"
+            style={{ backgroundColor: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}
+            title="Move to Recently Deleted">
+            <Trash2 className="w-4 h-4" />
+            {deleting ? 'Deleting…' : 'Delete'}
+          </button>
           <button onClick={() => save(false)} disabled={saving}
             className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold disabled:opacity-50 hover:opacity-90"
             style={{ backgroundColor: saved ? '#22c55e' : T, color: 'white' }}>
@@ -688,8 +743,16 @@ export default function TemplateEditPage() {
                       opacity: stateHidden ? 0.55 : 1,
                     }}>
                       <div className="flex items-center gap-2 px-4 pt-4 pb-3">
-                        <span className="flex-1 text-sm font-semibold" style={{ color: stateHidden ? '#94A3B8' : '#4338CA' }}>{tpl?.state?.name ?? 'State'}</span>
-                        <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: stateHidden ? '#F1F5F9' : '#EEF2FF', color: stateHidden ? '#94A3B8' : '#6366F1' }}>Gallery Cover Card</span>
+                        <input
+                          className="flex-1 text-sm font-semibold bg-transparent focus:outline-none rounded px-1 -ml-1 transition-colors"
+                          style={{ color: stateHidden ? '#94A3B8' : '#4338CA' }}
+                          value={cms.state_gallery_custom_name ?? tpl?.state?.name ?? ''}
+                          placeholder={tpl?.state?.name ?? 'State name…'}
+                          onChange={e => updCms('state_gallery_custom_name', e.target.value || null)}
+                          onFocus={e => (e.currentTarget.style.backgroundColor = '#EEF2FF')}
+                          onBlur={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                        />
+                        <span className="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0" style={{ background: stateHidden ? '#F1F5F9' : '#EEF2FF', color: stateHidden ? '#94A3B8' : '#6366F1' }}>Gallery Cover Card</span>
                         <button
                           type="button"
                           onClick={() => updCms('state_gallery_hidden', !stateHidden)}
@@ -764,7 +827,7 @@ export default function TemplateEditPage() {
                           boxShadow: isDragging ? '0 4px 16px rgba(0,0,0,0.12)' : 'none',
                         }}
                       >
-                        {/* Card header: drag handle + name + eye toggle */}
+                        {/* Card header: drag handle + name (editable) + eye toggle + delete */}
                         <div className="flex items-center gap-2 px-4 pt-4 pb-3">
                           {/* Drag handle */}
                           <div className="flex-shrink-0 cursor-grab text-[#CBD5E1] hover:text-[#94A3B8]" title="Drag to reorder">
@@ -774,9 +837,26 @@ export default function TemplateEditPage() {
                               <circle cx="5" cy="13" r="1.3"/><circle cx="11" cy="13" r="1.3"/>
                             </svg>
                           </div>
-                          <p className="flex-1 text-sm font-semibold" style={{ color: isHidden ? '#94A3B8' : '#0F172A' }}>
-                            {dest?.name ?? dc.destination_id}
-                          </p>
+                          <input
+                            className="flex-1 text-sm font-semibold bg-transparent focus:outline-none rounded px-1 -ml-1 transition-colors"
+                            style={{ color: isHidden ? '#94A3B8' : '#0F172A' }}
+                            value={dc.custom_name ?? dest?.name ?? ''}
+                            placeholder={dest?.name ?? 'Card name…'}
+                            onChange={e => { const c = [...cms.destination_cards]; c[i] = { ...c[i], custom_name: e.target.value || null }; updCms('destination_cards', c); }}
+                            onFocus={e => (e.currentTarget.style.backgroundColor = '#F8FAFC')}
+                            onBlur={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => updCms('destination_cards', cms.destination_cards.filter((_, idx) => idx !== i))}
+                            className="w-6 h-6 rounded flex items-center justify-center flex-shrink-0 transition-colors hover:bg-red-50"
+                            style={{ color: '#CBD5E1' }}
+                            title="Remove card"
+                            onMouseEnter={e => (e.currentTarget.style.color = '#EF4444')}
+                            onMouseLeave={e => (e.currentTarget.style.color = '#CBD5E1')}
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                          </button>
                           <button
                             type="button"
                             onClick={() => { const c = [...cms.destination_cards]; c[i] = { ...c[i], hidden: !isHidden }; updCms('destination_cards', c); }}
@@ -818,12 +898,57 @@ export default function TemplateEditPage() {
                     </div>
                   );
                 }); })()}
-                {destList.length > 0 && cms.destination_cards.length === 0 && (
-                  <button onClick={() => updCms('destination_cards', destList.map(did => ({ destination_id: did, custom_name: null, description: '', image_url: '' })))}
-                    className="h-9 px-4 rounded-lg text-sm font-semibold text-white hover:opacity-90" style={{ backgroundColor: T }}>
-                    Auto-generate from destinations
-                  </button>
-                )}
+                {/* ── Add destination card ── */}
+                <div className="pt-2 border-t" style={{ borderColor: '#F1F5F9' }}>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: '#94A3B8' }}>Add Destination Card</p>
+                  {/* Quick-add chips: unused destinations from template */}
+                  {(() => {
+                    const usedIds = new Set(cms.destination_cards.map(dc => dc.destination_id));
+                    const unused  = dests.filter(d => !usedIds.has(d.id));
+                    return unused.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5 mb-3">
+                        {unused.map(d => (
+                          <button key={d.id} type="button"
+                            onClick={() => updCms('destination_cards', [...cms.destination_cards, { destination_id: d.id, custom_name: null, description: '', image_url: '' }])}
+                            className="flex items-center gap-1 h-7 px-2.5 rounded-lg text-xs font-semibold border transition-colors hover:opacity-80"
+                            style={{ borderColor: `${T}40`, color: T, backgroundColor: `${T}08` }}>
+                            + {d.name}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null;
+                  })()}
+                  {/* Custom card: type any name */}
+                  <div className="flex gap-2">
+                    <input
+                      className="flex-1 h-9 px-3 rounded-lg border text-sm placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white"
+                      style={{ borderColor: '#E2E8F0' }}
+                      value={newCardName}
+                      onChange={e => setNewCardName(e.target.value)}
+                      placeholder="Custom card name (e.g. Coorg Waterfalls)…"
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && newCardName.trim()) {
+                          updCms('destination_cards', [...cms.destination_cards, { destination_id: `custom_${Date.now()}`, custom_name: newCardName.trim(), description: '', image_url: '' }]);
+                          setNewCardName('');
+                        }
+                      }}
+                    />
+                    <button type="button"
+                      disabled={!newCardName.trim()}
+                      onClick={() => { updCms('destination_cards', [...cms.destination_cards, { destination_id: `custom_${Date.now()}`, custom_name: newCardName.trim(), description: '', image_url: '' }]); setNewCardName(''); }}
+                      className="h-9 px-4 rounded-lg text-sm font-semibold text-white disabled:opacity-40 hover:opacity-90 flex-shrink-0"
+                      style={{ backgroundColor: T }}>
+                      + Add
+                    </button>
+                  </div>
+                  {destList.length > 0 && cms.destination_cards.length === 0 && (
+                    <button type="button" onClick={() => updCms('destination_cards', destList.map(did => ({ destination_id: did, custom_name: null, description: '', image_url: '' })))}
+                      className="mt-2 h-8 px-3 rounded-lg text-xs font-semibold border hover:bg-[#F8FAFC] transition-colors"
+                      style={{ borderColor: '#E2E8F0', color: '#64748B' }}>
+                      Auto-generate from template destinations
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -915,13 +1040,24 @@ export default function TemplateEditPage() {
                     const rooms = roomsForHotel(tier.default_hotel_id ?? '');
                     const skipping = tier.nights === 0;
                     return (
-                      <div key={did} className="mb-4 pb-4" style={{ borderBottom: '1px solid #F1F5F9' }}>
-                        {/* Destination label + nights stepper */}
+                      <div key={did} className="mb-4 pb-4 group/dest"
+                        style={{ borderBottom: '1px solid #F1F5F9' }}
+                        draggable
+                        onDragStart={() => handleDestDragStart(did)}
+                        onDragOver={e => handleDestDragOver(e, did)}
+                        onDrop={handleDestDrop}
+                        onDragEnd={() => { dragSrcId.current = null; dragOverId.current = null; }}>
+                        {/* Destination label + drag handle + nights stepper */}
                         <div className="flex items-center justify-between mb-2">
-                          <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: skipping ? '#CBD5E1' : '#94A3B8' }}>
-                            {dest?.name}
-                            {skipping && <span className="ml-2 normal-case font-medium text-[#CBD5E1]">· Not staying</span>}
-                          </p>
+                          <div className="flex items-center gap-1.5">
+                            <GripVertical
+                              className="w-3.5 h-3.5 cursor-grab active:cursor-grabbing opacity-0 group-hover/dest:opacity-100 transition-opacity flex-shrink-0"
+                              style={{ color: '#CBD5E1' }} />
+                            <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: dest ? (skipping ? '#CBD5E1' : '#94A3B8') : '#FDA4AF' }}>
+                              {dest?.name ?? <span className="normal-case font-medium text-red-400">Unknown destination · <button onClick={() => setTplSettings(p => ({ ...p, destination_ids: p.destination_ids.filter(x => x !== did) }))} className="underline hover:text-red-600">Remove</button></span>}
+                              {dest && skipping && <span className="ml-2 normal-case font-medium text-[#CBD5E1]">· Not staying</span>}
+                            </p>
+                          </div>
                           {/* Nights stepper */}
                           <div className="flex items-center gap-1">
                             <span className="text-[10px] font-semibold text-[#94A3B8] mr-1">Nights</span>
@@ -1361,6 +1497,146 @@ export default function TemplateEditPage() {
 
         </div>{/* end main content */}
       </div>{/* end flex */}
+
+      {/* ═══ PREVIEW DRAWER ═══ */}
+      {showPreview && (
+        <div className="fixed inset-0 z-50 flex justify-end" style={{ background: 'rgba(0,0,0,0.45)' }} onClick={() => setShowPreview(false)}>
+          <div className="relative h-full w-full max-w-[520px] bg-white overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="sticky top-0 z-10 bg-white flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #E2E8F0' }}>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: T }}>Template Preview</p>
+                <p className="text-sm font-bold text-[#0F172A] mt-0.5">{tplSettings.template_name || tpl.template_name}</p>
+              </div>
+              <button onClick={() => setShowPreview(false)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-slate-100" style={{ color: '#64748B' }}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 flex flex-col gap-6">
+
+              {/* Hero */}
+              {(cms.hero_images?.[0] || cms.hero_heading) && (
+                <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
+                  {cms.hero_images?.[0] && (
+                    <div className="relative h-44 bg-slate-100">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={cms.hero_images[0]} alt="Hero" className="w-full h-full object-cover" />
+                      <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.55), transparent)' }} />
+                      <div className="absolute bottom-0 left-0 p-4">
+                        {cms.hero_heading && <p className="text-white font-bold text-lg leading-tight">{cms.hero_heading}</p>}
+                        {cms.hero_subheading && <p className="text-white/80 text-xs mt-0.5">{cms.hero_subheading}</p>}
+                      </div>
+                    </div>
+                  )}
+                  {!cms.hero_images?.[0] && (
+                    <div className="p-4" style={{ background: `${T}10` }}>
+                      {cms.hero_heading && <p className="font-bold text-base text-[#0F172A]">{cms.hero_heading}</p>}
+                      {cms.hero_subheading && <p className="text-sm text-[#64748B] mt-1">{cms.hero_subheading}</p>}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Destination Cards */}
+              {(cms.destination_cards ?? []).filter(dc => !dc.hidden).length > 0 && (
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#64748B' }}>Destinations</p>
+                  <div className="flex flex-wrap gap-2">
+                    {(cms.destination_cards ?? []).filter(dc => !dc.hidden).map((dc, i) => (
+                      <div key={i} className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium text-white" style={{ background: T }}>
+                        <MapPin className="w-3 h-3" />
+                        {dc.custom_name || dests.find(d => d.id === dc.destination_id)?.name || dc.destination_id}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Inclusions / Exclusions */}
+              {((cms.inclusions ?? []).length > 0 || (cms.exclusions ?? []).length > 0) && (
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#64748B' }}>Inclusions & Exclusions</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: '#15803D' }}>✓ Inclusions</p>
+                      <ul className="flex flex-col gap-1.5">
+                        {(cms.inclusions ?? []).filter(Boolean).map((item, i) => (
+                          <li key={i} className="flex items-start gap-1.5 text-xs text-[#374151]">
+                            <span className="mt-0.5 flex-shrink-0 text-green-500">•</span>{item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: '#DC2626' }}>✕ Exclusions</p>
+                      <ul className="flex flex-col gap-1.5">
+                        {(cms.exclusions ?? []).filter(Boolean).map((item, i) => (
+                          <li key={i} className="flex items-start gap-1.5 text-xs text-[#374151]">
+                            <span className="mt-0.5 flex-shrink-0 text-red-500">•</span>{item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Why Choose */}
+              {normaliseWhy(cms.why_choose ?? []).filter(w => w.title).length > 0 && (
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#64748B' }}>Why Choose Us</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {normaliseWhy(cms.why_choose ?? []).map((w, i) => (
+                      <div key={i} className="rounded-xl p-3" style={{ background: `${T}08`, border: `1px solid ${T}20` }}>
+                        <p className="text-xs font-bold text-[#0F172A]">{w.title}</p>
+                        {w.description && <p className="text-[11px] text-[#64748B] mt-0.5 leading-relaxed">{w.description}</p>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Day Itinerary */}
+              {days.length > 0 && (
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#64748B' }}>Day Itinerary ({days.length} days)</p>
+                  <div className="flex flex-col gap-2">
+                    {days.map((d, i) => (
+                      <div key={d.id} className="rounded-xl p-3" style={{ border: '1px solid #E2E8F0' }}>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold px-2 py-0.5 rounded-full text-white" style={{ background: T }}>Day {i + 1}</span>
+                          <p className="text-sm font-semibold text-[#0F172A]">{d.title}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Hotel Tiers */}
+              {tiers.length > 0 && (
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#64748B' }}>Hotel Tiers</p>
+                  <div className="flex flex-col gap-2">
+                    {tiers.map((tier, i) => {
+                      const hotel = hotels.find(h => h.id === tier.default_hotel_id);
+                      return (
+                        <div key={i} className="rounded-xl p-3" style={{ border: '1px solid #E2E8F0' }}>
+                          <p className="text-xs font-bold text-[#0F172A]">{tier.tier_name}</p>
+                          {hotel && <p className="text-[11px] text-[#64748B] mt-0.5">{hotel.hotel_name}</p>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

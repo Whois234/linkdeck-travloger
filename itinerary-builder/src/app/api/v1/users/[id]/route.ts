@@ -15,7 +15,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     where: { id: params.id },
     select: {
       id: true, name: true, email: true, role: true,
-      agent_id: true, phone: true, gender: true, status: true, last_login: true, created_at: true, module_access: true,
+      agent_id: true, phone: true, gender: true, status: true, is_available: true, last_login: true, created_at: true, module_access: true,
     },
   });
   if (!found) return notFound('User not found');
@@ -30,6 +30,7 @@ const UpdateUserSchema = z.object({
   phone: z.string().optional().nullable(),
   gender: z.enum(['Male', 'Female', 'Other']).optional().nullable(),
   status: z.boolean().optional(),
+  is_available: z.boolean().optional(),
   module_access: z.array(z.object({ key: z.string(), perm: z.enum(['view', 'edit']) })).nullable().optional(),
 });
 
@@ -76,7 +77,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   if (parsed.data.agent_id !== undefined) data.agent_id = parsed.data.agent_id;
   if (parsed.data.phone !== undefined) data.phone = parsed.data.phone;
   if (parsed.data.gender !== undefined) data.gender = parsed.data.gender;
-  if (parsed.data.status !== undefined) data.status = parsed.data.status;
+  if (parsed.data.status       !== undefined) data.status       = parsed.data.status;
+  if (parsed.data.is_available !== undefined) data.is_available = parsed.data.is_available;
   if (parsed.data.module_access !== undefined) {
     data.module_access = parsed.data.module_access === null ? null : JSON.stringify(parsed.data.module_access);
   }
@@ -91,6 +93,38 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       agent_id: true, phone: true, gender: true, status: true,
       module_access: true, last_login: true, created_at: true,
     },
+  });
+
+  return ok(updated);
+}
+
+/**
+ * PATCH /api/v1/users/[id]
+ * Lightweight update — any user can toggle their own is_available.
+ * Admins can toggle any user's is_available or status.
+ */
+export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  const user = await getAuthUser(req);
+  if (!user) return unauthorized();
+
+  const isSelf  = user.sub === params.id;
+  const isAdmin = requireRole(user, UserRole.ADMIN);
+
+  if (!isSelf && !isAdmin) return forbidden();
+
+  const body = await req.json() as { is_available?: boolean; status?: boolean };
+  const data: Record<string, unknown> = {};
+
+  if (body.is_available !== undefined) data.is_available = body.is_available;
+  // Only admins can change account status
+  if (body.status !== undefined && isAdmin) data.status = body.status;
+
+  if (Object.keys(data).length === 0) return err('No valid fields to update', 400);
+
+  const updated = await prisma.user.update({
+    where:  { id: params.id },
+    data,
+    select: { id: true, name: true, is_available: true, status: true },
   });
 
   return ok(updated);

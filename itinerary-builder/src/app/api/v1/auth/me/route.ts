@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
 
   const dbUser = await prisma.user.findUnique({
     where: { id: user.sub },
-    select: { id: true, name: true, email: true, role: true, phone: true, gender: true, agent_id: true, module_access: true },
+    select: { id: true, name: true, email: true, role: true, phone: true, gender: true, agent_id: true, module_access: true, is_available: true },
   });
   if (!dbUser) return unauthorized();
 

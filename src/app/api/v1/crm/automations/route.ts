@@ -9,7 +9,7 @@ const schema = z.object({
   pipeline_id: z.string(),
   stage_id:    z.string(),
   trigger:     z.string().default('on_enter'),
-  action_type: z.enum(['assign_agent', 'send_notification', 'create_task', 'update_status']),
+  action_type: z.enum(['assign_agent', 'assign_user', 'send_notification', 'send_whatsapp', 'create_task', 'update_status']),
   action_data: z.record(z.unknown()),
   is_active:   z.boolean().optional().default(true),
 });

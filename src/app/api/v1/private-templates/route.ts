@@ -38,9 +38,13 @@ export async function GET(req: NextRequest) {
     ? { state_id: { in: state_ids } }
     : state_id ? { state_id } : {};
 
-  // Admin list returns ALL templates (live + draft); public-facing routes filter by status separately
-  const statusRaw = searchParams.get('status'); // 'live' | 'draft' | null = all
-  const statusFilter = statusRaw === 'live' ? { status: true } : statusRaw === 'draft' ? { status: false } : {};
+  // 'live' | 'draft' | null = active only; 'deleted' = trash bin
+  const statusRaw = searchParams.get('status');
+  const statusFilter =
+    statusRaw === 'live'    ? { status: true,  deleted_at: null } :
+    statusRaw === 'draft'   ? { status: false, deleted_at: null } :
+    statusRaw === 'deleted' ? { deleted_at: { not: null } }        :
+    { deleted_at: null };   // default: exclude trashed items
 
   const templates = await prisma.privateTemplate.findMany({
     where: { ...statusFilter, ...stateFilter },

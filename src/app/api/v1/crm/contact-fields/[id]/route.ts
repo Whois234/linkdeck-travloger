@@ -8,6 +8,7 @@ import { z } from 'zod';
 const FIELD_TYPES = ['text', 'email', 'phone', 'number', 'date', 'select', 'multiselect', 'textarea', 'url'] as const;
 
 const patchSchema = z.object({
+  key:         z.string().min(1).regex(/^[a-z0-9_]+$/, 'Key must be lowercase snake_case').optional(),
   label:       z.string().min(1).optional(),
   type:        z.enum(FIELD_TYPES).optional(),
   required:    z.boolean().optional(),
@@ -44,7 +45,6 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
 
   const existing = await prisma.contactField.findUnique({ where: { id: params.id } });
   if (!existing) return notFound('Contact field');
-  if (existing.is_system) return err('System fields cannot be deleted. You can hide them instead.', 400);
 
   await prisma.contactField.delete({ where: { id: params.id } });
   return ok({ deleted: true });

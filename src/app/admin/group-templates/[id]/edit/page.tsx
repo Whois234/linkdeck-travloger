@@ -9,7 +9,7 @@ import {
   ChevronDown, ChevronRight, Plus, Trash2, Check,
   Save, Star, Image as ImgIcon, FileText, LayoutList,
   MapPin, Shield, HelpCircle, BookOpen, Calendar,
-  Users, X, GripVertical, ListPlus,
+  Users, X, GripVertical, ListPlus, Eye,
 } from 'lucide-react';
 
 /* ── Style tokens ── */
@@ -25,15 +25,24 @@ const card  = { border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.
 interface Dest    { id: string; name: string }
 interface DayPlan { id: string; title: string; destination_id: string; description?: string | null }
 interface Policy  { id: string; title: string; policy_type: string; content: string }
-interface WhyItem { title: string; description: string }
+interface WhyItem { title: string; description: string; icon?: string }
 
 function normaliseWhy(arr: (string | WhyItem)[]): WhyItem[] {
   return arr.map(item =>
     typeof item === 'string'
-      ? { title: item, description: '' }
-      : item
+      ? { title: item, description: '', icon: 'star' }
+      : { icon: 'star', ...item }
   );
 }
+
+const ICON_OPTS = [
+  { key: 'star',   label: '★' },
+  { key: 'dollar', label: '$' },
+  { key: 'shield', label: '✓' },
+  { key: 'clock',  label: '⏱' },
+  { key: 'heart',  label: '♥' },
+  { key: 'pin',    label: '📍' },
+] as const;
 
 interface CmsOption {
   tier_name: string;
@@ -52,6 +61,7 @@ interface CmsData {
   hero_images: string[];
   state_gallery_image: string;
   state_gallery_hidden?: boolean;
+  state_gallery_custom_name?: string | null;
   destination_cards: Array<{ destination_id: string; custom_name: string | null; description: string; image_url: string; hidden?: boolean }>;
   pricing_mode: 'date_based' | 'package_based';
   trip_dates: Array<{ start_date: string; end_date: string; label: string; availability: 'available' | 'few_left' | 'filling_fast' | 'sold_out' }>;
@@ -132,7 +142,6 @@ const SECTIONS = [
   { id: 'batches', label: 'Batches',           icon: Calendar   },
   { id: 'covered', label: "What's Covered",    icon: Check      },
   { id: 'why',      label: 'Why Choose',        icon: Star       },
-  { id: 'incl_excl', label: 'Incl / Excl',    icon: ListPlus   },
   { id: 'policy',  label: 'Policies',          icon: Shield     },
   { id: 'faq',     label: 'FAQs',              icon: HelpCircle },
   { id: 'terms',   label: 'Terms',             icon: BookOpen   },
@@ -158,6 +167,7 @@ export default function GroupTemplateEditPage() {
   const [activeSection, setActiveSection] = useState('hero');
   const [expandedDays, setExpandedDays]   = useState<Set<number>>(new Set([1]));
   const [selectedPolicies, setSelectedPolicies] = useState<string[]>([]);
+  const [showPreview, setShowPreview] = useState(false);
 
   /* Drag-and-drop ref: tracks { field, from } while dragging */
   const dragRef = useRef<{ field: string; from: number } | null>(null);
@@ -180,6 +190,7 @@ export default function GroupTemplateEditPage() {
   const [editingBatch, setEditingBatch]     = useState<Batch & { _idx?: number } | null>(null);
   const [batchSaving, setBatchSaving]       = useState(false);
   const [batchErr, setBatchErr]             = useState('');
+  const [newCardName, setNewCardName]       = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -385,6 +396,11 @@ export default function GroupTemplateEditPage() {
         crumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Group Templates', href: '/admin/group-templates' }, { label: tpl.group_template_name || 'Edit' }]}
         action={
           <div className="flex gap-2">
+            <button onClick={() => setShowPreview(true)}
+              className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold border hover:bg-slate-50 transition-colors"
+              style={{ borderColor: '#E2E8F0', color: '#64748B' }}>
+              <Eye className="w-4 h-4" /> Preview
+            </button>
             <button onClick={() => save(false)} disabled={saving}
               className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold disabled:opacity-50 hover:opacity-90"
               style={{ backgroundColor: saved ? '#22c55e' : T, color: 'white' }}>
@@ -551,8 +567,16 @@ export default function GroupTemplateEditPage() {
                       opacity: stateHidden ? 0.55 : 1,
                     }}>
                       <div className="flex items-center gap-2 px-4 pt-4 pb-3">
-                        <span className="flex-1 text-sm font-semibold" style={{ color: stateHidden ? '#94A3B8' : '#4338CA' }}>{tpl?.state?.name ?? 'State'}</span>
-                        <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: stateHidden ? '#F1F5F9' : '#EEF2FF', color: stateHidden ? '#94A3B8' : '#6366F1' }}>Gallery Cover Card</span>
+                        <input
+                          className="flex-1 text-sm font-semibold bg-transparent focus:outline-none rounded px-1 -ml-1 transition-colors"
+                          style={{ color: stateHidden ? '#94A3B8' : '#4338CA' }}
+                          value={cms.state_gallery_custom_name ?? tpl?.state?.name ?? ''}
+                          placeholder={tpl?.state?.name ?? 'State name…'}
+                          onChange={e => updCms('state_gallery_custom_name', e.target.value || null)}
+                          onFocus={e => (e.currentTarget.style.backgroundColor = '#EEF2FF')}
+                          onBlur={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                        />
+                        <span className="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0" style={{ background: stateHidden ? '#F1F5F9' : '#EEF2FF', color: stateHidden ? '#94A3B8' : '#6366F1' }}>Gallery Cover Card</span>
                         <button
                           type="button"
                           onClick={() => updCms('state_gallery_hidden', !stateHidden)}
@@ -607,7 +631,7 @@ export default function GroupTemplateEditPage() {
                         boxShadow: isDragging ? '0 4px 16px rgba(0,0,0,0.12)' : 'none',
                       }}
                     >
-                      {/* Card header: drag handle + name + eye toggle */}
+                      {/* Card header: drag handle + name (editable) + eye toggle + delete */}
                       <div className="flex items-center gap-2 px-4 pt-4 pb-3">
                         <div className="flex-shrink-0 cursor-grab text-[#CBD5E1] hover:text-[#94A3B8]" title="Drag to reorder">
                           <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
@@ -616,9 +640,26 @@ export default function GroupTemplateEditPage() {
                             <circle cx="5" cy="13" r="1.3"/><circle cx="11" cy="13" r="1.3"/>
                           </svg>
                         </div>
-                        <p className="flex-1 text-sm font-semibold" style={{ color: isHidden ? '#94A3B8' : '#0F172A' }}>
-                          {dest?.name ?? dc.destination_id}
-                        </p>
+                        <input
+                          className="flex-1 text-sm font-semibold bg-transparent focus:outline-none rounded px-1 -ml-1 transition-colors"
+                          style={{ color: isHidden ? '#94A3B8' : '#0F172A' }}
+                          value={dc.custom_name ?? dest?.name ?? ''}
+                          placeholder={dest?.name ?? 'Card name…'}
+                          onChange={e => { const c = [...cms.destination_cards]; c[i] = { ...c[i], custom_name: e.target.value || null }; updCms('destination_cards', c); }}
+                          onFocus={e => (e.currentTarget.style.backgroundColor = '#F8FAFC')}
+                          onBlur={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => updCms('destination_cards', cms.destination_cards.filter((_, idx) => idx !== i))}
+                          className="w-6 h-6 rounded flex items-center justify-center flex-shrink-0 transition-colors hover:bg-red-50"
+                          style={{ color: '#CBD5E1' }}
+                          title="Remove card"
+                          onMouseEnter={e => (e.currentTarget.style.color = '#EF4444')}
+                          onMouseLeave={e => (e.currentTarget.style.color = '#CBD5E1')}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
                         <button
                           type="button"
                           onClick={() => { const c = [...cms.destination_cards]; c[i] = { ...c[i], hidden: !isHidden }; updCms('destination_cards', c); }}
@@ -660,12 +701,57 @@ export default function GroupTemplateEditPage() {
                     </div>
                   );
                 })}
-                {destList.length > 0 && cms.destination_cards.length === 0 && (
-                  <button onClick={() => updCms('destination_cards', destList.map(did => ({ destination_id: did, custom_name: null, description: '', image_url: '' })))}
-                    className="h-9 px-4 rounded-lg text-sm font-semibold text-white hover:opacity-90" style={{ backgroundColor: T }}>
-                    Auto-generate from destinations
-                  </button>
-                )}
+                {/* ── Add destination card ── */}
+                <div className="pt-2 border-t" style={{ borderColor: '#F1F5F9' }}>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: '#94A3B8' }}>Add Destination Card</p>
+                  {/* Quick-add chips: unused destinations from template */}
+                  {(() => {
+                    const usedIds = new Set(cms.destination_cards.map(dc => dc.destination_id));
+                    const unused  = dests.filter(d => !usedIds.has(d.id));
+                    return unused.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5 mb-3">
+                        {unused.map(d => (
+                          <button key={d.id} type="button"
+                            onClick={() => updCms('destination_cards', [...cms.destination_cards, { destination_id: d.id, custom_name: null, description: '', image_url: '' }])}
+                            className="flex items-center gap-1 h-7 px-2.5 rounded-lg text-xs font-semibold border transition-colors hover:opacity-80"
+                            style={{ borderColor: `${T}40`, color: T, backgroundColor: `${T}08` }}>
+                            + {d.name}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null;
+                  })()}
+                  {/* Custom card: type any name */}
+                  <div className="flex gap-2">
+                    <input
+                      className="flex-1 h-9 px-3 rounded-lg border text-sm placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white"
+                      style={{ borderColor: '#E2E8F0' }}
+                      value={newCardName}
+                      onChange={e => setNewCardName(e.target.value)}
+                      placeholder="Custom card name (e.g. Ooty Lake)…"
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && newCardName.trim()) {
+                          updCms('destination_cards', [...cms.destination_cards, { destination_id: `custom_${Date.now()}`, custom_name: newCardName.trim(), description: '', image_url: '' }]);
+                          setNewCardName('');
+                        }
+                      }}
+                    />
+                    <button type="button"
+                      disabled={!newCardName.trim()}
+                      onClick={() => { updCms('destination_cards', [...cms.destination_cards, { destination_id: `custom_${Date.now()}`, custom_name: newCardName.trim(), description: '', image_url: '' }]); setNewCardName(''); }}
+                      className="h-9 px-4 rounded-lg text-sm font-semibold text-white disabled:opacity-40 hover:opacity-90 flex-shrink-0"
+                      style={{ backgroundColor: T }}>
+                      + Add
+                    </button>
+                  </div>
+                  {destList.length > 0 && cms.destination_cards.length === 0 && (
+                    <button type="button" onClick={() => updCms('destination_cards', destList.map(did => ({ destination_id: did, custom_name: null, description: '', image_url: '' })))}
+                      className="mt-2 h-8 px-3 rounded-lg text-xs font-semibold border hover:bg-[#F8FAFC] transition-colors"
+                      style={{ borderColor: '#E2E8F0', color: '#64748B' }}>
+                      Auto-generate from template destinations
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -775,7 +861,7 @@ export default function GroupTemplateEditPage() {
                     </div>
                   </div>
                 ))}
-                {cms.package_options.length < 3 && (
+                {cms.package_options.length < 15 && (
                   <button onClick={() => updCms('package_options', [...cms.package_options, { tier_name: `Option ${cms.package_options.length + 1}`, display_order: cms.package_options.length + 1, is_most_popular: false, inclusions: [], adult_price: 0, child_price: 0 }])}
                     className="flex-shrink-0 w-12 rounded-xl flex items-center justify-center" style={{ border: '2px dashed #E2E8F0' }}>
                     <Plus className="w-5 h-5 text-[#CBD5E1]" />
@@ -1180,115 +1266,62 @@ export default function GroupTemplateEditPage() {
           {/* ═══ WHY CHOOSE ═══ */}
           {activeSection === 'why' && (
             <div className="bg-white rounded-2xl p-6" style={card}>
-              <SectionHeader title="Why Choose Travloger" desc="Pre-filled trust points shown to customers. Each can have a title and short description." />
+              <SectionHeader title="Why Choose Travloger" desc="Add trust points with titles and descriptions shown on the customer quotation page." />
               <div className="flex flex-col gap-3">
                 {normaliseWhy(cms.why_choose).map((item, i) => (
-                  <div
-                    key={i}
-                    draggable
-                    onDragStart={() => { dragRef.current = { field: 'why_choose', from: i }; }}
-                    onDragOver={e => { e.preventDefault(); setDragOver({ field: 'why_choose', idx: i }); }}
-                    onDragLeave={() => setDragOver(null)}
-                    onDrop={() => { setDragOver(null); if (dragRef.current?.field === 'why_choose') dndReorder('why_choose', dragRef.current.from, i); dragRef.current = null; }}
-                    onDragEnd={() => { setDragOver(null); dragRef.current = null; }}
-                    className="rounded-xl p-4 transition-all"
-                    style={{ border: dragOver?.field === 'why_choose' && dragOver?.idx === i ? `2px dashed ${T}` : '1px solid #E2E8F0', opacity: dragRef.current?.field === 'why_choose' && dragRef.current?.from === i ? 0.4 : 1, background: dragOver?.field === 'why_choose' && dragOver?.idx === i ? '#F0F7F9' : 'white' }}
-                  >
-                    <div className="flex items-start gap-3">
-                      <GripVertical className="w-4 h-4 flex-shrink-0 cursor-grab active:cursor-grabbing mt-1.5" style={{ color: '#CBD5E1' }} />
-                      <div className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-white text-[10px] font-bold mt-1" style={{ backgroundColor: T }}>{i + 1}</div>
-                      <div className="flex-1 flex flex-col gap-2">
-                        <input
-                          className="w-full h-9 px-3 rounded-lg border text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white"
-                          style={inpSt} placeholder="Title e.g. Best Prices Guaranteed"
-                          value={item.title}
-                          onChange={e => {
+                  <div key={i} className="p-4 rounded-xl" style={{ border: '1px solid #E2E8F0', backgroundColor: '#F8FAFC' }}>
+                    {/* Icon picker */}
+                    <div className="flex items-center gap-1 mb-2">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-[#94A3B8] mr-1">Icon</span>
+                      {ICON_OPTS.map(opt => (
+                        <button key={opt.key} type="button"
+                          onClick={() => {
                             const w = normaliseWhy(cms.why_choose);
-                            w[i] = { ...w[i], title: e.target.value };
+                            w[i] = { ...w[i], icon: opt.key };
                             updCms('why_choose', w);
-                          }} />
-                        <textarea
-                          className="w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white resize-none"
-                          style={inpSt} rows={2} placeholder="Short description (optional)"
-                          value={item.description}
-                          onChange={e => {
-                            const w = normaliseWhy(cms.why_choose);
-                            w[i] = { ...w[i], description: e.target.value };
-                            updCms('why_choose', w);
-                          }} />
-                      </div>
-                      <button onClick={() => updCms('why_choose', normaliseWhy(cms.why_choose).filter((_, j) => j !== i))}
-                        className="text-[#94A3B8] hover:text-red-500 mt-1 flex-shrink-0"><Trash2 className="w-4 h-4" /></button>
+                          }}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-sm border transition-all"
+                          style={{
+                            borderColor: item.icon === opt.key ? T : '#E2E8F0',
+                            backgroundColor: item.icon === opt.key ? `${T}18` : 'white',
+                            color: item.icon === opt.key ? T : '#64748B',
+                            fontWeight: item.icon === opt.key ? 700 : 400,
+                          }}
+                          title={opt.key}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
                     </div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center text-white text-[10px] font-bold" style={{ backgroundColor: T }}>{i + 1}</div>
+                      <input
+                        className="flex-1 h-9 px-3 rounded-lg border text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white" style={inpSt}
+                        placeholder="Point title (e.g. Best Prices Guaranteed)"
+                        value={item.title}
+                        onChange={e => {
+                          const w = normaliseWhy(cms.why_choose);
+                          w[i] = { ...w[i], title: e.target.value };
+                          updCms('why_choose', w);
+                        }} />
+                      <button onClick={() => updCms('why_choose', normaliseWhy(cms.why_choose).filter((_, j) => j !== i))}
+                        className="text-[#94A3B8] hover:text-red-500 flex-shrink-0"><Trash2 className="w-4 h-4" /></button>
+                    </div>
+                    <textarea
+                      className={ta} style={inpSt} rows={2}
+                      placeholder="Short description shown below the title (optional)"
+                      value={item.description}
+                      onChange={e => {
+                        const w = normaliseWhy(cms.why_choose);
+                        w[i] = { ...w[i], description: e.target.value };
+                        updCms('why_choose', w);
+                      }} />
                   </div>
                 ))}
-                <button onClick={() => updCms('why_choose', [...normaliseWhy(cms.why_choose), { title: '', description: '' }])}
+                <button onClick={() => updCms('why_choose', [...normaliseWhy(cms.why_choose), { title: '', description: '', icon: 'star' }])}
                   className="flex items-center gap-2 text-sm font-semibold mt-1" style={{ color: T }}>
                   <Plus className="w-4 h-4" /> Add Point
                 </button>
-              </div>
-            </div>
-          )}
-
-          {/* ═══ INCLUSIONS / EXCLUSIONS ═══ */}
-          {activeSection === 'incl_excl' && (
-            <div className="bg-white rounded-2xl p-6" style={card}>
-              <SectionHeader title="Inclusions & Exclusions" desc="List what is included and excluded in this package." />
-              <div className="grid grid-cols-2 gap-6">
-                {/* Inclusions */}
-                <div>
-                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#15803D' }}>✓ Inclusions</p>
-                  <div className="flex flex-col gap-2">
-                    {(cms.inclusions ?? []).map((item, i) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <span className="text-green-500 flex-shrink-0">•</span>
-                        <input
-                          className="flex-1 h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white"
-                          style={{ borderColor: '#E2E8F0' }}
-                          value={item}
-                          placeholder="e.g. Accommodation on twin sharing"
-                          onChange={e => {
-                            const arr = [...(cms.inclusions ?? [])];
-                            arr[i] = e.target.value;
-                            updCms('inclusions', arr);
-                          }} />
-                        <button onClick={() => updCms('inclusions', (cms.inclusions ?? []).filter((_, j) => j !== i))}
-                          className="text-[#94A3B8] hover:text-red-500 flex-shrink-0"><Trash2 className="w-4 h-4" /></button>
-                      </div>
-                    ))}
-                  </div>
-                  <button onClick={() => updCms('inclusions', [...(cms.inclusions ?? []), ''])}
-                    className="flex items-center gap-2 text-sm font-semibold mt-3" style={{ color: '#15803D' }}>
-                    <Plus className="w-4 h-4" /> Add Inclusion
-                  </button>
-                </div>
-                {/* Exclusions */}
-                <div>
-                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#DC2626' }}>✕ Exclusions</p>
-                  <div className="flex flex-col gap-2">
-                    {(cms.exclusions ?? []).map((item, i) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <span className="text-red-500 flex-shrink-0">•</span>
-                        <input
-                          className="flex-1 h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white"
-                          style={{ borderColor: '#E2E8F0' }}
-                          value={item}
-                          placeholder="e.g. Airfare / train tickets"
-                          onChange={e => {
-                            const arr = [...(cms.exclusions ?? [])];
-                            arr[i] = e.target.value;
-                            updCms('exclusions', arr);
-                          }} />
-                        <button onClick={() => updCms('exclusions', (cms.exclusions ?? []).filter((_, j) => j !== i))}
-                          className="text-[#94A3B8] hover:text-red-500 flex-shrink-0"><Trash2 className="w-4 h-4" /></button>
-                      </div>
-                    ))}
-                  </div>
-                  <button onClick={() => updCms('exclusions', [...(cms.exclusions ?? []), ''])}
-                    className="flex items-center gap-2 text-sm font-semibold mt-3" style={{ color: '#DC2626' }}>
-                    <Plus className="w-4 h-4" /> Add Exclusion
-                  </button>
-                </div>
               </div>
             </div>
           )}
@@ -1478,13 +1511,34 @@ export default function GroupTemplateEditPage() {
                 </div>
                 <div>
                   <label className={lbl}>Badge Color</label>
-                  <div className="flex items-center gap-3 mt-1">
-                    <input type="color" value={editingBatch.badge_color ?? '#F59E0B'}
-                      onChange={e => updBatch('badge_color', e.target.value)}
-                      className="h-9 w-14 rounded cursor-pointer border-0 p-0.5" style={{ backgroundColor: 'transparent' }} />
-                    <span className="text-xs text-[#64748B] font-mono">{editingBatch.badge_color ?? '#F59E0B'}</span>
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    {[
+                      { hex: '#F59E0B', label: 'Amber'  },
+                      { hex: '#EF4444', label: 'Red'    },
+                      { hex: '#22C55E', label: 'Green'  },
+                      { hex: '#3B82F6', label: 'Blue'   },
+                      { hex: '#8B5CF6', label: 'Purple' },
+                      { hex: '#EC4899', label: 'Pink'   },
+                      { hex: '#134956', label: 'Teal'   },
+                      { hex: '#64748B', label: 'Slate'  },
+                    ].map(({ hex, label }) => {
+                      const active = (editingBatch.badge_color ?? '#F59E0B').toUpperCase() === hex.toUpperCase();
+                      return (
+                        <button key={hex} type="button" title={label}
+                          onClick={() => updBatch('badge_color', hex)}
+                          className="w-8 h-8 rounded-lg flex items-center justify-center transition-all"
+                          style={{
+                            backgroundColor: hex,
+                            boxShadow: active ? `0 0 0 2px white, 0 0 0 4px ${hex}` : 'none',
+                            transform: active ? 'scale(1.15)' : 'scale(1)',
+                          }}>
+                          {active && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
+                        </button>
+                      );
+                    })}
                     <button type="button" onClick={() => updBatch('badge_color', null)}
-                      className="text-xs text-[#94A3B8] hover:text-[#64748B] underline">Reset</button>
+                      className="h-8 px-2.5 rounded-lg text-xs font-semibold transition-colors hover:bg-[#F1F5F9]"
+                      style={{ border: '1px solid #E2E8F0', color: '#94A3B8' }}>Reset</button>
                   </div>
                 </div>
               </div>
@@ -1499,6 +1553,150 @@ export default function GroupTemplateEditPage() {
           </button>
         </div>
       </Modal>
+
+      {/* ═══ PREVIEW DRAWER ═══ */}
+      {showPreview && (
+        <div className="fixed inset-0 z-50 flex justify-end" style={{ background: 'rgba(0,0,0,0.45)' }} onClick={() => setShowPreview(false)}>
+          <div className="relative h-full w-full max-w-[520px] bg-white overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="sticky top-0 z-10 bg-white flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #E2E8F0' }}>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: T }}>Template Preview</p>
+                <p className="text-sm font-bold text-[#0F172A] mt-0.5">{tpl.group_template_name}</p>
+              </div>
+              <button onClick={() => setShowPreview(false)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-slate-100" style={{ color: '#64748B' }}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 flex flex-col gap-6">
+
+              {/* Hero */}
+              {(cms.hero_images?.[0] || cms.hero_heading) && (
+                <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
+                  {cms.hero_images?.[0] && (
+                    <div className="relative h-44 bg-slate-100">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={cms.hero_images[0]} alt="Hero" className="w-full h-full object-cover" />
+                      <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.55), transparent)' }} />
+                      <div className="absolute bottom-0 left-0 p-4">
+                        {cms.hero_heading && <p className="text-white font-bold text-lg leading-tight">{cms.hero_heading}</p>}
+                        {cms.hero_subheading && <p className="text-white/80 text-xs mt-0.5">{cms.hero_subheading}</p>}
+                      </div>
+                    </div>
+                  )}
+                  {!cms.hero_images?.[0] && (
+                    <div className="p-4" style={{ background: `${T}10` }}>
+                      {cms.hero_heading && <p className="font-bold text-base text-[#0F172A]">{cms.hero_heading}</p>}
+                      {cms.hero_subheading && <p className="text-sm text-[#64748B] mt-1">{cms.hero_subheading}</p>}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Destination Cards */}
+              {(cms.destination_cards ?? []).length > 0 && (
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#64748B' }}>Destinations</p>
+                  <div className="flex flex-wrap gap-2">
+                    {(cms.destination_cards ?? []).map((dc, i) => (
+                      <div key={i} className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium text-white" style={{ background: T }}>
+                        <MapPin className="w-3 h-3" />
+                        {dc.custom_name || dests.find(d => d.id === dc.destination_id)?.name || dc.destination_id}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Inclusions / Exclusions */}
+              {((cms.inclusions ?? []).length > 0 || (cms.exclusions ?? []).length > 0) && (
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#64748B' }}>What&apos;s Covered</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: '#15803D' }}>✓ Inclusions</p>
+                      <ul className="flex flex-col gap-1.5">
+                        {(cms.inclusions ?? []).filter(Boolean).map((item, i) => (
+                          <li key={i} className="flex items-start gap-1.5 text-xs text-[#374151]">
+                            <span className="mt-0.5 flex-shrink-0 text-green-500">•</span>{item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: '#DC2626' }}>✕ Exclusions</p>
+                      <ul className="flex flex-col gap-1.5">
+                        {(cms.exclusions ?? []).filter(Boolean).map((item, i) => (
+                          <li key={i} className="flex items-start gap-1.5 text-xs text-[#374151]">
+                            <span className="mt-0.5 flex-shrink-0 text-red-500">•</span>{item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Why Choose */}
+              {(cms.why_choose ?? []).filter(w => (typeof w === 'string' ? w : w.title)).length > 0 && (
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#64748B' }}>Why Choose Us</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {(cms.why_choose ?? []).map((raw, i) => {
+                      const w = typeof raw === 'string' ? { title: raw, description: '' } : raw;
+                      return (
+                        <div key={i} className="rounded-xl p-3" style={{ background: `${T}08`, border: `1px solid ${T}20` }}>
+                          <p className="text-xs font-bold text-[#0F172A]">{w.title}</p>
+                          {w.description && <p className="text-[11px] text-[#64748B] mt-0.5 leading-relaxed">{w.description}</p>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Day Itinerary */}
+              {days.length > 0 && (
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#64748B' }}>Day Itinerary ({days.length} days)</p>
+                  <div className="flex flex-col gap-2">
+                    {days.map((d, i) => (
+                      <div key={d.id} className="rounded-xl p-3" style={{ border: '1px solid #E2E8F0' }}>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold px-2 py-0.5 rounded-full text-white" style={{ background: T }}>Day {i + 1}</span>
+                          <p className="text-sm font-semibold text-[#0F172A]">{d.title}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Package Options */}
+              {(cms.package_options ?? []).length > 0 && (
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#64748B' }}>Package Options</p>
+                  <div className="flex flex-col gap-2">
+                    {(cms.package_options ?? []).map((opt, i) => (
+                      <div key={i} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ background: opt.is_most_popular ? `${T}10` : '#F8FAFC', border: `1px solid ${opt.is_most_popular ? T : '#E2E8F0'}` }}>
+                        <div>
+                          <p className="text-sm font-bold" style={{ color: opt.is_most_popular ? T : '#0F172A' }}>{opt.tier_name}</p>
+                          {opt.is_most_popular && <span className="text-[10px] font-bold" style={{ color: T }}>★ Most Popular</span>}
+                        </div>
+                        <div className="text-right">
+                          {opt.adult_price > 0 && <p className="text-sm font-bold text-[#0F172A]">₹{opt.adult_price.toLocaleString()}<span className="text-[10px] font-normal text-[#64748B]">/adult</span></p>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
