@@ -232,6 +232,7 @@ function evaluateConditions(
       case 'is_not_empty': r = !!strVal.trim(); break;
       default:             r = true;
     }
+    console.log(`=== CONDITION CHECK === field:"${rule.field}" operator:"${rule.operator}" expected:"${ruleVal}" found:"${strVal}" → ${r ? 'PASS' : 'FAIL'}`);
     console.log(`[workflow:${workflowName ?? '?'}] "${rule.field}" ${rule.operator} "${ruleVal}" (found: "${strVal}") → ${r}`);
     return r;
   });
@@ -379,6 +380,8 @@ async function executeStageAutomations(contactId: string, stageName: string): Pr
 /** Run all active workflows matching the given event type for a contact (fire-and-forget). */
 async function executeContactWorkflows(contactId: string, event: 'on_create' | 'on_update' = 'on_create'): Promise<void> {
   try {
+    console.log(`=== CHECKING WORKFLOWS for contact === id:${contactId} event:${event}`);
+
     const workflows = await prisma.crmWorkflow.findMany({
       where: {
         module:    'contacts',
@@ -387,8 +390,12 @@ async function executeContactWorkflows(contactId: string, event: 'on_create' | '
       },
     });
 
+    console.log(`[workflow] Found ${workflows.length} active workflow(s) for event "${event}"`);
+
     const contact = await prisma.crmContact.findUnique({ where: { id: contactId } });
-    if (!contact) return;
+    if (!contact) { console.warn('[workflow] Contact not found:', contactId); return; }
+
+    console.log('[workflow] Contact custom_fields:', JSON.stringify(contact.custom_fields));
 
     const contactRecord = contact as unknown as Record<string, unknown>;
 
@@ -705,8 +712,11 @@ export async function createContact(
     return contact;
   });
 
-  // Run active on_create workflows after the transaction commits (non-blocking).
-  void executeContactWorkflows(createdContact.id);
+  // Run active on_create workflows SYNCHRONOUSLY so they complete before callers proceed.
+  // Critical for Vercel: fire-and-forget gets killed when the serverless function returns.
+  console.log('[contacts/create] Running on_create workflows for', createdContact.id, 'name:', createdContact.name);
+  await executeContactWorkflows(createdContact.id);
+  console.log('[contacts/create] Workflows complete for', createdContact.id);
 
   return createdContact;
 }
@@ -820,10 +830,8 @@ export async function updateContact(
     }
 
     return updated;
-  }).then(updated => {
-    // Fire on_update workflows after the transaction commits (non-blocking).
-    void executeContactWorkflows(updated.id, 'on_update');
-    // Fire stage automations if lead_stage changed
+  }).then(async updated => {
+    await executeContactWorkflows(updated.id, 'on_update');
     if (patch.lead_stage && updated.lead_stage === patch.lead_stage) {
       void executeStageAutomations(updated.id, patch.lead_stage);
     }

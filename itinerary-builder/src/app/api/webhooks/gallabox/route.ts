@@ -42,6 +42,8 @@ export async function POST(req: NextRequest) {
   // 1. Raw body first (required for HMAC)
   const rawBody = await req.text();
 
+  console.log('=== WEBHOOK RECEIVED ===', new Date().toISOString(), 'size:', rawBody.length);
+
   // 2. Log everything for debugging — full payload, no truncation
   const allHeaders: Record<string, string> = {};
   req.headers.forEach((v, k) => { allHeaders[k] = v; });
@@ -182,9 +184,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: String(err) }, { status: 200 });
   }
 
-  // Auto-create/update CrmContact for every incoming message from a new number
+  // Auto-create/update CrmContact for every incoming message from a new number.
+  // MUST await — Vercel kills fire-and-forget tasks when the function returns.
   if (direction === 'incoming' && phone) {
-    void autoCreateContactFromGallabox(phone, name, payload);
+    await autoCreateContactFromGallabox(phone, name, payload);
   }
 
   return NextResponse.json({ ok: true, eventType }, { status: 200 });
@@ -349,42 +352,52 @@ async function autoCreateContactFromGallabox(
       null,
     );
 
-    console.log('[gallabox/auto-contact] Created CrmContact:', contact.id,
-      'botFlowId:', botFlowId,
-      'custom_fields:', JSON.stringify(contact.custom_fields),
-    );
+    console.log('=== CONTACT SAVED ===', JSON.stringify({
+      id: contact.id, name: contact.name, phone: contact.phone,
+      assigned_to_id: contact.assigned_to_id,
+      custom_fields: contact.custom_fields,
+    }));
+
+    // createContact() now awaits executeContactWorkflows() before returning.
+    // So by this point workflows have already run and assigned_to_id is set in DB.
+    // No setTimeout needed — just fetch the updated contact.
+    const updatedContact = await prisma.crmContact.findUnique({
+      where:  { id: contact.id },
+      select: { assigned_to_id: true },
+    });
+    console.log('[gallabox/auto-contact] Post-workflow assigned_to_id:', updatedContact?.assigned_to_id);
 
     // ── Auto-create a Lead in the default pipeline ────────────────────────────
-    const defaultPipeline = await prisma.pipeline.findFirst({
-      where:   { is_default: true, status: true },
-      include: { stages: { where: { status: true }, orderBy: { order: 'asc' }, take: 1 } },
-    });
-
-    if (defaultPipeline?.stages[0]) {
-      // Wait a short moment then fetch the contact to get workflow-assigned user
-      await new Promise(r => setTimeout(r, 500));
-      const updatedContact = await prisma.crmContact.findUnique({
-        where:  { id: contact.id },
-        select: { assigned_to_id: true },
+    // Only create if no lead exists for this contact yet
+    const existingLead = await prisma.lead.findFirst({ where: { crm_contact_id: contact.id } });
+    if (!existingLead) {
+      // Prefer is_default=true pipeline; fall back to first active pipeline
+      const defaultPipeline = await prisma.pipeline.findFirst({
+        where:   { status: true, is_default: true },
+        include: { stages: { where: { status: true }, orderBy: { order: 'asc' }, take: 1 } },
+      }) ?? await prisma.pipeline.findFirst({
+        where:   { status: true },
+        include: { stages: { where: { status: true }, orderBy: { order: 'asc' }, take: 1 } },
       });
 
-      await prisma.lead.create({
-        data: {
-          name:              `${name ?? 'Lead'} — WhatsApp`,
-          phone,
-          pipeline_id:       defaultPipeline.id,
-          stage_id:          defaultPipeline.stages[0].id,
-          owner_id:          admin.id,
-          assigned_agent_id: updatedContact?.assigned_to_id ?? admin.id,
-          source:            gallaboxSource,
-          crm_contact_id:    contact.id,
-          status:            'NEW',
-        },
-      });
-
-      console.log('[gallabox/auto-contact] Created Lead in pipeline:', defaultPipeline.id,
-        'assigned_agent:', updatedContact?.assigned_to_id ?? admin.id,
-      );
+      if (defaultPipeline?.stages[0]) {
+        await prisma.lead.create({
+          data: {
+            name:              `${name ?? 'Lead'} — WhatsApp`,
+            phone,
+            pipeline_id:       defaultPipeline.id,
+            stage_id:          defaultPipeline.stages[0].id,
+            owner_id:          admin.id,
+            assigned_agent_id: updatedContact?.assigned_to_id ?? admin.id,
+            source:            gallaboxSource,
+            crm_contact_id:    contact.id,
+            status:            'NEW',
+          },
+        });
+        console.log('[gallabox/auto-contact] Created Lead in pipeline:', defaultPipeline.id,
+          'assigned_agent:', updatedContact?.assigned_to_id ?? admin.id,
+        );
+      }
     }
   } catch (e) {
     // Non-critical — log but don't fail the webhook

@@ -168,20 +168,27 @@ async function logWorkflowRun(
 const GALLABOX_CUSTOM_KEYS = ['gallabox_bot_flow_id', 'gallabox_ad_id', 'gallabox_source', 'gallabox_ad_headline'];
 
 /** Evaluate multi-condition logic against a contact record. */
-function evaluateConditions(contact: Record<string, unknown>, conditions: unknown): boolean {
+function evaluateConditions(
+  contact: Record<string, unknown>,
+  conditions: unknown,
+  workflowName?: string,
+): boolean {
   const cond = conditions as {
     match?: 'AND' | 'OR';
     rules?: Array<{ field: string; operator: string; value: string }>;
     source_filter?: string;
+    rr_index?: number;
   } | null;
   if (!cond) return true;
 
-  // Old format: source_filter only
+  // Old format: source_filter only (no rules array)
   if (!Array.isArray(cond.rules) || cond.rules.length === 0) {
     if (cond.source_filter) {
-      return String(contact.lead_source ?? '').toUpperCase() === cond.source_filter.toUpperCase();
+      const result = String(contact.lead_source ?? '').toUpperCase() === cond.source_filter.toUpperCase();
+      console.log(`[workflow:${workflowName ?? '?'}] source_filter check: lead_source="${String(contact.lead_source ?? '')}" filter="${cond.source_filter}" → ${result}`);
+      return result;
     }
-    return true;
+    return true; // no conditions = always match
   }
 
   const match = cond.match ?? 'OR';
@@ -191,34 +198,48 @@ function evaluateConditions(contact: Record<string, unknown>, conditions: unknow
     if (GALLABOX_CUSTOM_KEYS.includes(rule.field)) {
       const cf = contact.custom_fields as Record<string, unknown> | null | undefined;
       raw = cf?.[rule.field];
+      console.log(`[workflow:${workflowName ?? '?'}] GALLABOX field "${rule.field}" → custom_fields value: ${JSON.stringify(raw)} (cf keys: ${JSON.stringify(Object.keys(cf ?? {}))})`);
     } else {
       raw = contact[rule.field];
+      console.log(`[workflow:${workflowName ?? '?'}] field "${rule.field}" → value: ${JSON.stringify(raw)}`);
     }
 
-    const ruleVal = String(rule.value ?? '').toLowerCase();
+    const ruleVal  = String(rule.value ?? '').toLowerCase();
+    const fieldVal = Array.isArray(raw)
+      ? raw.map(String)
+      : String(raw ?? '').toLowerCase();
 
     // Tags is a string array
-    if (rule.field === 'tags' && Array.isArray(raw)) {
-      const tagArr = raw as string[];
-      if (rule.operator === 'has_tag')     return tagArr.some(t => t.toLowerCase() === ruleVal);
-      if (rule.operator === 'not_contains') return !tagArr.some(t => t.toLowerCase() === ruleVal);
-      return tagArr.join(' ').toLowerCase().includes(ruleVal);
+    if (rule.field === 'tags' && Array.isArray(fieldVal)) {
+      const tagArr = fieldVal;
+      let r: boolean;
+      if (rule.operator === 'has_tag')      r = tagArr.some(t => t.toLowerCase() === ruleVal);
+      else if (rule.operator === 'not_contains') r = !tagArr.some(t => t.toLowerCase() === ruleVal);
+      else r = tagArr.join(' ').toLowerCase().includes(ruleVal);
+      console.log(`[workflow:${workflowName ?? '?'}] tags ${rule.operator} "${ruleVal}" → ${r}`);
+      return r;
     }
 
-    const fieldVal = String(raw ?? '').toLowerCase();
+    const strVal = typeof fieldVal === 'string' ? fieldVal : String(fieldVal);
+    let r: boolean;
     switch (rule.operator) {
-      case 'is':           return fieldVal === ruleVal;
-      case 'is_not':       return fieldVal !== ruleVal;
-      case 'contains':     return fieldVal.includes(ruleVal);
-      case 'not_contains': return !fieldVal.includes(ruleVal);
-      case 'starts_with':  return fieldVal.startsWith(ruleVal);
-      case 'is_empty':     return !fieldVal.trim();
-      case 'is_not_empty': return !!fieldVal.trim();
-      default:             return true;
+      case 'is':           r = strVal === ruleVal; break;
+      case 'is_not':       r = strVal !== ruleVal; break;
+      case 'contains':     r = strVal.includes(ruleVal); break;
+      case 'not_contains': r = !strVal.includes(ruleVal); break;
+      case 'starts_with':  r = strVal.startsWith(ruleVal); break;
+      case 'is_empty':     r = !strVal.trim(); break;
+      case 'is_not_empty': r = !!strVal.trim(); break;
+      default:             r = true;
     }
+    console.log(`=== CONDITION CHECK === field:"${rule.field}" operator:"${rule.operator}" expected:"${ruleVal}" found:"${strVal}" → ${r ? 'PASS' : 'FAIL'}`);
+    console.log(`[workflow:${workflowName ?? '?'}] "${rule.field}" ${rule.operator} "${ruleVal}" (found: "${strVal}") → ${r}`);
+    return r;
   });
 
-  return match === 'AND' ? results.every(Boolean) : results.some(Boolean);
+  const overall = match === 'AND' ? results.every(Boolean) : results.some(Boolean);
+  console.log(`[workflow:${workflowName ?? '?'}] conditions overall (${match}): ${overall}`);
+  return overall;
 }
 
 /**
@@ -359,6 +380,8 @@ async function executeStageAutomations(contactId: string, stageName: string): Pr
 /** Run all active workflows matching the given event type for a contact (fire-and-forget). */
 async function executeContactWorkflows(contactId: string, event: 'on_create' | 'on_update' = 'on_create'): Promise<void> {
   try {
+    console.log(`=== CHECKING WORKFLOWS for contact === id:${contactId} event:${event}`);
+
     const workflows = await prisma.crmWorkflow.findMany({
       where: {
         module:    'contacts',
@@ -367,14 +390,21 @@ async function executeContactWorkflows(contactId: string, event: 'on_create' | '
       },
     });
 
+    console.log(`[workflow] Found ${workflows.length} active workflow(s) for event "${event}"`);
+
     const contact = await prisma.crmContact.findUnique({ where: { id: contactId } });
-    if (!contact) return;
+    if (!contact) { console.warn('[workflow] Contact not found:', contactId); return; }
+
+    console.log('[workflow] Contact custom_fields:', JSON.stringify(contact.custom_fields));
 
     const contactRecord = contact as unknown as Record<string, unknown>;
 
     for (const wf of workflows) {
-      if (!evaluateConditions(contactRecord, wf.conditions)) {
-        await logWorkflowRun(wf.id, contact.id, contact.name, wf.trigger, false, 'skipped', null, null, null, 'skipped');
+      console.log(`[workflow] Evaluating "${wf.name}" (id:${wf.id}) for contact "${contact.name}" (${contact.id})`);
+      console.log(`[workflow] Contact custom_fields:`, JSON.stringify(contact.custom_fields));
+
+      if (!evaluateConditions(contactRecord, wf.conditions, wf.name)) {
+        await logWorkflowRun(wf.id, contact.id, contact.name, wf.trigger, false, 'conditions_not_met', null, null, null, 'skipped');
         continue;
       }
 
@@ -382,10 +412,16 @@ async function executeContactWorkflows(contactId: string, event: 'on_create' | '
       const actions = wf.actions as unknown as Array<any>;
       if (!Array.isArray(actions) || actions.length === 0) continue;
 
-      const isOldFormat = !!actions[0]?.strategy;
+      // Old format: actions array had items with a top-level `strategy` AND no `type`
+      // New format: actions have `type` field ('assign_user', 'send_whatsapp', etc.)
+      // The old format check was wrong — new format also has strategy inside assign_user actions.
+      // Correct: old format if first action has NO `type` field.
+      const isOldFormat = !actions[0]?.type;
+
+      console.log(`[workflow] "${wf.name}" conditions MATCHED — running ${actions.length} action(s) (isOldFormat=${isOldFormat})`);
 
       if (isOldFormat) {
-        // ── Old format: round_robin / weighted / team ──
+        // ── Old format: top-level strategy (pre-migration) ──
         for (const action of actions) {
           if (action.type !== 'assign_user') continue;
           const rawUsers = (action.users ?? []) as Array<{ user_id: string; weight?: number }>;
@@ -676,8 +712,11 @@ export async function createContact(
     return contact;
   });
 
-  // Run active on_create workflows after the transaction commits (non-blocking).
-  void executeContactWorkflows(createdContact.id);
+  // Run active on_create workflows SYNCHRONOUSLY so they complete before callers proceed.
+  // Critical for Vercel: fire-and-forget gets killed when the serverless function returns.
+  console.log('[contacts/create] Running on_create workflows for', createdContact.id, 'name:', createdContact.name);
+  await executeContactWorkflows(createdContact.id);
+  console.log('[contacts/create] Workflows complete for', createdContact.id);
 
   return createdContact;
 }
@@ -791,10 +830,8 @@ export async function updateContact(
     }
 
     return updated;
-  }).then(updated => {
-    // Fire on_update workflows after the transaction commits (non-blocking).
-    void executeContactWorkflows(updated.id, 'on_update');
-    // Fire stage automations if lead_stage changed
+  }).then(async updated => {
+    await executeContactWorkflows(updated.id, 'on_update');
     if (patch.lead_stage && updated.lead_stage === patch.lead_stage) {
       void executeStageAutomations(updated.id, patch.lead_stage);
     }

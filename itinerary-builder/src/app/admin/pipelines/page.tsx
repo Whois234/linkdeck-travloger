@@ -19,7 +19,7 @@ const LeadDrawer      = dynamic(() => import('./LeadDrawer'),    { ssr: false })
 const AddLeadDrawer   = dynamic(() => import('./AddLeadDrawer'), { ssr: false });
 const CallBanner      = dynamic(() => import('./LeadDrawer').then(m => ({ default: m.CallBanner })),      { ssr: false });
 const CallLogPopup    = dynamic(() => import('./LeadDrawer').then(m => ({ default: m.CallLogPopup })),    { ssr: false });
-const WhatsAppPanel   = dynamic(() => import('@/components/WhatsAppPanel'),                               { ssr: false });
+// WhatsAppPanel replaced with Gallabox iframe drawer (see GallaboxDrawer below)
 
 const T = '#134956';
 
@@ -531,6 +531,69 @@ function FilterPill({ icon: Icon, label, active, onClick }: {
   );
 }
 
+// ─── Gallabox conversation iframe drawer ──────────────────────────────────────
+
+function GallaboxDrawer({ phone, name, channelId, onClose }: {
+  phone: string; name: string; channelId: string; onClose: () => void;
+}) {
+  const cleanPhone = phone.replace(/[\s+\-()]/g, '');
+  const iframeUrl = channelId
+    ? `https://conversation-widget.gallabox.com/conversations/phone/${cleanPhone}?name=${encodeURIComponent(name)}&channelId=${encodeURIComponent(channelId)}`
+    : '';
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      {/* Drawer */}
+      <div
+        className="fixed right-0 top-0 z-50 h-full bg-white flex flex-col"
+        style={{ width: 'min(420px, 100vw)', boxShadow: '-4px 0 24px rgba(0,0,0,0.15)' }}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 flex-shrink-0"
+          style={{ background: '#134956' }}>
+          <div className="min-w-0">
+            <p className="font-semibold text-sm text-white truncate">{name}</p>
+            <p className="text-xs text-white/70 truncate">{phone}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-white/10 transition-colors flex-shrink-0 ml-2"
+            style={{ color: 'white' }}
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Iframe */}
+        <div className="flex-1 overflow-hidden">
+          {iframeUrl ? (
+            <iframe
+              src={iframeUrl}
+              className="w-full h-full border-none"
+              title={`Chat with ${name}`}
+              allow="clipboard-write"
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full gap-3 p-6 text-center">
+              <p className="text-sm font-medium" style={{ color: '#64748B' }}>
+                Gallabox Channel ID not configured.
+              </p>
+              <p className="text-xs" style={{ color: '#94A3B8' }}>
+                Go to CRM Settings → Gallabox tab to set the Channel ID.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 interface CrmUser { id: string; name: string; role: string }
@@ -552,6 +615,7 @@ export default function PipelinesPage() {
   const draggingLeadId = useRef<string | null>(null);
   const [moveLead, setMoveLead] = useState<Lead | null>(null);
   const [waPanel, setWaPanel]   = useState<{ phone: string; name: string } | null>(null);
+  const [gallaboxChannelId, setGallaboxChannelId] = useState('');
   const [callState, setCallState] = useState<CallState>(null);
   const [callPopupState, setCallPopupState] = useState<{ leadId: string; leadName: string; elapsed: number; outcome: string } | null>(null);
 
@@ -570,6 +634,14 @@ export default function PipelinesPage() {
   const dragCleanupRef = useRef<(() => void) | null>(null);
 
   const qc = useQueryClient();
+
+  // Load Gallabox channel ID from app settings
+  useEffect(() => {
+    fetch('/api/v1/app-settings')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.data?.gallabox_channel_id) setGallaboxChannelId(d.data.gallabox_channel_id); })
+      .catch(() => {});
+  }, []);
 
   const { data: pipelinesData, isLoading: loadingPipelines } = usePipelines();
   const rawPipelines = (pipelinesData as Pipeline[] | undefined) ?? [];
@@ -1215,11 +1287,12 @@ export default function PipelinesPage() {
 
       {/* MoveToSheet triggered when ghost is released over Move To zone */}
 
-      {/* WhatsApp conversation panel */}
+      {/* Gallabox conversation drawer */}
       {waPanel && (
-        <WhatsAppPanel
+        <GallaboxDrawer
           phone={waPanel.phone}
-          contactName={waPanel.name}
+          name={waPanel.name}
+          channelId={gallaboxChannelId}
           onClose={() => setWaPanel(null)}
         />
       )}
