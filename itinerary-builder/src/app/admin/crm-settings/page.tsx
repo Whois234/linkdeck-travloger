@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   Plus, X, Loader2, Zap, Workflow, ToggleLeft, ToggleRight, Trash2, ChevronDown,
   Tag as TagIcon, ListPlus, Users, MessageSquare, RotateCcw, Weight, Shield, Check, Pencil,
-  UserPlus, RefreshCw, Bell, GitBranch, ArrowRight,
+  UserPlus, RefreshCw, Bell, GitBranch, ArrowRight, Settings2, CheckCircle2,
 } from 'lucide-react';
 import { ContactFieldsTab, ContactTagsTab } from './ContactCustomization';
 
@@ -72,14 +72,19 @@ const LEAD_SOURCES = ['GOOGLE_ADS', 'META_ADS', 'CTWA', 'ORGANIC', 'REFERRAL', '
 const LEAD_STAGES_LIST = ['NEW', 'CONTACTED', 'ENGAGED', 'FOLLOW_UP_REQUIRED', 'QUOTE_SENT', 'WON', 'LOST'];
 
 const WF_CONDITION_FIELDS = [
-  { value: 'lead_source',            label: 'Lead Source',   type: 'leadSource' },
-  { value: 'interested_destination', label: 'Destination',   type: 'text' },
-  { value: 'trip_type',              label: 'Trip Type',     type: 'text' },
-  { value: 'city',                   label: 'City',          type: 'text' },
-  { value: 'tags',                   label: 'Tag',           type: 'tag' },
-  { value: 'campaign_name',          label: 'Campaign Name', type: 'text' },
-  { value: 'notes',                  label: 'Notes',         type: 'text' },
-  { value: 'special_requirements',   label: 'Requirements',  type: 'text' },
+  { value: 'lead_source',            label: 'Lead Source',      type: 'leadSource' },
+  { value: 'interested_destination', label: 'Destination',      type: 'text' },
+  { value: 'trip_type',              label: 'Trip Type',        type: 'text' },
+  { value: 'city',                   label: 'City',             type: 'text' },
+  { value: 'tags',                   label: 'Tag',              type: 'tag' },
+  { value: 'campaign_name',          label: 'Campaign Name',    type: 'text' },
+  { value: 'notes',                  label: 'Notes',            type: 'text' },
+  { value: 'special_requirements',   label: 'Requirements',     type: 'text' },
+  // Gallabox enrichment fields (stored in custom_fields JSON)
+  { value: 'gallabox_bot_flow_id',   label: 'Bot Flow ID',      type: 'text' },
+  { value: 'gallabox_ad_id',         label: 'Ad ID (CTWA)',     type: 'text' },
+  { value: 'gallabox_source',        label: 'Gallabox Source',  type: 'text' },
+  { value: 'gallabox_ad_headline',   label: 'Ad Headline',      type: 'text' },
 ];
 
 const TEXT_OPERATORS = [
@@ -99,6 +104,8 @@ const WF_ACTION_TYPES = [
   { value: 'set_follow_up',     label: 'Set Follow-up Date' },
   { value: 'send_notification', label: 'Send Notification' },
   { value: 'update_lead_stage', label: 'Update Lead Stage' },
+  { value: 'send_whatsapp',     label: 'Send WhatsApp Template' },
+  { value: 'create_task',       label: 'Create Task' },
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -131,7 +138,7 @@ function SelectBox({ value, onChange, children, disabled }: {
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function CrmSettingsPage() {
-  const [tab, setTab]           = useState<'automations' | 'workflows' | 'contact-fields' | 'tags' | 'teams'>('automations');
+  const [tab, setTab]           = useState<'automations' | 'workflows' | 'contact-fields' | 'tags' | 'teams' | 'gallabox'>('automations');
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [users, setUsers]       = useState<User[]>([]);
   const [automations, setAutomations] = useState<StageAutomation[]>([]);
@@ -400,6 +407,7 @@ export default function CrmSettingsPage() {
           { key: 'contact-fields', label: 'Contact Fields',     icon: ListPlus },
           { key: 'tags',           label: 'Tags',               icon: TagIcon },
           { key: 'teams',          label: 'Teams',              icon: Users },
+          { key: 'gallabox',       label: 'Gallabox',           icon: MessageSquare },
         ] as const).map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setTab(key)}
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all"
@@ -1211,6 +1219,152 @@ export default function CrmSettingsPage() {
           )}
         </div>
       )}
+
+      {/* ═══════════════════════════════════════════════════════════════════════
+          Gallabox Settings
+      ══════════════════════════════════════════════════════════════════════════ */}
+      {tab === 'gallabox' && <GallaboxSettingsTab />}
+    </div>
+  );
+}
+
+// ─── Gallabox Settings Tab ────────────────────────────────────────────────────
+
+function GallaboxSettingsTab() {
+  const [channelId, setChannelId]   = useState('');
+  const [apiKey,    setApiKey]      = useState('');
+  const [loading,   setLoading]     = useState(true);
+  const [saving,    setSaving]      = useState(false);
+  const [saved,     setSaved]       = useState(false);
+  const [testState, setTestState]   = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle');
+  const [testIframeKey, setTestIframeKey] = useState(0);
+
+  const T_local = '#134956';
+
+  useEffect(() => {
+    fetch('/api/v1/app-settings')
+      .then(r => r.json())
+      .then(d => {
+        if (d.ok) {
+          setChannelId(d.data?.gallabox_channel_id ?? '');
+          setApiKey(d.data?.gallabox_api_key ?? '');
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function save() {
+    if (!channelId.trim()) return;
+    setSaving(true); setSaved(false);
+    const body: Record<string, string> = { gallabox_channel_id: channelId.trim() };
+    if (apiKey.trim()) body.gallabox_api_key = apiKey.trim();
+    await fetch('/api/v1/app-settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    setSaving(false); setSaved(true);
+    setTimeout(() => setSaved(false), 3000);
+  }
+
+  function testConnection() {
+    if (!channelId.trim()) return;
+    setTestState('testing');
+    setTestIframeKey(k => k + 1);
+    setTimeout(() => setTestState('ok'), 3000);
+  }
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-16">
+      <Loader2 className="w-5 h-5 animate-spin" style={{ color: T_local }} />
+    </div>
+  );
+
+  const testUrl = channelId
+    ? `https://conversation-widget.gallabox.com/conversations/phone/919999999999?name=Test&channelId=${encodeURIComponent(channelId)}`
+    : '';
+
+  return (
+    <div className="space-y-5 max-w-2xl">
+      <div>
+        <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>Gallabox Integration</p>
+        <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>
+          Configure your Gallabox channel to power the WhatsApp inbox and conversation widget.
+        </p>
+      </div>
+
+      <div className="bg-white rounded-2xl p-6 space-y-5" style={{ border: '1px solid #E2E8F0' }}>
+
+        {/* Channel ID */}
+        <div>
+          <label className="block text-[11px] font-bold uppercase tracking-wider mb-1.5" style={{ color: '#94A3B8' }}>
+            Gallabox Channel ID <span className="text-red-400">*</span>
+          </label>
+          <input value={channelId} onChange={e => { setChannelId(e.target.value); setSaved(false); }}
+            placeholder="e.g. 6627c8xxxxxxxxxxxxxxxx"
+            className="w-full text-sm rounded-xl px-4 py-2.5 outline-none font-mono"
+            style={{ border: `1.5px solid ${channelId ? '#E2E8F0' : '#FECACA'}` }} />
+          <p className="text-[11px] mt-1" style={{ color: '#94A3B8' }}>
+            Gallabox → Settings → Channels → Your WhatsApp channel → Channel ID
+          </p>
+        </div>
+
+        {/* API Key */}
+        <div>
+          <label className="block text-[11px] font-bold uppercase tracking-wider mb-1.5" style={{ color: '#94A3B8' }}>
+            Gallabox API Key <span className="text-xs normal-case font-normal">(optional)</span>
+          </label>
+          <input value={apiKey} onChange={e => { setApiKey(e.target.value); setSaved(false); }}
+            placeholder="Paste API key…" type="password"
+            className="w-full text-sm rounded-xl px-4 py-2.5 outline-none font-mono"
+            style={{ border: '1.5px solid #E2E8F0' }} />
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-3 pt-1">
+          <button onClick={save} disabled={saving || !channelId.trim()}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50"
+            style={{ background: T_local }}>
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <CheckCircle2 className="w-4 h-4" /> : <Settings2 className="w-4 h-4" />}
+            {saving ? 'Saving…' : saved ? 'Saved!' : 'Save Settings'}
+          </button>
+          <button onClick={testConnection} disabled={!channelId.trim() || testState === 'testing'}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40"
+            style={{ border: `1.5px solid ${T_local}`, color: T_local }}>
+            {testState === 'testing' ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
+            {testState === 'testing' ? 'Testing…' : testState === 'ok' ? '✓ Connected!' : 'Test Connection'}
+          </button>
+        </div>
+      </div>
+
+      {/* Live test iframe */}
+      {(testState === 'testing' || testState === 'ok') && testUrl && (
+        <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #E2E8F0', height: 480 }}>
+          <div className="flex items-center justify-between px-4 py-2.5" style={{ background: '#F8FAFC', borderBottom: '1px solid #F1F5F9' }}>
+            <p className="text-xs font-semibold" style={{ color: '#64748B' }}>Test Preview — Gallabox Widget</p>
+            {testState === 'ok' && (
+              <span className="text-[10px] font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded-full">✓ Widget loaded</span>
+            )}
+          </div>
+          <iframe key={testIframeKey} src={testUrl}
+            style={{ width: '100%', height: 'calc(100% - 42px)', border: 'none', display: 'block' }}
+            allow="microphone; camera; clipboard-write"
+            onLoad={() => setTestState('ok')}
+            title="Gallabox test widget" />
+        </div>
+      )}
+
+      {/* How-to */}
+      <div className="rounded-xl p-4 text-xs space-y-1.5" style={{ background: '#F0F9FF', border: '1px solid #BAE6FD', color: '#0369A1' }}>
+        <p className="font-bold">Where is the Channel ID?</p>
+        <ol className="space-y-0.5 list-decimal pl-4">
+          <li>Log in to <strong>app.gallabox.com</strong></li>
+          <li>Go to <strong>Settings → Channels</strong></li>
+          <li>Click on your WhatsApp channel</li>
+          <li>Copy the <strong>Channel ID</strong> from the details page</li>
+        </ol>
+      </div>
     </div>
   );
 }

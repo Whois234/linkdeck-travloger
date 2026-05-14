@@ -13,7 +13,7 @@
  * Stage changes are optimistic — UI updates instantly, sync to DB in background.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
@@ -21,7 +21,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, Edit2, Phone, Mail, MapPin, Calendar, Briefcase, Users as UsersIcon,
   Tag as TagIcon, AlertTriangle, BadgeCheck, Loader2, Sparkles, MessageCircle,
-  UserPlus, FileEdit, Trash2, Save, ExternalLink, TrendingUp, FileText, GitBranch,
+  UserPlus, FileEdit, Trash2, Save, ExternalLink, TrendingUp, FileText, GitBranch, X, RefreshCw,
 } from 'lucide-react';
 import { toast } from '@/components/Toaster';
 import { QK } from '@/lib/query-hooks';
@@ -256,11 +256,14 @@ export default function ContactDetailPage() {
   const router = useRouter();
   const qc = useQueryClient();
 
-  const [contact, setContact] = useState<Contact | null>(null);
-  const [users,   setUsers]   = useState<User[]>([]);
-  const [tags,    setTags]    = useState<Tag[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState(false);
+  const [contact, setContact]   = useState<Contact | null>(null);
+  const [users,   setUsers]     = useState<User[]>([]);
+  const [tags,    setTags]      = useState<Tag[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [editing, setEditing]   = useState(false);
+  const [whatsappOpen, setWhatsappOpen] = useState(false);
+  const [channelId, setChannelId]       = useState('');
+  const [waIframeKey, setWaIframeKey]   = useState(0);
   const [savingStage,   setSavingStage]   = useState(false);
   const [reassigning,   setReassigning]   = useState(false);
   const [showAssignee,  setShowAssignee]  = useState(false);
@@ -289,7 +292,15 @@ export default function ContactDetailPage() {
     }
   }
 
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [params.id]);
+  useEffect(() => {
+    load();
+    // Load channel ID for WhatsApp drawer
+    fetch('/api/v1/app-settings')
+      .then(r => r.json())
+      .then(d => { if (d.ok) setChannelId(d.data?.gallabox_channel_id ?? ''); })
+      .catch(() => {});
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [params.id]);
 
   // ── Optimistic stage change ─────────────────────────────────────────────────
   async function changeStage(next: LeadStage) {
@@ -417,6 +428,12 @@ export default function ContactDetailPage() {
           <span className="font-semibold" style={{ color: '#0F172A' }}>{contact.name}</span>
         </nav>
         <div className="flex items-center gap-2">
+          {/* Open in WhatsApp — Gallabox conversation widget */}
+          <button onClick={() => { setWhatsappOpen(true); setWaIframeKey(k => k + 1); }}
+            className="flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-semibold text-white transition-colors"
+            style={{ background: T }}>
+            <MessageCircle className="w-3.5 h-3.5" /> Open in WhatsApp
+          </button>
           <button onClick={() => setEditing(true)}
             className="flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-semibold transition-colors hover:bg-[#F8FAFC]"
             style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>
@@ -756,6 +773,70 @@ export default function ContactDetailPage() {
           qc.invalidateQueries({ queryKey: ['contacts'] });
         }}
       />
+
+      {/* ── WhatsApp Conversation Drawer ─────────────────────────────────── */}
+      {whatsappOpen && (
+        <div className="fixed inset-0 z-50 flex items-stretch justify-end"
+          style={{ background: 'rgba(0,0,0,0.45)' }}
+          onClick={e => { if (e.target === e.currentTarget) setWhatsappOpen(false); }}>
+          <div className="flex flex-col bg-white shadow-2xl"
+            style={{ width: 'min(640px, 95vw)', height: '100vh' }}>
+
+            {/* Drawer header */}
+            <div className="flex items-center justify-between px-5 py-4 flex-shrink-0"
+              style={{ background: T }}>
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center text-white font-bold">
+                  {contact.name.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-white">{contact.name}</p>
+                  <p className="text-[11px] text-white/70 font-mono">
+                    +{contact.phone.replace(/[\s+\-()]/g, '')}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setWaIframeKey(k => k + 1)}
+                  className="p-2 rounded-lg hover:bg-white/10 text-white" title="Reload">
+                  <RefreshCw className="w-4 h-4" />
+                </button>
+                <button onClick={() => setWhatsappOpen(false)}
+                  className="p-2 rounded-lg hover:bg-white/10 text-white">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* iframe or no-channel warning */}
+            {!channelId ? (
+              <div className="flex-1 flex flex-col items-center justify-center gap-3 p-8">
+                <MessageCircle className="w-10 h-10" style={{ color: '#F59E0B' }} />
+                <p className="text-sm font-semibold text-center" style={{ color: '#0F172A' }}>
+                  Gallabox Channel ID not configured
+                </p>
+                <p className="text-xs text-center max-w-xs" style={{ color: '#94A3B8' }}>
+                  Go to <strong>CRM Settings → Gallabox</strong> and save your Channel ID to activate the WhatsApp widget.
+                </p>
+                <a href="/admin/crm-settings"
+                  className="text-xs px-4 py-2 rounded-xl font-semibold text-white"
+                  style={{ background: T }}>
+                  Open CRM Settings
+                </a>
+              </div>
+            ) : (
+              <iframe
+                key={waIframeKey}
+                src={`https://conversation-widget.gallabox.com/conversations/phone/${contact.phone.replace(/[\s+\-()]/g, '')}?name=${encodeURIComponent(contact.name)}&channelId=${encodeURIComponent(channelId)}`}
+                className="flex-1"
+                style={{ border: 'none', display: 'block', width: '100%' }}
+                allow="microphone; camera; clipboard-write"
+                title={`WhatsApp — ${contact.name}`}
+              />
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

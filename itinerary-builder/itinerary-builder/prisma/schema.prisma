@@ -1471,3 +1471,10 @@ model CrmTeamMember {
   @@index([team_id])
   @@index([user_id])
 }
+
+// ─── App Settings (key-value store for admin-configurable settings) ────────────
+model AppSetting {
+  key        String   @id                    // e.g. 'gallabox_channel_id'
+  value      String                          // setting value
+  updated_at DateTime @updatedAt
+}
