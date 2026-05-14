@@ -1,23 +1,46 @@
 /**
  * Gallabox API service
- * Docs: https://documenter.getpostman.com/view/21043235/2s9Ye8gF7e
- *
- * Env vars required:
- *   GALLABOX_API_KEY      — from Gallabox Settings → API Keys
- *   GALLABOX_API_SECRET   — from Gallabox Settings → API Keys
- *   GALLABOX_CHANNEL_ID   — your WhatsApp channel ID
+ * Credentials are read from the AppSetting table (CRM Settings → Gallabox tab),
+ * falling back to env vars for backward compatibility.
  */
 
-const BASE_URL     = 'https://server.gallabox.com/devapi';
-const API_KEY      = process.env.GALLABOX_API_KEY      ?? '';
-const API_SECRET   = process.env.GALLABOX_API_SECRET   ?? '';
-const CHANNEL_ID   = process.env.GALLABOX_CHANNEL_ID   ?? '';
+import { prisma } from '@/lib/prisma';
 
-function headers() {
+const BASE_URL = 'https://api.gallabox.com/dev';
+
+interface GallaboxCreds {
+  apiKey:    string;
+  apiSecret: string;
+  channelId: string;
+}
+
+/** Read credentials from DB (AppSetting table), fall back to env vars */
+async function getGallaboxCreds(): Promise<GallaboxCreds> {
+  try {
+    const rows = await prisma.appSetting.findMany({
+      where: { key: { in: ['gallabox_api_key', 'gallabox_api_secret', 'gallabox_channel_id'] } },
+    });
+    const map: Record<string, string> = {};
+    for (const r of rows) map[r.key] = r.value;
+    return {
+      apiKey:    map['gallabox_api_key']    || process.env.GALLABOX_API_KEY    || '',
+      apiSecret: map['gallabox_api_secret'] || process.env.GALLABOX_API_SECRET || '',
+      channelId: map['gallabox_channel_id'] || process.env.GALLABOX_CHANNEL_ID || '',
+    };
+  } catch {
+    return {
+      apiKey:    process.env.GALLABOX_API_KEY    ?? '',
+      apiSecret: process.env.GALLABOX_API_SECRET ?? '',
+      channelId: process.env.GALLABOX_CHANNEL_ID ?? '',
+    };
+  }
+}
+
+function makeHeaders(creds: GallaboxCreds) {
   return {
-    'Content-Type':    'application/json',
-    'apiKey':          API_KEY,
-    'apiSecret':       API_SECRET,
+    'Content-Type': 'application/json',
+    'apikey':       creds.apiKey,
+    'apisecret':    creds.apiSecret,
   };
 }
 
@@ -107,18 +130,20 @@ export async function sendWhatsAppTemplate(
   language =     'en',
   buttonValues:  string[] = [], // URL button dynamic suffix(es)
 ): Promise<SendResult> {
-  if (!API_KEY || !API_SECRET || !CHANNEL_ID) {
-    return { ok: false, error: 'Gallabox env vars not configured — check GALLABOX_API_KEY, GALLABOX_API_SECRET, GALLABOX_CHANNEL_ID in Vercel' };
+  const creds = await getGallaboxCreds();
+  if (!creds.apiKey || !creds.apiSecret || !creds.channelId) {
+    return { ok: false, error: 'Gallabox credentials not configured — go to CRM Settings → Gallabox to set them' };
   }
 
   const digits = normalisePhone(phone);
 
   const payload = {
-    channelId:   CHANNEL_ID,
+    channelId:   creds.channelId,
     channelType: 'whatsapp',
-    recipient: {
-      phone: digits,
-      name:  contactName || 'Customer',
+    contact: {
+      phone:       digits,
+      name:        contactName || 'Customer',
+      countryCode: digits.startsWith('91') ? '+91' : undefined,
     },
     whatsapp: {
       type: 'template',
@@ -131,17 +156,16 @@ export async function sendWhatsAppTemplate(
   };
 
   try {
-    const res = await fetch(`${BASE_URL}/messages/whatsapp`, {
+    const res = await fetch(`${BASE_URL}/messages`, {
       method:  'POST',
-      headers: headers(),
+      headers: makeHeaders(creds),
       body:    JSON.stringify(payload),
     });
 
-    // Always check HTTP status BEFORE parsing — Gallabox can return HTML error pages
     if (!res.ok) {
       let errMsg = `Gallabox API error (${res.status})`;
-      if (res.status === 404) errMsg = 'Gallabox endpoint not found (404) — check API URL';
-      if (res.status === 401) errMsg = 'Gallabox unauthorised (401) — verify GALLABOX_API_KEY and GALLABOX_API_SECRET';
+      if (res.status === 401) errMsg = 'Gallabox unauthorised (401) — check apikey and apisecret in CRM Settings';
+      if (res.status === 404) errMsg = 'Gallabox channel not found (404) — check Channel ID in CRM Settings';
       try {
         const ct = res.headers.get('content-type') ?? '';
         if (ct.includes('application/json')) {
@@ -156,7 +180,6 @@ export async function sendWhatsAppTemplate(
 
     const data = await res.json() as Record<string, unknown>;
     console.log('[gallabox/send-template] response:', JSON.stringify(data));
-
     const msgId = (data.id ?? data.messageId ?? (data.data as Record<string,unknown>)?.id) as string | undefined;
     return { ok: true, messageId: msgId };
   } catch (e) {
@@ -173,18 +196,19 @@ export async function sendWhatsAppText(
   message:     string,
   contactName: string,
 ): Promise<SendResult> {
-  if (!API_KEY || !API_SECRET || !CHANNEL_ID) {
-    return { ok: false, error: 'Gallabox env vars not configured' };
+  const creds = await getGallaboxCreds();
+  if (!creds.apiKey || !creds.apiSecret || !creds.channelId) {
+    return { ok: false, error: 'Gallabox credentials not configured — go to CRM Settings → Gallabox' };
   }
 
   const digits = normalisePhone(phone);
 
   const payload = {
-    channelId:   CHANNEL_ID,
+    channelId:   creds.channelId,
     channelType: 'whatsapp',
-    recipient: {
-      phone: digits,
-      name:  contactName || 'Customer',
+    contact: {
+      phone:  digits,
+      name:   contactName || 'Customer',
     },
     whatsapp: {
       type: 'text',
@@ -193,17 +217,16 @@ export async function sendWhatsAppText(
   };
 
   try {
-    const res = await fetch(`${BASE_URL}/messages/whatsapp`, {
+    const res = await fetch(`${BASE_URL}/messages`, {
       method:  'POST',
-      headers: headers(),
+      headers: makeHeaders(creds),
       body:    JSON.stringify(payload),
     });
 
-    // Always check HTTP status BEFORE parsing — Gallabox can return HTML error pages
     if (!res.ok) {
       let errMsg = `Gallabox API error (${res.status})`;
-      if (res.status === 404) errMsg = 'Gallabox endpoint not found (404) — check API URL';
-      if (res.status === 401) errMsg = 'Gallabox unauthorised (401) — verify GALLABOX_API_KEY and GALLABOX_API_SECRET';
+      if (res.status === 401) errMsg = 'Gallabox unauthorised (401) — check apikey and apisecret in CRM Settings';
+      if (res.status === 404) errMsg = 'Gallabox channel not found (404) — check Channel ID in CRM Settings';
       try {
         const ct = res.headers.get('content-type') ?? '';
         if (ct.includes('application/json')) {
@@ -211,14 +234,13 @@ export async function sendWhatsAppText(
           const apiMsg = (d.message ?? d.error ?? '') as string;
           if (apiMsg) errMsg = apiMsg;
         }
-      } catch { /* ignore parse failure on error body */ }
+      } catch { /* ignore */ }
       console.error('[gallabox/send-text] API error:', errMsg);
       return { ok: false, error: errMsg };
     }
 
     const data = await res.json() as Record<string, unknown>;
     console.log('[gallabox/send-text] response:', JSON.stringify(data));
-
     const msgId = (data.id ?? data.messageId ?? (data.data as Record<string,unknown>)?.id) as string | undefined;
     return { ok: true, messageId: msgId };
   } catch (e) {
@@ -240,13 +262,13 @@ const FALLBACK_TEMPLATES: GallaboxTemplate[] = [
 ];
 
 export async function listWhatsAppTemplates(): Promise<GallaboxTemplate[]> {
-  if (!API_KEY || !API_SECRET) {
+  const creds = await getGallaboxCreds();
+  if (!creds.apiKey || !creds.apiSecret) {
     console.warn('[gallabox/templates] Missing API credentials — returning fallback');
     return FALLBACK_TEMPLATES;
   }
 
-  // Try known Gallabox endpoints — with and without channelId filter
-  const channelParam = CHANNEL_ID ? `&channelId=${CHANNEL_ID}` : '';
+  const channelParam = creds.channelId ? `&channelId=${creds.channelId}` : '';
   const endpoints = [
     `${BASE_URL}/whatsappTemplates?${channelParam}`,
     `${BASE_URL}/whatsappTemplates?status=APPROVED${channelParam}`,
@@ -263,7 +285,7 @@ export async function listWhatsAppTemplates(): Promise<GallaboxTemplate[]> {
 
   for (const url of endpoints) {
     try {
-      const res = await fetch(url, { headers: headers(), cache: 'no-store' });
+      const res = await fetch(url, { headers: makeHeaders(creds), cache: 'no-store' });
       const raw = await res.text();
       console.log(`[gallabox/templates] ${url} → ${res.status}: ${raw.slice(0, 400)}`);
 

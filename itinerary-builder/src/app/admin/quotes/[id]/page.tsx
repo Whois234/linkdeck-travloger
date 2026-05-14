@@ -682,6 +682,8 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
   const [eventsLoading, setEventsLoading] = useState(false);
   const [republishing, setRepublishing] = useState(false);
   const [republishMsg, setRepublishMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [sendingWa, setSendingWa] = useState(false);
+  const [waMsg, setWaMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [togglingLink, setTogglingLink] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -716,6 +718,18 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
       else setRepublishMsg({ ok: false, text: data.error ?? 'Re-publish failed.' });
     } catch { setRepublishMsg({ ok: false, text: 'Network error. Try again.' }); }
     finally { setRepublishing(false); setTimeout(() => setRepublishMsg(null), 6000); }
+  }
+
+  async function sendViaWhatsApp() {
+    if (!quote || sendingWa) return;
+    setSendingWa(true); setWaMsg(null);
+    try {
+      const res = await fetch(`/api/v1/quotes/${id}/send-whatsapp`, { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) setWaMsg({ ok: true, text: 'Itinerary sent on WhatsApp ✅' });
+      else setWaMsg({ ok: false, text: data.error ?? 'Failed to send WhatsApp' });
+    } catch { setWaMsg({ ok: false, text: 'Network error. Try again.' }); }
+    finally { setSendingWa(false); setTimeout(() => setWaMsg(null), 6000); }
   }
 
   async function handleToggleLink() {
@@ -814,11 +828,22 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
         crumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Quotes', href: '/admin/quotes' }, { label: quote.quote_number }]}
         action={
           <div className="flex items-center gap-2 flex-wrap">
+            {waMsg && (
+              <span className="text-xs font-medium px-3 py-1.5 rounded-lg" style={waMsg.ok ? { backgroundColor: '#DCFCE7', color: '#15803D' } : { backgroundColor: '#FEF2F2', color: '#DC2626' }}>
+                {waMsg.text}
+              </span>
+            )}
             {republishMsg && (
               <span className="text-xs font-medium px-3 py-1.5 rounded-lg" style={republishMsg.ok ? { backgroundColor: '#DCFCE7', color: '#15803D' } : { backgroundColor: '#FEF2F2', color: '#DC2626' }}>
                 {republishMsg.text}
               </span>
             )}
+            <button onClick={sendViaWhatsApp} disabled={sendingWa}
+              className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
+              style={{ backgroundColor: '#134956' }}>
+              <MessageCircle className={`w-4 h-4 ${sendingWa ? 'animate-pulse' : ''}`} />
+              {sendingWa ? 'Sending…' : 'Send via WhatsApp'}
+            </button>
             <button onClick={handleRepublish} disabled={republishing}
               className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
               style={{ backgroundColor: T }}>

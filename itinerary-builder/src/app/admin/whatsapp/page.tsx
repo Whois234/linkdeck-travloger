@@ -95,7 +95,9 @@ export default function WhatsAppPage() {
       const res = await fetch('/api/v1/crm/contacts?sort=newest&limit=200');
       const d   = await res.json();
       if (d.success || d.ok) {
-        const items: Contact[] = (d.data ?? d.contacts ?? []).map((c: Contact) => c);
+        // contacts API returns { success: true, data: { items: [...], contacts: [...] } }
+        const raw = Array.isArray(d.data) ? d.data : (d.data?.items ?? d.data?.contacts ?? []);
+        const items: Contact[] = raw.map((c: Contact) => c);
         setContacts(items);
       }
     } finally {

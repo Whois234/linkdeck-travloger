@@ -599,7 +599,7 @@ export default function CrmSettingsPage() {
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════════
-          Workflows — fires when a new contact is created (Bigin-style)
+          Workflows — summary only; full management at /admin/workflows
       ══════════════════════════════════════════════════════════════════════════ */}
       {tab === 'workflows' && (
         <div className="space-y-4">
@@ -608,15 +608,15 @@ export default function CrmSettingsPage() {
               <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>Workflows</p>
               <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>Multi-condition rules with multi-action sequences — runs when a new contact is created</p>
             </div>
-            <button onClick={() => { resetWfForm(); setShowWfForm(true); }}
+            <a href="/admin/workflows"
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white"
               style={{ backgroundColor: T }}>
-              <Plus className="w-4 h-4" /> New Workflow
-            </button>
+              <Zap className="w-4 h-4" /> Manage Workflows
+            </a>
           </div>
 
-          {/* ── Workflow builder — modal overlay ── */}
-          {showWfForm && (
+          {/* Workflow builder moved to /admin/workflows */}
+          {false && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
               onClick={e => { if (e.target === e.currentTarget) { setShowWfForm(false); resetWfForm(); } }}>
               <div className="bg-white rounded-2xl shadow-2xl w-full overflow-hidden flex flex-col" style={{ maxWidth: '640px', maxHeight: '90vh', border: '1px solid #E2E8F0' }}>
@@ -1000,13 +1000,13 @@ export default function CrmSettingsPage() {
             </div>
           )}
 
-          {/* Workflows list */}
-          {workflows.length === 0 && !showWfForm ? (
+          {/* Workflows list — read-only summary; manage at /admin/workflows */}
+          {workflows.length === 0 ? (
             <div className="text-center py-16 bg-white rounded-2xl" style={{ border: '1px solid #E2E8F0' }}>
               <Workflow className="w-10 h-10 mx-auto mb-3" style={{ color: '#CBD5E1' }} />
               <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>No workflows yet</p>
               <p className="text-xs mt-1 max-w-sm mx-auto" style={{ color: '#94A3B8' }}>
-                Create a workflow with conditions and actions to automate your lead management process.
+                Go to <a href="/admin/workflows" className="underline" style={{ color: T }}>Workflows</a> to create automation rules.
               </p>
             </div>
           ) : (
@@ -1036,14 +1036,12 @@ export default function CrmSettingsPage() {
                       </p>
                     </div>
                     <Toggle on={wf.is_active} onToggle={() => toggleWorkflow(wf.id, !wf.is_active)} />
-                    <button onClick={() => deleteWorkflow(wf.id)}
-                      className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#FEF2F2] transition-colors"
-                      style={{ color: '#EF4444' }}>
-                      <Trash2 className="w-4 h-4" />
-                    </button>
                   </div>
                 );
               })}
+              <p className="text-xs text-center pt-1" style={{ color: '#94A3B8' }}>
+                To add, edit or delete workflows → <a href="/admin/workflows" className="underline font-medium" style={{ color: T }}>Workflows page</a>
+              </p>
             </div>
           )}
         </div>

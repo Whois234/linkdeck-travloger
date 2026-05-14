@@ -1,165 +1,317 @@
 'use client';
-import { useState, useEffect } from 'react';
-import dynamic from 'next/dynamic';
-import { MessageCircle, Phone, Clock, CheckCircle2, AlertCircle, Search, RefreshCw, Loader2 } from 'lucide-react';
+/**
+ * /admin/whatsapp — Two-panel WhatsApp inbox powered by Gallabox Conversation Widget.
+ *
+ * LEFT  35%  — Contact list (role-filtered from CRM Contacts)
+ * RIGHT 65%  — Gallabox iframe for selected contact
+ *
+ * iframe URL:
+ *   https://conversation-widget.gallabox.com/conversations/phone/{phoneNoPlus}?name={name}&channelId={channelId}
+ */
 
-const WhatsAppPanel = dynamic(() => import('@/components/WhatsAppPanel'), { ssr: false });
+import { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  Search, RefreshCw, Loader2, MessageSquare, Phone,
+  ChevronRight, User as UserIcon,
+} from 'lucide-react';
 
 const T = '#134956';
 
-interface Conversation {
-  contact_phone: string;
-  contact_name: string | null;
-  last_message: string | null;
-  last_message_type: string | null;
-  last_direction: string;
-  last_message_at: string;
-  total_messages: number;
-  window_status: 'open' | 'expiring' | 'closed';
-  minutes_left: number;
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface Contact {
+  id: string;
+  name: string;
+  phone: string;
+  lead_source: string | null;
+  platform: string | null;
+  assigned_to: { id: string; name: string } | null;
+  created_at: string;
 }
 
-function fmtTime(iso: string) {
-  const d = new Date(iso);
-  const now = new Date();
-  const diffHrs = (now.getTime() - d.getTime()) / 3600000;
-  if (diffHrs < 24) return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-  if (diffHrs < 48) return 'Yesterday';
-  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Strip +, spaces, dashes — Gallabox needs plain digits with country code */
+function cleanPhone(raw: string): string {
+  return raw.replace(/[\s+\-()]/g, '');
 }
 
-function WindowDot({ status }: { status: 'open' | 'expiring' | 'closed' }) {
-  const cfg = {
-    open:     { color: '#16A34A', bg: '#DCFCE7', label: 'Open' },
-    expiring: { color: '#D97706', bg: '#FEF9C3', label: 'Expiring' },
-    closed:   { color: '#DC2626', bg: '#FEE2E2', label: 'Closed' },
-  }[status];
+/** Build the Gallabox Conversation Widget URL */
+function gallaboxUrl(phone: string, name: string, channelId: string): string {
+  const p = cleanPhone(phone);
+  const n = encodeURIComponent(name);
+  return `https://conversation-widget.gallabox.com/conversations/phone/${p}?name=${n}&channelId=${encodeURIComponent(channelId)}`;
+}
+
+function SourceBadge({ source }: { source: string | null }) {
+  if (!source) return null;
+  const isAd = source === 'whatsapp_ad' || source === 'META';
   return (
-    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-      style={{ backgroundColor: cfg.bg, color: cfg.color }}>
-      <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ backgroundColor: cfg.color }} />
-      {cfg.label}
+    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+      style={{
+        background: isAd ? '#FFF7ED' : '#F0FDF4',
+        color:      isAd ? '#C2410C' : '#15803D',
+      }}>
+      {isAd ? '📢 Ad' : '💬 Organic'}
     </span>
   );
 }
 
-export default function WhatsAppInboxPage() {
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [loading, setLoading]             = useState(true);
-  const [search, setSearch]               = useState('');
-  const [panel, setPanel]                 = useState<{ phone: string; name: string } | null>(null);
-  const [refreshing, setRefreshing]       = useState(false);
+function AgentAvatar({ name }: { name: string }) {
+  return (
+    <div className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold text-white"
+      style={{ background: T }}>
+      {name.charAt(0).toUpperCase()}
+    </div>
+  );
+}
 
-  async function load(showRefresh = false) {
+// ─── Main page ────────────────────────────────────────────────────────────────
+
+export default function WhatsAppPage() {
+  const [contacts, setContacts]     = useState<Contact[]>([]);
+  const [loading, setLoading]       = useState(true);
+  const [search, setSearch]         = useState('');
+  const [selected, setSelected]     = useState<Contact | null>(null);
+  const [channelId, setChannelId]   = useState('');
+  const [iframeKey, setIframeKey]   = useState(0); // force iframe reload
+  const [refreshing, setRefreshing] = useState(false);
+  const iframeRef                   = useRef<HTMLIFrameElement>(null);
+
+  // ── Load settings + contacts ──────────────────────────────────────────────
+
+  const loadSettings = useCallback(async () => {
+    try {
+      const res = await fetch('/api/v1/app-settings');
+      const d   = await res.json();
+      if (d.ok) setChannelId(d.data?.gallabox_channel_id ?? '');
+    } catch { /* silent */ }
+  }, []);
+
+  const loadContacts = useCallback(async (showRefresh = false) => {
     if (showRefresh) setRefreshing(true); else setLoading(true);
     try {
-      const res = await fetch('/api/gallabox/inbox');
-      const d = await res.json();
-      if (d.ok) setConversations(d.data);
+      // Fetch all assigned contacts, newest first, large limit for inbox feel
+      const res = await fetch('/api/v1/crm/contacts?sort=newest&limit=200');
+      const d   = await res.json();
+      if (d.success || d.ok) {
+        // contacts API returns { success: true, data: { items: [...], contacts: [...] } }
+        const raw = Array.isArray(d.data) ? d.data : (d.data?.items ?? d.data?.contacts ?? []);
+        const items: Contact[] = raw.map((c: Contact) => c);
+        setContacts(items);
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }
+  }, []);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    loadSettings();
+    loadContacts();
+  }, [loadSettings, loadContacts]);
 
-  const filtered = conversations.filter(c => {
+  // ── Filter contacts ───────────────────────────────────────────────────────
+
+  const filtered = contacts.filter(c => {
     const q = search.toLowerCase();
-    return !q || (c.contact_name ?? '').toLowerCase().includes(q) || c.contact_phone.includes(q);
+    if (!q) return true;
+    return (
+      c.name.toLowerCase().includes(q) ||
+      c.phone.includes(q) ||
+      (c.assigned_to?.name ?? '').toLowerCase().includes(q)
+    );
   });
 
-  function getPreview(c: Conversation) {
-    if (c.last_message) return c.last_message.length > 60 ? c.last_message.slice(0, 60) + '…' : c.last_message;
-    return c.last_message_type ? `[${c.last_message_type}]` : 'Media message';
+  // ── Select contact ────────────────────────────────────────────────────────
+
+  function selectContact(c: Contact) {
+    setSelected(c);
+    setIframeKey(k => k + 1); // force fresh load when switching contact
   }
 
+  const iframeSrc = selected && channelId
+    ? gallaboxUrl(selected.phone, selected.name, channelId)
+    : null;
+
   return (
-    <div className="max-w-3xl">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-xl font-bold" style={{ color: '#0F172A' }}>WhatsApp Inbox</h1>
-          <p className="text-sm mt-0.5" style={{ color: '#64748B' }}>
-            {loading ? 'Loading…' : `${filtered.length} conversation${filtered.length !== 1 ? 's' : ''}`}
-          </p>
-        </div>
-        <button onClick={() => load(true)} disabled={refreshing}
-          className="flex items-center gap-1.5 h-9 px-3 rounded-lg text-sm font-semibold border transition-colors hover:bg-[#F8FAFC] disabled:opacity-50"
-          style={{ borderColor: '#E2E8F0', color: '#64748B' }}>
-          <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
-      </div>
+    /* Full-height layout: fills the admin shell content area */
+    <div className="flex h-[calc(100vh-64px)] overflow-hidden rounded-2xl"
+      style={{ border: '1px solid #E2E8F0' }}>
 
-      {/* Search */}
-      <div className="relative mb-4">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8]" />
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or phone…"
-          className="w-full h-10 pl-10 pr-4 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-[#134956]/20"
-          style={{ borderColor: '#E2E8F0', color: '#0F172A' }} />
-      </div>
+      {/* ══════════════════════════════════════════════════════════════════════
+          LEFT PANEL — Contact list (35%)
+      ═══════════════════════════════════════════════════════════════════════ */}
+      <div className="flex flex-col bg-white" style={{ width: '35%', borderRight: '1px solid #F1F5F9' }}>
 
-      {/* Conversation list */}
-      <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
-        {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="w-6 h-6 animate-spin" style={{ color: T }} />
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 gap-3">
-            <MessageCircle className="w-10 h-10" style={{ color: '#CBD5E1' }} />
-            <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>No conversations yet</p>
-            <p className="text-xs" style={{ color: '#94A3B8' }}>
-              {search ? 'No matches for your search' : 'WhatsApp messages from your contacts will appear here'}
-            </p>
-          </div>
-        ) : (
-          filtered.map((c, i) => (
-            <button key={c.contact_phone} onClick={() => setPanel({ phone: c.contact_phone, name: c.contact_name ?? c.contact_phone })}
-              className="w-full flex items-start gap-3 px-4 py-3.5 text-left transition-colors hover:bg-[#F8FAFC]"
-              style={{ borderBottom: i < filtered.length - 1 ? '1px solid #F1F5F9' : undefined }}>
-              {/* Avatar */}
-              <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-white text-sm"
-                style={{ backgroundColor: T }}>
-                {(c.contact_name ?? c.contact_phone).charAt(0).toUpperCase()}
-              </div>
-              {/* Content */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-2 mb-0.5">
-                  <span className="font-semibold text-sm truncate" style={{ color: '#0F172A' }}>
-                    {c.contact_name ?? c.contact_phone}
-                  </span>
-                  <span className="text-[11px] flex-shrink-0" style={{ color: '#94A3B8' }}>
-                    {fmtTime(c.last_message_at)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-[12px] truncate" style={{ color: '#64748B' }}>
-                    {c.last_direction === 'outgoing' ? '↗ ' : ''}{getPreview(c)}
-                  </p>
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
-                    <WindowDot status={c.window_status} />
-                    <span className="text-[10px] font-medium" style={{ color: '#94A3B8' }}>
-                      {c.total_messages} msg{c.total_messages !== 1 ? 's' : ''}
-                    </span>
-                  </div>
-                </div>
-                <p className="text-[11px] mt-0.5" style={{ color: '#94A3B8' }}>+{c.contact_phone}</p>
-              </div>
+        {/* Header */}
+        <div className="px-4 pt-4 pb-3 flex-shrink-0">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="w-4 h-4" style={{ color: T }} />
+              <h2 className="text-sm font-bold" style={{ color: '#0F172A' }}>WhatsApp Inbox</h2>
+            </div>
+            <button onClick={() => loadContacts(true)} disabled={refreshing}
+              className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
+              <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} style={{ color: '#94A3B8' }} />
             </button>
-          ))
+          </div>
+
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: '#94A3B8' }} />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search contacts…"
+              className="w-full pl-8 pr-3 py-2 text-xs rounded-xl outline-none"
+              style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}
+            />
+          </div>
+        </div>
+
+        {/* Contact list */}
+        <div className="flex-1 overflow-y-auto">
+          {loading ? (
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="w-5 h-5 animate-spin" style={{ color: T }} />
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="text-center py-16">
+              <UserIcon className="w-8 h-8 mx-auto mb-2" style={{ color: '#CBD5E1' }} />
+              <p className="text-xs" style={{ color: '#94A3B8' }}>
+                {search ? 'No contacts match' : 'No contacts yet'}
+              </p>
+            </div>
+          ) : (
+            filtered.map(c => {
+              const isActive = selected?.id === c.id;
+              return (
+                <button key={c.id} onClick={() => selectContact(c)}
+                  className="w-full text-left px-4 py-3 flex items-start gap-3 transition-all"
+                  style={{
+                    background:  isActive ? `${T}10` : 'transparent',
+                    borderLeft:  isActive ? `3px solid ${T}` : '3px solid transparent',
+                  }}>
+
+                  {/* Avatar */}
+                  <div className="w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center text-sm font-bold text-white"
+                    style={{ background: isActive ? T : '#94A3B8' }}>
+                    {c.name.charAt(0).toUpperCase()}
+                  </div>
+
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-xs font-semibold truncate" style={{ color: isActive ? T : '#0F172A' }}>
+                        {c.name}
+                      </span>
+                      <ChevronRight className="w-3 h-3 flex-shrink-0" style={{ color: isActive ? T : '#CBD5E1' }} />
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <Phone className="w-2.5 h-2.5" style={{ color: '#94A3B8' }} />
+                      <span className="text-[10px] font-mono" style={{ color: '#94A3B8' }}>
+                        +{cleanPhone(c.phone)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                      <SourceBadge source={c.lead_source ?? c.platform} />
+                      {c.assigned_to && (
+                        <span className="flex items-center gap-1 text-[9px]" style={{ color: '#94A3B8' }}>
+                          <AgentAvatar name={c.assigned_to.name} />
+                          {c.assigned_to.name.split(' ')[0]}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </div>
+
+        {/* Footer count */}
+        {!loading && filtered.length > 0 && (
+          <div className="px-4 py-2 flex-shrink-0 text-[10px] text-center" style={{ color: '#CBD5E1', borderTop: '1px solid #F1F5F9' }}>
+            {filtered.length} contact{filtered.length !== 1 ? 's' : ''}
+          </div>
         )}
       </div>
 
-      {/* Chat panel */}
-      {panel && (
-        <WhatsAppPanel
-          phone={panel.phone}
-          contactName={panel.name}
-          onClose={() => setPanel(null)}
-        />
-      )}
+      {/* ══════════════════════════════════════════════════════════════════════
+          RIGHT PANEL — Gallabox iframe (65%)
+      ═══════════════════════════════════════════════════════════════════════ */}
+      <div className="flex-1 flex flex-col bg-gray-50">
+        {!selected ? (
+          /* Placeholder — no contact selected */
+          <div className="flex-1 flex flex-col items-center justify-center gap-4">
+            <div className="w-16 h-16 rounded-2xl flex items-center justify-center"
+              style={{ background: `${T}15` }}>
+              <MessageSquare className="w-8 h-8" style={{ color: T }} />
+            </div>
+            <div className="text-center">
+              <p className="text-base font-bold" style={{ color: '#0F172A' }}>Select a contact</p>
+              <p className="text-sm mt-1" style={{ color: '#94A3B8' }}>
+                Choose a contact from the left to view their conversation
+              </p>
+            </div>
+            {!channelId && (
+              <div className="text-xs px-4 py-2 rounded-xl text-center"
+                style={{ background: '#FEF3C7', color: '#92400E', maxWidth: 320 }}>
+                ⚠️ Gallabox Channel ID not configured.
+                Go to <strong>CRM Settings → Gallabox</strong> to set it up.
+              </div>
+            )}
+          </div>
+        ) : !channelId ? (
+          /* No channel ID configured */
+          <div className="flex-1 flex flex-col items-center justify-center gap-3">
+            <MessageSquare className="w-10 h-10" style={{ color: '#F59E0B' }} />
+            <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>Channel ID not configured</p>
+            <p className="text-xs text-center max-w-xs" style={{ color: '#94A3B8' }}>
+              Go to <strong>CRM Settings → Gallabox</strong> and paste your Gallabox Channel ID to activate the widget.
+            </p>
+            <a href="/admin/crm-settings"
+              className="text-xs px-4 py-2 rounded-xl font-semibold text-white"
+              style={{ background: T }}>
+              Open CRM Settings
+            </a>
+          </div>
+        ) : (
+          /* Gallabox iframe */
+          <div className="flex flex-col h-full">
+            {/* Mini header showing selected contact */}
+            <div className="flex items-center gap-3 px-4 py-2.5 flex-shrink-0 bg-white"
+              style={{ borderBottom: '1px solid #F1F5F9' }}>
+              <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                style={{ background: T }}>
+                {selected.name.charAt(0).toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold truncate" style={{ color: '#0F172A' }}>{selected.name}</p>
+                <p className="text-[10px] font-mono" style={{ color: '#94A3B8' }}>+{cleanPhone(selected.phone)}</p>
+              </div>
+              <button onClick={() => setIframeKey(k => k + 1)}
+                className="p-1.5 rounded-lg hover:bg-gray-100"
+                title="Reload conversation">
+                <RefreshCw className="w-3.5 h-3.5" style={{ color: '#94A3B8' }} />
+              </button>
+            </div>
+
+            {/* iframe */}
+            <iframe
+              key={iframeKey}
+              ref={iframeRef}
+              src={iframeSrc!}
+              width="100%"
+              className="flex-1"
+              style={{ border: 'none', display: 'block' }}
+              allow="microphone; camera; clipboard-write"
+              title={`WhatsApp — ${selected.name}`}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
