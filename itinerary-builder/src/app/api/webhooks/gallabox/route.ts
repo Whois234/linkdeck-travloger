@@ -231,13 +231,38 @@ async function autoCreateContactFromGallabox(
     // lead_source: 'whatsapp_ad' if came from an ad click, otherwise 'organic'
     const gallaboxSource = (adId || adSourceType === 'AD') ? 'whatsapp_ad' : 'organic';
 
-    // platform is always WHATSAPP for Gallabox contacts
-    // device_platform: MOBILE if ctwa_clid (click from phone) else MOBILE (WhatsApp is always mobile)
-    const devicePlatform: 'MOBILE' | 'DESKTOP' = 'MOBILE';
+    // ── Ad platform (WHERE the ad ran) ───────────────────────────────────────
+    // META = Facebook / Instagram ads + WhatsApp CTWA (all Meta platforms)
+    // WHATSAPP = organic WhatsApp message (no ad referral)
+    const adPlatform = (adId || adSourceType === 'AD' || ctwaClid)
+      ? 'META'       // came via a Meta ad (CTWA, Instagram, Facebook)
+      : 'WHATSAPP';  // organic WhatsApp message
+
+    // ── Device OS (WHAT device they used) ────────────────────────────────────
+    // Gallabox referral may have 'media_type' or we check ctwa_clid patterns.
+    // Some Gallabox versions expose os/device in the contact or payload.
+    const rawOs = (
+      (payload.contact as Record<string,unknown>)?.os ??
+      (payload.contact as Record<string,unknown>)?.device ??
+      wa.os ??
+      wa.device ??
+      referral.os ??
+      null
+    ) as string | null;
+
+    let devicePlatform: 'ANDROID' | 'IOS' | 'MOBILE' | 'DESKTOP' = 'MOBILE';
+    if (rawOs) {
+      const osLower = rawOs.toLowerCase();
+      if (osLower.includes('android')) devicePlatform = 'ANDROID';
+      else if (osLower.includes('ios') || osLower.includes('iphone') || osLower.includes('ipad')) devicePlatform = 'IOS';
+    }
+    // ctwa_clid format can hint: Android CLIDs often start with different prefixes but
+    // this isn't reliable — keep MOBILE as the safe fallback when rawOs is null.
 
     console.log('[gallabox/auto-contact] Extracted fields:', JSON.stringify({
       phone, name, botFlowId, gallaboxContactId,
-      adId, adHeadline, ctwaClid, gallaboxSource, devicePlatform,
+      adId, adHeadline, ctwaClid, gallaboxSource,
+      adPlatform, devicePlatform, rawOs,
       refParam, adSourceType,
     }));
 
@@ -268,10 +293,12 @@ async function autoCreateContactFromGallabox(
         await updateContact(
           existing.id,
           {
-            ...(adId && !existing.ad_name           ? { ad_name:             adId        } : {}),
-            ...(adHeadline && !existing.campaign_name ? { campaign_name:     adHeadline  } : {}),
-            ...(ctwaClid && !existing.facebook_click_id ? { facebook_click_id: ctwaClid  } : {}),
+            ...(adId && !existing.ad_name                   ? { ad_name:             adId        } : {}),
+            ...(adHeadline && !existing.campaign_name        ? { campaign_name:       adHeadline  } : {}),
+            ...(ctwaClid && !existing.facebook_click_id      ? { facebook_click_id:   ctwaClid    } : {}),
             ...(gallaboxContactId && !existing.gallabox_contact_id ? { gallabox_contact_id: gallaboxContactId } : {}),
+            // Upgrade platform from WHATSAPP → META if we now know it's from an ad
+            ...(adPlatform === 'META' && existing.platform !== 'META' ? { platform: 'META' } : {}),
             custom_fields: newCf,
           },
           null,
@@ -309,13 +336,13 @@ async function autoCreateContactFromGallabox(
         phone,
         name:                name?.trim() || 'WhatsApp Lead',
         lead_source:         gallaboxSource,
-        platform:            'WHATSAPP',          // always WhatsApp for Gallabox contacts
-        device_platform:     devicePlatform,      // MOBILE (WhatsApp is always mobile)
+        platform:            adPlatform,          // 'META' for CTWA/ad leads, 'WHATSAPP' for organic
+        device_platform:     devicePlatform,      // ANDROID | IOS | MOBILE (best-effort from payload)
         gallabox_contact_id: gallaboxContactId ?? undefined,
-        campaign_name:       adHeadline ?? undefined,  // Facebook ad headline → campaign
-        ad_name:             adId       ?? undefined,  // Ad ID → ad_name
+        campaign_name:       adHeadline ?? undefined,  // Facebook ad headline → campaign name
+        ad_name:             adId       ?? undefined,  // Ad source_id → ad identifier
         ad_set_name:         adSourceType === 'AD' ? 'CTWA' : undefined,
-        facebook_click_id:   ctwaClid   ?? undefined,  // CTWA click ID
+        facebook_click_id:   ctwaClid   ?? undefined,  // CTWA click ID (fbclid)
         custom_fields:       customFields,
         owner_id:            admin.id,
       },

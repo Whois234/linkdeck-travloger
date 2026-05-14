@@ -1024,6 +1024,7 @@ model User {
   phone         String?
   gender        String?
   status        Boolean   @default(true)
+  is_available  Boolean   @default(true)   // online=true / offline=false (separate from status=account active)
   last_login    DateTime?
   module_access String?   // JSON array of module keys; null = full access for the role
   created_at    DateTime  @default(now())
@@ -1037,6 +1038,7 @@ model User {
 
   @@index([role])
   @@index([status])
+  @@index([is_available])
 }
 
 model Notification {
@@ -1187,6 +1189,8 @@ enum Platform {
 enum DevicePlatform {
   MOBILE
   DESKTOP
+  ANDROID
+  IOS
 }
 
 enum LeadStage {
@@ -1366,6 +1370,26 @@ model CrmWorkflow {
   is_active  Boolean  @default(true)
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt
+}
+
+// ─── Workflow execution history ───────────────────────────────────────────────
+
+model WorkflowRun {
+  id                 String   @id @default(cuid())
+  workflow_id        String
+  contact_id         String?
+  contact_name       String?
+  trigger            String
+  conditions_matched Boolean  @default(false)
+  action_type        String
+  action_detail      String?
+  assigned_to        String?  // user name who was assigned
+  result             String   // 'success' | 'failed' | 'skipped'
+  error              String?
+  created_at         DateTime @default(now())
+
+  @@index([workflow_id])
+  @@index([created_at])
 }
 
 // ─── Gallabox integration ─────────────────────────────────────────────────────
