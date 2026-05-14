@@ -314,13 +314,19 @@ function ToggleStatusModal({ user, onClose, onSaved }: { user: User; onClose: ()
   const deactivating = user.status;
   async function handleConfirm() {
     setSaving(true); setApiError(null);
-    const res = await fetch(`/api/v1/users/${user.id}`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: !user.status }),
-    });
-    setSaving(false);
-    if (res.ok) { onSaved(); onClose(); }
-    else { const d = await res.json().catch(() => ({})); setApiError(d.error ?? 'Something went wrong.'); }
+    try {
+      const res = await fetch(`/api/v1/users/${user.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: !user.status }),
+      });
+      if (res.ok) { onSaved(); onClose(); return; }
+      const d = await res.json().catch(() => ({}));
+      setApiError(d.error ?? `Failed (${res.status})`);
+    } catch (err) {
+      setApiError(err instanceof Error ? err.message : 'Network error');
+    } finally {
+      setSaving(false);
+    }
   }
   return (
     <Modal title={deactivating ? 'Deactivate User' : 'Activate User'} onClose={onClose}>
@@ -507,8 +513,9 @@ function fullDateTime(iso: string | null): string {
 
 // ─── User row action menu ─────────────────────────────────────────────────────
 
-function ActionMenu({ user, onEdit, onAccess, onReset, onToggle }: {
+function ActionMenu({ user, isSelf, onEdit, onAccess, onReset, onToggle }: {
   user: User;
+  isSelf: boolean;
   onEdit: () => void;
   onAccess: () => void;
   onReset: () => void;
@@ -542,12 +549,16 @@ function ActionMenu({ user, onEdit, onAccess, onReset, onToggle }: {
               className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-slate-50 transition-colors text-left" style={{ color: '#374151' }}>
               <KeyRound className="w-3.5 h-3.5" style={{ color: '#94A3B8' }} /> Reset Password
             </button>
-            <div style={{ height: 1, background: '#F1F5F9', margin: '4px 0' }} />
-            <button onClick={() => { setOpen(false); onToggle(); }}
-              className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-red-50 transition-colors text-left" style={{ color: user.status ? '#DC2626' : '#15803D' }}>
-              {user.status ? <UserX className="w-3.5 h-3.5" /> : <UserCheck className="w-3.5 h-3.5" />}
-              {user.status ? 'Deactivate' : 'Activate'}
-            </button>
+            {!isSelf && (
+              <>
+                <div style={{ height: 1, background: '#F1F5F9', margin: '4px 0' }} />
+                <button onClick={() => { setOpen(false); onToggle(); }}
+                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-red-50 transition-colors text-left" style={{ color: user.status ? '#DC2626' : '#15803D' }}>
+                  {user.status ? <UserX className="w-3.5 h-3.5" /> : <UserCheck className="w-3.5 h-3.5" />}
+                  {user.status ? 'Deactivate' : 'Activate'}
+                </button>
+              </>
+            )}
           </div>
         </>
       )}
@@ -597,8 +608,16 @@ export default function UsersPage() {
   const [resetUser,  setResetUser]  = useState<User | null>(null);
   const [toggleUser, setToggleUser] = useState<User | null>(null);
   const [moduleUser, setModuleUser] = useState<User | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const LIMIT = 20;
+
+  useEffect(() => {
+    fetch('/api/v1/auth/me')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.data?.id) setCurrentUserId(d.data.id); })
+      .catch(() => {});
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -633,7 +652,7 @@ export default function UsersPage() {
   const roleTabs = [{ value: '', label: 'All Users' }, ...ROLES.map(r => ({ value: r, label: r }))];
 
   return (
-    <div className="max-w-[1280px]">
+    <div className="max-w-[1280px] pb-4">
       <PageHeader
         title="Team Members"
         subtitle="Manage roles, access permissions and availability"
@@ -648,32 +667,32 @@ export default function UsersPage() {
       />
 
       {/* ── Stats row ─────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-3 mb-5">
+      <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-4 sm:mb-5">
         {[
           { icon: Users,   label: 'Total Members', value: total,   color: '#134956', bg: '#EEF6F8' },
           { icon: Wifi,    label: 'Online Now',     value: online,  color: '#059669', bg: '#ECFDF5' },
           { icon: WifiOff, label: 'Offline',        value: offline, color: '#94A3B8', bg: '#F8FAFC' },
         ].map(s => (
-          <div key={s.label} className="flex items-center gap-3.5 px-5 py-4 rounded-2xl bg-white"
+          <div key={s.label} className="flex items-center gap-2.5 sm:gap-3.5 px-3 sm:px-5 py-3 sm:py-4 rounded-xl sm:rounded-2xl bg-white"
             style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: s.bg }}>
-              <s.icon className="w-5 h-5" style={{ color: s.color }} />
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: s.bg }}>
+              <s.icon className="w-4 h-4 sm:w-5 sm:h-5" style={{ color: s.color }} />
             </div>
-            <div>
-              <p className="text-2xl font-bold leading-none" style={{ color: '#0F172A' }}>{s.value}</p>
-              <p className="text-xs mt-0.5 font-medium" style={{ color: '#94A3B8' }}>{s.label}</p>
+            <div className="min-w-0">
+              <p className="text-lg sm:text-2xl font-bold leading-none" style={{ color: '#0F172A' }}>{s.value}</p>
+              <p className="text-[10px] sm:text-xs mt-0.5 font-medium truncate" style={{ color: '#94A3B8' }}>{s.label}</p>
             </div>
           </div>
         ))}
       </div>
 
       {/* ── Filter bar ────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 mb-4 flex-wrap">
-        {/* Role pill tabs */}
-        <div className="flex items-center gap-1 p-1 rounded-xl flex-wrap" style={{ background: '#F1F5F9' }}>
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-3 mb-4">
+        {/* Role pill tabs — horizontally scrollable on mobile */}
+        <div className="flex items-center gap-1 p-1 rounded-xl overflow-x-auto no-scrollbar" style={{ background: '#F1F5F9' }}>
           {roleTabs.map(tab => (
             <button key={tab.value} onClick={() => setRoleFilter(tab.value)}
-              className="px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all"
+              className="px-3 sm:px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap flex-shrink-0"
               style={roleFilter === tab.value
                 ? { background: 'white', color: '#134956', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }
                 : { color: '#64748B' }}>
@@ -682,26 +701,25 @@ export default function UsersPage() {
           ))}
         </div>
 
-        {/* Spacer */}
-        <div className="flex-1" />
+        <div className="hidden sm:block flex-1" />
 
         {/* Search */}
-        <div className="relative">
+        <div className="relative w-full sm:w-auto">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: '#94A3B8' }} />
           <input
             value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Search name or email…"
-            className="h-9 pl-9 pr-4 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-[#134956]/20 focus:border-[#134956] transition-colors w-56"
+            className="h-9 pl-9 pr-4 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-[#134956]/20 focus:border-[#134956] transition-colors w-full sm:w-56"
             style={{ borderColor: '#E2E8F0', color: '#0F172A', background: 'white' }} />
         </div>
       </div>
 
-      {/* ── Table card ───────────────────────────────────────────────────── */}
+      {/* ── Table / Cards ───────────────────────────────────────────────── */}
       <div className="bg-white rounded-2xl overflow-hidden"
         style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
 
-        {/* Table header */}
-        <div className="grid items-center px-5 py-3"
+        {/* Desktop table header */}
+        <div className="hidden md:grid items-center px-5 py-3"
           style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr auto', borderBottom: '1px solid #F1F5F9', background: '#FAFBFC' }}>
           {['Team Member', 'Role', 'Access', 'Availability', 'Last Active', ''].map(h => (
             <div key={h} className="text-[11px] font-bold uppercase tracking-wider" style={{ color: '#94A3B8' }}>{h}</div>
@@ -721,81 +739,121 @@ export default function UsersPage() {
         ) : users.map((u, i) => {
           const initials = u.name.split(' ').filter(Boolean).map(w => w[0]).join('').toUpperCase().slice(0, 2);
           const ra = ROLE_AVATAR[u.role];
+          const isSelf = u.id === currentUserId;
+          const rowBorder = i < users.length - 1 ? '1px solid #F8FAFC' : undefined;
           return (
-            <div key={u.id}
-              className="group grid items-center px-5 py-3.5 transition-colors hover:bg-slate-50/60"
-              style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr auto', borderBottom: i < users.length - 1 ? '1px solid #F8FAFC' : undefined }}>
+            <div key={u.id} style={{ borderBottom: rowBorder }}>
 
-              {/* Member info */}
-              <div className="flex items-center gap-3.5 min-w-0">
-                {/* Gradient avatar */}
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white text-sm font-bold flex-shrink-0 select-none"
-                  style={{ background: ra.gradient, boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
-                  {initials}
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="font-semibold text-[13px] truncate" style={{ color: '#0F172A' }}>{u.name}</p>
-                    {!u.status && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold" style={{ background: '#FEE2E2', color: '#DC2626' }}>Inactive</span>
-                    )}
+              {/* Desktop row */}
+              <div className="hidden md:grid group items-center px-5 py-3.5 transition-colors hover:bg-slate-50/60"
+                style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr auto' }}>
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white text-sm font-bold flex-shrink-0 select-none"
+                    style={{ background: ra.gradient, boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
+                    {initials}
                   </div>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    <p className="text-xs truncate" style={{ color: '#94A3B8' }}>{u.email}</p>
-                    {u.agent_id && (
-                      <>
-                        <span style={{ color: '#E2E8F0' }}>·</span>
-                        <span className="text-[11px] font-mono" style={{ color: '#CBD5E1' }}>{u.agent_id}</span>
-                      </>
-                    )}
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold text-[13px] truncate" style={{ color: '#0F172A' }}>{u.name}</p>
+                      {!u.status && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold" style={{ background: '#FEE2E2', color: '#DC2626' }}>Inactive</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <p className="text-xs truncate" style={{ color: '#94A3B8' }}>{u.email}</p>
+                      {u.agent_id && (
+                        <>
+                          <span style={{ color: '#E2E8F0' }}>·</span>
+                          <span className="text-[11px] font-mono" style={{ color: '#CBD5E1' }}>{u.agent_id}</span>
+                        </>
+                      )}
+                    </div>
                   </div>
+                </div>
+
+                <div>
+                  <span className="inline-flex px-2.5 py-1 rounded-lg text-xs font-bold tracking-wide"
+                    style={{ backgroundColor: ra.badge, color: ra.badgeText }}>{u.role}</span>
+                </div>
+
+                <div><AccessBadge user={u} /></div>
+
+                <div className="flex items-center gap-2.5">
+                  <AvailabilitySwitch on={u.is_available} onToggle={() => toggleAvailability(u)} />
+                  <span className="text-xs font-medium" style={{ color: u.is_available ? '#059669' : '#94A3B8' }}>
+                    {u.is_available ? 'Online' : 'Offline'}
+                  </span>
+                </div>
+
+                <div title={fullDateTime(u.last_login)}>
+                  <p className="text-xs font-medium" style={{ color: u.last_login ? '#374151' : '#CBD5E1' }}>
+                    {relativeTime(u.last_login)}
+                  </p>
+                </div>
+
+                <div className="flex justify-end">
+                  <ActionMenu user={u} isSelf={isSelf}
+                    onEdit={() => setEditUser(u)}
+                    onAccess={() => setModuleUser(u)}
+                    onReset={() => setResetUser(u)}
+                    onToggle={() => setToggleUser(u)} />
                 </div>
               </div>
 
-              {/* Role */}
-              <div>
-                <span className="inline-flex px-2.5 py-1 rounded-lg text-xs font-bold tracking-wide"
-                  style={{ backgroundColor: ra.badge, color: ra.badgeText }}>
-                  {u.role}
-                </span>
-              </div>
+              {/* Mobile card */}
+              <div className="md:hidden px-4 py-3.5">
+                <div className="flex items-start gap-3">
+                  <div className="w-11 h-11 rounded-xl flex items-center justify-center text-white text-sm font-bold flex-shrink-0 select-none"
+                    style={{ background: ra.gradient, boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
+                    {initials}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="font-semibold text-sm truncate" style={{ color: '#0F172A' }}>{u.name}</p>
+                          {!u.status && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold" style={{ background: '#FEE2E2', color: '#DC2626' }}>Inactive</span>
+                          )}
+                        </div>
+                        <p className="text-xs truncate mt-0.5" style={{ color: '#94A3B8' }}>{u.email}</p>
+                      </div>
+                      <ActionMenu user={u} isSelf={isSelf}
+                        onEdit={() => setEditUser(u)}
+                        onAccess={() => setModuleUser(u)}
+                        onReset={() => setResetUser(u)}
+                        onToggle={() => setToggleUser(u)} />
+                    </div>
 
-              {/* Access */}
-              <div>
-                <AccessBadge user={u} />
-              </div>
+                    <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                      <span className="inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide"
+                        style={{ backgroundColor: ra.badge, color: ra.badgeText }}>{u.role}</span>
+                      <AccessBadge user={u} />
+                      {u.agent_id && (
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ background: '#F1F5F9', color: '#64748B' }}>{u.agent_id}</span>
+                      )}
+                    </div>
 
-              {/* Availability toggle */}
-              <div className="flex items-center gap-2.5">
-                <AvailabilitySwitch on={u.is_available} onToggle={() => toggleAvailability(u)} />
-                <span className="text-xs font-medium" style={{ color: u.is_available ? '#059669' : '#94A3B8' }}>
-                  {u.is_available ? 'Online' : 'Offline'}
-                </span>
-              </div>
-
-              {/* Last active */}
-              <div title={fullDateTime(u.last_login)}>
-                <p className="text-xs font-medium" style={{ color: u.last_login ? '#374151' : '#CBD5E1' }}>
-                  {relativeTime(u.last_login)}
-                </p>
-              </div>
-
-              {/* Actions menu */}
-              <div className="flex justify-end">
-                <ActionMenu
-                  user={u}
-                  onEdit={() => setEditUser(u)}
-                  onAccess={() => setModuleUser(u)}
-                  onReset={() => setResetUser(u)}
-                  onToggle={() => setToggleUser(u)}
-                />
+                    <div className="flex items-center justify-between mt-2.5 pt-2.5" style={{ borderTop: '1px dashed #F1F5F9' }}>
+                      <div className="flex items-center gap-2">
+                        <AvailabilitySwitch on={u.is_available} onToggle={() => toggleAvailability(u)} />
+                        <span className="text-[11px] font-medium" style={{ color: u.is_available ? '#059669' : '#94A3B8' }}>
+                          {u.is_available ? 'Online' : 'Offline'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] font-medium" style={{ color: u.last_login ? '#94A3B8' : '#CBD5E1' }}>
+                        {relativeTime(u.last_login)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           );
         })}
 
         {/* Footer / Pagination */}
-        <div className="flex items-center justify-between px-5 py-3.5"
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 px-4 sm:px-5 py-3 sm:py-3.5"
           style={{ borderTop: '1px solid #F1F5F9', background: '#FAFBFC' }}>
           <p className="text-xs" style={{ color: '#94A3B8' }}>
             Showing {users.length} of <span className="font-semibold" style={{ color: '#374151' }}>{total}</span> members
