@@ -383,9 +383,9 @@ export { CallBanner, CallLogPopup };
 export type CallState = { active: boolean; leadId: string; leadName: string; phone: string; elapsed: number } | null;
 
 export default function LeadDrawer({
-  leadId, stages, onClose, onUpdated, callState, setCallState,
+  leadId, stages, users, onClose, onUpdated, callState, setCallState,
 }: {
-  leadId: string; stages: Stage[]; onClose: () => void; onUpdated: () => void;
+  leadId: string; stages: Stage[]; users?: { id: string; name: string }[]; onClose: () => void; onUpdated: () => void;
   callState: CallState;
   setCallState: (s: CallState) => void;
 }) {
@@ -406,7 +406,8 @@ export default function LeadDrawer({
   const [taskType, setTaskType] = useState('call');
   const [taskDue, setTaskDue] = useState('');
   const [taskNotes, setTaskNotes] = useState('');
-  const [movingStage, setMovingStage] = useState(false);
+  const [movingStage, setMovingStage]       = useState(false);
+  const [assigningAgent, setAssigningAgent] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editForm, setEditForm] = useState({ name: '', phone: '', email: '', destination_interest: '', travel_month: '', budget_range: '' });
   const [savingEdit, setSavingEdit] = useState(false);
@@ -441,6 +442,17 @@ export default function LeadDrawer({
       body: JSON.stringify({ stage_id: stageId }),
     });
     setMovingStage(false);
+    qc.invalidateQueries({ queryKey: QK.lead(leadId) });
+    onUpdated();
+  }
+
+  async function assignAgent(agentId: string | null) {
+    setAssigningAgent(true);
+    await fetch(`/api/v1/leads/${leadId}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assigned_agent_id: agentId }),
+    });
+    setAssigningAgent(false);
     qc.invalidateQueries({ queryKey: QK.lead(leadId) });
     onUpdated();
   }
@@ -523,6 +535,22 @@ export default function LeadDrawer({
                 </select>
                 <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none" style={{ color: currentStage?.color ?? '#64748B' }} />
               </div>
+              {/* Assigned agent dropdown */}
+              {users && users.length > 0 && (
+                <div className="relative">
+                  <select
+                    value={lead.assigned_agent_id ?? ''}
+                    onChange={e => assignAgent(e.target.value || null)}
+                    disabled={assigningAgent}
+                    className="text-xs font-semibold pl-2 pr-6 py-1 rounded-full outline-none appearance-none cursor-pointer disabled:opacity-60"
+                    style={{ backgroundColor: lead.assigned_agent_id ? '#EEF7F9' : '#F1F5F9', color: lead.assigned_agent_id ? '#134956' : '#94A3B8', border: `1px solid ${lead.assigned_agent_id ? '#134956' : '#E2E8F0'}` }}>
+                    <option value="">Unassigned</option>
+                    {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  </select>
+                  <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none" style={{ color: lead.assigned_agent_id ? '#134956' : '#94A3B8' }} />
+                </div>
+              )}
+
               <div className="flex-1" />
               <button
                 onClick={() => { window.location.href = `tel:${lead.phone}`; setCallState({ active: true, leadId, leadName: lead.name, phone: lead.phone, elapsed: 0 }); }}
@@ -838,7 +866,12 @@ export default function LeadDrawer({
                             style={{ background: isFirst ? `linear-gradient(135deg, ${cfg.color}08, white)` : 'white', border: `1px solid ${isFirst ? cfg.color + '20' : '#F1F5F9'}` }}>
                             <div className="px-4 py-3">
                               <div className="flex items-start justify-between gap-2">
-                                <p className="text-sm font-semibold leading-snug" style={{ color: '#0F172A' }}>{cfg.label(meta)}</p>
+                                <div className="min-w-0">
+                                  <p className="text-sm font-semibold leading-snug" style={{ color: '#0F172A' }}>{cfg.label(meta)}</p>
+                                  {cfg.sublabel && cfg.sublabel(meta) && (
+                                    <p className="text-[11px] mt-0.5 font-medium" style={{ color: '#94A3B8' }}>{cfg.sublabel(meta)}</p>
+                                  )}
+                                </div>
                                 <span className="text-[10px] font-medium flex-shrink-0 mt-0.5 whitespace-nowrap" style={{ color: '#94A3B8' }}>{timeAgo(a.created_at)}</span>
                               </div>
                               {a.type === 'stage_changed' && meta.from && (

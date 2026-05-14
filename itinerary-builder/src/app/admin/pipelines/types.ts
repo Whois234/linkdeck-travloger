@@ -8,6 +8,8 @@ export interface Lead {
   travel_month: string | null; budget_range: string | null;
   status: string; stage_id: string | null; pipeline_id: string | null;
   owner_id: string | null; crm_contact_id: string | null;
+  assigned_agent_id: string | null;
+  assigned_agent?: { id: string; name: string } | null;
   created_at: string;
   stage?: { id: string; name: string; color: string; order: number } | null;
   _count?: { call_logs: number; lead_notes: number };
@@ -50,16 +52,37 @@ export const TASK_ICONS: Record<string, string> = {
   call: 'PhoneCall', follow_up: 'RefreshCw', send_quote: 'FileText', meeting: 'Users', other: 'Pin',
 };
 
-export const ACTIVITY_CONFIG: Record<string, { icon: string; color: string; label: (m: Record<string, string>) => string }> = {
-  created:      { icon: 'Sparkles',        color: '#6366F1', label: () => 'Lead created' },
-  stage_changed:{ icon: 'ArrowLeftRight',  color: '#0EA5E9', label: m => `Stage: ${m.from ?? '?'} → ${m.to ?? '?'}` },
-  note_added:   { icon: 'FileText',        color: '#F59E0B', label: () => 'Note added' },
-  call_logged:  { icon: 'PhoneCall',       color: '#10B981', label: m => `Call logged — ${m.outcome ?? ''}` },
-  task_added:   { icon: 'Clock',           color: '#8B5CF6', label: m => `Task: ${(m.task_type as string ?? '').replace('_', ' ')}` },
-  quote_created:  { icon: 'FileText',      color: '#2563EB', label: () => 'Quote created' },
-  quote_sent:     { icon: 'Send',          color: '#0891B2', label: () => 'Quote sent to customer' },
-  quote_viewed:   { icon: 'Eye',           color: '#7C3AED', label: () => 'Customer viewed the quote' },
-  quote_approved: { icon: 'CheckCircle',   color: '#15803D', label: () => 'Customer approved the quote' },
+export const ACTIVITY_CONFIG: Record<string, { icon: string; color: string; label: (m: Record<string, string>) => string; sublabel?: (m: Record<string, string>) => string }> = {
+  created: {
+    icon: 'Sparkles', color: '#6366F1',
+    label: m => {
+      const src = (m.source ?? '').toLowerCase();
+      if (src === 'ctwa' || src === 'whatsapp_ad') return '📣 Created via WhatsApp Ad (CTWA)';
+      if (src === 'organic' || src === 'whatsapp') return '💬 Created via Organic WhatsApp';
+      if (m.channel === 'gallabox') return '📱 Created via Gallabox';
+      if (m.channel === 'manual') return '✍️ Added manually';
+      return '🔗 Lead created';
+    },
+    sublabel: m => [m.campaign, m.platform].filter(Boolean).join(' · '),
+  },
+  workflow_assigned: {
+    icon: 'Zap', color: '#F59E0B',
+    label: m => `⚡ Auto-assigned to ${m.agent_name ?? 'agent'} via workflow`,
+    sublabel: m => m.workflow_name ? `Workflow: ${m.workflow_name}` : '',
+  },
+  assigned: {
+    icon: 'Users', color: '#134956',
+    label: m => m.agent_name ? `👤 Assigned to ${m.agent_name}` : '👤 Assigned (unassigned)',
+    sublabel: m => m.by_name ? `By ${m.by_name}` : '',
+  },
+  stage_changed: { icon: 'ArrowLeftRight', color: '#0EA5E9', label: m => `Stage: ${m.from ?? '?'} → ${m.to ?? '?'}` },
+  note_added:    { icon: 'FileText',        color: '#F59E0B', label: () => 'Note added' },
+  call_logged:   { icon: 'PhoneCall',       color: '#10B981', label: m => `Call logged — ${m.outcome ?? ''}` },
+  task_added:    { icon: 'Clock',           color: '#8B5CF6', label: m => `Task: ${(m.task_type as string ?? '').replace('_', ' ')}` },
+  quote_created: { icon: 'FileText',        color: '#2563EB', label: () => 'Quote created' },
+  quote_sent:    { icon: 'Send',            color: '#0891B2', label: () => 'Quote sent to customer' },
+  quote_viewed:  { icon: 'Eye',             color: '#7C3AED', label: () => 'Customer viewed the quote' },
+  quote_approved:{ icon: 'CheckCircle',     color: '#15803D', label: () => 'Customer approved the quote' },
 };
 
 export const SECTION_ORDER = ['hero', 'packages', 'dates', 'itinerary', 'inclusions', 'fare', 'policies', 'faqs'];

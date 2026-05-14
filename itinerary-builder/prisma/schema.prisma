@@ -156,6 +156,7 @@ enum QuoteEventType {
   booking_intent
   rating_submitted
   batch_selected
+  whatsapp_sent
 }
 
 enum UserRole {
@@ -790,6 +791,7 @@ model Lead {
   updated_at           DateTime   @updatedAt
 
   crm_contact          CrmContact?     @relation(fields: [crm_contact_id], references: [id])
+  assigned_agent       User?           @relation("LeadAssignedAgent", fields: [assigned_agent_id], references: [id])
   customers            Customer[]
   quotes               Quote[]
   pipeline             Pipeline?       @relation(fields: [pipeline_id], references: [id])
@@ -1035,6 +1037,7 @@ model User {
   assigned_contacts   CrmContact[]      @relation("CrmContactAssignee")
   contact_activities  ContactActivity[] @relation("ContactActivityActor")
   team_memberships    CrmTeamMember[]
+  assigned_leads      Lead[]            @relation("LeadAssignedAgent")
 
   @@index([role])
   @@index([status])

@@ -1,0 +1,65 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
+import bcrypt from 'bcryptjs';
+import { prisma } from '@/lib/prisma';
+import { signToken } from '@/lib/auth';
+import { err } from '@/lib/api-response';
+import { rateLimit, clientIp } from '@/lib/rate-limit';
+
+const LoginSchema = z.object({
+  email: z.string().email().transform(v => v.toLowerCase().trim()),
+  password: z.string().min(1),
+  remember: z.boolean().optional(),
+});
+
+export async function POST(req: NextRequest) {
+  // 5 attempts per minute per IP. Counts every attempt, not just failures,
+  // so a credential-stuffing burst stops even when each guess is "right" for one account.
+  const ip = clientIp(req);
+  const rl = rateLimit({ key: `login:${ip}`, max: 5, windowMs: 60_000 });
+  if (!rl.ok) {
+    const res = err('Too many login attempts. Please wait a minute and try again.', 429);
+    res.headers.set('Retry-After', String(rl.retryAfter));
+    return res;
+  }
+
+  const body = await req.json().catch(() => ({}));
+  const parsed = LoginSchema.safeParse(body);
+  if (!parsed.success) return err('Invalid request', 400, parsed.error.flatten());
+
+  const { email, password, remember } = parsed.data;
+
+  const user = await prisma.user.findUnique({ where: { email, status: true } });
+  if (!user) return err('Invalid email or password', 401);
+
+  const valid = await bcrypt.compare(password, user.password);
+  if (!valid) return err('Invalid email or password', 401);
+
+  // Update last_login timestamp
+  await prisma.user.update({ where: { id: user.id }, data: { last_login: new Date() } });
+
+  const tokenExpiry = remember ? '30d' : '8h';
+  const token = await signToken({
+    sub: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    agent_id: user.agent_id ?? undefined,
+    module_access: user.module_access ? (JSON.parse(user.module_access) as Array<{ key: string; perm: 'view' | 'edit' }>) : null,
+  }, tokenExpiry);
+
+  const maxAge = remember ? 60 * 60 * 24 * 30 : 60 * 60 * 8; // 30 days or 8 hours
+
+  const res = NextResponse.json({
+    success: true,
+    data: { id: user.id, name: user.name, email: user.email, role: user.role },
+  });
+  res.cookies.set('travloger_token', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge,
+    path: '/',
+  });
+  return res;
+}

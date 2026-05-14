@@ -23,6 +23,41 @@ type DevicePlatform = 'MOBILE' | 'DESKTOP';
 
 const T = '#134956';
 
+const COUNTRY_CODES = [
+  { code: '+91',  flag: '🇮🇳', name: 'India'        },
+  { code: '+971', flag: '🇦🇪', name: 'UAE'          },
+  { code: '+1',   flag: '🇺🇸', name: 'USA / Canada' },
+  { code: '+44',  flag: '🇬🇧', name: 'UK'           },
+  { code: '+65',  flag: '🇸🇬', name: 'Singapore'    },
+  { code: '+60',  flag: '🇲🇾', name: 'Malaysia'     },
+  { code: '+61',  flag: '🇦🇺', name: 'Australia'    },
+  { code: '+81',  flag: '🇯🇵', name: 'Japan'        },
+  { code: '+49',  flag: '🇩🇪', name: 'Germany'      },
+  { code: '+33',  flag: '🇫🇷', name: 'France'       },
+  { code: '+966', flag: '🇸🇦', name: 'Saudi Arabia' },
+  { code: '+974', flag: '🇶🇦', name: 'Qatar'        },
+  { code: '+968', flag: '🇴🇲', name: 'Oman'         },
+  { code: '+973', flag: '🇧🇭', name: 'Bahrain'      },
+  { code: '+94',  flag: '🇱🇰', name: 'Sri Lanka'    },
+  { code: '+977', flag: '🇳🇵', name: 'Nepal'        },
+  { code: '+880', flag: '🇧🇩', name: 'Bangladesh'   },
+];
+
+/** Split a fully-qualified phone (e.g. "919876543210") into { code, local }. */
+function parseExistingPhone(full: string): { code: string; local: string } {
+  if (!full) return { code: '+91', local: '' };
+  const digits = full.replace(/\D/g, '');
+  // Sort by length desc so longer codes (971, 966) match before shorter (+1)
+  const sorted = [...COUNTRY_CODES].sort((a, b) => b.code.length - a.code.length);
+  for (const { code } of sorted) {
+    const prefix = code.replace('+', '');
+    if (digits.startsWith(prefix)) {
+      return { code, local: digits.slice(prefix.length) };
+    }
+  }
+  return { code: '+91', local: digits };
+}
+
 const STAGES: { value: LeadStage;  label: string }[] = [
   { value: 'NEW',       label: 'New' },
   { value: 'CONTACTED', label: 'Contacted' },
@@ -76,7 +111,8 @@ export interface ContactFormValue {
   id?: string;
   // Basic
   name: string;
-  phone: string;
+  countryCode: string;  // e.g. "+91"
+  phone: string;        // local number only (no country code)
   email: string;
   city: string;
 
@@ -122,7 +158,7 @@ export interface ContactFormValue {
 }
 
 const EMPTY: ContactFormValue = {
-  name: '', phone: '', email: '', city: '',
+  name: '', countryCode: '+91', phone: '', email: '', city: '',
   interested_destination: '', number_of_travellers: '', trip_type: '',
   special_requirements: '', budget_per_person: '',
   lead_source: '', platform: '', campaign_name: '', ad_set_name: '', ad_name: '',
@@ -182,7 +218,9 @@ export default function ContactFormModal({ open, mode, initial, users, tags, onC
   // Reset whenever the modal opens or the initial subject changes.
   useEffect(() => {
     if (open) {
-      setForm({ ...EMPTY, ...initial });
+      // In edit mode, parse the existing stored phone (e.g. "919876543210") into code + local.
+      const { code, local } = initial?.phone ? parseExistingPhone(initial.phone) : { code: '+91', local: '' };
+      setForm({ ...EMPTY, ...initial, countryCode: code, phone: local });
       setErrors({});
       setShowOtherAd(false);
       setTagInput('');
@@ -224,7 +262,7 @@ export default function ContactFormModal({ open, mode, initial, users, tags, onC
     const e: Record<string, string> = {};
     if (!form.name.trim())                                              e.name  = 'Name is required';
     if (!form.phone.trim())                                             e.phone = 'Phone is required';
-    else if (!/^[0-9+\-\s()]{7,20}$/.test(form.phone.trim()))           e.phone = 'Phone format looks invalid';
+    else if (!/^\d{5,15}$/.test(form.phone.replace(/[\s\-()]/g, '')))   e.phone = 'Enter digits only (5–15 numbers)';
     if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email))   e.email = 'Email format looks invalid';
     if (form.number_of_travellers && !/^\d+$/.test(form.number_of_travellers))
                                                                         e.number_of_travellers = 'Must be a whole number';
@@ -249,7 +287,7 @@ export default function ContactFormModal({ open, mode, initial, users, tags, onC
     try {
       const payload: Record<string, unknown> = {
         name:                 form.name.trim(),
-        phone:                form.phone.replace(/[\s\-\(\)]/g, ''),
+        phone:                form.countryCode.replace('+', '') + form.phone.replace(/[\s\-\(\)]/g, ''),
         email:                form.email.trim() || null,
         city:                 form.city.trim() || null,
         interested_destination: form.interested_destination.trim() || null,
@@ -354,8 +392,25 @@ export default function ContactFormModal({ open, mode, initial, users, tags, onC
                   value={form.name} onChange={e => update('name', e.target.value)} placeholder="Anjali Sharma" />
               </Field>
               <Field label="Phone *" error={errors.phone}>
-                <input className={inputCls} style={borderStyle} data-field="phone" type="tel"
-                  value={form.phone} onChange={e => update('phone', e.target.value)} placeholder="+91 98765 43210" />
+                <div className="flex rounded-lg border overflow-hidden" style={borderStyle} data-field="phone">
+                  <select
+                    value={form.countryCode}
+                    onChange={e => update('countryCode', e.target.value)}
+                    className="h-9 pl-2 pr-1 text-sm font-semibold bg-[#F8FAFC] border-r focus:outline-none flex-shrink-0 cursor-pointer"
+                    style={{ borderColor: '#E2E8F0', color: '#0F172A', minWidth: 72 }}
+                  >
+                    {COUNTRY_CODES.map(c => (
+                      <option key={c.code} value={c.code}>{c.flag} {c.code}</option>
+                    ))}
+                  </select>
+                  <input
+                    className="flex-1 h-9 px-3 text-sm placeholder:text-[#94A3B8] focus:outline-none bg-white"
+                    type="tel" inputMode="numeric"
+                    value={form.phone}
+                    onChange={e => update('phone', e.target.value.replace(/[^\d\s\-()]/g, ''))}
+                    placeholder="98765 43210"
+                  />
+                </div>
               </Field>
               <Field label="Email" error={errors.email}>
                 <input className={inputCls} style={borderStyle} data-field="email" type="email"

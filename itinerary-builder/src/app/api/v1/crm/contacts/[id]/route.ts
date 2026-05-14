@@ -195,12 +195,23 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 }
 
-// ─── DELETE (soft) ───────────────────────────────────────────────────────────
+// ─── DELETE (soft or hard) ───────────────────────────────────────────────────
 
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   const user = await getAuthUser(req);
   if (!user) return unauthorized();
   if (!requireRole(user, UserRole.ADMIN, UserRole.MANAGER)) return forbidden();
+
+  const hard = new URL(req.url).searchParams.get('hard') === 'true';
+
+  if (hard) {
+    // Permanent delete — only admins can permanently destroy data
+    if (!requireRole(user, UserRole.ADMIN)) return forbidden();
+    const contact = await prisma.crmContact.findUnique({ where: { id: params.id } });
+    if (!contact) return notFound('Contact');
+    await prisma.crmContact.delete({ where: { id: params.id } });
+    return ok({ deleted: true, permanent: true });
+  }
 
   try {
     await softDeleteContact(params.id, user.sub);

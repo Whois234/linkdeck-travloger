@@ -2,15 +2,19 @@ import { SignJWT, jwtVerify } from 'jose';
 import { NextRequest } from 'next/server';
 import { UserRole } from '@prisma/client';
 
-if (!process.env.JWT_SECRET && process.env.NODE_ENV === 'production') {
-  throw new Error('JWT_SECRET environment variable is not set. This is a critical security error.');
-}
 if (!process.env.JWT_SECRET) {
   console.warn('[auth] WARNING: JWT_SECRET is not set. Using insecure fallback. Set JWT_SECRET in .env for production.');
 }
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET ?? 'fallback-dev-secret-change-in-production'
-);
+
+// Lazy getter — evaluated at request time, not at module load / build time
+function getJwtSecret() {
+  if (!process.env.JWT_SECRET && process.env.NODE_ENV === 'production') {
+    throw new Error('JWT_SECRET environment variable is not set. This is a critical security error.');
+  }
+  return new TextEncoder().encode(
+    process.env.JWT_SECRET ?? 'fallback-dev-secret-change-in-production'
+  );
+}
 
 export interface JWTPayload {
   sub: string;       // user id
@@ -28,11 +32,11 @@ export async function signToken(payload: Omit<JWTPayload, 'iat' | 'exp'>, expire
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime(expiresIn)
-    .sign(JWT_SECRET);
+    .sign(getJwtSecret());
 }
 
 export async function verifyToken(token: string): Promise<JWTPayload> {
-  const { payload } = await jwtVerify(token, JWT_SECRET);
+  const { payload } = await jwtVerify(token, getJwtSecret());
   return payload as unknown as JWTPayload;
 }
 

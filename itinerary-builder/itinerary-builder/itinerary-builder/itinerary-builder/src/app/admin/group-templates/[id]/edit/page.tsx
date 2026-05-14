@@ -1,0 +1,1531 @@
+'use client';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { PageHeader } from '@/components/admin/PageHeader';
+import { Modal } from '@/components/admin/Modal';
+import { ImageUploader } from '@/components/admin/ImageUploader';
+import { RichTextEditor } from '@/components/admin/RichTextEditor';
+import {
+  ChevronDown, ChevronRight, Plus, Trash2, Check,
+  Save, Star, Image as ImgIcon, FileText, LayoutList,
+  MapPin, Shield, HelpCircle, BookOpen, Calendar,
+  Users, X, GripVertical, ListPlus,
+} from 'lucide-react';
+
+/* ── Style tokens ── */
+const inp   = 'w-full h-9 px-3 rounded-lg border text-sm placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white';
+const ta    = 'w-full px-3 py-2 rounded-lg border text-sm placeholder:text-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white resize-none';
+const sel   = 'w-full h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white appearance-none';
+const lbl   = 'block text-[11px] font-semibold uppercase tracking-wider mb-1.5 text-[#64748B]';
+const inpSt = { borderColor: '#E2E8F0' };
+const T     = '#134956';
+const card  = { border: '1px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' };
+
+/* ── Types ── */
+interface Dest    { id: string; name: string }
+interface DayPlan { id: string; title: string; destination_id: string; description?: string | null }
+interface Policy  { id: string; title: string; policy_type: string; content: string }
+interface WhyItem { title: string; description: string }
+
+function normaliseWhy(arr: (string | WhyItem)[]): WhyItem[] {
+  return arr.map(item =>
+    typeof item === 'string'
+      ? { title: item, description: '' }
+      : item
+  );
+}
+
+interface CmsOption {
+  tier_name: string;
+  display_order: number;
+  is_most_popular: boolean;
+  inclusions: string[];
+  adult_price: number;
+  child_price: number;
+}
+interface CmsData {
+  min_pax: number;
+  max_pax: number;
+  hero_heading: string;
+  hero_subheading: string;
+  hero_tags: string[];
+  hero_images: string[];
+  state_gallery_image: string;
+  state_gallery_hidden?: boolean;
+  destination_cards: Array<{ destination_id: string; custom_name: string | null; description: string; image_url: string; hidden?: boolean }>;
+  pricing_mode: 'date_based' | 'package_based';
+  trip_dates: Array<{ start_date: string; end_date: string; label: string; availability: 'available' | 'few_left' | 'filling_fast' | 'sold_out' }>;
+  package_options: CmsOption[];
+  inclusions: string[];
+  exclusions: string[];
+  why_choose: (string | WhyItem)[];
+  faqs_enabled: boolean;
+  custom_faqs: Array<{ question: string; answer: string }>;
+}
+interface GDay {
+  id?: string; day_number: number; destination_id: string; title: string;
+  description_override: string | null; image_override: string | null;
+  gallery_images: string[] | null;
+  day_plan_id: string | null; meals: Record<string, boolean> | null; sort_order: number;
+}
+interface Batch {
+  id?: string;
+  batch_name: string;
+  start_date: string;
+  end_date: string;
+  total_seats: number;
+  available_seats: number;
+  adult_price: number;
+  child_5_12_price: number;
+  child_below_5_price: number;
+  single_supplement: number | null;
+  gst_percent: number;
+  booking_status: string;
+  badge_text: string | null;
+  badge_color: string | null;
+  assigned_agent_id: string | null;
+}
+interface Template {
+  id: string; group_template_name: string; duration_days: number; duration_nights: number;
+  theme: string | null; start_city: string | null; end_city: string | null; hero_image: string | null;
+  destinations: string[]; state_id: string; state: { id: string; name: string };
+  cms_data: CmsData | null;
+  group_template_days: GDay[];
+  group_batches: Batch[];
+}
+
+const DEFAULT_CMS: CmsData = {
+  min_pax: 10, max_pax: 25,
+  hero_heading: '', hero_subheading: '',
+  hero_tags: [], hero_images: [], state_gallery_image: '', destination_cards: [],
+  pricing_mode: 'date_based',
+  trip_dates: [],
+  package_options: [
+    { tier_name: 'Standard', display_order: 1, is_most_popular: false, inclusions: [], adult_price: 0, child_price: 0 },
+    { tier_name: 'Deluxe',   display_order: 2, is_most_popular: true,  inclusions: [], adult_price: 0, child_price: 0 },
+  ],
+  inclusions: ['Accommodation on twin/triple sharing basis', 'Daily breakfast & dinner (MAP)', 'AC vehicle for all transfers & sightseeing', 'Toll, parking, driver allowance', '5% GST included'],
+  exclusions: ['Personal expenses & shopping', 'Airfare / train tickets', 'Travel insurance', 'Entry fees to monuments', 'Anything not mentioned in inclusions'],
+  why_choose: [
+    { title: 'Ranked Professionals', description: 'Our certified travel experts craft every detail of your journey.' },
+    { title: 'Best Prices Guaranteed', description: 'We match or beat any comparable package price, no questions asked.' },
+    { title: 'Top-tier Standards', description: 'Only hand-picked hotels, guides, and transport providers.' },
+    { title: '24×7 Monitoring', description: 'Round-the-clock support for every traveller on every tour.' },
+    { title: 'On-ground Support', description: 'Dedicated local contacts available throughout your trip.' },
+  ],
+  faqs_enabled: false, custom_faqs: [],
+};
+
+const EMPTY_BATCH: Batch = {
+  batch_name: '', start_date: '', end_date: '',
+  total_seats: 20, available_seats: 20,
+  adult_price: 0, child_5_12_price: 0, child_below_5_price: 0,
+  single_supplement: null, gst_percent: 5,
+  booking_status: 'OPEN', badge_text: null, badge_color: null, assigned_agent_id: null,
+};
+
+const SECTIONS = [
+  { id: 'hero',    label: 'Hero',              icon: ImgIcon    },
+  { id: 'dests',   label: 'Destination Cards', icon: MapPin     },
+  { id: 'options', label: 'Package Options',   icon: LayoutList },
+  { id: 'days',    label: 'Day Itinerary',     icon: FileText   },
+  { id: 'batches', label: 'Batches',           icon: Calendar   },
+  { id: 'covered', label: "What's Covered",    icon: Check      },
+  { id: 'why',      label: 'Why Choose',        icon: Star       },
+  { id: 'incl_excl', label: 'Incl / Excl',    icon: ListPlus   },
+  { id: 'policy',  label: 'Policies',          icon: Shield     },
+  { id: 'faq',     label: 'FAQs',              icon: HelpCircle },
+  { id: 'terms',   label: 'Terms',             icon: BookOpen   },
+];
+
+const BOOKING_STATUSES = ['OPEN', 'FILLING_FAST', 'ALMOST_FULL', 'FULL', 'CLOSED', 'CANCELLED'];
+
+/* ════════════════════════════════════════════════════ */
+export default function GroupTemplateEditPage() {
+  const { id } = useParams<{ id: string }>();
+  const router  = useRouter();
+
+  const [tpl,      setTpl]      = useState<Template | null>(null);
+  const [cms,      setCms]      = useState<CmsData>(DEFAULT_CMS);
+  const [days,     setDays]     = useState<GDay[]>([]);
+  const [batches,  setBatches]  = useState<Batch[]>([]);
+  const [dests,    setDests]    = useState<Dest[]>([]);
+  const [dayPlans, setDayPlans] = useState<DayPlan[]>([]);
+  const [policies, setPolicies] = useState<Policy[]>([]);
+  const [loading,  setLoading]  = useState(true);
+  const [saving,   setSaving]   = useState(false);
+  const [saved,    setSaved]    = useState(false);
+  const [activeSection, setActiveSection] = useState('hero');
+  const [expandedDays, setExpandedDays]   = useState<Set<number>>(new Set([1]));
+  const [selectedPolicies, setSelectedPolicies] = useState<string[]>([]);
+
+  /* Drag-and-drop ref: tracks { field, from } while dragging */
+  const dragRef = useRef<{ field: string; from: number } | null>(null);
+  const [dragOver, setDragOver] = useState<{ field: string; idx: number } | null>(null);
+
+  /** Reorder any CMS array field */
+  function dndReorder(field: keyof CmsData, from: number, to: number) {
+    if (from === to) return;
+    setCms(prev => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const arr = [...(prev[field] as any[])];
+      const [moved] = arr.splice(from, 1);
+      arr.splice(to, 0, moved);
+      return { ...prev, [field]: arr };
+    });
+  }
+
+  /* Batch modal state */
+  const [showBatchModal, setShowBatchModal] = useState(false);
+  const [editingBatch, setEditingBatch]     = useState<Batch & { _idx?: number } | null>(null);
+  const [batchSaving, setBatchSaving]       = useState(false);
+  const [batchErr, setBatchErr]             = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [tr, dr, dpr, pr] = await Promise.all([
+      fetch(`/api/v1/group-templates/${id}`),
+      fetch('/api/v1/destinations'),
+      fetch('/api/v1/day-plans'),
+      fetch('/api/v1/policies'),
+    ]);
+    const [td, dd, dpd, pd] = await Promise.all([tr.json(), dr.json(), dpr.json(), pr.json()]);
+    if (td.success) {
+      const t: Template = td.data;
+      setTpl(t);
+      const c: CmsData = (t.cms_data as CmsData) ?? { ...DEFAULT_CMS };
+      // Ensure every destination in the template has a card (handles missing/new destinations)
+      const existingCardIds = new Set(c.destination_cards.map(dc => dc.destination_id));
+      const missingDests = (t.destinations as string[] ?? []).filter(did => !existingCardIds.has(did));
+      if (missingDests.length > 0) {
+        c.destination_cards = [
+          ...c.destination_cards,
+          ...missingDests.map((did: string) => ({ destination_id: did, custom_name: null, description: '', image_url: '' })),
+        ];
+      }
+      // Backfill new fields that may not exist in older cms_data
+      if (!Array.isArray(c.inclusions)) c.inclusions = [...DEFAULT_CMS.inclusions];
+      if (!Array.isArray(c.exclusions)) c.exclusions = [...DEFAULT_CMS.exclusions];
+      if (!Array.isArray(c.hero_images)) c.hero_images = [];
+      if (typeof c.state_gallery_image !== 'string') c.state_gallery_image = '';
+      if (c.pricing_mode !== 'date_based' && c.pricing_mode !== 'package_based') c.pricing_mode = 'date_based';
+      if (!Array.isArray(c.trip_dates)) c.trip_dates = [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      c.trip_dates = (c.trip_dates as any[]).map((td) => ({ ...td, availability: td.availability ?? 'available' }));
+      setCms(c);
+      setDays(t.group_template_days.map(d => ({
+        ...d,
+        description_override: d.description_override ?? null,
+        image_override: d.image_override ?? null,
+        gallery_images: (d as unknown as { gallery_images?: string[] | null }).gallery_images ?? null,
+        day_plan_id: d.day_plan_id ?? null,
+        meals: (d.meals as Record<string,boolean> | null) ?? null,
+      })));
+      setBatches(t.group_batches.map(b => ({
+        ...b,
+        start_date: b.start_date ? new Date(b.start_date as unknown as string).toISOString().slice(0, 10) : '',
+        end_date:   b.end_date   ? new Date(b.end_date   as unknown as string).toISOString().slice(0, 10) : '',
+        single_supplement: b.single_supplement ?? null,
+        assigned_agent_id: b.assigned_agent_id ?? null,
+      })));
+      setSelectedPolicies((t as unknown as { default_policy_ids?: string[] }).default_policy_ids ?? []);
+    }
+    if (dd.success) setDests(dd.data);
+    if (dpd.success) setDayPlans(dpd.data);
+    if (pd.success) setPolicies(pd.data);
+    setLoading(false);
+  }, [id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  /* Auto-scaffold days */
+  useEffect(() => {
+    if (!tpl || days.length > 0) return;
+    const destList = (tpl.destinations ?? []) as string[];
+    const newDays: GDay[] = Array.from({ length: tpl.duration_nights + 1 }, (_, i) => ({
+      day_number: i + 1,
+      destination_id: destList[0] ?? '',
+      title: `Day ${i + 1}`,
+      description_override: null, image_override: null,
+      gallery_images: null,
+      day_plan_id: null, meals: null, sort_order: i + 1,
+    }));
+    setDays(newDays);
+  }, [tpl, days.length]);
+
+  /* ── Save CMS + Days ── */
+  const save = useCallback(async (publish = false) => {
+    setSaving(true);
+    try {
+      await Promise.all([
+        fetch(`/api/v1/group-templates/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            cms_data: cms,
+            hero_image: cms.hero_tags[0] ?? null,
+            default_policy_ids: selectedPolicies,
+            status: publish ? true : undefined,
+          }),
+        }),
+        fetch(`/api/v1/group-templates/${id}/days`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(days),
+        }),
+      ]);
+      if (publish) {
+        router.push('/admin/group-templates?published=1');
+      } else {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2500);
+      }
+    } finally {
+      setSaving(false);
+    }
+  }, [id, cms, days, selectedPolicies, router]);
+
+  /* ── Batch save/delete ── */
+  async function saveBatch() {
+    if (!editingBatch) return;
+    setBatchSaving(true); setBatchErr('');
+    const { _idx, id: batchId, ...payload } = editingBatch as Batch & { _idx?: number };
+    try {
+      if (batchId) {
+        // Update existing
+        const res = await fetch(`/api/v1/group-templates/${id}/batches/${batchId}`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...payload }),
+        });
+        if (!res.ok) { const d = await res.json(); setBatchErr(d.error ?? 'Failed'); return; }
+        setBatches(p => p.map((b, i) => i === _idx ? { ...editingBatch } : b));
+      } else {
+        // Create new
+        const res = await fetch(`/api/v1/group-templates/${id}/batches`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...payload,
+            total_seats: Number(payload.total_seats),
+            available_seats: Number(payload.available_seats),
+            adult_price: Number(payload.adult_price),
+            child_5_12_price: Number(payload.child_5_12_price),
+            child_below_5_price: Number(payload.child_below_5_price),
+            gst_percent: Number(payload.gst_percent),
+            single_supplement: payload.single_supplement ? Number(payload.single_supplement) : null,
+          }),
+        });
+        if (!res.ok) { const d = await res.json(); setBatchErr(d.error ?? 'Failed'); return; }
+        const d = await res.json();
+        setBatches(p => [...p, { ...d.data, start_date: d.data.start_date?.slice(0,10) ?? '', end_date: d.data.end_date?.slice(0,10) ?? '' }]);
+      }
+      setShowBatchModal(false);
+    } finally {
+      setBatchSaving(false);
+    }
+  }
+
+  async function deleteBatch(batchId: string, idx: number) {
+    if (!confirm('Deactivate this batch?')) return;
+    await fetch(`/api/v1/group-templates/${id}/batches/${batchId}`, { method: 'DELETE' });
+    setBatches(p => p.filter((_, i) => i !== idx));
+  }
+
+  /* ── Helpers ── */
+  function updCms<K extends keyof CmsData>(key: K, val: CmsData[K]) {
+    setCms(p => ({ ...p, [key]: val }));
+  }
+  function toggleDay(n: number) {
+    setExpandedDays(prev => { const s = new Set(prev); if (s.has(n)) s.delete(n); else s.add(n); return s; });
+  }
+  function updDay(idx: number, patch: Partial<GDay>) {
+    setDays(p => p.map((d, i) => i === idx ? { ...d, ...patch } : d));
+  }
+  function dayPlansForDest(destId: string) {
+    return dayPlans.filter(dp => dp.destination_id === destId);
+  }
+  function togglePolicy(pid: string) {
+    setSelectedPolicies(p => p.includes(pid) ? p.filter(x => x !== pid) : [...p, pid]);
+  }
+  function openNewBatch() {
+    setEditingBatch({ ...EMPTY_BATCH });
+    setBatchErr(''); setShowBatchModal(true);
+  }
+  function openEditBatch(b: Batch, idx: number) {
+    setEditingBatch({ ...b, _idx: idx } as Batch & { _idx: number });
+    setBatchErr(''); setShowBatchModal(true);
+  }
+  function updBatch<K extends keyof Batch>(key: K, val: Batch[K]) {
+    setEditingBatch(p => p ? { ...p, [key]: val } : p);
+  }
+
+  const statusColors: Record<string, { bg: string; color: string }> = {
+    OPEN:         { bg: '#DCFCE7', color: '#166534' },
+    FILLING_FAST: { bg: '#FEF3C7', color: '#92400E' },
+    ALMOST_FULL:  { bg: '#FFEDD5', color: '#9A3412' },
+    FULL:         { bg: '#FEE2E2', color: '#991B1B' },
+    CLOSED:       { bg: '#F1F5F9', color: '#475569' },
+    CANCELLED:    { bg: '#F1F5F9', color: '#94A3B8' },
+  };
+
+  /* ═══ RENDER ═══ */
+  if (loading) return (
+    <div className="flex items-center justify-center py-32">
+      <div className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: T }} />
+    </div>
+  );
+  if (!tpl) return <div className="py-20 text-center text-sm text-[#64748B]">Template not found.</div>;
+
+  const destList = (tpl.destinations ?? []) as string[];
+
+  return (
+    <div className="max-w-[1200px]">
+      <PageHeader
+        title={tpl.group_template_name}
+        subtitle={`${tpl.duration_nights}N/${tpl.duration_days}D · ${tpl.state.name}${tpl.theme ? ` · ${tpl.theme}` : ''} · Group Tour`}
+        crumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Group Templates', href: '/admin/group-templates' }, { label: tpl.group_template_name || 'Edit' }]}
+        action={
+          <div className="flex gap-2">
+            <button onClick={() => save(false)} disabled={saving}
+              className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold disabled:opacity-50 hover:opacity-90"
+              style={{ backgroundColor: saved ? '#22c55e' : T, color: 'white' }}>
+              {saved ? <><Check className="w-4 h-4" /> Saved!</> : saving ? 'Saving…' : <><Save className="w-4 h-4" /> Save Draft</>}
+            </button>
+            <button onClick={() => save(true)} disabled={saving}
+              className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white disabled:opacity-50 hover:opacity-90"
+              style={{ backgroundColor: '#16a34a' }}>
+              Publish
+            </button>
+          </div>
+        }
+      />
+
+      <div className="flex gap-6">
+        {/* ── SIDEBAR ── */}
+        <nav className="w-44 flex-shrink-0">
+          <div className="sticky top-4 bg-white rounded-2xl overflow-hidden py-2" style={card}>
+            {SECTIONS.map(s => {
+              const Icon = s.icon;
+              const active = activeSection === s.id;
+              return (
+                <button key={s.id} onClick={() => setActiveSection(s.id)}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-sm font-medium transition-colors"
+                  style={active ? { backgroundColor: `${T}12`, color: T } : { color: '#64748B' }}>
+                  <Icon className="w-4 h-4 flex-shrink-0" />
+                  {s.label}
+                  {s.id === 'batches' && batches.length > 0 && (
+                    <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ backgroundColor: T, color: 'white' }}>{batches.length}</span>
+                  )}
+                  {active && s.id !== 'batches' && <ChevronRight className="w-3.5 h-3.5 ml-auto" />}
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+
+        {/* ── MAIN CONTENT ── */}
+        <div className="flex-1 min-w-0">
+
+          {/* ═══ HERO ═══ */}
+          {activeSection === 'hero' && (
+            <div className="bg-white rounded-2xl p-6" style={card}>
+              <SectionHeader title="Hero Section" desc="The full-width banner customers see first." />
+              <div className="grid gap-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className={lbl}>Min Pax</label>
+                    <input type="number" min="1" className={inp} style={inpSt} value={cms.min_pax}
+                      onChange={e => updCms('min_pax', Number(e.target.value))} />
+                  </div>
+                  <div>
+                    <label className={lbl}>Max Pax</label>
+                    <input type="number" min="1" className={inp} style={inpSt} value={cms.max_pax}
+                      onChange={e => updCms('max_pax', Number(e.target.value))} />
+                  </div>
+                </div>
+                <div>
+                  <ImageUploader
+                    label="Hero Image (Primary)"
+                    folder="templates/hero"
+                    value={cms.hero_tags[0] ?? null}
+                    onChange={url => {
+                      updCms('hero_tags', url ? [url, ...cms.hero_tags.slice(1)] : cms.hero_tags.slice(1));
+                      const imgs = [...(cms.hero_images ?? [])];
+                      if (url) { imgs[0] = url; } else { imgs.splice(0, 1); }
+                      updCms('hero_images', imgs);
+                    }}
+                    placeholder="Upload hero banner image"
+                    sizeHint="1200 × 630 px (landscape 16:9)"
+                  />
+                </div>
+
+                {/* Hero Slideshow */}
+                <div className="rounded-xl p-4" style={{ border: '1px dashed #CBD5E1', backgroundColor: '#F8FAFC' }}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <p className={lbl} style={{ marginBottom: 2 }}>Hero Slideshow Images</p>
+                      <p className="text-[11px] text-[#94A3B8]">Add extra slides — they auto-cycle every 5 s in the itinerary. Leave empty for a single static image.</p>
+                    </div>
+                    <button
+                      onClick={() => updCms('hero_images', [...(cms.hero_images ?? []), ''])}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white hover:opacity-90 flex-shrink-0"
+                      style={{ backgroundColor: T }}
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Add Slide
+                    </button>
+                  </div>
+                  {(cms.hero_images ?? []).length === 0 ? (
+                    <p className="text-xs text-[#94A3B8] text-center py-3">No slides yet. Click &quot;Add Slide&quot; to build a carousel.</p>
+                  ) : (
+                    <div className="flex flex-col gap-3">
+                      {(cms.hero_images ?? []).map((url, si) => (
+                        <div key={si} className="flex items-start gap-2">
+                          <div className="flex-1">
+                            <ImageUploader
+                              label={si === 0 ? 'Slide 1 (Primary)' : `Slide ${si + 1}`}
+                              folder="templates/hero"
+                              value={url || null}
+                              onChange={imgUrl => {
+                                const imgs = [...(cms.hero_images ?? [])];
+                                imgs[si] = imgUrl ?? '';
+                                updCms('hero_images', imgs);
+                                if (si === 0) updCms('hero_tags', [imgUrl ?? '', ...cms.hero_tags.slice(1)]);
+                              }}
+                              placeholder={`Upload slide ${si + 1}`}
+                              sizeHint="1200 × 630 px"
+                            />
+                          </div>
+                          <button
+                            onClick={() => {
+                              const imgs = (cms.hero_images ?? []).filter((_, j) => j !== si);
+                              updCms('hero_images', imgs);
+                              if (si === 0) updCms('hero_tags', [imgs[0] ?? '', ...cms.hero_tags.slice(1)]);
+                            }}
+                            className="mt-6 p-1.5 rounded-lg text-[#94A3B8] hover:text-red-500 hover:bg-red-50 flex-shrink-0"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className={lbl}>Main Heading</label>
+                  <input className={inp} style={inpSt} value={cms.hero_heading}
+                    onChange={e => updCms('hero_heading', e.target.value)} placeholder="God's Own Country" />
+                </div>
+                <div>
+                  <label className={lbl}>Subheading / Tagline</label>
+                  <input className={inp} style={inpSt} value={cms.hero_subheading}
+                    onChange={e => updCms('hero_subheading', e.target.value)} placeholder="Kerala — Where Nature Meets Soul" />
+                </div>
+                <div>
+                  <label className={lbl}>Destination Tags</label>
+                  <div className="flex flex-wrap gap-2">
+                    {(cms.hero_tags.slice(1) ?? []).map((tag, i) => (
+                      <span key={i} className="flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium" style={{ backgroundColor: '#F1F5F9', color: '#475569' }}>
+                        {tag}
+                        <button onClick={() => { const t = [...cms.hero_tags]; t.splice(i + 1, 1); updCms('hero_tags', t); }} className="ml-1 text-[#94A3B8] hover:text-red-500">×</button>
+                      </span>
+                    ))}
+                    <TagInput onAdd={t => updCms('hero_tags', [...cms.hero_tags, t])} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ═══ DESTINATION CARDS ═══ */}
+          {activeSection === 'dests' && (
+            <div className="bg-white rounded-2xl p-6" style={card}>
+              <SectionHeader title="Destination Cards" desc="One card per destination shown in the gallery grid. Toggle eye icon to hide a card. Drag ⠿ to reorder." />
+              <div className="flex flex-col gap-4">
+                {/* State card — always first in the gallery */}
+                {(() => {
+                  const stateHidden = !!cms.state_gallery_hidden;
+                  return (
+                    <div className="rounded-xl overflow-hidden transition-all" style={{
+                      border: `1px solid ${stateHidden ? '#E2E8F0' : '#C7D2FE'}`,
+                      background: stateHidden ? '#F8FAFC' : '#F5F3FF',
+                      opacity: stateHidden ? 0.55 : 1,
+                    }}>
+                      <div className="flex items-center gap-2 px-4 pt-4 pb-3">
+                        <span className="flex-1 text-sm font-semibold" style={{ color: stateHidden ? '#94A3B8' : '#4338CA' }}>{tpl?.state?.name ?? 'State'}</span>
+                        <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: stateHidden ? '#F1F5F9' : '#EEF2FF', color: stateHidden ? '#94A3B8' : '#6366F1' }}>Gallery Cover Card</span>
+                        <button
+                          type="button"
+                          onClick={() => updCms('state_gallery_hidden', !stateHidden)}
+                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-semibold transition-all flex-shrink-0"
+                          style={{
+                            borderColor: stateHidden ? '#E2E8F0' : T,
+                            backgroundColor: stateHidden ? '#F1F5F9' : `${T}12`,
+                            color: stateHidden ? '#94A3B8' : T,
+                          }}
+                        >
+                          {stateHidden ? (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                          ) : (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                          )}
+                          {stateHidden ? 'Hidden' : 'Visible'}
+                        </button>
+                      </div>
+                      <div className="px-4 pb-4" style={{ filter: stateHidden ? 'grayscale(0.4)' : 'none' }}>
+                        <ImageUploader
+                          label="State Gallery Photo"
+                          folder="templates/destinations"
+                          value={cms.state_gallery_image || null}
+                          onChange={url => updCms('state_gallery_image', url ?? '')}
+                          placeholder="Upload photo for state gallery card"
+                          sizeHint="800 × 600 px (4:3)"
+                        />
+                      </div>
+                    </div>
+                  );
+                })()}
+                {cms.destination_cards.map((dc, i) => {
+                  const dest = dests.find(d => d.id === dc.destination_id);
+                  const isHidden = !!dc.hidden;
+                  const isDragging = dragRef.current?.field === 'destination_cards' && dragRef.current?.from === i;
+                  const isDragTarget = dragOver?.field === 'destination_cards' && dragOver?.idx === i && !isDragging;
+                  return (
+                    <div
+                      key={dc.destination_id}
+                      draggable
+                      onDragStart={() => { dragRef.current = { field: 'destination_cards', from: i }; }}
+                      onDragEnd={() => { setDragOver(null); dragRef.current = null; }}
+                      onDragOver={e => { e.preventDefault(); setDragOver({ field: 'destination_cards', idx: i }); }}
+                      onDrop={() => { setDragOver(null); if (dragRef.current?.field === 'destination_cards') dndReorder('destination_cards', dragRef.current.from, i); dragRef.current = null; }}
+                      className="rounded-xl overflow-hidden transition-all"
+                      style={{
+                        border: `1px solid ${isDragTarget ? T : '#E2E8F0'}`,
+                        opacity: isDragging ? 0.4 : isHidden ? 0.55 : 1,
+                        background: isDragTarget ? `${T}08` : isHidden ? '#F8FAFC' : '#fff',
+                        cursor: 'grab',
+                        transform: isDragTarget ? 'scale(1.01)' : 'none',
+                        boxShadow: isDragging ? '0 4px 16px rgba(0,0,0,0.12)' : 'none',
+                      }}
+                    >
+                      {/* Card header: drag handle + name + eye toggle */}
+                      <div className="flex items-center gap-2 px-4 pt-4 pb-3">
+                        <div className="flex-shrink-0 cursor-grab text-[#CBD5E1] hover:text-[#94A3B8]" title="Drag to reorder">
+                          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                            <circle cx="5" cy="3" r="1.3"/><circle cx="11" cy="3" r="1.3"/>
+                            <circle cx="5" cy="8" r="1.3"/><circle cx="11" cy="8" r="1.3"/>
+                            <circle cx="5" cy="13" r="1.3"/><circle cx="11" cy="13" r="1.3"/>
+                          </svg>
+                        </div>
+                        <p className="flex-1 text-sm font-semibold" style={{ color: isHidden ? '#94A3B8' : '#0F172A' }}>
+                          {dest?.name ?? dc.destination_id}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => { const c = [...cms.destination_cards]; c[i] = { ...c[i], hidden: !isHidden }; updCms('destination_cards', c); }}
+                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-semibold transition-all flex-shrink-0"
+                          style={{
+                            borderColor: isHidden ? '#E2E8F0' : T,
+                            backgroundColor: isHidden ? '#F1F5F9' : `${T}12`,
+                            color: isHidden ? '#94A3B8' : T,
+                          }}
+                        >
+                          {isHidden ? (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                          ) : (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                          )}
+                          {isHidden ? 'Hidden' : 'Visible'}
+                        </button>
+                      </div>
+                      <div className="px-4 pb-4">
+                        <div className="grid grid-cols-2 gap-3" style={{ filter: isHidden ? 'grayscale(0.4)' : 'none' }}>
+                          <div className="col-span-2">
+                            <ImageUploader
+                              label="Destination Photo"
+                              folder="templates/destinations"
+                              value={dc.image_url || null}
+                              onChange={url => { const c = [...cms.destination_cards]; c[i] = { ...c[i], image_url: url ?? '' }; updCms('destination_cards', c); }}
+                              placeholder="Upload destination photo"
+                              sizeHint="800 × 600 px (4:3)"
+                            />
+                          </div>
+                          <div className="col-span-2">
+                            <label className={lbl}>Short Description</label>
+                            <textarea className={ta} style={inpSt} rows={2} value={dc.description}
+                              onChange={e => { const c = [...cms.destination_cards]; c[i] = { ...c[i], description: e.target.value }; updCms('destination_cards', c); }}
+                              placeholder="Venice of the East…" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {destList.length > 0 && cms.destination_cards.length === 0 && (
+                  <button onClick={() => updCms('destination_cards', destList.map(did => ({ destination_id: did, custom_name: null, description: '', image_url: '' })))}
+                    className="h-9 px-4 rounded-lg text-sm font-semibold text-white hover:opacity-90" style={{ backgroundColor: T }}>
+                    Auto-generate from destinations
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ═══ PACKAGE OPTIONS ═══ */}
+          {activeSection === 'options' && (
+            <div className="bg-white rounded-2xl p-6" style={card}>
+              <SectionHeader title="Package Options" desc="Choose how customers see pricing: date-based (batch price from departure dates) or fixed package pricing." />
+
+              {/* Pricing mode toggle */}
+              <div className="mb-6 p-4 rounded-xl" style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: '#64748B' }}>Pricing Mode</p>
+                <div className="flex gap-3">
+                  {([
+                    { value: 'date_based',    label: 'Date-based Pricing',    desc: 'Price comes from departure batch dates' },
+                    { value: 'package_based', label: 'Fixed Package Pricing', desc: 'Price set directly on each package option' },
+                  ] as const).map(({ value, label, desc }) => (
+                    <button
+                      key={value}
+                      onClick={() => updCms('pricing_mode', value)}
+                      className="flex-1 p-3 rounded-xl text-left transition-all"
+                      style={{
+                        border: `2px solid ${cms.pricing_mode === value ? T : '#E2E8F0'}`,
+                        backgroundColor: cms.pricing_mode === value ? `${T}08` : '#fff',
+                      }}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="w-3.5 h-3.5 rounded-full flex-shrink-0" style={{
+                          border: `2px solid ${cms.pricing_mode === value ? T : '#CBD5E1'}`,
+                          backgroundColor: cms.pricing_mode === value ? T : 'transparent',
+                        }} />
+                        <span className="text-sm font-semibold" style={{ color: cms.pricing_mode === value ? T : '#0F172A' }}>{label}</span>
+                      </div>
+                      <p className="text-xs ml-5" style={{ color: '#64748B' }}>{desc}</p>
+                    </button>
+                  ))}
+                </div>
+                {cms.pricing_mode === 'date_based' && (
+                  <p className="text-xs mt-3 flex items-center gap-1.5" style={{ color: '#64748B' }}>
+                    <span style={{ color: '#F59E0B' }}>ℹ</span>
+                    Customer will see a date picker with prices from your batches. Package options below are hidden.
+                  </p>
+                )}
+                {cms.pricing_mode === 'package_based' && (
+                  <p className="text-xs mt-3 flex items-center gap-1.5" style={{ color: '#64748B' }}>
+                    <span style={{ color: '#F59E0B' }}>ℹ</span>
+                    Customer will see the package options below with fixed prices. Date picker is hidden.
+                  </p>
+                )}
+              </div>
+
+              {/* Package options — only shown when package_based */}
+              {cms.pricing_mode === 'package_based' && (
+              <div className="flex gap-3 mb-2 flex-wrap">
+                {cms.package_options.map((opt, oi) => (
+                  <div key={oi} className="flex-1 min-w-[180px] rounded-xl p-4" style={{ border: `2px solid ${opt.is_most_popular ? T : '#E2E8F0'}` }}>
+                    <div className="flex items-center justify-between mb-3">
+                      <input className="font-bold text-sm bg-transparent border-0 outline-none text-[#0F172A] w-full"
+                        value={opt.tier_name}
+                        onChange={e => { const o = [...cms.package_options]; o[oi] = { ...o[oi], tier_name: e.target.value }; updCms('package_options', o); }} />
+                      {cms.package_options.length > 1 && (
+                        <button onClick={() => { const o = cms.package_options.filter((_, i) => i !== oi).map((x, i) => ({ ...x, display_order: i + 1 })); updCms('package_options', o); }}
+                          className="text-[#94A3B8] hover:text-red-500 ml-2 flex-shrink-0">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Most popular toggle */}
+                    <label className="flex items-center gap-2 cursor-pointer mb-3">
+                      <input type="checkbox" checked={opt.is_most_popular}
+                        onChange={() => { const o = cms.package_options.map((x, i) => ({ ...x, is_most_popular: i === oi })); updCms('package_options', o); }} />
+                      <span className="text-xs text-[#64748B]">Most Popular</span>
+                    </label>
+
+                    {/* Direct pricing */}
+                    <div className="grid grid-cols-2 gap-2 mb-3">
+                      <div>
+                        <label className="block text-[10px] font-semibold uppercase tracking-wider mb-1 text-[#94A3B8]">Adult Price (₹)</label>
+                        <input type="number" min="0" className="w-full h-8 px-2 rounded-lg border text-sm focus:outline-none" style={inpSt}
+                          value={opt.adult_price}
+                          onChange={e => { const o = [...cms.package_options]; o[oi] = { ...o[oi], adult_price: Number(e.target.value) }; updCms('package_options', o); }} />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold uppercase tracking-wider mb-1 text-[#94A3B8]">Child Price (₹)</label>
+                        <input type="number" min="0" className="w-full h-8 px-2 rounded-lg border text-sm focus:outline-none" style={inpSt}
+                          value={opt.child_price}
+                          onChange={e => { const o = [...cms.package_options]; o[oi] = { ...o[oi], child_price: Number(e.target.value) }; updCms('package_options', o); }} />
+                      </div>
+                    </div>
+
+                    {/* Inclusions */}
+                    <p className={lbl}>Inclusions</p>
+                    <div className="flex flex-col gap-1">
+                      {opt.inclusions.map((inc, ii) => (
+                        <div key={ii} className="flex items-center gap-1">
+                          <input className="flex-1 h-7 px-2 rounded border text-xs focus:outline-none" style={inpSt}
+                            value={inc} onChange={e => { const o = [...cms.package_options]; o[oi] = { ...o[oi], inclusions: o[oi].inclusions.map((x, j) => j === ii ? e.target.value : x) }; updCms('package_options', o); }} />
+                          <button onClick={() => { const o = [...cms.package_options]; o[oi] = { ...o[oi], inclusions: o[oi].inclusions.filter((_, j) => j !== ii) }; updCms('package_options', o); }}
+                            className="text-[#94A3B8] hover:text-red-500"><Trash2 className="w-3 h-3" /></button>
+                        </div>
+                      ))}
+                      <button onClick={() => { const o = [...cms.package_options]; o[oi] = { ...o[oi], inclusions: [...o[oi].inclusions, ''] }; updCms('package_options', o); }}
+                        className="text-xs font-semibold flex items-center gap-1 mt-1" style={{ color: T }}>
+                        <Plus className="w-3 h-3" /> Add inclusion
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {cms.package_options.length < 3 && (
+                  <button onClick={() => updCms('package_options', [...cms.package_options, { tier_name: `Option ${cms.package_options.length + 1}`, display_order: cms.package_options.length + 1, is_most_popular: false, inclusions: [], adult_price: 0, child_price: 0 }])}
+                    className="flex-shrink-0 w-12 rounded-xl flex items-center justify-center" style={{ border: '2px dashed #E2E8F0' }}>
+                    <Plus className="w-5 h-5 text-[#CBD5E1]" />
+                  </button>
+                )}
+              </div>
+              )} {/* end pricing_mode === package_based */}
+
+              {/* ── Trip Dates (package_based only — no prices, just date ranges) ── */}
+              {cms.pricing_mode === 'package_based' && (
+                <div className="mt-6 pt-6" style={{ borderTop: '1px solid #E2E8F0' }}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <p className="text-sm font-semibold" style={{ color: '#0F172A' }}>Trip Dates</p>
+                      <p className="text-xs mt-0.5" style={{ color: '#64748B' }}>Add available departure windows — shown on the itinerary as simple date info, no price.</p>
+                    </div>
+                    <button
+                      onClick={() => updCms('trip_dates', [...cms.trip_dates, { start_date: '', end_date: '', label: '', availability: 'available' }])}
+                      className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold text-white hover:opacity-90"
+                      style={{ backgroundColor: T }}>
+                      <Plus className="w-3.5 h-3.5" /> Add Date
+                    </button>
+                  </div>
+
+                  {cms.trip_dates.length === 0 && (
+                    <div className="py-6 text-center rounded-xl" style={{ border: '2px dashed #E2E8F0' }}>
+                      <p className="text-sm" style={{ color: '#94A3B8' }}>No dates added yet. Click &ldquo;Add Date&rdquo; to add a departure window.</p>
+                    </div>
+                  )}
+
+                  <div className="flex flex-col gap-2">
+                    {cms.trip_dates.map((td, i) => (
+                      <div key={i} className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] gap-2 items-end p-3 rounded-xl" style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                        <div>
+                          <label className="block text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: '#94A3B8' }}>Start Date</label>
+                          <input type="date" className="w-full h-8 px-2 rounded-lg border text-sm focus:outline-none" style={{ borderColor: '#E2E8F0' }}
+                            value={td.start_date}
+                            onChange={e => { const d = [...cms.trip_dates]; d[i] = { ...d[i], start_date: e.target.value }; updCms('trip_dates', d); }} />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: '#94A3B8' }}>End Date</label>
+                          <input type="date" className="w-full h-8 px-2 rounded-lg border text-sm focus:outline-none" style={{ borderColor: '#E2E8F0' }}
+                            value={td.end_date}
+                            onChange={e => { const d = [...cms.trip_dates]; d[i] = { ...d[i], end_date: e.target.value }; updCms('trip_dates', d); }} />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: '#94A3B8' }}>Label (optional)</label>
+                          <input type="text" placeholder="e.g. May Long Weekend" className="w-full h-8 px-2 rounded-lg border text-sm focus:outline-none" style={{ borderColor: '#E2E8F0' }}
+                            value={td.label}
+                            onChange={e => { const d = [...cms.trip_dates]; d[i] = { ...d[i], label: e.target.value }; updCms('trip_dates', d); }} />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: '#94A3B8' }}>Availability</label>
+                          <select className="w-full h-8 px-2 rounded-lg border text-sm focus:outline-none" style={{ borderColor: '#E2E8F0' }}
+                            value={td.availability ?? 'available'}
+                            onChange={e => { const d = [...cms.trip_dates]; d[i] = { ...d[i], availability: e.target.value as 'available' | 'few_left' | 'filling_fast' | 'sold_out' }; updCms('trip_dates', d); }}>
+                            <option value="available">✅ Available</option>
+                            <option value="few_left">🔴 Few Slots Left</option>
+                            <option value="filling_fast">🔥 Filling Fast</option>
+                            <option value="sold_out">❌ Sold Out</option>
+                          </select>
+                        </div>
+                        <button onClick={() => updCms('trip_dates', cms.trip_dates.filter((_, j) => j !== i))}
+                          className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-[#94A3B8] hover:text-red-500">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ═══ DAY ITINERARY ═══ */}
+          {activeSection === 'days' && (
+            <div className="flex flex-col gap-3">
+              <div className="bg-white rounded-2xl p-5" style={card}>
+                <SectionHeader title="Day-wise Itinerary" desc={`${tpl.duration_nights + 1} days · Fill in titles, descriptions and images.`} />
+              </div>
+              {days.map((day, i) => {
+                const isOpen = expandedDays.has(day.day_number);
+                const dps    = dayPlansForDest(day.destination_id);
+                return (
+                  <div key={i} className="bg-white rounded-2xl overflow-hidden" style={card}>
+                    <div className="flex items-center gap-3 px-5 py-3.5 cursor-pointer" onClick={() => toggleDay(day.day_number)}>
+                      {isOpen ? <ChevronDown className="w-4 h-4 text-[#94A3B8]" /> : <ChevronRight className="w-4 h-4 text-[#94A3B8]" />}
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0" style={{ backgroundColor: T }}>
+                        {day.day_number}
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-semibold text-[#0F172A]">{day.title || `Day ${day.day_number}`}</p>
+                        <p className="text-xs text-[#94A3B8]">{dests.find(d => d.id === day.destination_id)?.name ?? '—'}</p>
+                      </div>
+                    </div>
+                    {isOpen && (
+                      <div className="px-5 pb-5 pt-1" style={{ borderTop: '1px solid #F1F5F9' }}>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className={lbl}>Destination for this day</label>
+                            <select className={sel} style={inpSt} value={day.destination_id}
+                              onChange={e => updDay(i, { destination_id: e.target.value, day_plan_id: null })}>
+                              <option value="">Select…</option>
+                              {dests.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className={lbl}>Day Plan Library (optional)</label>
+                            <select className={sel} style={inpSt} value={day.day_plan_id ?? ''}
+                              onChange={e => {
+                                const dp = dayPlans.find(x => x.id === e.target.value);
+                                updDay(i, { day_plan_id: e.target.value || null, title: dp?.title ?? day.title, description_override: dp?.description ?? day.description_override });
+                              }}>
+                              <option value="">None — write manually</option>
+                              {dps.map(dp => <option key={dp.id} value={dp.id}>{dp.title}</option>)}
+                            </select>
+                          </div>
+                          <div className="col-span-2">
+                            <label className={lbl}>Day Title <span className="text-red-500">*</span></label>
+                            <input className={inp} style={inpSt} value={day.title}
+                              onChange={e => updDay(i, { title: e.target.value })} placeholder={`Day ${day.day_number} — Arrival`} />
+                          </div>
+                          <div className="col-span-2">
+                            <label className={lbl}>Description</label>
+                            <RichTextEditor
+                              value={day.description_override}
+                              onChange={html => updDay(i, { description_override: html || null })}
+                              placeholder="Describe the day's activities…"
+                              minHeight={130}
+                            />
+                          </div>
+                          <div className="col-span-2">
+                            <ImageUploader
+                              label="Day Image (Primary)"
+                              folder="templates/days"
+                              value={day.image_override ?? null}
+                              onChange={url => updDay(i, { image_override: url })}
+                              placeholder="Upload day image"
+                              sizeHint="1200 × 800 px (3:2) — shown full-width in itinerary"
+                            />
+                          </div>
+                          {/* Day Gallery Slideshow */}
+                          <div className="col-span-2 rounded-xl p-3" style={{ border: '1px dashed #CBD5E1', backgroundColor: '#F8FAFC' }}>
+                            <div className="flex items-center justify-between mb-2">
+                              <div>
+                                <p className={lbl} style={{ marginBottom: 1 }}>Day Slideshow Photos</p>
+                                <p className="text-[11px] text-[#94A3B8]">Extra images shown as a swipeable gallery on this day card.</p>
+                              </div>
+                              <button
+                                onClick={() => updDay(i, { gallery_images: [...(day.gallery_images ?? []), ''] })}
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-white hover:opacity-90 flex-shrink-0"
+                                style={{ backgroundColor: T }}
+                              >
+                                <Plus className="w-3 h-3" /> Add
+                              </button>
+                            </div>
+                            {(day.gallery_images ?? []).length === 0 ? (
+                              <p className="text-xs text-[#94A3B8] text-center py-2">No extra photos yet.</p>
+                            ) : (
+                              <div className="flex flex-col gap-2">
+                                {(day.gallery_images ?? []).map((gUrl, gi) => (
+                                  <div key={gi} className="flex items-start gap-2">
+                                    <div className="flex-1">
+                                      <ImageUploader
+                                        label={`Photo ${gi + 1}`}
+                                        folder="templates/days"
+                                        value={gUrl || null}
+                                        onChange={imgUrl => {
+                                          const g = [...(day.gallery_images ?? [])];
+                                          g[gi] = imgUrl ?? '';
+                                          updDay(i, { gallery_images: g });
+                                        }}
+                                        placeholder={`Upload photo ${gi + 1}`}
+                                        sizeHint="1200 × 800 px"
+                                      />
+                                    </div>
+                                    <button
+                                      onClick={() => updDay(i, { gallery_images: (day.gallery_images ?? []).filter((_, j) => j !== gi) })}
+                                      className="mt-6 p-1.5 rounded-lg text-[#94A3B8] hover:text-red-500 hover:bg-red-50 flex-shrink-0"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          <div className="col-span-2">
+                            <label className={lbl}>Meals included</label>
+                            <div className="flex gap-3">
+                              {(['B', 'L', 'D'] as const).map(meal => (
+                                <label key={meal} className="flex items-center gap-1.5 cursor-pointer">
+                                  <input type="checkbox"
+                                    checked={!!(day.meals as Record<string, boolean> | null)?.[meal]}
+                                    onChange={e => updDay(i, { meals: { ...(day.meals ?? {}), [meal]: e.target.checked } })} />
+                                  <span className="text-sm text-[#334155]">{{ B: 'Breakfast', L: 'Lunch', D: 'Dinner' }[meal]}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ═══ BATCHES ═══ */}
+          {activeSection === 'batches' && (
+            <div className="flex flex-col gap-4">
+              <div className="bg-white rounded-2xl p-5" style={card}>
+                <div className="flex items-center justify-between mb-1">
+                  <div>
+                    <h2 className="text-base font-bold text-[#0F172A]">Departure Batches</h2>
+                    <p className="text-sm text-[#64748B] mt-0.5">Manage fixed departure dates, seats, and per-batch pricing.</p>
+                  </div>
+                  <button onClick={openNewBatch}
+                    className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white hover:opacity-90" style={{ backgroundColor: T }}>
+                    <Plus className="w-4 h-4" /> Add Batch
+                  </button>
+                </div>
+              </div>
+
+              {batches.length === 0 ? (
+                <div className="py-16 text-center bg-white rounded-2xl" style={card}>
+                  <Calendar className="w-8 h-8 mx-auto mb-3 text-[#CBD5E1]" />
+                  <p className="font-semibold text-sm text-[#0F172A]">No batches yet</p>
+                  <p className="text-sm mt-1 text-[#64748B] mb-4">Add your first departure batch to open bookings</p>
+                  <button onClick={openNewBatch} className="h-9 px-4 rounded-lg text-sm font-semibold text-white hover:opacity-90" style={{ backgroundColor: T }}>
+                    <Plus className="w-4 h-4 inline mr-1.5" />Add Batch
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {batches.map((b, idx) => {
+                    const sc = statusColors[b.booking_status] ?? statusColors['CLOSED'];
+                    const start = b.start_date ? new Date(b.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+                    const end   = b.end_date   ? new Date(b.end_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+                    const pctFull = b.total_seats > 0 ? Math.round((1 - b.available_seats / b.total_seats) * 100) : 0;
+                    return (
+                      <div key={idx} className="bg-white rounded-2xl p-5" style={card}>
+                        <div className="flex items-start justify-between gap-3 mb-3">
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <p className="font-semibold text-sm text-[#0F172A]">{b.batch_name || `Batch ${idx + 1}`}</p>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={sc}>{b.booking_status}</span>
+                            </div>
+                            <p className="text-xs text-[#64748B]">{start} → {end}</p>
+                          </div>
+                          <div className="flex gap-1 flex-shrink-0">
+                            <button onClick={() => openEditBatch(b, idx)}
+                              className="h-8 px-3 rounded-lg text-xs font-semibold hover:opacity-80"
+                              style={{ backgroundColor: `${T}12`, color: T }}>Edit</button>
+                            {b.id && (
+                              <button onClick={() => deleteBatch(b.id!, idx)}
+                                className="h-8 w-8 rounded-lg flex items-center justify-center text-[#94A3B8] hover:bg-[#FEF2F2] hover:text-[#DC2626]">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Seats bar */}
+                        <div className="mb-3">
+                          <div className="flex justify-between text-xs text-[#94A3B8] mb-1">
+                            <span>{b.available_seats} seats left</span>
+                            <span>{pctFull}% filled</span>
+                          </div>
+                          <div className="h-1.5 rounded-full bg-[#F1F5F9] overflow-hidden">
+                            <div className="h-full rounded-full transition-all" style={{ width: `${pctFull}%`, backgroundColor: pctFull >= 90 ? '#DC2626' : pctFull >= 70 ? '#F59E0B' : '#22c55e' }} />
+                          </div>
+                        </div>
+
+                        {/* Pricing row */}
+                        <div className="grid grid-cols-3 gap-2 pt-3" style={{ borderTop: '1px solid #F1F5F9' }}>
+                          <div>
+                            <p className="text-[10px] text-[#94A3B8] uppercase tracking-wider mb-0.5">Adult</p>
+                            <p className="text-sm font-bold text-[#0F172A]">₹{Number(Math.round(b.adult_price)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-[#94A3B8] uppercase tracking-wider mb-0.5">Child (5–12)</p>
+                            <p className="text-sm font-bold text-[#0F172A]">₹{Number(Math.round(b.child_5_12_price)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-[#94A3B8] uppercase tracking-wider mb-0.5">Child (&lt;5)</p>
+                            <p className="text-sm font-bold text-[#0F172A]">₹{Number(Math.round(b.child_below_5_price)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ═══ WHAT'S COVERED ═══ */}
+          {activeSection === 'covered' && (
+            <div className="bg-white rounded-2xl p-6" style={card}>
+              <SectionHeader title="What's Covered" desc="Define what's included and excluded in this group tour. Shown beautifully on the customer itinerary." />
+
+              {/* Inclusions */}
+              <div className="mb-6">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-6 h-6 rounded-md flex items-center justify-center" style={{ background: '#DCFCE7' }}>
+                    <Check className="w-3.5 h-3.5" style={{ color: '#15803D' }} />
+                  </div>
+                  <p className="text-sm font-bold" style={{ color: '#15803D' }}>Inclusions</p>
+                  <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: '#DCFCE7', color: '#166534' }}>{cms.inclusions.length} items</span>
+                </div>
+                <div className="flex flex-col gap-2 mb-3">
+                  {cms.inclusions.map((item, i) => (
+                    <div
+                      key={i}
+                      draggable
+                      onDragStart={() => { dragRef.current = { field: 'inclusions', from: i }; }}
+                      onDragOver={e => { e.preventDefault(); setDragOver({ field: 'inclusions', idx: i }); }}
+                      onDragLeave={() => setDragOver(null)}
+                      onDrop={() => { setDragOver(null); if (dragRef.current?.field === 'inclusions') dndReorder('inclusions', dragRef.current.from, i); dragRef.current = null; }}
+                      onDragEnd={() => { setDragOver(null); dragRef.current = null; }}
+                      className="flex items-center gap-2 rounded-lg transition-all"
+                      style={{ opacity: dragRef.current?.field === 'inclusions' && dragRef.current?.from === i ? 0.4 : 1, background: dragOver?.field === 'inclusions' && dragOver?.idx === i ? '#F0FDF4' : 'transparent', outline: dragOver?.field === 'inclusions' && dragOver?.idx === i ? '2px dashed #86EFAC' : 'none' }}
+                    >
+                      <GripVertical className="w-4 h-4 flex-shrink-0 cursor-grab active:cursor-grabbing" style={{ color: '#CBD5E1' }} />
+                      <div className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center" style={{ background: '#F0FDF4', border: '1px solid #BBF7D0' }}>
+                        <Check className="w-3 h-3" style={{ color: '#16A34A' }} />
+                      </div>
+                      <input
+                        className={inp} style={inpSt}
+                        value={item}
+                        onChange={e => { const a = [...cms.inclusions]; a[i] = e.target.value; updCms('inclusions', a); }}
+                        placeholder={`Inclusion ${i + 1}`}
+                      />
+                      <button onClick={() => updCms('inclusions', cms.inclusions.filter((_, j) => j !== i))}
+                        className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center hover:bg-red-50 transition-colors" style={{ color: '#94A3B8' }}>
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button onClick={() => updCms('inclusions', [...cms.inclusions, ''])}
+                  className="flex items-center gap-2 h-8 px-3 rounded-lg text-xs font-semibold hover:opacity-90" style={{ background: '#DCFCE7', color: '#15803D', border: '1px solid #BBF7D0' }}>
+                  <Plus className="w-3 h-3" /> Add Inclusion
+                </button>
+              </div>
+
+              <div style={{ borderTop: '1px solid #F1F5F9', marginBottom: 20 }} />
+
+              {/* Exclusions */}
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-6 h-6 rounded-md flex items-center justify-center" style={{ background: '#FEE2E2' }}>
+                    <X className="w-3.5 h-3.5" style={{ color: '#DC2626' }} />
+                  </div>
+                  <p className="text-sm font-bold" style={{ color: '#B91C1C' }}>Exclusions</p>
+                  <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: '#FEE2E2', color: '#7F1D1D' }}>{cms.exclusions.length} items</span>
+                </div>
+                <div className="flex flex-col gap-2 mb-3">
+                  {cms.exclusions.map((item, i) => (
+                    <div
+                      key={i}
+                      draggable
+                      onDragStart={() => { dragRef.current = { field: 'exclusions', from: i }; }}
+                      onDragOver={e => { e.preventDefault(); setDragOver({ field: 'exclusions', idx: i }); }}
+                      onDragLeave={() => setDragOver(null)}
+                      onDrop={() => { setDragOver(null); if (dragRef.current?.field === 'exclusions') dndReorder('exclusions', dragRef.current.from, i); dragRef.current = null; }}
+                      onDragEnd={() => { setDragOver(null); dragRef.current = null; }}
+                      className="flex items-center gap-2 rounded-lg transition-all"
+                      style={{ opacity: dragRef.current?.field === 'exclusions' && dragRef.current?.from === i ? 0.4 : 1, background: dragOver?.field === 'exclusions' && dragOver?.idx === i ? '#FFF5F5' : 'transparent', outline: dragOver?.field === 'exclusions' && dragOver?.idx === i ? '2px dashed #FCA5A5' : 'none' }}
+                    >
+                      <GripVertical className="w-4 h-4 flex-shrink-0 cursor-grab active:cursor-grabbing" style={{ color: '#CBD5E1' }} />
+                      <div className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center" style={{ background: '#FFF5F5', border: '1px solid #FCA5A5' }}>
+                        <X className="w-3 h-3" style={{ color: '#DC2626' }} />
+                      </div>
+                      <input
+                        className={inp} style={inpSt}
+                        value={item}
+                        onChange={e => { const a = [...cms.exclusions]; a[i] = e.target.value; updCms('exclusions', a); }}
+                        placeholder={`Exclusion ${i + 1}`}
+                      />
+                      <button onClick={() => updCms('exclusions', cms.exclusions.filter((_, j) => j !== i))}
+                        className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center hover:bg-red-50 transition-colors" style={{ color: '#94A3B8' }}>
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <button onClick={() => updCms('exclusions', [...cms.exclusions, ''])}
+                  className="flex items-center gap-2 h-8 px-3 rounded-lg text-xs font-semibold hover:opacity-90" style={{ background: '#FEE2E2', color: '#DC2626', border: '1px solid #FCA5A5' }}>
+                  <Plus className="w-3 h-3" /> Add Exclusion
+                </button>
+              </div>
+
+              <div className="mt-6 p-3 rounded-xl text-xs" style={{ background: '#F0F7F9', border: '1px solid #B2D8E2', color: '#134956' }}>
+                💡 <strong>Tip:</strong> These are saved to the group template and shown as "What's Covered" on the customer itinerary. Be specific — customers read this before booking!
+              </div>
+            </div>
+          )}
+
+          {/* ═══ WHY CHOOSE ═══ */}
+          {activeSection === 'why' && (
+            <div className="bg-white rounded-2xl p-6" style={card}>
+              <SectionHeader title="Why Choose Travloger" desc="Pre-filled trust points shown to customers. Each can have a title and short description." />
+              <div className="flex flex-col gap-3">
+                {normaliseWhy(cms.why_choose).map((item, i) => (
+                  <div
+                    key={i}
+                    draggable
+                    onDragStart={() => { dragRef.current = { field: 'why_choose', from: i }; }}
+                    onDragOver={e => { e.preventDefault(); setDragOver({ field: 'why_choose', idx: i }); }}
+                    onDragLeave={() => setDragOver(null)}
+                    onDrop={() => { setDragOver(null); if (dragRef.current?.field === 'why_choose') dndReorder('why_choose', dragRef.current.from, i); dragRef.current = null; }}
+                    onDragEnd={() => { setDragOver(null); dragRef.current = null; }}
+                    className="rounded-xl p-4 transition-all"
+                    style={{ border: dragOver?.field === 'why_choose' && dragOver?.idx === i ? `2px dashed ${T}` : '1px solid #E2E8F0', opacity: dragRef.current?.field === 'why_choose' && dragRef.current?.from === i ? 0.4 : 1, background: dragOver?.field === 'why_choose' && dragOver?.idx === i ? '#F0F7F9' : 'white' }}
+                  >
+                    <div className="flex items-start gap-3">
+                      <GripVertical className="w-4 h-4 flex-shrink-0 cursor-grab active:cursor-grabbing mt-1.5" style={{ color: '#CBD5E1' }} />
+                      <div className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-white text-[10px] font-bold mt-1" style={{ backgroundColor: T }}>{i + 1}</div>
+                      <div className="flex-1 flex flex-col gap-2">
+                        <input
+                          className="w-full h-9 px-3 rounded-lg border text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white"
+                          style={inpSt} placeholder="Title e.g. Best Prices Guaranteed"
+                          value={item.title}
+                          onChange={e => {
+                            const w = normaliseWhy(cms.why_choose);
+                            w[i] = { ...w[i], title: e.target.value };
+                            updCms('why_choose', w);
+                          }} />
+                        <textarea
+                          className="w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white resize-none"
+                          style={inpSt} rows={2} placeholder="Short description (optional)"
+                          value={item.description}
+                          onChange={e => {
+                            const w = normaliseWhy(cms.why_choose);
+                            w[i] = { ...w[i], description: e.target.value };
+                            updCms('why_choose', w);
+                          }} />
+                      </div>
+                      <button onClick={() => updCms('why_choose', normaliseWhy(cms.why_choose).filter((_, j) => j !== i))}
+                        className="text-[#94A3B8] hover:text-red-500 mt-1 flex-shrink-0"><Trash2 className="w-4 h-4" /></button>
+                    </div>
+                  </div>
+                ))}
+                <button onClick={() => updCms('why_choose', [...normaliseWhy(cms.why_choose), { title: '', description: '' }])}
+                  className="flex items-center gap-2 text-sm font-semibold mt-1" style={{ color: T }}>
+                  <Plus className="w-4 h-4" /> Add Point
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ═══ INCLUSIONS / EXCLUSIONS ═══ */}
+          {activeSection === 'incl_excl' && (
+            <div className="bg-white rounded-2xl p-6" style={card}>
+              <SectionHeader title="Inclusions & Exclusions" desc="List what is included and excluded in this package." />
+              <div className="grid grid-cols-2 gap-6">
+                {/* Inclusions */}
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#15803D' }}>✓ Inclusions</p>
+                  <div className="flex flex-col gap-2">
+                    {(cms.inclusions ?? []).map((item, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <span className="text-green-500 flex-shrink-0">•</span>
+                        <input
+                          className="flex-1 h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white"
+                          style={{ borderColor: '#E2E8F0' }}
+                          value={item}
+                          placeholder="e.g. Accommodation on twin sharing"
+                          onChange={e => {
+                            const arr = [...(cms.inclusions ?? [])];
+                            arr[i] = e.target.value;
+                            updCms('inclusions', arr);
+                          }} />
+                        <button onClick={() => updCms('inclusions', (cms.inclusions ?? []).filter((_, j) => j !== i))}
+                          className="text-[#94A3B8] hover:text-red-500 flex-shrink-0"><Trash2 className="w-4 h-4" /></button>
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={() => updCms('inclusions', [...(cms.inclusions ?? []), ''])}
+                    className="flex items-center gap-2 text-sm font-semibold mt-3" style={{ color: '#15803D' }}>
+                    <Plus className="w-4 h-4" /> Add Inclusion
+                  </button>
+                </div>
+                {/* Exclusions */}
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#DC2626' }}>✕ Exclusions</p>
+                  <div className="flex flex-col gap-2">
+                    {(cms.exclusions ?? []).map((item, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <span className="text-red-500 flex-shrink-0">•</span>
+                        <input
+                          className="flex-1 h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-[#134956]/10 bg-white"
+                          style={{ borderColor: '#E2E8F0' }}
+                          value={item}
+                          placeholder="e.g. Airfare / train tickets"
+                          onChange={e => {
+                            const arr = [...(cms.exclusions ?? [])];
+                            arr[i] = e.target.value;
+                            updCms('exclusions', arr);
+                          }} />
+                        <button onClick={() => updCms('exclusions', (cms.exclusions ?? []).filter((_, j) => j !== i))}
+                          className="text-[#94A3B8] hover:text-red-500 flex-shrink-0"><Trash2 className="w-4 h-4" /></button>
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={() => updCms('exclusions', [...(cms.exclusions ?? []), ''])}
+                    className="flex items-center gap-2 text-sm font-semibold mt-3" style={{ color: '#DC2626' }}>
+                    <Plus className="w-4 h-4" /> Add Exclusion
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ═══ POLICIES ═══ */}
+          {activeSection === 'policy' && (
+            <div className="bg-white rounded-2xl p-6" style={card}>
+              <SectionHeader title="Policies" desc="Toggle which policies to include in the customer view." />
+              <div className="flex flex-col gap-3">
+                {['PAYMENT', 'CANCELLATION', 'IMPORTANT_NOTE'].map(type => {
+                  const typePolicies = policies.filter(p => p.policy_type === type);
+                  if (!typePolicies.length) return null;
+                  return (
+                    <div key={type}>
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-[#94A3B8] mb-2">{type.replace('_', ' ')}</p>
+                      {typePolicies.map(p => (
+                        <label key={p.id} className="flex items-start gap-3 p-3 rounded-xl cursor-pointer hover:bg-[#F8FAFC] mb-1" style={{ border: `1px solid ${selectedPolicies.includes(p.id) ? T : '#E2E8F0'}` }}>
+                          <input type="checkbox" checked={selectedPolicies.includes(p.id)} onChange={() => togglePolicy(p.id)} className="mt-0.5" />
+                          <div>
+                            <p className="text-sm font-semibold text-[#0F172A]">{p.title}</p>
+                            <p className="text-xs text-[#94A3B8] mt-0.5 line-clamp-1">{p.content.replace(/<[^>]+>/g, ' ').slice(0, 80)}…</p>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ═══ FAQs ═══ */}
+          {activeSection === 'faq' && (
+            <div className="bg-white rounded-2xl p-6" style={card}>
+              <SectionHeader title="FAQs" desc="Toggle FAQ section on/off. Add or edit custom questions." />
+              <label className="flex items-center gap-3 cursor-pointer mb-6 p-3 rounded-xl" style={{ border: '1px solid #E2E8F0', backgroundColor: cms.faqs_enabled ? `${T}08` : '#F8FAFC' }}>
+                <div onClick={() => updCms('faqs_enabled', !cms.faqs_enabled)}
+                  className="w-10 h-6 rounded-full transition-colors relative flex-shrink-0 cursor-pointer"
+                  style={{ backgroundColor: cms.faqs_enabled ? T : '#CBD5E1' }}>
+                  <div className="absolute top-1 w-4 h-4 rounded-full bg-white transition-transform" style={{ left: cms.faqs_enabled ? '22px' : '4px' }} />
+                </div>
+                <span className="text-sm font-semibold" style={{ color: cms.faqs_enabled ? T : '#64748B' }}>
+                  {cms.faqs_enabled ? 'FAQs enabled' : 'FAQs disabled'}
+                </span>
+              </label>
+              {cms.faqs_enabled && (
+                <div className="flex flex-col gap-3">
+                  {cms.custom_faqs.map((faq, i) => (
+                    <div
+                      key={i}
+                      draggable
+                      onDragStart={() => { dragRef.current = { field: 'custom_faqs', from: i }; }}
+                      onDragOver={e => { e.preventDefault(); setDragOver({ field: 'custom_faqs', idx: i }); }}
+                      onDragLeave={() => setDragOver(null)}
+                      onDrop={() => { setDragOver(null); if (dragRef.current?.field === 'custom_faqs') dndReorder('custom_faqs', dragRef.current.from, i); dragRef.current = null; }}
+                      onDragEnd={() => { setDragOver(null); dragRef.current = null; }}
+                      className="rounded-xl p-4 transition-all"
+                      style={{ border: dragOver?.field === 'custom_faqs' && dragOver?.idx === i ? '2px dashed #134956' : '1px solid #E2E8F0', opacity: dragRef.current?.field === 'custom_faqs' && dragRef.current?.from === i ? 0.4 : 1, background: dragOver?.field === 'custom_faqs' && dragOver?.idx === i ? '#F0F7F9' : 'white' }}
+                    >
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div className="flex items-center gap-2">
+                          <GripVertical className="w-4 h-4 cursor-grab active:cursor-grabbing" style={{ color: '#CBD5E1' }} />
+                          <p className="text-xs font-semibold uppercase tracking-wider text-[#64748B]">Q{i + 1}</p>
+                        </div>
+                        <button onClick={() => updCms('custom_faqs', cms.custom_faqs.filter((_, j) => j !== i))}
+                          className="text-[#94A3B8] hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
+                      <input className={`${inp} mb-2`} style={inpSt} value={faq.question}
+                        onChange={e => { const f = [...cms.custom_faqs]; f[i] = { ...f[i], question: e.target.value }; updCms('custom_faqs', f); }}
+                        placeholder="What is included in the package?" />
+                      <textarea className={ta} style={inpSt} rows={2} value={faq.answer}
+                        onChange={e => { const f = [...cms.custom_faqs]; f[i] = { ...f[i], answer: e.target.value }; updCms('custom_faqs', f); }}
+                        placeholder="Answer…" />
+                    </div>
+                  ))}
+                  <button onClick={() => updCms('custom_faqs', [...cms.custom_faqs, { question: '', answer: '' }])}
+                    className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white hover:opacity-90" style={{ backgroundColor: T }}>
+                    <Plus className="w-4 h-4" /> Add FAQ
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ═══ TERMS ═══ */}
+          {activeSection === 'terms' && (
+            <div className="bg-white rounded-2xl p-6" style={card}>
+              <SectionHeader title="Terms & Conditions" desc="Select which terms to include from the master list." />
+              <div className="flex flex-col gap-2">
+                {policies.filter(p => p.policy_type === 'TERMS').map(p => (
+                  <label key={p.id} className="flex items-start gap-3 p-3 rounded-xl cursor-pointer hover:bg-[#F8FAFC]" style={{ border: `1px solid ${selectedPolicies.includes(p.id) ? T : '#E2E8F0'}` }}>
+                    <input type="checkbox" checked={selectedPolicies.includes(p.id)} onChange={() => togglePolicy(p.id)} className="mt-0.5" />
+                    <div>
+                      <p className="text-sm font-semibold text-[#0F172A]">{p.title}</p>
+                      <p className="text-xs text-[#94A3B8] mt-0.5 line-clamp-2">{p.content.replace(/<[^>]+>/g, ' ').slice(0, 100)}…</p>
+                    </div>
+                  </label>
+                ))}
+                {policies.filter(p => p.policy_type === 'TERMS').length === 0 && (
+                  <p className="text-sm text-[#94A3B8] text-center py-8">No terms found. Add them in the Policies master.</p>
+                )}
+              </div>
+            </div>
+          )}
+
+        </div>{/* end main content */}
+      </div>{/* end flex */}
+
+      {/* ═══ BATCH MODAL ═══ */}
+      <Modal open={showBatchModal} onClose={() => setShowBatchModal(false)}
+        title={editingBatch?.id ? 'Edit Batch' : 'Add Departure Batch'}
+        subtitle="Set dates, seats, and pricing for this departure"
+        maxWidth="max-w-xl">
+        {batchErr && <div className="mb-4 p-3 rounded-lg text-sm font-medium" style={{ backgroundColor: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>{batchErr}</div>}
+        {editingBatch && (
+          <div className="flex flex-col gap-4">
+            <div>
+              <label className={lbl}>Batch Name <span className="text-red-500">*</span></label>
+              <input className={inp} style={inpSt} value={editingBatch.batch_name}
+                onChange={e => updBatch('batch_name', e.target.value)} placeholder="Summer Departure — Jun 2025" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className={lbl}>Start Date <span className="text-red-500">*</span></label>
+                <input type="date" className={inp} style={inpSt} value={editingBatch.start_date}
+                  onChange={e => updBatch('start_date', e.target.value)} />
+              </div>
+              <div>
+                <label className={lbl}>End Date <span className="text-red-500">*</span></label>
+                <input type="date" className={inp} style={inpSt} value={editingBatch.end_date}
+                  onChange={e => updBatch('end_date', e.target.value)} />
+              </div>
+              <div>
+                <label className={lbl}>Total Seats</label>
+                <input type="number" min="1" className={inp} style={inpSt} value={editingBatch.total_seats}
+                  onChange={e => updBatch('total_seats', Number(e.target.value))} />
+              </div>
+              <div>
+                <label className={lbl}>Available Seats</label>
+                <input type="number" min="0" className={inp} style={inpSt} value={editingBatch.available_seats}
+                  onChange={e => updBatch('available_seats', Number(e.target.value))} />
+              </div>
+            </div>
+
+            <div style={{ borderTop: '1px solid #F1F5F9', paddingTop: '16px' }}>
+              <p className="text-xs font-bold uppercase tracking-wider text-[#64748B] mb-3">Pricing (₹ per person)</p>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className={lbl}>Adult</label>
+                  <input type="number" min="0" className={inp} style={inpSt} value={editingBatch.adult_price}
+                    onChange={e => updBatch('adult_price', Number(e.target.value))} />
+                </div>
+                <div>
+                  <label className={lbl}>Child 5–12</label>
+                  <input type="number" min="0" className={inp} style={inpSt} value={editingBatch.child_5_12_price}
+                    onChange={e => updBatch('child_5_12_price', Number(e.target.value))} />
+                </div>
+                <div>
+                  <label className={lbl}>Child &lt;5</label>
+                  <input type="number" min="0" className={inp} style={inpSt} value={editingBatch.child_below_5_price}
+                    onChange={e => updBatch('child_below_5_price', Number(e.target.value))} />
+                </div>
+                <div>
+                  <label className={lbl}>Single Supplement</label>
+                  <input type="number" min="0" className={inp} style={inpSt}
+                    value={editingBatch.single_supplement ?? ''}
+                    onChange={e => updBatch('single_supplement', e.target.value ? Number(e.target.value) : null)}
+                    placeholder="Optional" />
+                </div>
+                <div>
+                  <label className={lbl}>GST %</label>
+                  <input type="number" min="0" max="100" className={inp} style={inpSt} value={editingBatch.gst_percent}
+                    onChange={e => updBatch('gst_percent', Number(e.target.value))} />
+                </div>
+                <div>
+                  <label className={lbl}>Status</label>
+                  <select className={sel} style={inpSt} value={editingBatch.booking_status}
+                    onChange={e => updBatch('booking_status', e.target.value)}>
+                    {BOOKING_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className={lbl}>Badge Text <span className="text-[#94A3B8] font-normal">(optional)</span></label>
+                  <input className={inp} style={inpSt} value={editingBatch.badge_text ?? ''}
+                    onChange={e => updBatch('badge_text', e.target.value || null)}
+                    placeholder="e.g. Filling Fast, 2 Spots Left, Early Bird" />
+                </div>
+                <div>
+                  <label className={lbl}>Badge Color</label>
+                  <div className="flex items-center gap-3 mt-1">
+                    <input type="color" value={editingBatch.badge_color ?? '#F59E0B'}
+                      onChange={e => updBatch('badge_color', e.target.value)}
+                      className="h-9 w-14 rounded cursor-pointer border-0 p-0.5" style={{ backgroundColor: 'transparent' }} />
+                    <span className="text-xs text-[#64748B] font-mono">{editingBatch.badge_color ?? '#F59E0B'}</span>
+                    <button type="button" onClick={() => updBatch('badge_color', null)}
+                      className="text-xs text-[#94A3B8] hover:text-[#64748B] underline">Reset</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        <div className="flex justify-end gap-3 mt-5 pt-5" style={{ borderTop: '1px solid #F1F5F9' }}>
+          <button onClick={() => setShowBatchModal(false)} className="h-9 px-4 rounded-lg text-sm font-semibold text-[#64748B] hover:bg-[#F8FAFC]" style={{ border: '1px solid #E2E8F0' }}>Cancel</button>
+          <button onClick={saveBatch} disabled={batchSaving || !editingBatch?.batch_name || !editingBatch?.start_date || !editingBatch?.end_date}
+            className="h-9 px-5 rounded-lg text-sm font-semibold text-white disabled:opacity-50 hover:opacity-90" style={{ backgroundColor: T }}>
+            {batchSaving ? 'Saving…' : editingBatch?.id ? 'Update Batch' : 'Add Batch'}
+          </button>
+        </div>
+      </Modal>
+
+    </div>
+  );
+}
+
+/* ── Sub-components ── */
+function SectionHeader({ title, desc }: { title: string; desc: string }) {
+  return (
+    <div className="mb-5">
+      <h2 className="text-base font-bold text-[#0F172A] mb-1">{title}</h2>
+      <p className="text-sm text-[#64748B]">{desc}</p>
+    </div>
+  );
+}
+
+function TagInput({ onAdd }: { onAdd: (t: string) => void }) {
+  const [val, setVal] = useState('');
+  return (
+    <div className="flex gap-1">
+      <input className="h-7 px-2 rounded border text-xs focus:outline-none w-28" style={{ borderColor: '#E2E8F0' }}
+        value={val} onChange={e => setVal(e.target.value)} placeholder="Add tag…"
+        onKeyDown={e => { if (e.key === 'Enter' && val.trim()) { onAdd(val.trim()); setVal(''); } }} />
+      <button onClick={() => { if (val.trim()) { onAdd(val.trim()); setVal(''); } }}
+        className="h-7 w-7 rounded flex items-center justify-center text-white flex-shrink-0"
+        style={{ backgroundColor: '#134956' }}>
+        <Plus className="w-3 h-3" />
+      </button>
+    </div>
+  );
+}

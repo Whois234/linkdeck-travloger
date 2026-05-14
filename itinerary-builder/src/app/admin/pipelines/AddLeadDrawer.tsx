@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { X, Loader2 } from 'lucide-react';
+import PhoneInput, { combinePhone } from '@/components/PhoneInput';
 
 export default function AddLeadDrawer({
   pipelineId, onClose, onCreated,
@@ -8,16 +9,19 @@ export default function AddLeadDrawer({
   pipelineId: string; onClose: () => void; onCreated: () => void;
 }) {
   const [form, setForm] = useState({ name: '', phone: '', email: '', source: '', destination_interest: '', travel_month: '', budget_range: '' });
+  const [phoneCode, setPhoneCode] = useState('+91');
+  const [phoneLocal, setPhoneLocal] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.name.trim() || !form.phone.trim()) { setError('Name and phone are required'); return; }
+    const fullPhone = combinePhone(phoneCode, phoneLocal);
+    if (!form.name.trim() || !phoneLocal.trim()) { setError('Name and phone are required'); return; }
     setSaving(true); setError('');
     const res = await fetch('/api/v1/leads', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...form, pipeline_id: pipelineId }),
+      body: JSON.stringify({ ...form, phone: fullPhone, pipeline_id: pipelineId }),
     });
     const data = await res.json();
     setSaving(false);
@@ -50,7 +54,13 @@ export default function AddLeadDrawer({
         </div>
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
           {field('Name *', 'name', 'text', 'Full name')}
-          {field('Phone *', 'phone', 'tel', '+91 98765 43210')}
+          <div>
+            <label className="block text-xs font-semibold mb-1" style={{ color: '#374151' }}>Phone *</label>
+            <PhoneInput
+              code={phoneCode} local={phoneLocal}
+              onCodeChange={setPhoneCode} onLocalChange={setPhoneLocal}
+            />
+          </div>
           {field('Email', 'email', 'email', 'email@example.com')}
           {field('Source', 'source', 'text', 'Facebook, Referral, Walk-in...')}
           {field('Destination Interest', 'destination_interest', 'text', 'Goa, Manali, Maldives...')}

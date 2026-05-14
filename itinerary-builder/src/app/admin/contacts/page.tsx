@@ -725,10 +725,24 @@ function ContactPipelineSection({ c, onRefresh }: { c: Contact; onRefresh: () =>
 // ─── Deleted Contacts Recycle Bin ────────────────────────────────────────────
 
 function DeletedContactsTab({ qc, contactParams }: { qc: QueryClient; contactParams: URLSearchParams }) {
-  const [deleted, setDeleted]   = useState<{ id: string; name: string; phone: string; deleted_at: string; email?: string | null }[]>([]);
-  const [loading, setLoading]   = useState(true);
+  const [deleted, setDeleted]     = useState<{ id: string; name: string; phone: string; deleted_at: string; email?: string | null }[]>([]);
+  const [loading, setLoading]     = useState(true);
   const [restoring, setRestoring] = useState<string | null>(null);
-  const [purging, setPurging]   = useState<string | null>(null);
+  const [purging, setPurging]     = useState<string | null>(null);
+  const [selected, setSelected]   = useState<Set<string>>(new Set());
+  const [bulkPurging, setBulkPurging] = useState(false);
+
+  const allSelected = deleted.length > 0 && selected.size === deleted.length;
+  function toggleAll() {
+    setSelected(allSelected ? new Set() : new Set(deleted.map(c => c.id)));
+  }
+  function toggleOne(id: string) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
 
   const load = async () => {
     setLoading(true);
@@ -761,15 +775,37 @@ function DeletedContactsTab({ qc, contactParams }: { qc: QueryClient; contactPar
   async function purgeNow(id: string) {
     if (!confirm('Permanently delete this contact? This CANNOT be undone.')) return;
     setPurging(id);
-    const res = await fetch(`/api/v1/crm/contacts/${id}`, { method: 'DELETE' });
+    const res = await fetch(`/api/v1/crm/contacts/${id}?hard=true`, { method: 'DELETE' });
     const data = await res.json();
     if (data.success) {
       toast.success('Contact permanently deleted');
       setDeleted(prev => prev.filter(c => c.id !== id));
+      setSelected(prev => { const n = new Set(prev); n.delete(id); return n; });
     } else {
-      toast.error('Failed to delete contact');
+      toast.error(data.error ?? 'Failed to delete contact');
     }
     setPurging(null);
+  }
+
+  async function bulkPurge() {
+    if (selected.size === 0) return;
+    if (!confirm(`Permanently delete ${selected.size} contact${selected.size > 1 ? 's' : ''}? This CANNOT be undone.`)) return;
+    setBulkPurging(true);
+    const ids = Array.from(selected);
+    const res = await fetch('/api/v1/crm/contacts', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      toast.success(`${data.data?.deleted ?? ids.length} contact${ids.length > 1 ? 's' : ''} permanently deleted`);
+      setDeleted(prev => prev.filter(c => !selected.has(c.id)));
+      setSelected(new Set());
+    } else {
+      toast.error(data.error ?? 'Bulk delete failed');
+    }
+    setBulkPurging(false);
   }
 
   const daysSince = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / (1000 * 60 * 60 * 24));
@@ -799,49 +835,90 @@ function DeletedContactsTab({ qc, contactParams }: { qc: QueryClient; contactPar
           <p className="text-xs mt-1" style={{ color: '#94A3B8' }}>Deleted contacts appear here and are auto-purged after 30 days.</p>
         </div>
       ) : (
-        <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
-          <div className="grid grid-cols-5 px-5 py-3 text-[11px] font-bold uppercase tracking-wider"
-            style={{ backgroundColor: '#FFF5F5', borderBottom: '1px solid #FECACA', color: '#94A3B8' }}>
-            <div className="col-span-2">Contact</div>
-            <div>Phone</div>
-            <div>Deleted</div>
-            <div className="text-right">Actions</div>
-          </div>
-          {deleted.map((c, i) => {
-            const days = daysSince(c.deleted_at);
-            const daysLeft = 30 - days;
-            return (
-              <div key={c.id} className="grid grid-cols-5 items-center px-5 py-4"
-                style={{ borderBottom: i < deleted.length - 1 ? '1px solid #FEF2F2' : 'none' }}>
-                <div className="col-span-2">
-                  <p className="text-sm font-semibold" style={{ color: '#374151' }}>{c.name}</p>
-                  {c.email && <p className="text-xs" style={{ color: '#94A3B8' }}>{c.email}</p>}
-                </div>
-                <div className="font-mono text-xs" style={{ color: '#134956' }}>{c.phone}</div>
-                <div>
-                  <p className="text-xs" style={{ color: '#64748B' }}>{days} day{days !== 1 ? 's' : ''} ago</p>
-                  <p className="text-[10px] font-semibold" style={{ color: daysLeft <= 5 ? '#DC2626' : '#94A3B8' }}>
-                    {daysLeft > 0 ? `${daysLeft}d left` : 'Due for purge'}
-                  </p>
-                </div>
-                <div className="flex items-center justify-end gap-2">
-                  <button onClick={() => restore(c.id)} disabled={restoring === c.id}
-                    className="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
-                    style={{ backgroundColor: '#134956', color: '#fff' }}>
-                    {restoring === c.id ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
-                    Restore
-                  </button>
-                  <button onClick={() => purgeNow(c.id)} disabled={purging === c.id}
-                    className="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
-                    style={{ backgroundColor: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
-                    {purging === c.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
-                    Delete Forever
-                  </button>
-                </div>
+        <>
+          {/* Bulk action bar */}
+          {selected.size > 0 && (
+            <div className="flex items-center justify-between px-4 py-2.5 rounded-xl mb-2"
+              style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA' }}>
+              <span className="text-sm font-semibold" style={{ color: '#991B1B' }}>
+                {selected.size} contact{selected.size > 1 ? 's' : ''} selected
+              </span>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setSelected(new Set())}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium"
+                  style={{ color: '#64748B' }}>
+                  Clear
+                </button>
+                <button onClick={bulkPurge} disabled={bulkPurging}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5"
+                  style={{ backgroundColor: '#DC2626', color: '#fff' }}>
+                  {bulkPurging ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                  Delete {selected.size} Forever
+                </button>
               </div>
-            );
-          })}
-        </div>
+            </div>
+          )}
+
+          <div className="bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
+            <div className="grid items-center px-5 py-3 text-[11px] font-bold uppercase tracking-wider"
+              style={{ gridTemplateColumns: '36px 1fr 160px 110px 200px', backgroundColor: '#FFF5F5', borderBottom: '1px solid #FECACA', color: '#94A3B8' }}>
+              {/* Select all */}
+              <button onClick={toggleAll} className="flex items-center justify-center">
+                {allSelected
+                  ? <CheckSquare className="w-4 h-4" style={{ color: '#DC2626' }} />
+                  : <Square className="w-4 h-4 text-gray-300" />}
+              </button>
+              <div>Contact</div>
+              <div>Phone</div>
+              <div>Deleted</div>
+              <div className="text-right">Actions</div>
+            </div>
+            {deleted.map((c, i) => {
+              const days = daysSince(c.deleted_at);
+              const daysLeft = 30 - days;
+              const isChecked = selected.has(c.id);
+              return (
+                <div key={c.id} className="grid items-center px-5 py-4"
+                  style={{
+                    gridTemplateColumns: '36px 1fr 160px 110px 200px',
+                    borderBottom: i < deleted.length - 1 ? '1px solid #FEF2F2' : 'none',
+                    backgroundColor: isChecked ? '#FFF5F5' : undefined,
+                  }}>
+                  <button onClick={() => toggleOne(c.id)} className="flex items-center justify-center">
+                    {isChecked
+                      ? <CheckSquare className="w-4 h-4" style={{ color: '#DC2626' }} />
+                      : <Square className="w-4 h-4 text-gray-300" />}
+                  </button>
+                  <div>
+                    <p className="text-sm font-semibold" style={{ color: '#374151' }}>{c.name}</p>
+                    {c.email && <p className="text-xs" style={{ color: '#94A3B8' }}>{c.email}</p>}
+                  </div>
+                  <div className="font-mono text-xs" style={{ color: '#134956' }}>{c.phone}</div>
+                  <div>
+                    <p className="text-xs" style={{ color: '#64748B' }}>{days} day{days !== 1 ? 's' : ''} ago</p>
+                    <p className="text-[10px] font-semibold" style={{ color: daysLeft <= 5 ? '#DC2626' : '#94A3B8' }}>
+                      {daysLeft > 0 ? `${daysLeft}d left` : 'Due for purge'}
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-end gap-2">
+                    <button onClick={() => restore(c.id)} disabled={restoring === c.id}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                      style={{ backgroundColor: '#134956', color: '#fff' }}>
+                      {restoring === c.id ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                      Restore
+                    </button>
+                    <button onClick={() => purgeNow(c.id)} disabled={purging === c.id || bulkPurging}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                      style={{ backgroundColor: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA' }}>
+                      {purging === c.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                      Delete Forever
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
       )}
     </div>
   );
@@ -1290,7 +1367,15 @@ export default function ContactsPage() {
       {tab === 'contacts' ? (
         <>
           {/* Table */}
-          <div className="flex-1 overflow-auto bg-white">
+          <div className="flex-1 overflow-auto bg-white relative">
+            {/* Loading overlay — shown when re-fetching with existing data (e.g. filter change) */}
+            {loading && contacts.length > 0 && (
+              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 pointer-events-none"
+                style={{ background: 'rgba(255,255,255,0.72)', backdropFilter: 'blur(2px)' }}>
+                <Loader2 className="w-6 h-6 animate-spin" style={{ color: '#134956' }} />
+                <span className="text-xs font-semibold" style={{ color: '#64748B' }}>Loading contacts…</span>
+              </div>
+            )}
             {loading && contacts.length === 0 ? (
               <TableSkeleton rows={12} />
             ) : (
@@ -1307,7 +1392,7 @@ export default function ContactsPage() {
                     {[
                       'Full Name', 'Phone', 'Email', 'City', 'Nationality', 'Destination', 'Travellers',
                       'Budget', 'Trip', 'Source', 'Platform', 'Campaign',
-                      'Stage', 'Assigned', 'Follow-up', 'DNC', 'Booking', 'Quotes', 'Created By', 'Created', '',
+                      'Pipeline', 'Stage', 'Assigned', 'Follow-up', 'DNC', 'Booking', 'Quotes', 'Created By', 'Created', '',
                     ].map(h => (
                       <th key={h} className="text-left px-3 py-3 text-[11px] font-bold uppercase tracking-wider whitespace-nowrap" style={{ color: '#64748B' }}>{h}</th>
                     ))}
@@ -1460,6 +1545,23 @@ export default function ContactsPage() {
                           {c.campaign_name
                             ? <span className="truncate block max-w-[120px]" title={c.campaign_name}>{c.campaign_name}</span>
                             : <span style={{ color: '#CBD5E1' }}>—</span>}
+                        </td>
+
+                        {/* Pipeline indicator */}
+                        <td className="px-3 py-3">
+                          {c.leads.some(l => l.pipeline !== null) ? (
+                            <span title="Added to pipeline" className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold"
+                              style={{ background: '#DCFCE7', color: '#15803D' }}>
+                              <svg viewBox="0 0 8 8" className="w-2 h-2 fill-current"><circle cx="4" cy="4" r="4"/></svg>
+                              Yes
+                            </span>
+                          ) : (
+                            <span title="Not in any pipeline" className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold"
+                              style={{ background: '#FEE2E2', color: '#DC2626' }}>
+                              <svg viewBox="0 0 8 8" className="w-2 h-2 fill-current"><circle cx="4" cy="4" r="4"/></svg>
+                              No
+                            </span>
+                          )}
                         </td>
 
                         {/* Lead Stage — pipeline stage takes precedence for accuracy */}

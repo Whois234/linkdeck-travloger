@@ -321,38 +321,71 @@ export default function WorkflowsPage() {
     updateAction(actionIdx, { users: newUsers });
   }
 
-  // ─── Condition field UI ───────────────────────────────────────────────────
+  // ─── Condition field UI (Bigin-style numbered rows) ─────────────────────
 
   function RuleRow({ rule, idx }: { rule: WfRule; idx: number }) {
-    const fieldDef = WF_CONDITION_FIELDS.find(f => f.value === rule.field);
+    const fieldDef  = WF_CONDITION_FIELDS.find(f => f.value === rule.field);
     const operators = fieldDef?.type === 'tag' ? TAG_OPERATORS
       : fieldDef?.type === 'leadSource' ? SELECT_OPERATORS
       : TEXT_OPERATORS;
+    const needsValue = rule.operator !== 'is_empty' && rule.operator !== 'is_not_empty';
     return (
-      <div className="flex gap-2 items-center">
-        <div className="flex-1 grid grid-cols-3 gap-2">
-          <SelectBox value={rule.field} onChange={v => updateRule(idx, { field: v, operator: 'is', value: '' })}>
-            {WF_CONDITION_FIELDS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
-          </SelectBox>
-          <SelectBox value={rule.operator} onChange={v => updateRule(idx, { operator: v })}>
-            {operators.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </SelectBox>
-          {rule.operator !== 'is_empty' && rule.operator !== 'is_not_empty' && (
+      <div className="flex items-start gap-3">
+        {/* Row number */}
+        <div className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0 mt-2.5"
+          style={{ background: '#F1F5F9', color: '#64748B' }}>
+          {idx + 1}
+        </div>
+        {/* Fields */}
+        <div className="flex-1 grid gap-2" style={{ gridTemplateColumns: needsValue ? '1fr 1fr 1fr' : '1fr 1fr' }}>
+          <div className="relative">
+            <select value={rule.field} onChange={e => updateRule(idx, { field: e.target.value, operator: 'is', value: '' })}
+              className="w-full text-sm rounded-lg px-3 py-2.5 outline-none appearance-none bg-white"
+              style={{ border: '1px solid #D1D5DB' }}>
+              {WF_CONDITION_FIELDS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+            </select>
+            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none text-gray-400" />
+          </div>
+          <div className="relative">
+            <select value={rule.operator} onChange={e => updateRule(idx, { operator: e.target.value })}
+              className="w-full text-sm rounded-lg px-3 py-2.5 outline-none appearance-none bg-white"
+              style={{ border: '1px solid #D1D5DB' }}>
+              {operators.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none text-gray-400" />
+          </div>
+          {needsValue && (
             fieldDef?.type === 'leadSource'
-              ? <SelectBox value={rule.value} onChange={v => updateRule(idx, { value: v })}>
-                  <option value="">Any source…</option>
-                  {LEAD_SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
-                </SelectBox>
+              ? <div className="relative">
+                  <select value={rule.value} onChange={e => updateRule(idx, { value: e.target.value })}
+                    className="w-full text-sm rounded-lg px-3 py-2.5 outline-none appearance-none bg-white"
+                    style={{ border: '1px solid #D1D5DB' }}>
+                    <option value="">Any source…</option>
+                    {LEAD_SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none text-gray-400" />
+                </div>
               : <input value={rule.value} onChange={e => updateRule(idx, { value: e.target.value })}
-                  placeholder="Value…" className="text-sm rounded-lg px-3 py-2.5 outline-none"
+                  placeholder="Enter value…"
+                  className="text-sm rounded-lg px-3 py-2.5 outline-none bg-white"
                   style={{ border: '1px solid #D1D5DB' }} />
           )}
         </div>
-        <button onClick={() => removeRule(idx)} className="p-1 rounded hover:bg-red-50">
-          <X className="w-4 h-4 text-red-400" />
+        {/* Remove */}
+        <button onClick={() => removeRule(idx)}
+          className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mt-2.5 transition-colors hover:bg-red-50"
+          style={{ border: '1.5px solid #FCA5A5' }}>
+          <X className="w-3 h-3 text-red-400" />
         </button>
       </div>
     );
+  }
+
+  // Bigin-style condition pattern: (1 and 2) or 3
+  function conditionPattern(): string {
+    if (wfRules.length === 0) return '';
+    const nums = wfRules.map((_, i) => i + 1);
+    return nums.join(` ${wfMatch.toLowerCase()} `);
   }
 
   // ─── Action UI ────────────────────────────────────────────────────────────
@@ -741,100 +774,172 @@ export default function WorkflowsPage() {
         </div>
       )}
 
-      {/* Create / Edit Modal */}
+      {/* Create / Edit Modal — Bigin-inspired */}
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
-          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
-            <div className="sticky top-0 bg-white flex items-center justify-between px-6 py-4 border-b border-gray-100">
-              <p className="font-bold text-base" style={{ color: '#0F172A' }}>
-                {editingId ? 'Edit Workflow' : 'New Workflow'}
-              </p>
-              <button onClick={() => { setShowForm(false); resetForm(); }} className="p-1.5 rounded-lg hover:bg-gray-100">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(15,23,42,0.55)' }}>
+          <div className="w-full max-w-2xl max-h-[92vh] flex flex-col rounded-2xl bg-white shadow-2xl" style={{ border: '1px solid #E2E8F0' }}>
+
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-6 py-4 flex-shrink-0" style={{ borderBottom: '1px solid #F1F5F9' }}>
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: `${T}18` }}>
+                  <Zap className="w-4 h-4" style={{ color: T }} />
+                </div>
+                <div>
+                  <p className="font-bold text-sm" style={{ color: '#0F172A' }}>{editingId ? 'Edit Workflow' : 'New Workflow'}</p>
+                  <p className="text-[11px]" style={{ color: '#94A3B8' }}>Automation rule for CRM contacts</p>
+                </div>
+              </div>
+              <button onClick={() => { setShowForm(false); resetForm(); }}
+                className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-100 transition-colors">
                 <X className="w-4 h-4" style={{ color: '#64748B' }} />
               </button>
             </div>
-            <div className="p-6 space-y-5">
 
-              {/* Name */}
-              <div>
-                <label className="block text-[11px] font-bold uppercase tracking-wider mb-1.5" style={{ color: '#94A3B8' }}>Workflow Name</label>
-                <input value={wfName} onChange={e => setWfName(e.target.value)}
-                  placeholder="e.g. Assign Goa Leads, Hot Lead Follow-up…"
-                  className="w-full text-sm rounded-xl px-4 py-2.5 outline-none font-medium"
-                  style={{ border: '1.5px solid #E2E8F0' }} />
-              </div>
+            {/* Scrollable body */}
+            <div className="overflow-y-auto flex-1 px-6 py-5 space-y-0">
 
-              {/* Trigger */}
-              <div>
-                <label className="block text-[11px] font-bold uppercase tracking-wider mb-1.5" style={{ color: '#94A3B8' }}>Trigger</label>
-                <div className="flex gap-2 flex-wrap">
-                  {TRIGGERS.map(t => (
-                    <button key={t.value} onClick={() => setWfTrigger(t.value as typeof wfTrigger)}
-                      className="px-3 py-1.5 rounded-lg text-sm font-semibold border transition-all"
-                      style={{ borderColor: wfTrigger === t.value ? T : '#E2E8F0', background: wfTrigger === t.value ? `${T}15` : 'white', color: wfTrigger === t.value ? T : '#64748B' }}>
-                      {t.label}
-                    </button>
-                  ))}
+              {/* ── Step 1: Name + Trigger ── */}
+              <div className="rounded-xl mb-3 overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
+                <div className="flex items-center gap-3 px-4 py-3" style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
+                  <span className="w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0" style={{ background: T }}>1</span>
+                  <span className="text-sm font-semibold" style={{ color: '#0F172A' }}>Trigger</span>
+                  <span className="text-xs ml-1" style={{ color: '#94A3B8' }}>When should this workflow fire?</span>
                 </div>
-              </div>
-
-              {/* Conditions */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-[11px] font-bold uppercase tracking-wider" style={{ color: '#94A3B8' }}>Conditions</label>
-                  <div className="flex items-center gap-2">
-                    {wfRules.length > 1 && (
-                      <div className="flex gap-1">
-                        {(['AND', 'OR'] as const).map(m => (
-                          <button key={m} onClick={() => setWfMatch(m)}
-                            className="px-2 py-0.5 rounded text-xs font-bold border transition-all"
-                            style={{ borderColor: wfMatch === m ? T : '#E2E8F0', background: wfMatch === m ? `${T}15` : 'white', color: wfMatch === m ? T : '#94A3B8' }}>
-                            {m}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    <button onClick={addRule}
-                      className="text-xs px-2.5 py-1.5 rounded-lg font-semibold flex items-center gap-1"
-                      style={{ background: `${T}15`, color: T }}>
-                      <Plus className="w-3 h-3" /> Add
-                    </button>
+                <div className="px-4 py-4 space-y-3">
+                  <input value={wfName} onChange={e => setWfName(e.target.value)}
+                    placeholder="Workflow name, e.g. Assign Goa Leads…"
+                    className="w-full text-sm rounded-lg px-3 py-2.5 outline-none font-medium"
+                    style={{ border: '1px solid #D1D5DB' }} />
+                  <div className="flex gap-2 flex-wrap">
+                    {TRIGGERS.map(t => (
+                      <button key={t.value} onClick={() => setWfTrigger(t.value as typeof wfTrigger)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all"
+                        style={{
+                          borderColor: wfTrigger === t.value ? T : '#E2E8F0',
+                          background:  wfTrigger === t.value ? `${T}12` : 'white',
+                          color:       wfTrigger === t.value ? T : '#64748B',
+                        }}>
+                        {t.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
-                {wfRules.length === 0
-                  ? <p className="text-xs py-3 px-4 rounded-lg" style={{ color: '#CBD5E1', background: '#F8FAFC' }}>No conditions — workflow runs for every matching contact.</p>
-                  : <div className="space-y-2">{wfRules.map((rule, i) => <RuleRow key={i} rule={rule} idx={i} />)}</div>
-                }
               </div>
 
-              {/* Actions */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-[11px] font-bold uppercase tracking-wider" style={{ color: '#94A3B8' }}>Actions</label>
+              {/* ── Step 2: Conditions ── */}
+              <div className="rounded-xl mb-3 overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
+                <div className="flex items-center gap-3 px-4 py-3" style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
+                  <span className="w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0" style={{ background: T }}>2</span>
+                  <span className="text-sm font-semibold" style={{ color: '#0F172A' }}>Conditions</span>
+                  <span className="text-xs ml-1" style={{ color: '#94A3B8' }}>Which contacts should this apply to?</span>
+                </div>
+                <div className="px-4 py-4">
+                  {/* All contacts vs specific */}
+                  <div className="flex items-center gap-5 mb-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" name="cond_type" checked={wfRules.length > 0}
+                        onChange={() => { if (wfRules.length === 0) addRule(); }}
+                        className="w-3.5 h-3.5 accent-[#134956]" />
+                      <span className="text-sm font-medium" style={{ color: '#374151' }}>Contacts matching certain conditions</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" name="cond_type" checked={wfRules.length === 0}
+                        onChange={() => setWfRules([])}
+                        className="w-3.5 h-3.5 accent-[#134956]" />
+                      <span className="text-sm font-medium" style={{ color: '#374151' }}>All Contacts</span>
+                    </label>
+                  </div>
+
+                  {wfRules.length > 0 && (
+                    <div className="space-y-0">
+                      {wfRules.map((rule, i) => (
+                        <div key={i}>
+                          <RuleRow rule={rule} idx={i} />
+                          {/* AND / OR connector between rows */}
+                          {i < wfRules.length - 1 && (
+                            <div className="flex items-center gap-2 my-2 ml-9">
+                              {(['AND', 'OR'] as const).map(m => (
+                                <button key={m} onClick={() => setWfMatch(m)}
+                                  className="px-2.5 py-0.5 rounded-full text-[11px] font-bold border transition-all"
+                                  style={{
+                                    borderColor: wfMatch === m ? T : '#E2E8F0',
+                                    background:  wfMatch === m ? `${T}12` : '#F8FAFC',
+                                    color:       wfMatch === m ? T : '#94A3B8',
+                                  }}>
+                                  {m}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+
+                      {/* Pattern display + Add button */}
+                      <div className="mt-3 flex items-center justify-between">
+                        <p className="text-[11px] px-2.5 py-1 rounded-md font-mono"
+                          style={{ background: '#F1F5F9', color: '#64748B' }}>
+                          ({conditionPattern()})
+                        </p>
+                        <button onClick={addRule}
+                          className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                          style={{ background: `${T}12`, color: T }}>
+                          <Plus className="w-3 h-3" /> Add Condition
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {wfRules.length === 0 && (
+                    <button onClick={addRule}
+                      className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors mt-1"
+                      style={{ background: `${T}12`, color: T }}>
+                      <Plus className="w-3 h-3" /> Add Condition
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* ── Step 3: Actions ── */}
+              <div className="rounded-xl mb-3 overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
+                <div className="flex items-center justify-between px-4 py-3" style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
+                  <div className="flex items-center gap-3">
+                    <span className="w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0" style={{ background: T }}>3</span>
+                    <span className="text-sm font-semibold" style={{ color: '#0F172A' }}>Actions</span>
+                    <span className="text-xs ml-1" style={{ color: '#94A3B8' }}>What should happen?</span>
+                  </div>
                   <button onClick={addAction}
-                    className="text-xs px-2.5 py-1.5 rounded-lg font-semibold flex items-center gap-1"
-                    style={{ background: `${T}15`, color: T }}>
-                    <Plus className="w-3 h-3" /> Add
+                    className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                    style={{ background: `${T}12`, color: T }}>
+                    <Plus className="w-3 h-3" /> Add Action
                   </button>
                 </div>
-                {wfActions.map((action, i) => <ActionCard key={i} action={action} idx={i} />)}
+                <div className="px-4 py-4 space-y-3">
+                  {wfActions.map((action, i) => <ActionCard key={i} action={action} idx={i} />)}
+                </div>
               </div>
 
-              {wfError && <p className="text-sm text-red-500 font-medium">{wfError}</p>}
+              {wfError && (
+                <div className="flex items-center gap-2 px-4 py-3 rounded-lg" style={{ background: '#FEF2F2', border: '1px solid #FECACA' }}>
+                  <X className="w-4 h-4 text-red-500 flex-shrink-0" />
+                  <p className="text-sm text-red-600 font-medium">{wfError}</p>
+                </div>
+              )}
+            </div>
 
-              <div className="flex gap-3 pt-2">
-                <button onClick={() => { setShowForm(false); resetForm(); }}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
-                  style={{ border: '1.5px solid #E2E8F0', color: '#64748B' }}>
-                  Cancel
-                </button>
-                <button onClick={saveWorkflow} disabled={savingWf}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-60"
-                  style={{ background: T }}>
-                  {savingWf ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                  {editingId ? 'Update Workflow' : 'Create Workflow'}
-                </button>
-              </div>
+            {/* Modal footer */}
+            <div className="flex gap-3 px-6 py-4 flex-shrink-0" style={{ borderTop: '1px solid #F1F5F9' }}>
+              <button onClick={() => { setShowForm(false); resetForm(); }}
+                className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors hover:bg-gray-50"
+                style={{ border: '1.5px solid #E2E8F0', color: '#64748B' }}>
+                Cancel
+              </button>
+              <button onClick={saveWorkflow} disabled={savingWf}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-60 transition-opacity"
+                style={{ background: T }}>
+                {savingWf ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                {editingId ? 'Update Workflow' : 'Create Workflow'}
+              </button>
             </div>
           </div>
         </div>

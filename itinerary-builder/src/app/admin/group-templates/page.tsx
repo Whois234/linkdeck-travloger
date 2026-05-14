@@ -86,6 +86,31 @@ function GroupTemplatesPageInner() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
+  // ── Inline title rename ──
+  const [renamingId, setRenamingId]     = useState<string | null>(null);
+  const [renameVal, setRenameVal]       = useState('');
+  const [renameSaving, setRenameSaving] = useState(false);
+
+  async function saveRename(id: string) {
+    const trimmed = renameVal.trim();
+    if (!trimmed) { setRenamingId(null); return; }
+    setRenameSaving(true);
+    const res  = await fetch(`/api/v1/group-templates/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ group_template_name: trimmed }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      setRows(prev => prev.map(r => r.id === id ? { ...r, group_template_name: trimmed } : r));
+      setToast('Template renamed');
+    } else {
+      setToast('Failed to rename');
+    }
+    setRenamingId(null);
+    setRenameSaving(false);
+  }
+
   const [setup, setSetup] = useState({
     group_template_name: '', state_id: '', duration_nights: '4', duration_days: '5',
     min_pax: '10', max_pax: '25', start_city: '', end_city: '', theme: '', tab_title: '',
@@ -487,7 +512,36 @@ function GroupTemplatesPageInner() {
                     <td className="px-4 py-3.5" onClick={e => { e.stopPropagation(); toggleSelect(r.id); }}>
                       <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(r.id)} className="w-4 h-4 rounded accent-[#134956]" />
                     </td>
-                    <td className="px-4 py-3.5 font-semibold text-[#0F172A]">{r.group_template_name}</td>
+                    <td className="px-4 py-3.5" onClick={e => e.stopPropagation()}>
+                      {renamingId === r.id ? (
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            autoFocus
+                            value={renameVal}
+                            onChange={e => setRenameVal(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') void saveRename(r.id); if (e.key === 'Escape') setRenamingId(null); }}
+                            onBlur={() => void saveRename(r.id)}
+                            disabled={renameSaving}
+                            className="flex-1 h-8 px-2.5 rounded-lg border text-sm font-semibold text-[#0F172A] focus:outline-none focus:ring-2"
+                            style={{ borderColor: '#134956', minWidth: 0 }}
+                          />
+                          {renameSaving && <span className="text-[10px] text-[#94A3B8]">Saving…</span>}
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 group/rename">
+                          <span className="font-semibold text-[#0F172A] cursor-pointer"
+                            onClick={() => router.push(`/admin/group-templates/${r.id}/edit`)}>
+                            {r.group_template_name}
+                          </span>
+                          <button
+                            onClick={() => { setRenamingId(r.id); setRenameVal(r.group_template_name); }}
+                            className="opacity-0 group-hover/rename:opacity-100 w-5 h-5 rounded flex items-center justify-center transition-opacity hover:bg-[#EEF7F9]"
+                            title="Rename template">
+                            <Pencil className="w-3 h-3 text-[#94A3B8]" />
+                          </button>
+                        </div>
+                      )}
+                    </td>
                     <td className="px-4 py-3.5">
                       <span className="text-[11px] font-bold px-2 py-0.5 rounded-md" style={{ backgroundColor: '#FEF9C3', color: '#854D0E' }}>{r.state.name}</span>
                     </td>
@@ -597,8 +651,29 @@ function GroupTemplatesPageInner() {
                   )}
                 </div>
                 <div className="p-4">
-                  <div className="flex items-start justify-between gap-2 mb-1">
-                    <p className="font-semibold text-sm text-[#0F172A] leading-tight">{r.group_template_name}</p>
+                  <div className="flex items-start justify-between gap-2 mb-1" onClick={e => e.stopPropagation()}>
+                    {renamingId === r.id ? (
+                      <input
+                        autoFocus
+                        value={renameVal}
+                        onChange={e => setRenameVal(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') void saveRename(r.id); if (e.key === 'Escape') setRenamingId(null); }}
+                        onBlur={() => void saveRename(r.id)}
+                        disabled={renameSaving}
+                        className="flex-1 h-7 px-2 rounded-lg border text-sm font-semibold text-[#0F172A] focus:outline-none"
+                        style={{ borderColor: '#134956' }}
+                      />
+                    ) : (
+                      <div className="flex items-center gap-1 group/crename flex-1 min-w-0">
+                        <p className="font-semibold text-sm text-[#0F172A] leading-tight truncate">{r.group_template_name}</p>
+                        <button
+                          onClick={() => { setRenamingId(r.id); setRenameVal(r.group_template_name); }}
+                          className="opacity-0 group-hover/crename:opacity-100 w-5 h-5 rounded flex items-center justify-center flex-shrink-0 transition-opacity hover:bg-[#EEF7F9]"
+                          title="Rename">
+                          <Pencil className="w-3 h-3 text-[#94A3B8]" />
+                        </button>
+                      </div>
+                    )}
                     <ChevronRight className="w-4 h-4 text-[#CBD5E1] group-hover:text-[#134956] transition-colors flex-shrink-0 mt-0.5" />
                   </div>
                   <p className="text-xs text-[#94A3B8] mb-2">{r.duration_nights}N/{r.duration_days}D · {r.theme ?? 'Group Tour'}{r.start_city ? ` · ${r.start_city}` : ''}</p>

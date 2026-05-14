@@ -13,6 +13,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     include: {
       stage: true,
       pipeline: { select: { id: true, name: true } },
+      assigned_agent: { select: { id: true, name: true } },
       lead_notes: { orderBy: { created_at: 'desc' } },
       call_logs: { orderBy: { created_at: 'desc' } },
       lead_tasks: { orderBy: { due_time: 'asc' } },
@@ -59,11 +60,30 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 
   if (Object.keys(data).length === 0) return err('No valid fields to update', 400);
 
+  const agentChanging = body.assigned_agent_id !== undefined && body.assigned_agent_id !== record.assigned_agent_id;
+
   const updated = await prisma.lead.update({
     where: { id: params.id },
     data,
-    include: { stage: true, pipeline: { select: { id: true, name: true } } },
+    include: { stage: true, pipeline: { select: { id: true, name: true } }, assigned_agent: { select: { id: true, name: true } } },
   });
+
+  // Log assignment activity when agent changes
+  if (agentChanging) {
+    const agentName = body.assigned_agent_id
+      ? ((updated.assigned_agent as { name?: string } | null)?.name ?? body.assigned_agent_id)
+      : null;
+    const byUser = await prisma.user.findUnique({ where: { id: user.sub }, select: { name: true } }).catch(() => null);
+    await prisma.leadActivity.create({
+      data: {
+        lead_id:    params.id,
+        type:       'assigned',
+        metadata:   { agent_id: body.assigned_agent_id ?? '', agent_name: agentName ?? '', by_name: byUser?.name ?? '' },
+        created_by: user.sub,
+      },
+    }).catch(() => {});
+  }
+
   return ok(updated);
 }
 

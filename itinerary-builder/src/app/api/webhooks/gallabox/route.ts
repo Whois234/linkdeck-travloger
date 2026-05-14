@@ -201,55 +201,59 @@ async function autoCreateContactFromGallabox(
   payload: Record<string, unknown>,
 ): Promise<void> {
   try {
-    const wa           = (payload.whatsapp    ?? {}) as Record<string, unknown>;
-    const referral     = (wa.referral         ?? {}) as Record<string, unknown>;
+    // ── Normalise all known wrapper objects ───────────────────────────────────
+    const wa           = (payload.whatsapp    ?? payload.message ?? {}) as Record<string, unknown>;
     const conversation = (payload.conversation ?? {}) as Record<string, unknown>;
+    const contactObj   = (payload.contact     ?? {}) as Record<string, unknown>;
 
-    // ── Extract botFlowId from every known Gallabox payload location ──────────
-    // Gallabox puts this in different places depending on event type + version
+    // Gallabox puts referral data in multiple locations depending on event type.
+    // Check all known paths and use the first non-empty one.
+    const referral = (
+      (wa.referral      as Record<string, unknown> | undefined)    ??
+      (payload.referral as Record<string, unknown> | undefined)    ??
+      {}
+    ) as Record<string, unknown>;
+
+    // ── Extract botFlowId — check EVERY known path ────────────────────────────
     const botFlowId = (
-      payload.botFlowId        ??  // top-level (most common)
-      payload.flowId           ??  // alternate key
-      conversation.botFlowId   ??  // nested in conversation object
-      wa.botFlowId             ??  // nested in whatsapp object
-      payload.botFlow          ??  // some versions use full object
+      payload.botFlowId            ??  // top-level (most common in Gallabox v2)
+      payload.flowId               ??  // alternate top-level key
+      payload.botFlow              ??  // full object fallback
+      conversation.botFlowId       ??  // nested in conversation
+      conversation.flowId          ??
+      wa.botFlowId                 ??  // nested in whatsapp/message
+      contactObj.botFlowId         ??  // nested in contact object
       null
     ) as string | null;
 
     // ── Extract Gallabox contact ID ───────────────────────────────────────────
     const gallaboxContactId = (
       payload.contactId  ??
-      (payload.contact as Record<string, unknown>)?.id ??
+      contactObj.id      ??
       null
     ) as string | null;
 
     // ── Extract ad / referral data (CTWA = Click-to-WhatsApp ads) ────────────
-    const adId          = (referral.source_id    ?? null) as string | null;
-    const adSourceType  = (referral.source_type  ?? null) as string | null; // 'AD' | 'POST'
-    const adHeadline    = (referral.headline     ?? null) as string | null; // Facebook ad headline
-    const adBody        = (referral.body         ?? null) as string | null;
-    const ctwaClid      = (referral.ctwa_clid    ?? null) as string | null; // Facebook click ID
-    const refParam      = (referral.ref          ?? null) as string | null;
+    const adId         = (referral.source_id  ?? null) as string | null;
+    const adSourceType = (referral.source_type ?? null) as string | null;
+    const adHeadline   = (referral.headline    ?? null) as string | null;
+    const adBody       = (referral.body        ?? null) as string | null;
+    const ctwaClid     = (referral.ctwa_clid   ?? null) as string | null;
+    const refParam     = (referral.ref         ?? null) as string | null;
 
     // lead_source: 'whatsapp_ad' if came from an ad click, otherwise 'organic'
     const gallaboxSource = (adId || adSourceType === 'AD') ? 'whatsapp_ad' : 'organic';
 
-    // ── Ad platform (WHERE the ad ran) ───────────────────────────────────────
-    // META = Facebook / Instagram ads + WhatsApp CTWA (all Meta platforms)
-    // WHATSAPP = organic WhatsApp message (no ad referral)
     const adPlatform = (adId || adSourceType === 'AD' || ctwaClid)
-      ? 'META'       // came via a Meta ad (CTWA, Instagram, Facebook)
-      : 'WHATSAPP';  // organic WhatsApp message
+      ? 'META'
+      : 'WHATSAPP';
 
-    // ── Device OS (WHAT device they used) ────────────────────────────────────
-    // Gallabox referral may have 'media_type' or we check ctwa_clid patterns.
-    // Some Gallabox versions expose os/device in the contact or payload.
     const rawOs = (
-      (payload.contact as Record<string,unknown>)?.os ??
-      (payload.contact as Record<string,unknown>)?.device ??
-      wa.os ??
-      wa.device ??
-      referral.os ??
+      contactObj.os     ??
+      contactObj.device ??
+      wa.os             ??
+      wa.device         ??
+      referral.os       ??
       null
     ) as string | null;
 
@@ -259,40 +263,53 @@ async function autoCreateContactFromGallabox(
       if (osLower.includes('android')) devicePlatform = 'ANDROID';
       else if (osLower.includes('ios') || osLower.includes('iphone') || osLower.includes('ipad')) devicePlatform = 'IOS';
     }
-    // ctwa_clid format can hint: Android CLIDs often start with different prefixes but
-    // this isn't reliable — keep MOBILE as the safe fallback when rawOs is null.
 
-    console.log('[gallabox/auto-contact] Extracted fields:', JSON.stringify({
-      phone, name, botFlowId, gallaboxContactId,
-      adId, adHeadline, ctwaClid, gallaboxSource,
-      adPlatform, devicePlatform, rawOs,
-      refParam, adSourceType,
+    // ── FULL DIAGNOSTIC LOG ──────────────────────────────────────────────────
+    console.log('=== GALLABOX FIELDS EXTRACTED ===', JSON.stringify({
+      phone,
+      name,
+      gallabox_bot_flow_id: botFlowId,
+      gallabox_ad_id:       adId,
+      lead_source:          gallaboxSource,
+      adSourceType,
+      adHeadline,
+      ctwaClid,
+      adPlatform,
+      raw_referral:
+        Object.keys(referral).length > 0 ? referral
+        : wa.referral    ? `wa.referral: ${JSON.stringify(wa.referral)}`
+        : payload.referral ? `payload.referral: ${JSON.stringify(payload.referral)}`
+        : 'NOT FOUND',
+      top_level_keys:      Object.keys(payload).slice(0, 25),
+      wa_keys:             Object.keys(wa).slice(0, 20),
+      conv_keys:           Object.keys(conversation).slice(0, 10),
+      contact_keys:        Object.keys(contactObj).slice(0, 10),
     }));
 
     // ── Check if contact already exists ──────────────────────────────────────
     const existing = await prisma.crmContact.findUnique({ where: { phone } });
 
     if (existing) {
+      // Always touch updated_at so sort=recent reflects latest Gallabox message activity
+      await prisma.crmContact.update({ where: { id: existing.id }, data: { updated_at: new Date() } });
+
       // Enrich existing contact with any new gallabox fields not yet saved
       const cf = (existing.custom_fields ?? {}) as Record<string, unknown>;
-      const updatePatch: Record<string, unknown> = {};
+      const newCf: Record<string, unknown> = { ...cf };
+      if (botFlowId && !cf.gallabox_bot_flow_id)    newCf.gallabox_bot_flow_id = botFlowId;
+      if (adId && !cf.gallabox_ad_id)               newCf.gallabox_ad_id = adId;
+      if (adHeadline && !cf.gallabox_ad_headline)   newCf.gallabox_ad_headline = adHeadline;
+      if (!cf.gallabox_source)                       newCf.gallabox_source = gallaboxSource;
 
-      if (botFlowId && !cf.gallabox_bot_flow_id)    updatePatch['custom_fields.gallabox_bot_flow_id'] = botFlowId;
-      if (adId && !existing.ad_name)                updatePatch.ad_name = adId;
-      if (adHeadline && !existing.campaign_name)    updatePatch.campaign_name = adHeadline;
-      if (ctwaClid && !existing.facebook_click_id)  updatePatch.facebook_click_id = ctwaClid;
-      if (gallaboxContactId && !existing.gallabox_contact_id) updatePatch.gallabox_contact_id = gallaboxContactId;
-
-      const hasCfUpdates = botFlowId && !cf.gallabox_bot_flow_id;
-      const hasFieldUpdates = Object.keys(updatePatch).some(k => !k.startsWith('custom_fields.'));
+      const hasCfUpdates = JSON.stringify(newCf) !== JSON.stringify(cf);
+      const hasFieldUpdates =
+        (adId && !existing.ad_name) ||
+        (adHeadline && !existing.campaign_name) ||
+        (ctwaClid && !existing.facebook_click_id) ||
+        (gallaboxContactId && !existing.gallabox_contact_id) ||
+        (adPlatform === 'META' && existing.platform !== 'META');
 
       if (hasCfUpdates || hasFieldUpdates) {
-        const newCf: Record<string, unknown> = { ...cf };
-        if (botFlowId && !cf.gallabox_bot_flow_id)    newCf.gallabox_bot_flow_id = botFlowId;
-        if (adId && !cf.gallabox_ad_id)               newCf.gallabox_ad_id = adId;
-        if (adHeadline && !cf.gallabox_ad_headline)   newCf.gallabox_ad_headline = adHeadline;
-        if (!cf.gallabox_source)                       newCf.gallabox_source = gallaboxSource;
-
         await updateContact(
           existing.id,
           {
@@ -306,7 +323,7 @@ async function autoCreateContactFromGallabox(
           },
           null,
         );
-        console.log('[gallabox/auto-contact] Updated existing contact:', existing.id);
+        console.log('[gallabox/auto-contact] Enriched existing contact:', existing.id);
       }
       return;
     }

@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getAuthUser, requireRole } from '@/lib/auth';
-import { ok, created, err, unauthorized } from '@/lib/api-response';
+import { ok, created, err, unauthorized, forbidden } from '@/lib/api-response';
 import { z } from 'zod';
 import {
   createContact,
@@ -186,6 +186,7 @@ export async function GET(req: NextRequest) {
     sortBy === 'follow_up_desc'   ? { follow_up_date: 'desc' as const } :
     sortBy === 'booking_value_desc' ? { booking_value: 'desc' as const } :
     sortBy === 'booking_value_asc'  ? { booking_value: 'asc'  as const } :
+    sortBy === 'recent'             ? { updated_at: 'desc' as const } :
                                     { created_at: 'desc' as const };
 
   const [total, contacts] = await Promise.all([
@@ -245,6 +246,22 @@ export async function GET(req: NextRequest) {
     pages: Math.ceil(total / limit),
     totalPages: Math.ceil(total / limit),
   });
+}
+
+// ─── DELETE (bulk hard-delete) ───────────────────────────────────────────────
+// Body: { ids: string[] }  — permanently destroys soft-deleted contacts.
+export async function DELETE(req: NextRequest) {
+  const user = await getAuthUser(req);
+  if (!user) return unauthorized();
+  if (!requireRole(user, UserRole.ADMIN)) return forbidden();
+
+  const body = await req.json().catch(() => ({}));
+  const ids: string[] = Array.isArray(body.ids) ? body.ids.filter((v: unknown) => typeof v === 'string') : [];
+  if (ids.length === 0) return err('No ids provided', 400);
+  if (ids.length > 200) return err('Too many ids (max 200)', 400);
+
+  const { count } = await prisma.crmContact.deleteMany({ where: { id: { in: ids } } });
+  return ok({ deleted: count });
 }
 
 export async function POST(req: NextRequest) {

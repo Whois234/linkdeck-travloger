@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { PageHeader } from '@/components/admin/PageHeader';
 import MultiStateSelect from '@/components/MultiStateSelect';
+import PhoneInput, { combinePhone, parsePhone } from '@/components/PhoneInput';
 import {
   Users, MapPin, LayoutList, DollarSign, FileText, Link2,
   Check, Copy, ExternalLink, ChevronRight, Plus, Minus,
@@ -115,7 +116,11 @@ export default function CreateQuotePage() {
   /* ─── Step 1 fields ─── */
   const [quoteName, setQuoteName]     = useState('');
   const [custName, setCustName]       = useState(searchParams.get('lead_name') ?? '');
-  const [custMobile, setCustMobile]   = useState(searchParams.get('lead_phone') ?? '');
+  const _rawPhone = searchParams.get('lead_phone') ?? '';
+  const _parsed   = parsePhone(_rawPhone);
+  const [phoneCode,  setPhoneCode]  = useState(_parsed.code);
+  const [phoneLocal, setPhoneLocal] = useState(_parsed.local || _rawPhone);
+  const custMobile = combinePhone(phoneCode, phoneLocal);
   const [custEmail, setCustEmail]     = useState(searchParams.get('lead_email') ?? '');
   const [stateIds, setStateIds]       = useState<string[]>([]);
   const stateId = stateIds[0] ?? ''; // primary state (backward compat)
@@ -753,7 +758,11 @@ export default function CreateQuotePage() {
               </div>
               <div>
                 <label className={lbl}>Mobile (WhatsApp) <span className="text-red-500">*</span></label>
-                <input className={inp} style={inpSt} value={custMobile} onChange={e => setCustMobile(e.target.value)} placeholder="+91 98765 43210" />
+                <PhoneInput
+                  code={phoneCode} local={phoneLocal}
+                  onCodeChange={setPhoneCode} onLocalChange={setPhoneLocal}
+                  style={inpSt}
+                />
               </div>
               <div>
                 <label className={lbl}>Email</label>

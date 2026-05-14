@@ -1187,6 +1187,7 @@ export default function PipelinesPage() {
         <LeadDrawer
           leadId={selectedLead.id}
           stages={activePipeline?.stages ?? []}
+          users={users.map(u => ({ id: u.id, name: u.name }))}
           onClose={() => setSelectedLead(null)}
           onUpdated={() => qc.invalidateQueries({ queryKey: [...QK.pipeline(resolvedPipelineId), filterParams.toString()] })}
           callState={callState}

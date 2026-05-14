@@ -16,7 +16,7 @@ export async function GET(
 ) {
   const user = await getAuthUser(req);
   if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
-  if (!requireRole(user, UserRole.MANAGER)) {
+  if (!requireRole(user, UserRole.ADMIN, UserRole.MANAGER, UserRole.SALES, UserRole.OPS)) {
     return NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 });
   }
 

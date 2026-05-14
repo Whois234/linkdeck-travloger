@@ -193,12 +193,24 @@ function evaluateConditions(
 
   const match = cond.match ?? 'OR';
   const results = cond.rules.map(rule => {
-    // Support Gallabox fields stored in custom_fields JSON
+    // Support Gallabox fields stored in custom_fields JSON (or fallback: other_ad_details)
     let raw: unknown;
-    if (GALLABOX_CUSTOM_KEYS.includes(rule.field)) {
+
+    // lead_source: normalise CTWA / whatsapp_ad / META_AD → 'whatsapp_ad' for condition matching
+    if (rule.field === 'lead_source') {
+      const stored = String(contact['lead_source'] ?? '').toLowerCase();
+      // Treat all ad-origin values as 'whatsapp_ad' so conditions work regardless of stored variant
+      raw = (stored === 'ctwa' || stored === 'whatsapp_ad' || stored === 'meta_ad') ? 'whatsapp_ad' : stored;
+      console.log(`=== CONDITION CHECK === lead_source raw="${stored}" normalised="${raw}"`);
+    } else if (GALLABOX_CUSTOM_KEYS.includes(rule.field)) {
       const cf = contact.custom_fields as Record<string, unknown> | null | undefined;
       raw = cf?.[rule.field];
-      console.log(`[workflow:${workflowName ?? '?'}] GALLABOX field "${rule.field}" → custom_fields value: ${JSON.stringify(raw)} (cf keys: ${JSON.stringify(Object.keys(cf ?? {}))})`);
+      // Fallback: older contacts may have these stored in other_ad_details instead
+      if (raw === undefined || raw === null || raw === '') {
+        const oad = contact.other_ad_details as Record<string, unknown> | null | undefined;
+        raw = oad?.[rule.field];
+      }
+      console.log(`[workflow:${workflowName ?? '?'}] GALLABOX field "${rule.field}" → value: ${JSON.stringify(raw)} (cf keys: ${JSON.stringify(Object.keys((contact.custom_fields as Record<string, unknown>) ?? {}))})`);
     } else {
       raw = contact[rule.field];
       console.log(`[workflow:${workflowName ?? '?'}] field "${rule.field}" → value: ${JSON.stringify(raw)}`);
@@ -508,6 +520,16 @@ async function executeContactWorkflows(contactId: string, event: 'on_create' | '
                   metadata:        { workflow_id: wf.id, user_id: assignedUserId } as Prisma.InputJsonValue,
                   performed_by_id: null,
                 }});
+                // Also update the pipeline lead's assigned_agent_id + log LeadActivity
+                const relatedLead = await prisma.lead.findFirst({ where: { crm_contact_id: contactId }, orderBy: { created_at: 'desc' } });
+                if (relatedLead) {
+                  await prisma.lead.update({ where: { id: relatedLead.id }, data: { assigned_agent_id: assignedUserId } });
+                  await prisma.leadActivity.create({ data: {
+                    lead_id:    relatedLead.id, type: 'workflow_assigned',
+                    metadata:   { agent_id: assignedUserId, agent_name: assignedUserName, workflow_name: wf.name, workflow_id: wf.id },
+                    created_by: 'system',
+                  }}).catch(() => {});
+                }
                 await logWorkflowRun(wf.id, contact.id, contact.name, wf.trigger, true, 'assign_user', assignedUserId, assignedUserName, null, 'success');
               }
 
@@ -712,6 +734,52 @@ export async function createContact(
     return contact;
   });
 
+  // Auto-create a pipeline Lead for every new contact.
+  try {
+    const pipeline = await prisma.pipeline.findFirst({
+      where:   { is_default: true, status: true },
+      include: { stages: { where: { status: true }, orderBy: { order: 'asc' }, take: 1 } },
+    }) ?? await prisma.pipeline.findFirst({
+      where:   { status: true },
+      include: { stages: { where: { status: true }, orderBy: { order: 'asc' }, take: 1 } },
+    });
+    if (pipeline?.stages[0]) {
+      const cf = createdContact.custom_fields as Record<string, unknown> | null;
+      const src = (createdContact.lead_source ?? 'organic').toLowerCase();
+      const channel = src === 'ctwa' || src === 'whatsapp_ad' || cf?.gallabox_contact_id ? 'gallabox' : 'manual';
+      const newLead = await prisma.lead.create({
+        data: {
+          name:              `${createdContact.name ?? 'Lead'} — WhatsApp`,
+          phone:             createdContact.phone ?? '',
+          pipeline_id:       pipeline.id,
+          stage_id:          pipeline.stages[0].id,
+          owner_id:          createdContact.owner_id ?? createdContact.assigned_to_id ?? input.owner_id,
+          assigned_agent_id: createdContact.assigned_to_id ?? createdContact.owner_id ?? input.owner_id,
+          source:            createdContact.lead_source ?? 'organic',
+          crm_contact_id:    createdContact.id,
+          status:            'NEW',
+        },
+      });
+      // Log creation activity
+      await prisma.leadActivity.create({
+        data: {
+          lead_id:    newLead.id,
+          type:       'created',
+          metadata:   {
+            source:    createdContact.lead_source ?? 'organic',
+            platform:  createdContact.platform ?? '',
+            campaign:  createdContact.campaign_name ?? '',
+            channel,
+            gallabox_ad_id: (cf?.gallabox_ad_id as string | null) ?? '',
+          },
+          created_by: input.owner_id ?? 'system',
+        },
+      }).catch(() => {});
+    }
+  } catch (e) {
+    console.warn('[contacts/create] Pipeline lead creation failed (non-fatal):', e);
+  }
+
   // Run active on_create workflows SYNCHRONOUSLY so they complete before callers proceed.
   // Critical for Vercel: fire-and-forget gets killed when the serverless function returns.
   console.log('[contacts/create] Running on_create workflows for', createdContact.id, 'name:', createdContact.name);
@@ -883,6 +951,8 @@ export async function upsertContactFromGallabox(payload: {
   facebook_browser_id?: string | null;
   other_ad_details?: Record<string, unknown> | null;
   created_at?: Date | string | null;
+  /** Gallabox-specific custom fields (bot_flow_id, ad_id, etc.) stored for workflow matching. */
+  gallabox_custom_fields?: Record<string, unknown> | null;
   // The Gallabox webhook is anonymous; we attribute creates to the system user
   // (passed in by the route handler).
   system_owner_id: string;
@@ -905,6 +975,7 @@ export async function upsertContactFromGallabox(payload: {
         facebook_click_id:   payload.facebook_click_id ?? null,
         facebook_browser_id: payload.facebook_browser_id ?? null,
         other_ad_details:    payload.other_ad_details ?? null,
+        custom_fields:       payload.gallabox_custom_fields ?? null,
         owner_id:            payload.system_owner_id,
       },
       null,
@@ -923,6 +994,19 @@ export async function upsertContactFromGallabox(payload: {
   if (!existing.email                && payload.email)                patch.email                = payload.email;
   if (!existing.lead_source)                                          patch.lead_source          = 'CTWA';
   if (!existing.platform)                                             patch.platform             = 'WHATSAPP';
+
+  // Merge new custom fields into existing ones (never overwrite existing values).
+  if (payload.gallabox_custom_fields) {
+    const existingCf = (existing.custom_fields ?? {}) as Record<string, unknown>;
+    const merged: Record<string, unknown> = { ...existingCf };
+    for (const [k, v] of Object.entries(payload.gallabox_custom_fields)) {
+      if (merged[k] === undefined || merged[k] === null || merged[k] === '') merged[k] = v;
+    }
+    patch.custom_fields = merged;
+  }
+
+  // Always touch updated_at so "sort=recent" reflects the latest Gallabox activity.
+  await prisma.crmContact.update({ where: { id: existing.id }, data: { updated_at: new Date() } });
 
   const contact = Object.keys(patch).length > 0
     ? await updateContact(existing.id, patch, null)

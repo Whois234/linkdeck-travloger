@@ -41,6 +41,16 @@ interface GallaboxPayload {
   facebook_browser_id?: string;
   timestamp?: string;
   created_at?: string;
+  // Gallabox-specific custom fields used for workflow conditions
+  gallabox_bot_flow_id?: string;
+  gallaboxBotFlowId?: string;
+  bot_flow_id?: string;
+  gallabox_ad_id?: string;
+  gallaboxAdId?: string;
+  gallabox_source?: string;
+  gallaboxSource?: string;
+  gallabox_ad_headline?: string;
+  gallaboxAdHeadline?: string;
   // Anything else goes into other_ad_details
   [k: string]: unknown;
 }
@@ -117,6 +127,17 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  // Extract Gallabox-specific custom fields for workflow condition matching.
+  const gallaboxCustomFields: Record<string, unknown> = {};
+  const botFlowId = payload.gallabox_bot_flow_id ?? payload.gallaboxBotFlowId ?? payload.bot_flow_id ?? null;
+  const adId      = payload.gallabox_ad_id ?? payload.gallaboxAdId ?? null;
+  const gbSource  = payload.gallabox_source ?? payload.gallaboxSource ?? null;
+  const adHeadline = payload.gallabox_ad_headline ?? payload.gallaboxAdHeadline ?? null;
+  if (botFlowId)   gallaboxCustomFields.gallabox_bot_flow_id  = String(botFlowId);
+  if (adId)        gallaboxCustomFields.gallabox_ad_id         = String(adId);
+  if (gbSource)    gallaboxCustomFields.gallabox_source        = String(gbSource);
+  if (adHeadline)  gallaboxCustomFields.gallabox_ad_headline   = String(adHeadline);
+
   // Bundle anything we didn't recognize into other_ad_details for forensic value.
   const KNOWN_KEYS = new Set([
     'name', 'full_name', 'fullName', 'phone', 'phoneNumber', 'mobile', 'email',
@@ -124,6 +145,10 @@ export async function POST(req: NextRequest) {
     'campaign_name', 'campaignName', 'ad_set_name', 'adSetName', 'ad_name', 'adName',
     'fbclid', 'facebook_click_id', 'fbp', 'facebook_browser_id',
     'timestamp', 'created_at',
+    'gallabox_bot_flow_id', 'gallaboxBotFlowId', 'bot_flow_id',
+    'gallabox_ad_id', 'gallaboxAdId',
+    'gallabox_source', 'gallaboxSource',
+    'gallabox_ad_headline', 'gallaboxAdHeadline',
   ]);
   const otherAdDetails: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(payload)) {
@@ -143,6 +168,7 @@ export async function POST(req: NextRequest) {
       facebook_browser_id: (payload.facebook_browser_id ?? payload.fbp ?? null) as string | null,
       other_ad_details:    Object.keys(otherAdDetails).length > 0 ? otherAdDetails : null,
       created_at:          (payload.created_at ?? payload.timestamp ?? null) as string | null,
+      gallabox_custom_fields: Object.keys(gallaboxCustomFields).length > 0 ? gallaboxCustomFields : null,
       system_owner_id:     ownerId,
     });
 
