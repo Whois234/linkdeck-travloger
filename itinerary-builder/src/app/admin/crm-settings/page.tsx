@@ -1412,6 +1412,12 @@ function MetaAdsTab() {
   const [editing,      setEditing]      = useState<Record<string, { destination: string; trip_type: string; prefilled_code: string }>>({});
   const [savingAd,     setSavingAd]     = useState<string | null>(null);
 
+  // ── Filter + sort state ──
+  const [filterCampaign, setFilterCampaign] = useState<string>('');
+  const [filterAdSet,    setFilterAdSet]    = useState<string>('');
+  const [filterStatus,   setFilterStatus]   = useState<'all' | 'active' | 'paused'>('all');
+  const [sortBy,         setSortBy]         = useState<'active_first' | 'paused_first' | 'campaign_az' | 'campaign_za' | 'ad_az'>('active_first');
+
   const T = '#134956';
 
   useEffect(() => {
@@ -1491,8 +1497,24 @@ function MetaAdsTab() {
   const inp = 'w-full text-sm rounded-lg px-3 py-2 outline-none';
   const inpSt = { border: '1px solid #D1D5DB', background: '#fff' };
 
-  // Group ads by campaign for display
-  const campaigns = Array.from(new Set(ads.map(a => a.campaign_name ?? '—')));
+  // ── Derived filter/sort data ──
+  const allCampaigns = Array.from(new Set(ads.map(a => a.campaign_name ?? ''))).filter(Boolean).sort();
+  const allAdSets = Array.from(
+    new Set(ads.filter(a => !filterCampaign || a.campaign_name === filterCampaign).map(a => a.ad_set_name ?? ''))
+  ).filter(Boolean).sort();
+
+  const filteredAds = ads
+    .filter(a => !filterCampaign || a.campaign_name === filterCampaign)
+    .filter(a => !filterAdSet    || a.ad_set_name   === filterAdSet)
+    .filter(a => filterStatus === 'all' ? true : filterStatus === 'active' ? a.is_active : !a.is_active)
+    .sort((a, b) => {
+      if (sortBy === 'active_first')  return (b.is_active ? 1 : 0) - (a.is_active ? 1 : 0);
+      if (sortBy === 'paused_first')  return (a.is_active ? 1 : 0) - (b.is_active ? 1 : 0);
+      if (sortBy === 'campaign_az')   return (a.campaign_name ?? '').localeCompare(b.campaign_name ?? '');
+      if (sortBy === 'campaign_za')   return (b.campaign_name ?? '').localeCompare(a.campaign_name ?? '');
+      if (sortBy === 'ad_az')         return (a.ad_name ?? '').localeCompare(b.ad_name ?? '');
+      return 0;
+    });
 
   if (loadingCreds) return <div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 animate-spin" style={{ color: T }} /></div>;
 
@@ -1539,12 +1561,95 @@ function MetaAdsTab() {
 
       {/* ── Ads Table ── */}
       <div className="p-6 space-y-4" style={cardSt}>
+        {/* Header */}
         <div className="flex items-center justify-between">
-          <p className="text-sm font-bold" style={{ color: '#0F172A' }}>Ad Mapping Table <span className="text-xs font-normal" style={{ color: '#94A3B8' }}>({ads.length} ads)</span></p>
+          <p className="text-sm font-bold" style={{ color: '#0F172A' }}>
+            Ad Mapping Table{' '}
+            <span className="text-xs font-normal" style={{ color: '#94A3B8' }}>
+              ({filteredAds.length}{filteredAds.length !== ads.length ? ` of ${ads.length}` : ''} ads)
+            </span>
+          </p>
           <button onClick={loadAds} disabled={loadingAds} className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg hover:bg-[#F8FAFC]" style={{ color: '#64748B', border: '1px solid #E2E8F0' }}>
             <RefreshCw className={`w-3.5 h-3.5 ${loadingAds ? 'animate-spin' : ''}`} /> Refresh
           </button>
         </div>
+
+        {/* ── Filter + Sort bar ── */}
+        {ads.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 p-3 rounded-xl" style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+            {/* Campaign filter */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#94A3B8' }}>Campaign</span>
+              <select
+                value={filterCampaign}
+                onChange={e => { setFilterCampaign(e.target.value); setFilterAdSet(''); }}
+                className="text-xs rounded-lg px-2.5 py-1.5 pr-7 appearance-none outline-none"
+                style={{ border: '1px solid #D1D5DB', background: filterCampaign ? '#134956' : '#fff', color: filterCampaign ? '#fff' : '#374151', minWidth: 120 }}
+              >
+                <option value="">All campaigns</option>
+                {allCampaigns.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+
+            {/* Ad Set filter (only show relevant adsets) */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#94A3B8' }}>Ad Set</span>
+              <select
+                value={filterAdSet}
+                onChange={e => setFilterAdSet(e.target.value)}
+                className="text-xs rounded-lg px-2.5 py-1.5 pr-7 appearance-none outline-none"
+                style={{ border: '1px solid #D1D5DB', background: filterAdSet ? '#134956' : '#fff', color: filterAdSet ? '#fff' : '#374151', minWidth: 120 }}
+              >
+                <option value="">All ad sets</option>
+                {allAdSets.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+
+            {/* Status filter — pill buttons */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#94A3B8' }}>Status</span>
+              <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid #D1D5DB' }}>
+                {(['all', 'active', 'paused'] as const).map((s, i) => (
+                  <button key={s} onClick={() => setFilterStatus(s)}
+                    className="text-[10px] font-semibold px-2.5 py-1.5 capitalize"
+                    style={{
+                      background: filterStatus === s ? (s === 'active' ? '#16A34A' : s === 'paused' ? '#94A3B8' : '#134956') : '#fff',
+                      color:      filterStatus === s ? '#fff' : '#64748B',
+                      borderLeft: i > 0 ? '1px solid #D1D5DB' : 'none',
+                    }}>
+                    {s === 'all' ? 'All' : s === 'active' ? '● Active' : '○ Paused'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Sort */}
+            <div className="flex items-center gap-1.5 ml-auto">
+              <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#94A3B8' }}>Sort</span>
+              <select
+                value={sortBy}
+                onChange={e => setSortBy(e.target.value as typeof sortBy)}
+                className="text-xs rounded-lg px-2.5 py-1.5 pr-7 appearance-none outline-none"
+                style={{ border: '1px solid #D1D5DB', background: '#fff', color: '#374151' }}
+              >
+                <option value="active_first">Active first</option>
+                <option value="paused_first">Paused first</option>
+                <option value="campaign_az">Campaign A→Z</option>
+                <option value="campaign_za">Campaign Z→A</option>
+                <option value="ad_az">Ad name A→Z</option>
+              </select>
+            </div>
+
+            {/* Clear filters */}
+            {(filterCampaign || filterAdSet || filterStatus !== 'all') && (
+              <button onClick={() => { setFilterCampaign(''); setFilterAdSet(''); setFilterStatus('all'); }}
+                className="text-[10px] font-semibold px-2.5 py-1.5 rounded-lg"
+                style={{ color: '#EF4444', border: '1px solid #FCA5A5', background: '#FFF5F5' }}>
+                ✕ Clear filters
+              </button>
+            )}
+          </div>
+        )}
 
         {loadingAds ? (
           <div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin" style={{ color: T }} /></div>
@@ -1552,6 +1657,14 @@ function MetaAdsTab() {
           <div className="text-center py-10" style={{ color: '#94A3B8' }}>
             <Zap className="w-8 h-8 mx-auto mb-2 opacity-40" />
             <p className="text-sm">No ads synced yet. Click &ldquo;Sync from Meta&rdquo; to import your ads.</p>
+          </div>
+        ) : filteredAds.length === 0 ? (
+          <div className="text-center py-8" style={{ color: '#94A3B8' }}>
+            <p className="text-sm">No ads match the current filters.</p>
+            <button onClick={() => { setFilterCampaign(''); setFilterAdSet(''); setFilterStatus('all'); }}
+              className="mt-2 text-xs font-semibold underline" style={{ color: '#134956' }}>
+              Clear filters
+            </button>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -1564,7 +1677,7 @@ function MetaAdsTab() {
                 </tr>
               </thead>
               <tbody>
-                {ads.map(ad => {
+                {filteredAds.map(ad => {
                   const isEdit = !!editing[ad.id];
                   const e = editing[ad.id];
                   return (
