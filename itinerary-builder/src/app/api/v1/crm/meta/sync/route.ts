@@ -117,49 +117,60 @@ export async function POST(req: NextRequest) {
     const adsetMap: Record<string, { name: string; campaign_id: string }> = {};
     for (const a of adsets) adsetMap[String(a.id)] = { name: String(a.name ?? ''), campaign_id: String(a.campaign_id ?? '') };
 
-    // Upsert each ad (preserve existing manual fields)
-    let upserted = 0;
-    for (const ad of ads) {
-      const adId = String(ad.id ?? '');
-      if (!adId) continue;
-      const adsetId      = String(ad.adset_id    ?? '');
-      const campaignId   = String(ad.campaign_id  ?? '');
-      const adsetInfo    = adsetMap[adsetId];
-      const campaignName = campaignMap[campaignId] ?? '';
+    // Batch-fetch ALL existing mappings in ONE query (avoids N×findUnique)
+    const adIds = ads.map(a => String(a.id ?? '')).filter(Boolean);
+    const existingRows = await prisma.metaAdsMapping.findMany({
+      where:  { ad_id: { in: adIds } },
+      select: { ad_id: true, destination: true, trip_type: true, prefilled_code: true },
+    });
+    const existingMap: Record<string, { destination: string | null; trip_type: string | null; prefilled_code: string | null }> = {};
+    for (const r of existingRows) existingMap[r.ad_id] = r;
 
-      const existing = await prisma.metaAdsMapping.findUnique({
-        where:  { ad_id: adId },
-        select: { destination: true, trip_type: true, prefilled_code: true },
-      });
+    console.log(`[META SYNC] Existing mappings in DB: ${existingRows.length}`);
 
-      await prisma.metaAdsMapping.upsert({
-        where:  { ad_id: adId },
-        update: {
-          ad_name:       String(ad.name ?? ''),
-          ad_set_id:     adsetId      || null,
-          ad_set_name:   adsetInfo?.name  || null,
-          campaign_id:   campaignId   || null,
-          campaign_name: campaignName || null,
-          is_active:     String(ad.status ?? '').toUpperCase() === 'ACTIVE',
-          synced_at:     new Date(),
-        },
-        create: {
-          ad_id:          adId,
-          ad_name:        String(ad.name ?? ''),
-          ad_set_id:      adsetId      || null,
-          ad_set_name:    adsetInfo?.name  || null,
-          campaign_id:    campaignId   || null,
-          campaign_name:  campaignName || null,
-          destination:    existing?.destination    ?? null,
-          trip_type:      existing?.trip_type       ?? null,
-          prefilled_code: existing?.prefilled_code  ?? null,
-          is_active:      String(ad.status ?? '').toUpperCase() === 'ACTIVE',
-          synced_at:      new Date(),
-        },
-      });
-      upserted++;
-    }
+    // Upsert ALL ads in parallel
+    const now = new Date();
+    const results = await Promise.allSettled(
+      ads.map(async (ad) => {
+        const adId = String(ad.id ?? '');
+        if (!adId) return;
+        const adsetId      = String(ad.adset_id    ?? '');
+        const campaignId   = String(ad.campaign_id  ?? '');
+        const adsetInfo    = adsetMap[adsetId];
+        const campaignName = campaignMap[campaignId] ?? '';
+        const existing     = existingMap[adId];
 
+        await prisma.metaAdsMapping.upsert({
+          where:  { ad_id: adId },
+          update: {
+            ad_name:       String(ad.name ?? ''),
+            ad_set_id:     adsetId           || null,
+            ad_set_name:   adsetInfo?.name   || null,
+            campaign_id:   campaignId        || null,
+            campaign_name: campaignName      || null,
+            is_active:     String(ad.status ?? '').toUpperCase() === 'ACTIVE',
+            synced_at:     now,
+          },
+          create: {
+            ad_id:          adId,
+            ad_name:        String(ad.name ?? ''),
+            ad_set_id:      adsetId           || null,
+            ad_set_name:    adsetInfo?.name   || null,
+            campaign_id:    campaignId        || null,
+            campaign_name:  campaignName      || null,
+            destination:    existing?.destination    ?? null,
+            trip_type:      existing?.trip_type       ?? null,
+            prefilled_code: existing?.prefilled_code  ?? null,
+            is_active:      String(ad.status ?? '').toUpperCase() === 'ACTIVE',
+            synced_at:      now,
+          },
+        });
+      })
+    );
+
+    const upserted  = results.filter(r => r.status === 'fulfilled').length;
+    const failed    = results.filter(r => r.status === 'rejected').length;
+    if (failed > 0) console.warn(`[META SYNC] ${failed} upserts failed`);
     console.log(`[META SYNC] Done — upserted ${upserted} ads`);
     return ok({ synced: upserted, campaigns: campaigns.length, adsets: adsets.length, ads: ads.length });
 
