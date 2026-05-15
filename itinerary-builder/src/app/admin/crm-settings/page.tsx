@@ -1519,8 +1519,10 @@ function MetaAdsTab() {
           </button>
           {syncResult && (
             syncResult.error
-              ? <p className="text-xs font-medium text-red-600">{syncResult.error}</p>
-              : <p className="text-xs font-medium text-green-600">✓ {syncResult.synced} ads synced</p>
+              ? <p className="text-xs font-medium text-red-600 max-w-sm break-words">{syncResult.error}</p>
+              : <p className="text-xs font-medium" style={{ color: syncResult.synced === 0 ? '#D97706' : '#16A34A' }}>
+                  {syncResult.synced === 0 ? '⚠ Synced 0 ads — check Vercel logs for details' : `✓ ${syncResult.synced} ads synced`}
+                </p>
           )}
         </div>
         <p className="text-xs" style={{ color: '#94A3B8' }}>
