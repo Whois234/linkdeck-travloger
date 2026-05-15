@@ -54,10 +54,6 @@ export type ContactCreateInput = {
   google_click_id?: string | null;
   platform_lead_id?: string | null;
   gallabox_contact_id?: string | null;
-  gallabox_ad_set_id?:   string | null;
-  gallabox_campaign_id?: string | null;
-  prefilled_code?:       string | null;
-  source_url?:           string | null;
 
   // CRM workflow
   lead_stage?: LeadStage;                 // defaults to NEW at DB level
@@ -681,10 +677,6 @@ export async function createContact(
         google_click_id:        input.google_click_id ?? null,
         platform_lead_id:       input.platform_lead_id ?? null,
         gallabox_contact_id:    input.gallabox_contact_id ?? null,
-        gallabox_ad_set_id:     input.gallabox_ad_set_id   ?? null,
-        gallabox_campaign_id:   input.gallabox_campaign_id ?? null,
-        prefilled_code:         input.prefilled_code       ?? null,
-        source_url:             input.source_url           ?? null,
 
         lead_stage:             input.lead_stage ?? 'NEW',
         // Default: assign to owner (creator) unless explicitly overridden.
@@ -855,10 +847,6 @@ export async function updateContact(
     if (patch.google_click_id     !== undefined) data.google_click_id     = patch.google_click_id;
     if (patch.platform_lead_id    !== undefined) data.platform_lead_id    = patch.platform_lead_id;
     if (patch.gallabox_contact_id !== undefined) data.gallabox_contact_id = patch.gallabox_contact_id;
-    if (patch.gallabox_ad_set_id   !== undefined) data.gallabox_ad_set_id   = patch.gallabox_ad_set_id;
-    if (patch.gallabox_campaign_id !== undefined) data.gallabox_campaign_id = patch.gallabox_campaign_id;
-    if (patch.prefilled_code       !== undefined) data.prefilled_code       = patch.prefilled_code;
-    if (patch.source_url           !== undefined) data.source_url           = patch.source_url;
 
     if (patch.lead_stage     !== undefined) data.lead_stage     = patch.lead_stage;
     if (patch.assigned_to_id !== undefined) {

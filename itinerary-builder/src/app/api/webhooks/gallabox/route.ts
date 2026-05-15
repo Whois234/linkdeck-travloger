@@ -244,9 +244,33 @@ async function autoCreateContactFromGallabox(
     // lead_source: 'whatsapp_ad' if came from an ad click, otherwise 'organic'
     const gallaboxSource = (adId || adSourceType === 'AD') ? 'whatsapp_ad' : 'organic';
 
-    const adPlatform = (adId || adSourceType === 'AD' || ctwaClid)
-      ? 'META'
-      : 'WHATSAPP';
+    // Platform is always WHATSAPP for Gallabox (even for CTWA ads — they come through WhatsApp)
+    const adPlatform = 'WHATSAPP';
+
+    // Device platform from source_url: fb.me → ANDROID (Facebook app), instagram.com → IOS (Instagram)
+    const sourceUrl = (referral.source_url ?? null) as string | null;
+    const srcUrlLower = (sourceUrl ?? '').toLowerCase();
+    let devicePlatformFromUrl: 'ANDROID' | 'IOS' | 'MOBILE' | 'DESKTOP' | null = null;
+    if (srcUrlLower.includes('instagram.com')) devicePlatformFromUrl = 'IOS';
+    else if (srcUrlLower.includes('fb.me') || srcUrlLower.includes('facebook.com')) devicePlatformFromUrl = 'ANDROID';
+
+    // Look up Meta Ads mapping for enrichment
+    let metaMapping: { ad_name: string | null; ad_set_id: string | null; ad_set_name: string | null; campaign_id: string | null; campaign_name: string | null; destination: string | null; trip_type: string | null; prefilled_code: string | null } | null = null;
+    if (adId) {
+      try {
+        metaMapping = await prisma.metaAdsMapping.findUnique({
+          where: { ad_id: adId },
+          select: { ad_name: true, ad_set_id: true, ad_set_name: true, campaign_id: true, campaign_name: true, destination: true, trip_type: true, prefilled_code: true },
+        });
+        if (metaMapping) console.log('[gallabox/auto-contact] Meta mapping found for ad_id:', adId, JSON.stringify(metaMapping));
+        else console.log('[gallabox/auto-contact] No Meta mapping for ad_id:', adId);
+      } catch (e) { console.warn('[gallabox/auto-contact] meta mapping lookup failed:', e); }
+    }
+
+    // Extract prefilled code from first message body (e.g. "Hi I want Kerala trip #K01" → "K01")
+    const msgBody = (typeof waText.body === 'string' ? waText.body : null) ?? '';
+    const prefilledMatch = msgBody.match(/#([A-Z0-9]+)/i);
+    const extractedPrefilledCode = prefilledMatch ? prefilledMatch[1].toUpperCase() : (metaMapping?.prefilled_code ?? null);
 
     const rawOs = (
       contactObj.os     ??
@@ -289,6 +313,16 @@ async function autoCreateContactFromGallabox(
     // ── Check if contact already exists ──────────────────────────────────────
     const existing = await prisma.crmContact.findUnique({ where: { phone } });
 
+    // If the contact was soft-deleted, restore it so Gallabox re-engagement works
+    if (existing?.deleted_at) {
+      await prisma.crmContact.update({
+        where: { id: existing.id },
+        data: { deleted_at: null, updated_at: new Date() },
+      });
+      console.log('[gallabox/auto-contact] Restored soft-deleted contact:', existing.id, phone);
+      // Fall through to enrichment below (treat as existing active contact)
+    }
+
     if (existing) {
       // Always touch updated_at so sort=recent reflects latest Gallabox message activity
       await prisma.crmContact.update({ where: { id: existing.id }, data: { updated_at: new Date() } });
@@ -307,18 +341,26 @@ async function autoCreateContactFromGallabox(
         (adHeadline && !existing.campaign_name) ||
         (ctwaClid && !existing.facebook_click_id) ||
         (gallaboxContactId && !existing.gallabox_contact_id) ||
-        (adPlatform === 'META' && existing.platform !== 'META');
+        (metaMapping?.campaign_id && !existing.gallabox_campaign_id) ||
+        (metaMapping?.ad_set_id && !existing.gallabox_ad_set_id) ||
+        (extractedPrefilledCode && !existing.prefilled_code) ||
+        (sourceUrl && !existing.source_url);
 
       if (hasCfUpdates || hasFieldUpdates) {
         await updateContact(
           existing.id,
           {
-            ...(adId && !existing.ad_name                   ? { ad_name:             adId        } : {}),
-            ...(adHeadline && !existing.campaign_name        ? { campaign_name:       adHeadline  } : {}),
-            ...(ctwaClid && !existing.facebook_click_id      ? { facebook_click_id:   ctwaClid    } : {}),
+            ...(adId && !existing.ad_name                   ? { ad_name:             metaMapping?.ad_name ?? adId } : {}),
+            ...(adHeadline && !existing.campaign_name        ? { campaign_name:       metaMapping?.campaign_name ?? adHeadline } : {}),
+            ...(ctwaClid && !existing.facebook_click_id      ? { facebook_click_id:   ctwaClid } : {}),
             ...(gallaboxContactId && !existing.gallabox_contact_id ? { gallabox_contact_id: gallaboxContactId } : {}),
-            // Upgrade platform from WHATSAPP → META if we now know it's from an ad
-            ...(adPlatform === 'META' && existing.platform !== 'META' ? { platform: 'META' } : {}),
+            ...(metaMapping?.ad_set_name && !existing.ad_set_name ? { ad_set_name: metaMapping.ad_set_name } : {}),
+            ...(metaMapping?.campaign_id && !existing.gallabox_campaign_id ? { gallabox_campaign_id: metaMapping.campaign_id } : {}),
+            ...(metaMapping?.ad_set_id && !existing.gallabox_ad_set_id ? { gallabox_ad_set_id: metaMapping.ad_set_id } : {}),
+            ...(extractedPrefilledCode && !existing.prefilled_code ? { prefilled_code: extractedPrefilledCode } : {}),
+            ...(sourceUrl && !existing.source_url ? { source_url: sourceUrl } : {}),
+            ...(metaMapping?.destination && !existing.interested_destination ? { interested_destination: metaMapping.destination } : {}),
+            ...(metaMapping?.trip_type && !existing.trip_type ? { trip_type: metaMapping.trip_type } : {}),
             custom_fields: newCf,
           },
           null,
@@ -356,15 +398,24 @@ async function autoCreateContactFromGallabox(
         phone,
         name:                name?.trim() || 'WhatsApp Lead',
         lead_source:         gallaboxSource,
-        platform:            adPlatform,          // 'META' for CTWA/ad leads, 'WHATSAPP' for organic
-        device_platform:     devicePlatform,      // ANDROID | IOS | MOBILE (best-effort from payload)
+        platform:            adPlatform,
+        device_platform:     devicePlatformFromUrl ?? devicePlatform,
         gallabox_contact_id: gallaboxContactId ?? undefined,
-        campaign_name:       adHeadline ?? undefined,  // Facebook ad headline → campaign name
-        ad_name:             adId       ?? undefined,  // Ad source_id → ad identifier
-        ad_set_name:         adSourceType === 'AD' ? 'CTWA' : undefined,
-        facebook_click_id:   ctwaClid   ?? undefined,  // CTWA click ID (fbclid)
-        custom_fields:       customFields,
-        owner_id:            admin.id,
+        // From Meta Ads mapping (preferred) OR from Gallabox referral data
+        campaign_name:       metaMapping?.campaign_name ?? adHeadline ?? undefined,
+        ad_set_name:         metaMapping?.ad_set_name ?? (adSourceType === 'AD' ? 'CTWA' : undefined),
+        ad_name:             metaMapping?.ad_name ?? adId ?? undefined,
+        facebook_click_id:   ctwaClid ?? undefined,
+        // Travel interest from mapping
+        interested_destination: metaMapping?.destination ?? undefined,
+        trip_type:           metaMapping?.trip_type ?? undefined,
+        // New enrichment fields
+        gallabox_ad_set_id:   metaMapping?.ad_set_id ?? undefined,
+        gallabox_campaign_id: metaMapping?.campaign_id ?? undefined,
+        prefilled_code:       extractedPrefilledCode ?? undefined,
+        source_url:           sourceUrl ?? undefined,
+        custom_fields:        customFields,
+        owner_id:             admin.id,
       },
       null,
     );

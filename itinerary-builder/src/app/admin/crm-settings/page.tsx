@@ -138,7 +138,7 @@ function SelectBox({ value, onChange, children, disabled }: {
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function CrmSettingsPage() {
-  const [tab, setTab]           = useState<'automations' | 'workflows' | 'contact-fields' | 'tags' | 'teams' | 'gallabox'>('automations');
+  const [tab, setTab]           = useState<'automations' | 'workflows' | 'contact-fields' | 'tags' | 'teams' | 'gallabox' | 'meta_ads'>('automations');
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [users, setUsers]       = useState<User[]>([]);
   const [automations, setAutomations] = useState<StageAutomation[]>([]);
@@ -408,6 +408,7 @@ export default function CrmSettingsPage() {
           { key: 'tags',           label: 'Tags',               icon: TagIcon },
           { key: 'teams',          label: 'Teams',              icon: Users },
           { key: 'gallabox',       label: 'Gallabox',           icon: MessageSquare },
+          { key: 'meta_ads',       label: 'Meta Ads',           icon: Zap },
         ] as const).map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setTab(key)}
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all"
@@ -1221,7 +1222,8 @@ export default function CrmSettingsPage() {
       {/* ═══════════════════════════════════════════════════════════════════════
           Gallabox Settings
       ══════════════════════════════════════════════════════════════════════════ */}
-      {tab === 'gallabox' && <GallaboxSettingsTab />}
+      {tab === 'gallabox'  && <GallaboxSettingsTab />}
+      {tab === 'meta_ads'  && <MetaAdsTab />}
     </div>
   );
 }
@@ -1229,9 +1231,10 @@ export default function CrmSettingsPage() {
 // ─── Gallabox Settings Tab ────────────────────────────────────────────────────
 
 function GallaboxSettingsTab() {
-  const [channelId, setChannelId]   = useState('');
-  const [apiKey,    setApiKey]      = useState('');
-  const [loading,   setLoading]     = useState(true);
+  const [channelId,  setChannelId]  = useState('');
+  const [apiKey,     setApiKey]     = useState('');
+  const [apiSecret,  setApiSecret]  = useState('');
+  const [loading,    setLoading]    = useState(true);
   const [saving,    setSaving]      = useState(false);
   const [saved,     setSaved]       = useState(false);
   const [testState, setTestState]   = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle');
@@ -1244,8 +1247,9 @@ function GallaboxSettingsTab() {
       .then(r => r.json())
       .then(d => {
         if (d.ok) {
-          setChannelId(d.data?.gallabox_channel_id ?? '');
-          setApiKey(d.data?.gallabox_api_key ?? '');
+          setChannelId(d.data?.gallabox_channel_id  ?? '');
+          setApiKey(d.data?.gallabox_api_key       ?? '');
+          setApiSecret(d.data?.gallabox_api_secret ?? '');
         }
       })
       .catch(() => {})
@@ -1256,7 +1260,8 @@ function GallaboxSettingsTab() {
     if (!channelId.trim()) return;
     setSaving(true); setSaved(false);
     const body: Record<string, string> = { gallabox_channel_id: channelId.trim() };
-    if (apiKey.trim()) body.gallabox_api_key = apiKey.trim();
+    if (apiKey.trim())    body.gallabox_api_key    = apiKey.trim();
+    if (apiSecret.trim()) body.gallabox_api_secret = apiSecret.trim();
     await fetch('/api/v1/app-settings', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -1311,12 +1316,29 @@ function GallaboxSettingsTab() {
         {/* API Key */}
         <div>
           <label className="block text-[11px] font-bold uppercase tracking-wider mb-1.5" style={{ color: '#94A3B8' }}>
-            Gallabox API Key <span className="text-xs normal-case font-normal">(optional)</span>
+            Gallabox API Key <span className="text-red-400">*</span>
           </label>
           <input value={apiKey} onChange={e => { setApiKey(e.target.value); setSaved(false); }}
             placeholder="Paste API key…" type="password"
             className="w-full text-sm rounded-xl px-4 py-2.5 outline-none font-mono"
-            style={{ border: '1.5px solid #E2E8F0' }} />
+            style={{ border: `1.5px solid ${apiKey ? '#E2E8F0' : '#FECACA'}` }} />
+          <p className="text-[11px] mt-1" style={{ color: '#94A3B8' }}>
+            Gallabox → Settings → Developers → API Key
+          </p>
+        </div>
+
+        {/* API Secret */}
+        <div>
+          <label className="block text-[11px] font-bold uppercase tracking-wider mb-1.5" style={{ color: '#94A3B8' }}>
+            Gallabox API Secret <span className="text-red-400">*</span>
+          </label>
+          <input value={apiSecret} onChange={e => { setApiSecret(e.target.value); setSaved(false); }}
+            placeholder="Paste API secret…" type="password"
+            className="w-full text-sm rounded-xl px-4 py-2.5 outline-none font-mono"
+            style={{ border: `1.5px solid ${apiSecret ? '#E2E8F0' : '#FECACA'}` }} />
+          <p className="text-[11px] mt-1" style={{ color: '#94A3B8' }}>
+            Gallabox → Settings → Developers → API Secret · Required for sending templates
+          </p>
         </div>
 
         {/* Actions */}
@@ -1361,6 +1383,256 @@ function GallaboxSettingsTab() {
           <li>Go to <strong>Settings → Channels</strong></li>
           <li>Click on your WhatsApp channel</li>
           <li>Copy the <strong>Channel ID</strong> from the details page</li>
+        </ol>
+      </div>
+    </div>
+  );
+}
+
+// ─── Meta Ads Tab ─────────────────────────────────────────────────────────────
+
+interface MetaAdRow {
+  id: string; ad_id: string; ad_name: string | null;
+  ad_set_id: string | null; ad_set_name: string | null;
+  campaign_id: string | null; campaign_name: string | null;
+  destination: string | null; trip_type: string | null;
+  prefilled_code: string | null; is_active: boolean; synced_at: string;
+}
+
+function MetaAdsTab() {
+  const [accessToken, setAccessToken] = useState('');
+  const [adAccountId, setAdAccountId] = useState('');
+  const [loadingCreds, setLoadingCreds] = useState(true);
+  const [savingCreds,  setSavingCreds]  = useState(false);
+  const [savedCreds,   setSavedCreds]   = useState(false);
+  const [syncing,      setSyncing]      = useState(false);
+  const [syncResult,   setSyncResult]   = useState<{ synced?: number; error?: string } | null>(null);
+  const [ads,          setAds]          = useState<MetaAdRow[]>([]);
+  const [loadingAds,   setLoadingAds]   = useState(false);
+  const [editing,      setEditing]      = useState<Record<string, { destination: string; trip_type: string; prefilled_code: string }>>({});
+  const [savingAd,     setSavingAd]     = useState<string | null>(null);
+
+  const T = '#134956';
+
+  useEffect(() => {
+    fetch('/api/v1/app-settings')
+      .then(r => r.json())
+      .then(d => {
+        if (d.ok) {
+          setAccessToken(d.data?.meta_access_token  ?? '');
+          setAdAccountId(d.data?.meta_ad_account_id ?? '');
+        }
+      })
+      .finally(() => setLoadingCreds(false));
+    loadAds();
+  }, []);
+
+  async function loadAds() {
+    setLoadingAds(true);
+    try {
+      const res = await fetch('/api/v1/crm/meta/ads');
+      const d = await res.json();
+      if (d.ok) setAds(d.data ?? []);
+    } finally { setLoadingAds(false); }
+  }
+
+  async function saveCreds() {
+    setSavingCreds(true); setSavedCreds(false);
+    await fetch('/api/v1/app-settings', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...(accessToken.trim() ? { meta_access_token:  accessToken.trim()  } : {}),
+        ...(adAccountId.trim() ? { meta_ad_account_id: adAccountId.trim()  } : {}),
+      }),
+    });
+    setSavingCreds(false); setSavedCreds(true);
+    setTimeout(() => setSavedCreds(false), 3000);
+  }
+
+  async function sync() {
+    setSyncing(true); setSyncResult(null);
+    try {
+      const res = await fetch('/api/v1/crm/meta/sync', { method: 'POST' });
+      const d = await res.json();
+      if (d.ok) { setSyncResult({ synced: d.data?.synced ?? 0 }); await loadAds(); }
+      else setSyncResult({ error: d.error ?? 'Sync failed' });
+    } catch (e) { setSyncResult({ error: String(e) }); }
+    finally { setSyncing(false); }
+  }
+
+  function startEdit(ad: MetaAdRow) {
+    setEditing(prev => ({ ...prev, [ad.id]: { destination: ad.destination ?? '', trip_type: ad.trip_type ?? '', prefilled_code: ad.prefilled_code ?? '' } }));
+  }
+
+  function cancelEdit(id: string) {
+    setEditing(prev => { const n = { ...prev }; delete n[id]; return n; });
+  }
+
+  async function saveAd(id: string) {
+    setSavingAd(id);
+    const patch = editing[id];
+    await fetch(`/api/v1/crm/meta/ads/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ destination: patch.destination || null, trip_type: patch.trip_type || null, prefilled_code: patch.prefilled_code || null }),
+    });
+    setSavingAd(null);
+    cancelEdit(id);
+    loadAds();
+  }
+
+  const cardSt = { border: '1px solid #E2E8F0', borderRadius: 16, background: '#fff', boxShadow: '0 1px 4px rgba(15,23,42,0.05)' };
+  const inp = 'w-full text-sm rounded-lg px-3 py-2 outline-none';
+  const inpSt = { border: '1px solid #D1D5DB', background: '#fff' };
+
+  // Group ads by campaign for display
+  const campaigns = Array.from(new Set(ads.map(a => a.campaign_name ?? '—')));
+
+  if (loadingCreds) return <div className="flex items-center justify-center py-16"><Loader2 className="w-6 h-6 animate-spin" style={{ color: T }} /></div>;
+
+  return (
+    <div className="space-y-6">
+      {/* ── Credentials ── */}
+      <div className="p-6 space-y-4" style={cardSt}>
+        <p className="text-sm font-bold" style={{ color: '#0F172A' }}>Meta Ads API Credentials</p>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-semibold mb-1.5" style={{ color: '#64748B' }}>Meta Access Token (long-lived)</label>
+            <input type="password" className={inp} style={inpSt} value={accessToken} onChange={e => setAccessToken(e.target.value)} placeholder="EAAxxxxxx..." />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold mb-1.5" style={{ color: '#64748B' }}>Ad Account ID</label>
+            <input className={inp} style={inpSt} value={adAccountId} onChange={e => setAdAccountId(e.target.value)} placeholder="act_262291790500754" />
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <button onClick={saveCreds} disabled={savingCreds}
+            className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
+            style={{ backgroundColor: T }}>
+            {savingCreds ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+            {savedCreds ? '✓ Saved' : 'Save Credentials'}
+          </button>
+          <button onClick={sync} disabled={syncing || !adAccountId.trim()}
+            className="flex items-center gap-2 h-9 px-4 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
+            style={{ backgroundColor: '#2563EB' }}>
+            {syncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+            {syncing ? 'Syncing…' : 'Sync from Meta'}
+          </button>
+          {syncResult && (
+            syncResult.error
+              ? <p className="text-xs font-medium text-red-600">{syncResult.error}</p>
+              : <p className="text-xs font-medium text-green-600">✓ {syncResult.synced} ads synced</p>
+          )}
+        </div>
+        <p className="text-xs" style={{ color: '#94A3B8' }}>
+          Get a long-lived token from Meta Business Suite → Settings → System Users → Generate Token. Required scopes: <code>ads_read</code>.
+        </p>
+      </div>
+
+      {/* ── Ads Table ── */}
+      <div className="p-6 space-y-4" style={cardSt}>
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-bold" style={{ color: '#0F172A' }}>Ad Mapping Table <span className="text-xs font-normal" style={{ color: '#94A3B8' }}>({ads.length} ads)</span></p>
+          <button onClick={loadAds} disabled={loadingAds} className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg hover:bg-[#F8FAFC]" style={{ color: '#64748B', border: '1px solid #E2E8F0' }}>
+            <RefreshCw className={`w-3.5 h-3.5 ${loadingAds ? 'animate-spin' : ''}`} /> Refresh
+          </button>
+        </div>
+
+        {loadingAds ? (
+          <div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin" style={{ color: T }} /></div>
+        ) : ads.length === 0 ? (
+          <div className="text-center py-10" style={{ color: '#94A3B8' }}>
+            <Zap className="w-8 h-8 mx-auto mb-2 opacity-40" />
+            <p className="text-sm">No ads synced yet. Click &ldquo;Sync from Meta&rdquo; to import your ads.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr style={{ borderBottom: '1px solid #F1F5F9' }}>
+                  {['Campaign', 'Ad Set', 'Ad Name', 'Destination', 'Trip Type', 'Code', 'Status', ''].map(h => (
+                    <th key={h} className="text-left pb-2 pr-4 font-bold" style={{ color: '#94A3B8' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {ads.map(ad => {
+                  const isEdit = !!editing[ad.id];
+                  const e = editing[ad.id];
+                  return (
+                    <tr key={ad.id} style={{ borderBottom: '1px solid #F8FAFC' }} className="hover:bg-[#FAFAFA]">
+                      <td className="py-2 pr-4 font-medium" style={{ color: '#0F172A', maxWidth: 160 }}>
+                        <p className="truncate">{ad.campaign_name ?? '—'}</p>
+                        <p className="text-[10px]" style={{ color: '#94A3B8' }}>{ad.campaign_id}</p>
+                      </td>
+                      <td className="py-2 pr-4" style={{ color: '#64748B', maxWidth: 140 }}>
+                        <p className="truncate">{ad.ad_set_name ?? '—'}</p>
+                      </td>
+                      <td className="py-2 pr-4" style={{ color: '#64748B', maxWidth: 160 }}>
+                        <p className="truncate">{ad.ad_name ?? '—'}</p>
+                      </td>
+                      <td className="py-2 pr-3">
+                        {isEdit ? (
+                          <input className="w-28 text-xs rounded px-2 py-1" style={{ border: '1px solid #D1D5DB' }}
+                            value={e.destination} onChange={ev => setEditing(p => ({ ...p, [ad.id]: { ...p[ad.id], destination: ev.target.value } }))}
+                            placeholder="e.g. Kerala" />
+                        ) : <span style={{ color: ad.destination ? '#0F172A' : '#CBD5E1' }}>{ad.destination ?? '—'}</span>}
+                      </td>
+                      <td className="py-2 pr-3">
+                        {isEdit ? (
+                          <input className="w-24 text-xs rounded px-2 py-1" style={{ border: '1px solid #D1D5DB' }}
+                            value={e.trip_type} onChange={ev => setEditing(p => ({ ...p, [ad.id]: { ...p[ad.id], trip_type: ev.target.value } }))}
+                            placeholder="GROUP / PVT" />
+                        ) : <span style={{ color: ad.trip_type ? '#0F172A' : '#CBD5E1' }}>{ad.trip_type ?? '—'}</span>}
+                      </td>
+                      <td className="py-2 pr-3">
+                        {isEdit ? (
+                          <input className="w-20 text-xs rounded px-2 py-1 font-mono" style={{ border: '1px solid #D1D5DB' }}
+                            value={e.prefilled_code} onChange={ev => setEditing(p => ({ ...p, [ad.id]: { ...p[ad.id], prefilled_code: ev.target.value.toUpperCase() } }))}
+                            placeholder="K01" />
+                        ) : ad.prefilled_code ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ backgroundColor: '#134956', color: '#fff' }}>#{ad.prefilled_code}</span>
+                        ) : <span style={{ color: '#CBD5E1' }}>—</span>}
+                      </td>
+                      <td className="py-2 pr-3">
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${ad.is_active ? 'text-green-700 bg-green-50' : 'text-gray-400 bg-gray-50'}`}>
+                          {ad.is_active ? 'Active' : 'Paused'}
+                        </span>
+                      </td>
+                      <td className="py-2">
+                        {isEdit ? (
+                          <div className="flex gap-1.5">
+                            <button onClick={() => saveAd(ad.id)} disabled={savingAd === ad.id}
+                              className="px-2 py-1 rounded text-[10px] font-bold text-white" style={{ backgroundColor: T }}>
+                              {savingAd === ad.id ? '…' : 'Save'}
+                            </button>
+                            <button onClick={() => cancelEdit(ad.id)} className="px-2 py-1 rounded text-[10px] font-semibold" style={{ color: '#64748B', border: '1px solid #E2E8F0' }}>
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button onClick={() => startEdit(ad)} className="px-2 py-1 rounded text-[10px] font-semibold hover:bg-[#F1F5F9]" style={{ color: '#64748B' }}>
+                            Edit
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ── Instructions ── */}
+      <div className="p-5 rounded-xl text-xs space-y-2" style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0', color: '#64748B' }}>
+        <p className="font-bold text-[#0F172A]">How it works</p>
+        <ol className="list-decimal pl-4 space-y-1">
+          <li>Save your Meta Access Token + Ad Account ID and click <strong>Sync from Meta</strong></li>
+          <li>All your campaigns, ad sets and ads are imported into the table above</li>
+          <li>For each ad, set the <strong>Destination</strong>, <strong>Trip Type</strong> and <strong>Prefilled Code</strong> (e.g. K01)</li>
+          <li>When a customer messages via WhatsApp from a CTWA ad, the CRM automatically enriches the contact with campaign name, ad set, destination and trip type</li>
+          <li>Use these fields in <strong>Workflows</strong> to auto-assign contacts (e.g. &ldquo;IF Campaign ID = 120239… → Assign to Kerala team&rdquo;)</li>
         </ol>
       </div>
     </div>

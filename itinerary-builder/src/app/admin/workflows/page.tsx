@@ -4,7 +4,8 @@
  * Full builder: conditions, multi-action, availability-aware user picker, run history.
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   Plus, X, Loader2, Zap, ToggleLeft, ToggleRight, Trash2,
   ChevronDown, ChevronUp, RotateCcw, Weight, Shield,
@@ -63,19 +64,29 @@ const TRIGGERS = [
 ];
 
 const WF_CONDITION_FIELDS = [
-  { value: 'lead_source',            label: 'Lead Source',        type: 'leadSource' },
-  { value: 'interested_destination', label: 'Destination',        type: 'text' },
-  { value: 'trip_type',              label: 'Trip Type',          type: 'text' },
-  { value: 'city',                   label: 'City',               type: 'text' },
-  { value: 'tags',                   label: 'Tag',                type: 'tag' },
-  { value: 'campaign_name',          label: 'Campaign Name',      type: 'text' },
-  { value: 'notes',                  label: 'Notes',              type: 'text' },
-  { value: 'special_requirements',   label: 'Requirements',       type: 'text' },
-  // Gallabox enrichment fields
-  { value: 'gallabox_bot_flow_id',   label: 'Bot Flow ID',        type: 'text' },
-  { value: 'gallabox_ad_id',         label: 'Ad ID (CTWA)',       type: 'text' },
-  { value: 'gallabox_source',        label: 'Gallabox Source',    type: 'text' },
-  { value: 'gallabox_ad_headline',   label: 'Ad Headline',        type: 'text' },
+  // ── Standard fields ──
+  { value: 'lead_source',            label: 'Lead Source',          type: 'leadSource', group: 'Contact' },
+  { value: 'interested_destination', label: 'Destination',          type: 'text',       group: 'Contact' },
+  { value: 'trip_type',              label: 'Trip Type',            type: 'text',       group: 'Contact' },
+  { value: 'city',                   label: 'City',                 type: 'text',       group: 'Contact' },
+  { value: 'platform',               label: 'Platform',             type: 'text',       group: 'Contact' },
+  { value: 'device_platform',        label: 'Device Platform',      type: 'text',       group: 'Contact' },
+  { value: 'tags',                   label: 'Tag',                  type: 'tag',        group: 'Contact' },
+  { value: 'notes',                  label: 'Notes',                type: 'text',       group: 'Contact' },
+  { value: 'special_requirements',   label: 'Requirements',         type: 'text',       group: 'Contact' },
+  // ── Meta Ads / Campaign fields ──
+  { value: 'prefilled_code',         label: 'Prefilled Code',       type: 'text',       group: 'Meta Ads' },
+  { value: 'campaign_name',          label: 'Campaign Name',        type: 'text',       group: 'Meta Ads' },
+  { value: 'gallabox_campaign_id',   label: 'Campaign ID',          type: 'text',       group: 'Meta Ads' },
+  { value: 'ad_set_name',            label: 'Ad Set Name',          type: 'text',       group: 'Meta Ads' },
+  { value: 'gallabox_ad_set_id',     label: 'Ad Set ID',            type: 'text',       group: 'Meta Ads' },
+  { value: 'ad_name',                label: 'Ad Name',              type: 'text',       group: 'Meta Ads' },
+  { value: 'source_url',             label: 'Source URL',           type: 'text',       group: 'Meta Ads' },
+  // ── Gallabox fields (stored in custom_fields JSON) ──
+  { value: 'gallabox_bot_flow_id',   label: 'Bot Flow ID',          type: 'text',       group: 'Gallabox' },
+  { value: 'gallabox_ad_id',         label: 'Ad ID (CTWA)',         type: 'text',       group: 'Gallabox' },
+  { value: 'gallabox_source',        label: 'Gallabox Source',      type: 'text',       group: 'Gallabox' },
+  { value: 'gallabox_ad_headline',   label: 'Ad Headline',          type: 'text',       group: 'Gallabox' },
 ];
 
 const TEXT_OPERATORS    = [
@@ -162,6 +173,14 @@ function relTime(iso: string | null | undefined): string {
 interface RunStats { last_run_at: string | null; total: number; }
 
 export default function WorkflowsPage() {
+  const searchParams = useSearchParams();
+  const prefillParam = searchParams?.get('prefill');
+  const prefillData = useMemo<Record<string, string | null>>(() => {
+    if (!prefillParam) return {};
+    try { return JSON.parse(decodeURIComponent(prefillParam)) as Record<string, string | null>; }
+    catch { return {}; }
+  }, [prefillParam]);
+
   const [workflows, setWorkflows]   = useState<CrmWorkflow[]>([]);
   const [users, setUsers]           = useState<UserRecord[]>([]);
   const [loading, setLoading]       = useState(true);
@@ -214,6 +233,28 @@ export default function WorkflowsPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // Auto-open create form pre-filled with contact data (from "+ Workflow" button on contact panel)
+  useEffect(() => {
+    if (!prefillParam || Object.keys(prefillData).length === 0) return;
+    const fieldMap: Record<string, string> = {
+      lead_source: 'lead_source', campaign_name: 'campaign_name',
+      ad_set_name: 'ad_set_name', gallabox_campaign_id: 'gallabox_campaign_id',
+      gallabox_ad_set_id: 'gallabox_ad_set_id', interested_destination: 'interested_destination',
+      trip_type: 'trip_type', prefilled_code: 'prefilled_code', platform: 'platform',
+    };
+    const prefillRules: WfRule[] = Object.entries(prefillData)
+      .filter(([k, v]) => fieldMap[k] && v)
+      .map(([k, v]) => ({ field: fieldMap[k], operator: 'is', value: String(v) }));
+    if (prefillRules.length > 0) {
+      resetForm();
+      setWfRules(prefillRules);
+      setWfMatch('AND');
+      setWfName('New Workflow from Contact');
+      setShowForm(true);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillParam]);
+
   // ─── Run history ──────────────────────────────────────────────────────────
 
   async function toggleRunHistory(wfId: string) {
@@ -262,7 +303,7 @@ export default function WorkflowsPage() {
     };
     const res = await fetch(
       editingId ? `/api/v1/crm/workflows/${editingId}` : '/api/v1/crm/workflows',
-      { method: editingId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) },
+      { method: editingId ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) },
     );
     const data = await res.json();
     setSavingWf(false);
@@ -342,7 +383,14 @@ export default function WorkflowsPage() {
             <select value={rule.field} onChange={e => updateRule(idx, { field: e.target.value, operator: 'is', value: '' })}
               className="w-full text-sm rounded-lg px-3 py-2.5 outline-none appearance-none bg-white"
               style={{ border: '1px solid #D1D5DB' }}>
-              {WF_CONDITION_FIELDS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+              {(['Contact', 'Meta Ads', 'Gallabox'] as const).map(grp => {
+                const fields = WF_CONDITION_FIELDS.filter(f => f.group === grp);
+                return (
+                  <optgroup key={grp} label={grp}>
+                    {fields.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+                  </optgroup>
+                );
+              })}
             </select>
             <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none text-gray-400" />
           </div>

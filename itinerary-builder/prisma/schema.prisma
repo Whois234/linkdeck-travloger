@@ -1103,6 +1103,10 @@ model CrmContact {
   google_click_id     String?
   platform_lead_id    String?
   gallabox_contact_id String?
+  gallabox_ad_set_id  String?
+  gallabox_campaign_id String?
+  prefilled_code      String?
+  source_url          String?
 
   // ── CRM workflow ───────────────────────────────────────────────────────────
   lead_stage        LeadStage @default(NEW)
@@ -1480,4 +1484,26 @@ model AppSetting {
   key        String   @id                    // e.g. 'gallabox_channel_id'
   value      String                          // setting value
   updated_at DateTime @updatedAt
+}
+
+// ─── Meta Ads Mapping ────────────────────────────────────────────────────────
+model MetaAdsMapping {
+  id            String    @id @default(cuid())
+  ad_id         String    @unique
+  ad_name       String?
+  ad_set_id     String?
+  ad_set_name   String?
+  campaign_id   String?
+  campaign_name String?
+  destination   String?
+  trip_type     String?
+  prefilled_code String?
+  is_active     Boolean   @default(true)
+  synced_at     DateTime  @default(now())
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  @@index([ad_id])
+  @@index([campaign_id])
+  @@index([ad_set_id])
 }

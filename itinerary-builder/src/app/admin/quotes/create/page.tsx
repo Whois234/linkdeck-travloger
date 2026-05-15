@@ -7,7 +7,7 @@ import PhoneInput, { combinePhone, parsePhone } from '@/components/PhoneInput';
 import {
   Users, MapPin, LayoutList, DollarSign, FileText, Link2,
   Check, Copy, ExternalLink, ChevronRight, Plus, Minus,
-  Star, Car, ChevronDown, ChevronUp, Loader2, GripVertical,
+  Star, Car, ChevronDown, ChevronUp, Loader2, GripVertical, Send,
 } from 'lucide-react';
 
 /* ─── Style tokens ─── */
@@ -112,6 +112,8 @@ export default function CreateQuotePage() {
   const [errMsg, setErrMsg]       = useState('');
   const [copied, setCopied]       = useState(false);
   const [createdQuote, setCreatedQuote] = useState<{ id: string; quote_number: string; public_token: string } | null>(null);
+  const [sendingTemplate, setSendingTemplate] = useState(false);
+  const [templateMsg, setTemplateMsg]         = useState<{ ok: boolean; text: string } | null>(null);
 
   /* ─── Step 1 fields ─── */
   const [quoteName, setQuoteName]     = useState('');
@@ -588,13 +590,18 @@ export default function CreateQuotePage() {
       (cData.data ?? []).forEach((o: { option_name: string; pricing: typeof calcResults[string] }) => { results[o.option_name] = o.pricing; });
       setCalcResults(results);
 
-      // 4. Publish
+      // 4. Publish — returns token immediately (snapshot runs in background)
       const pRes = await fetch(`/api/v1/quotes/${quoteId}/publish`, { method: 'POST' });
       const pData = await pRes.json();
       if (!pRes.ok) { setErrMsg(pData.error ?? 'Failed to publish quote'); return; }
 
+      // Show success screen immediately — don't wait for snapshot
       setCreatedQuote({ id: quoteId, quote_number: qData.data.quote_number, public_token: pData.data.public_token ?? qData.data.public_token });
       setStep(quoteType === 'PRIVATE' ? 7 : 3);
+
+      // 5. Fire snapshot generation in background — client keeps the request alive
+      fetch(`/api/v1/quotes/${quoteId}/snapshot`, { method: 'POST' }).catch(() => {});
+
     } finally {
       setSaving(false); setCalculating(false);
     }
@@ -630,8 +637,11 @@ export default function CreateQuotePage() {
       const pRes  = await fetch(`/api/v1/quotes/${quoteId}/publish`, { method: 'POST' });
       const pData = await pRes.json();
       if (!pRes.ok) { setErrMsg(pData.error ?? 'Failed to publish'); return; }
+      // Show success screen immediately
       setCreatedQuote({ id: quoteId, quote_number: qData.data.quote_number, public_token: pData.data.public_token ?? qData.data.public_token });
       setStep(3);
+      // Fire snapshot in background
+      fetch(`/api/v1/quotes/${quoteId}/snapshot`, { method: 'POST' }).catch(() => {});
     } finally {
       setSaving(false);
     }
@@ -676,10 +686,33 @@ export default function CreateQuotePage() {
     setTimeout(() => setCopied(false), 2000);
   }
 
+  async function sendGallaboxTemplate() {
+    if (!createdQuote || sendingTemplate) return;
+    setSendingTemplate(true); setTemplateMsg(null);
+    try {
+      const res = await fetch('/api/gallabox/send', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone:        custMobile,
+          contactName:  custName,
+          templateName: 'itinerary_ready',
+          buttonUrl:    createdQuote.public_token,
+        }),
+      });
+      const data = await res.json() as { ok: boolean; error?: string };
+      if (data.ok) setTemplateMsg({ ok: true,  text: 'Template sent via Gallabox ✅' });
+      else         setTemplateMsg({ ok: false, text: data.error ?? 'Failed to send template' });
+    } catch { setTemplateMsg({ ok: false, text: 'Network error. Try again.' }); }
+    finally { setSendingTemplate(false); setTimeout(() => setTemplateMsg(null), 6000); }
+  }
+
   const shareUrl = createdQuote ? `${typeof window !== 'undefined' ? window.location.origin : ''}/quotations/${createdQuote.public_token}` : '';
   const waText   = createdQuote
     ? `Hi ${custName}, here is your ${selectedPT?.template_name ?? selectedGT?.group_template_name ?? 'tour'} quote: ${shareUrl}`
     : '';
+  // Phone for wa.me — custMobile already has country code (e.g. "919391203737"), no extra prefix needed
+  const waPhone  = custMobile.replace(/\D/g, '');
 
   /* ═══ RENDER ═══ */
   return (
@@ -2042,14 +2075,28 @@ export default function CreateQuotePage() {
               </div>
             )}
 
+            {/* Template send feedback */}
+            {templateMsg && (
+              <div className="mb-3 px-4 py-2 rounded-xl text-sm font-medium text-center"
+                style={templateMsg.ok ? { backgroundColor: '#DCFCE7', color: '#15803D' } : { backgroundColor: '#FEF2F2', color: '#DC2626' }}>
+                {templateMsg.text}
+              </div>
+            )}
+
             {/* Action buttons */}
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              <a href={`https://wa.me/91${custMobile.replace(/\D/g, '')}?text=${encodeURIComponent(waText)}`}
+              <a href={`https://wa.me/${waPhone}?text=${encodeURIComponent(waText)}`}
                 target="_blank" rel="noopener noreferrer"
                 className="flex items-center justify-center gap-2 h-10 px-5 rounded-xl text-sm font-bold text-white"
                 style={{ backgroundColor: '#25D366' }}>
                 <ExternalLink className="w-4 h-4" /> Send on WhatsApp
               </a>
+              <button onClick={sendGallaboxTemplate} disabled={sendingTemplate}
+                className="flex items-center justify-center gap-2 h-10 px-5 rounded-xl text-sm font-bold text-white disabled:opacity-50 transition-opacity"
+                style={{ backgroundColor: '#128C7E' }}>
+                <Send className={`w-4 h-4 ${sendingTemplate ? 'animate-pulse' : ''}`} />
+                {sendingTemplate ? 'Sending…' : 'Send Itinerary Template'}
+              </button>
               <button onClick={() => router.push(`/admin/quotes/${createdQuote.id}`)}
                 className="flex items-center justify-center gap-2 h-10 px-5 rounded-xl text-sm font-bold text-white"
                 style={{ backgroundColor: T }}>

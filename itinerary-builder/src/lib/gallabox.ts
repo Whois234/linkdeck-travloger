@@ -6,7 +6,8 @@
 
 import { prisma } from '@/lib/prisma';
 
-const BASE_URL = 'https://api.gallabox.com/dev';
+const BASE_URL      = 'https://server.gallabox.com/devapi';
+const MESSAGES_PATH = '/messages/whatsapp'; // confirmed from Gallabox n8n/Postman docs
 
 interface GallaboxCreds {
   apiKey:    string;
@@ -137,44 +138,44 @@ export async function sendWhatsAppTemplate(
 
   const digits = normalisePhone(phone);
 
-  const payload = {
-    channelId:   creds.channelId,
-    channelType: 'whatsapp',
-    contact: {
-      phone:       digits,
-      name:        contactName || 'Customer',
-      countryCode: digits.startsWith('91') ? '+91' : undefined,
+  const payload: Record<string, unknown> = {
+    channelId:    creds.channelId,
+    channelType:  'whatsapp',
+    recipient: {
+      phone: digits,
+      name:  contactName || 'Customer',
     },
     whatsapp: {
       type: 'template',
       template: {
         templateName,
-        ...(variables.length    > 0 ? { bodyValues:   variables    } : {}),
-        ...(buttonValues.length > 0 ? { buttonValues: buttonValues } : {}),
+        ...(variables.length    > 0 ? { bodyValues:   variables.map((v, i) => ({ index: i, type: 'text', text: v })) } : {}),
+        ...(buttonValues.length > 0 ? { buttonValues: buttonValues.map((v, i) => ({
+          index: i, type: 'button', sub_type: 'url',
+          parameters: { type: 'text', text: v },
+        })) } : {}),
       },
     },
   };
 
   try {
-    const res = await fetch(`${BASE_URL}/messages`, {
+    const res = await fetch(`${BASE_URL}${MESSAGES_PATH}`, {
       method:  'POST',
       headers: makeHeaders(creds),
       body:    JSON.stringify(payload),
     });
 
     if (!res.ok) {
-      let errMsg = `Gallabox API error (${res.status})`;
-      if (res.status === 401) errMsg = 'Gallabox unauthorised (401) — check apikey and apisecret in CRM Settings';
-      if (res.status === 404) errMsg = 'Gallabox channel not found (404) — check Channel ID in CRM Settings';
+      // Always read the full body to surface Gallabox's real error message
+      let rawBody = '';
+      try { rawBody = await res.text(); } catch { /* ignore */ }
+      let errMsg = `Gallabox error (${res.status}): ${rawBody.slice(0, 300)}`;
       try {
-        const ct = res.headers.get('content-type') ?? '';
-        if (ct.includes('application/json')) {
-          const d = await res.json() as Record<string, unknown>;
-          const apiMsg = (d.message ?? d.error ?? '') as string;
-          if (apiMsg) errMsg = apiMsg;
-        }
-      } catch { /* ignore parse failure on error body */ }
-      console.error('[gallabox/send-template] API error:', errMsg);
+        const d = JSON.parse(rawBody) as Record<string, unknown>;
+        const apiMsg = (d.message ?? d.error ?? d.msg ?? '') as string;
+        if (apiMsg) errMsg = `Gallabox (${res.status}): ${apiMsg}`;
+      } catch { /* raw text is fine */ }
+      console.error('[gallabox/send-template] API error:', errMsg, '| payload:', JSON.stringify(payload));
       return { ok: false, error: errMsg };
     }
 
@@ -206,9 +207,9 @@ export async function sendWhatsAppText(
   const payload = {
     channelId:   creds.channelId,
     channelType: 'whatsapp',
-    contact: {
-      phone:  digits,
-      name:   contactName || 'Customer',
+    recipient: {
+      phone: digits,
+      name:  contactName || 'Customer',
     },
     whatsapp: {
       type: 'text',
@@ -217,7 +218,7 @@ export async function sendWhatsAppText(
   };
 
   try {
-    const res = await fetch(`${BASE_URL}/messages`, {
+    const res = await fetch(`${BASE_URL}${MESSAGES_PATH}`, {
       method:  'POST',
       headers: makeHeaders(creds),
       body:    JSON.stringify(payload),

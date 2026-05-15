@@ -580,8 +580,8 @@ function QuoteDiscountCard({ quote, onUpdated }: { quote: Quote; onUpdated: () =
         }),
       });
       if (res.ok) {
-        // Republish so customer page reflects it
-        await fetch(`/api/v1/quotes/${quote.id}/publish`, { method: 'POST' }).catch(() => {});
+        // Refresh snapshot so customer page reflects the discount
+        fetch(`/api/v1/quotes/${quote.id}/snapshot`, { method: 'POST' }).catch(() => {});
         setMsg({ ok: true, text: 'Discount applied & itinerary republished.' });
         setEditing(false);
         onUpdated();
@@ -714,7 +714,8 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
     if (!quote || republishing) return;
     setRepublishing(true); setRepublishMsg(null);
     try {
-      const res = await fetch(`/api/v1/quotes/${id}/publish`, { method: 'POST' });
+      // Use snapshot endpoint directly — publish already sets status, snapshot regenerates the JSON
+      const res = await fetch(`/api/v1/quotes/${id}/snapshot`, { method: 'POST' });
       const data = await res.json();
       if (res.ok) { setRepublishMsg({ ok: true, text: 'Snapshot refreshed — customer link is now up to date.' }); load(); }
       else setRepublishMsg({ ok: false, text: data.error ?? 'Re-publish failed.' });
