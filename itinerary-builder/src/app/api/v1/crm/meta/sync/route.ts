@@ -178,6 +178,6 @@ export async function POST(req: NextRequest) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error('[META SYNC] UNHANDLED ERROR:', msg);
     // Always return JSON — never let Next.js return an HTML error page
-    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+    return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
 }

@@ -1453,15 +1453,15 @@ function MetaAdsTab() {
     setSyncing(true); setSyncResult(null);
     try {
       const res = await fetch('/api/v1/crm/meta/sync', { method: 'POST' });
-      let d: { ok?: boolean; data?: { synced?: number }; error?: string } = {};
+      let d: { success?: boolean; ok?: boolean; data?: { synced?: number }; error?: string } = {};
       try {
         d = await res.json();
       } catch {
-        // Response was not JSON (HTML error page etc.) — show HTTP status
         setSyncResult({ error: `Server error ${res.status}: route crashed. Check Vercel logs for [META SYNC] entries.` });
         return;
       }
-      if (d.ok) { setSyncResult({ synced: d.data?.synced ?? 0 }); await loadAds(); }
+      // api-response helpers use { success, data } — also accept { ok } for safety
+      if (d.success || d.ok) { setSyncResult({ synced: d.data?.synced ?? 0 }); await loadAds(); }
       else setSyncResult({ error: d.error ?? `HTTP ${res.status}: Sync failed` });
     } catch (e) { setSyncResult({ error: String(e) }); }
     finally { setSyncing(false); }
