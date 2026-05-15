@@ -50,10 +50,18 @@ const CalculateSchema = z.object({
   options: z.array(QuoteOptionSchema).min(1).max(3),
 });
 
+export const dynamic     = 'force-dynamic';
+export const maxDuration = 60;
+
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+  const t0 = Date.now();
+  console.log('[CALC] Start', t0);
+
   const user = await getAuthUser(req);
   if (!user) return unauthorized();
   if (!requireRole(user, UserRole.ADMIN, UserRole.SALES, UserRole.MANAGER)) return forbidden();
+
+  console.log('[CALC] Auth', Date.now() - t0, 'ms');
 
   const quote = await prisma.quote.findUnique({ where: { id: params.id } });
   if (!quote) return notFound('Quote');
@@ -72,6 +80,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (hasManualOverride && parsed.data.options.some((o) => o.hotels.some((h) => h.manual_cost_override != null && !h.override_reason))) {
     return err('override_reason is required when using manual_cost_override', 400);
   }
+
+  console.log('[CALC] Validated + quote fetched', Date.now() - t0, 'ms');
 
   try {
     // Process all options in parallel for speed
@@ -125,61 +135,68 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       results[1].is_most_popular = true;
     }
 
+    console.log('[CALC] Pricing computed', Date.now() - t0, 'ms');
+
     // Persist options + hotel selections.
     // NOTE: We intentionally avoid prisma.$transaction(async tx=>{...}) here because
     // Supabase uses PgBouncer in transaction-pooling mode which does not support
-    // Prisma interactive (callback-based) transactions. Instead we delete + re-create
-    // sequentially — the operation is idempotent so partial failures are safe to retry.
+    // Prisma interactive (callback-based) transactions. Instead we delete + re-create.
     await prisma.quoteOption.deleteMany({ where: { quote_id: params.id } });
 
-    for (const result of results) {
-        const qo = await prisma.quoteOption.create({
+    console.log('[CALC] Old options deleted', Date.now() - t0, 'ms');
+
+    // Create all options in parallel, then create all their hotels in parallel
+    await Promise.all(results.map(async (result) => {
+      const qo = await prisma.quoteOption.create({
+        data: {
+          quote_id: params.id,
+          option_name: result.option_name,
+          display_order: result.display_order,
+          is_most_popular: result.is_most_popular,
+          vehicle_type_id: result.vehicle_type_id,
+          vehicle_cost: result.pricing.vehicle_cost,
+          hotel_cost: result.pricing.hotel_cost,
+          activity_cost: result.pricing.activity_cost,
+          transfer_cost: result.pricing.transfer_cost,
+          misc_cost: result.pricing.misc_cost,
+          base_cost: result.pricing.base_cost,
+          profit_type: result.pricing.profit_type,
+          profit_value: result.pricing.profit_value,
+          profit_amount: result.pricing.profit_amount,
+          discount_amount: result.pricing.discount_amount,
+          selling_before_gst: result.pricing.selling_before_gst,
+          gst_percent: result.pricing.gst_percent,
+          gst_amount: result.pricing.gst_amount,
+          final_price: result.pricing.final_price,
+          price_per_adult_display: result.pricing.price_per_adult_display,
+          rounding_adjustment: result.pricing.rounding_adjustment,
+        },
+      });
+
+      const inputOption = parsed.data.options.find((o) => o.option_name === result.option_name)!;
+      // Create all hotels for this option in parallel
+      await Promise.all(inputOption.hotels.map(async (h) => {
+        const hb = result.hotel_breakdowns.find((b: any) => b.hotel_id === h.hotel_id && b.destination_id === h.destination_id);
+        await prisma.quoteOptionHotel.create({
           data: {
-            quote_id: params.id,
-            option_name: result.option_name,
-            display_order: result.display_order,
-            is_most_popular: result.is_most_popular,
-            vehicle_type_id: result.vehicle_type_id,
-            vehicle_cost: result.pricing.vehicle_cost,
-            hotel_cost: result.pricing.hotel_cost,
-            activity_cost: result.pricing.activity_cost,
-            transfer_cost: result.pricing.transfer_cost,
-            misc_cost: result.pricing.misc_cost,
-            base_cost: result.pricing.base_cost,
-            profit_type: result.pricing.profit_type,
-            profit_value: result.pricing.profit_value,
-            profit_amount: result.pricing.profit_amount,
-            discount_amount: result.pricing.discount_amount,
-            selling_before_gst: result.pricing.selling_before_gst,
-            gst_percent: result.pricing.gst_percent,
-            gst_amount: result.pricing.gst_amount,
-            final_price: result.pricing.final_price,
-            price_per_adult_display: result.pricing.price_per_adult_display,
-            rounding_adjustment: result.pricing.rounding_adjustment,
+            quote_option_id: qo.id,
+            destination_id: h.destination_id,
+            hotel_id: h.hotel_id,
+            room_category_id: h.room_category_id,
+            meal_plan_id: h.meal_plan_id,
+            check_in_date: new Date(h.check_in_date),
+            check_out_date: new Date(h.check_out_date),
+            nights: Math.round((new Date(h.check_out_date).getTime() - new Date(h.check_in_date).getTime()) / (1000 * 60 * 60 * 24)),
+            rooming_json: h.rooming_json,
+            calculated_cost: hb?.calculated_cost ?? 0,
+            manual_cost_override: h.manual_cost_override,
+            override_reason: h.override_reason,
           },
         });
+      }));
+    }));
 
-        const inputOption = parsed.data.options.find((o) => o.option_name === result.option_name)!;
-        for (const h of inputOption.hotels) {
-          const hb = result.hotel_breakdowns.find((b: any) => b.hotel_id === h.hotel_id && b.destination_id === h.destination_id);
-          await prisma.quoteOptionHotel.create({
-            data: {
-              quote_option_id: qo.id,
-              destination_id: h.destination_id,
-              hotel_id: h.hotel_id,
-              room_category_id: h.room_category_id,
-              meal_plan_id: h.meal_plan_id,
-              check_in_date: new Date(h.check_in_date),
-              check_out_date: new Date(h.check_out_date),
-              nights: Math.round((new Date(h.check_out_date).getTime() - new Date(h.check_in_date).getTime()) / (1000 * 60 * 60 * 24)),
-              rooming_json: h.rooming_json,
-              calculated_cost: hb?.calculated_cost ?? 0,
-              manual_cost_override: h.manual_cost_override,
-              override_reason: h.override_reason,
-            },
-          });
-        }
-    }
+    console.log('[CALC] All DB writes done', Date.now() - t0, 'ms');
 
     return ok(results);
   } catch (e: unknown) {

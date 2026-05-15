@@ -4,6 +4,9 @@ import { getAuthUser, requireRole } from '@/lib/auth';
 import { ok, err, unauthorized, forbidden, notFound } from '@/lib/api-response';
 import { UserRole, QuoteStatus } from '@prisma/client';
 
+export const dynamic     = 'force-dynamic';
+export const maxDuration = 60;
+
 /**
  * POST /api/v1/quotes/:id/publish
  *

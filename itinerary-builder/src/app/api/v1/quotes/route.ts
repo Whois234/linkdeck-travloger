@@ -8,6 +8,9 @@ import { UserRole, QuoteType, QuoteStatus } from '@prisma/client';
 import { generateQuoteNumber } from '@/lib/generate-quote-number';
 import { sendWhatsAppTemplate, normalisePhone } from '@/lib/gallabox';
 
+export const dynamic    = 'force-dynamic';
+export const maxDuration = 60;
+
 const QuoteSchema = z.object({
   quote_name: z.string().optional().nullable(),
   quote_type: z.nativeEnum(QuoteType),
@@ -97,18 +100,27 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const t0 = Date.now();
+  console.log('[QUOTE] Start', t0);
+
   const user = await getAuthUser(req);
   if (!user) return unauthorized();
   if (!requireRole(user, UserRole.ADMIN, UserRole.SALES, UserRole.MANAGER)) return forbidden();
+
+  console.log('[QUOTE] Auth', Date.now() - t0, 'ms');
 
   const rawBody = await req.json(); const body = cleanBody(rawBody);
   const parsed = QuoteSchema.safeParse(body);
   if (!parsed.success) return err('Validation failed', 400, parsed.error.flatten());
 
+  console.log('[QUOTE] Validated', Date.now() - t0, 'ms');
+
   // state_ids: use provided array or fall back to [state_id]
   const state_ids = parsed.data.state_ids?.length ? parsed.data.state_ids : [parsed.data.state_id];
   const primaryStateId = state_ids[0];
   const quote_number = await generateQuoteNumber(primaryStateId);
+
+  console.log('[QUOTE] Quote number generated', Date.now() - t0, 'ms');
 
   const { state_ids: _si, ...quoteData } = parsed.data;
   const quote = await prisma.quote.create({
@@ -125,210 +137,205 @@ export async function POST(req: NextRequest) {
     } as Parameters<typeof prisma.quote.create>[0]['data'],
   });
 
-  // Create quote_created event
-  await prisma.quoteEvent.create({
-    data: { quote_id: quote.id, event_type: 'quote_created', metadata: { created_by: user.sub } },
-  });
+  console.log('[QUOTE] DB saved', Date.now() - t0, 'ms');
 
-  // ── Auto-send WhatsApp notification to customer ───────────────────────────
-  // Fire-and-forget: never block the quote creation response
+  // ── Fire-and-forget: everything after this runs in background ──────────────
+  // Return the quote to the client immediately — do NOT await any of the below.
+
   void (async () => {
+    const bg0 = Date.now();
     try {
-      const customer = await prisma.customer.findUnique({
-        where: { id: quote.customer_id },
-        select: { name: true, phone: true },
+      // 1. Quote created event
+      await prisma.quoteEvent.create({
+        data: { quote_id: quote.id, event_type: 'quote_created', metadata: { created_by: user.sub } },
       });
-      if (customer?.phone) {
-        const phone = normalisePhone(customer.phone);
-        // Uses the "quote_preparation" template (or whichever is approved in your Gallabox account).
-        // Variables: {{1}} = customer name, {{2}} = quote number
-        // Change GALLABOX_QUOTE_TEMPLATE env var to match your actual approved template name.
-        const templateName = process.env.GALLABOX_QUOTE_TEMPLATE ?? 'quote_preparation';
-        const result = await sendWhatsAppTemplate(
-          phone,
-          templateName,
-          [customer.name, quote.quote_number],
-          customer.name,
-        );
+      console.log('[QUOTE BG] quoteEvent.create', Date.now() - bg0, 'ms');
+    } catch (e) { console.error('[QUOTE BG] quoteEvent.create failed:', e); }
 
-        // Save to GallaboxMessage log
-        const ist = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000);
-        await prisma.gallaboxMessage.create({
-          data: {
-            gallabox_id:   result.messageId,
-            contact_phone: phone,
-            contact_name:  customer.name,
-            direction:     'outgoing',
-            message_type:  'template',
-            content:       `[Template: ${templateName}] ${customer.name} | ${quote.quote_number}`,
-            status:        result.ok ? 'sent' : 'failed',
-            failure_reason: result.ok ? null : (result.error ?? null),
-            event_type:    'Message.Send.Template',
-            raw_payload:   { templateName, quoteId: quote.id, quoteNumber: quote.quote_number },
-            created_at:    ist,
-            updated_at:    ist,
-          },
-        }).catch(e => console.error('[quotes/POST] WhatsApp log failed:', e));
+    // 2. Auto-send WhatsApp notification to customer
+    void (async () => {
+      try {
+        const customer = await prisma.customer.findUnique({
+          where: { id: quote.customer_id },
+          select: { name: true, phone: true },
+        });
+        if (customer?.phone) {
+          const phone = normalisePhone(customer.phone);
+          const templateName = process.env.GALLABOX_QUOTE_TEMPLATE ?? 'quote_preparation';
+          const result = await sendWhatsAppTemplate(
+            phone,
+            templateName,
+            [customer.name, quote.quote_number],
+            customer.name,
+          );
 
-        if (!result.ok) {
-          console.warn('[quotes/POST] WhatsApp auto-send failed:', result.error);
-        } else {
-          console.log('[quotes/POST] WhatsApp sent for quote', quote.quote_number, '→ messageId:', result.messageId);
-        }
-      }
-    } catch (e) {
-      console.error('[quotes/POST] WhatsApp auto-send error:', e);
-    }
-  })();
-
-  // ── Auto-link to pipeline lead ────────────────────────────────────────────
-  // If lead_id was provided, just log the activity.
-  // If not, find or create a pipeline lead for this customer automatically.
-  let finalLeadId = quote.lead_id;
-
-  if (finalLeadId) {
-    await prisma.leadActivity.create({
-      data: { lead_id: finalLeadId, type: 'quote_created', metadata: { quote_id: quote.id, quote_number: quote.quote_number }, created_by: user.sub },
-    }).catch(() => {});
-  } else {
-    // Auto-link: find or create a pipeline lead for this customer.
-    // Each step has its own error handling so a failure in one step doesn't
-    // silently kill the entire chain.
-    const customer = await prisma.customer.findUnique({ where: { id: quote.customer_id } }).catch(() => null);
-
-    if (customer?.phone) {
-      const rawPhone = customer.phone;
-      const normalizedPhone = rawPhone.replace(/[\s\-\(\)]/g, '');
-
-      // 1. Find existing CrmContact by phone (try both forms)
-      let contact = await prisma.crmContact.findFirst({
-        where: { OR: [{ phone: normalizedPhone }, { phone: rawPhone }] },
-      }).catch(() => null);
-
-      // 2. Find existing active (non-converted) lead for this contact
-      let lead = contact
-        ? await prisma.lead.findFirst({
-            where: { crm_contact_id: contact.id, is_converted: false },
-            orderBy: { created_at: 'desc' },
-          }).catch(() => null)
-        : null;
-
-      // 3. Create CrmContact if missing
-      let contactWasNew = false;
-      if (!contact) {
-        try {
-          contact = await prisma.crmContact.create({
+          const ist = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000);
+          await prisma.gallaboxMessage.create({
             data: {
-              name:          customer.name,
-              phone:         normalizedPhone,
-              owner_id:      user.sub,
-              assigned_to_id: user.sub,   // auto-assign to quote creator
+              gallabox_id:   result.messageId,
+              contact_phone: phone,
+              contact_name:  customer.name,
+              direction:     'outgoing',
+              message_type:  'template',
+              content:       `[Template: ${templateName}] ${customer.name} | ${quote.quote_number}`,
+              status:        result.ok ? 'sent' : 'failed',
+              failure_reason: result.ok ? null : (result.error ?? null),
+              event_type:    'Message.Send.Template',
+              raw_payload:   { templateName, quoteId: quote.id, quoteNumber: quote.quote_number },
+              created_at:    ist,
+              updated_at:    ist,
             },
-          });
-          contactWasNew = true;
-        } catch (e) {
-          // Might already exist due to race — try to fetch again
-          contact = await prisma.crmContact.findFirst({
-            where: { OR: [{ phone: normalizedPhone }, { phone: rawPhone }] },
-          }).catch(() => null);
-          if (!contact) console.error('[quotes/POST] crmContact.create failed:', e);
+          }).catch(e => console.error('[QUOTE BG] WhatsApp log failed:', e));
+
+          if (!result.ok) {
+            console.warn('[QUOTE BG] WhatsApp auto-send failed:', result.error);
+          } else {
+            console.log('[QUOTE BG] WhatsApp sent for quote', quote.quote_number, '→ messageId:', result.messageId);
+          }
         }
+      } catch (e) {
+        console.error('[QUOTE BG] WhatsApp auto-send error:', e);
       }
+    })();
 
-      // Log LEAD_CREATED activity if we just created this contact
-      if (contact && contactWasNew) {
-        prisma.contactActivity.create({
-          data: {
-            contact_id:      contact.id,
-            type:            'LEAD_CREATED',
-            description:     `Contact created from quote`,
-            metadata:        { source: 'quote', quote_number: quote.quote_number },
-            performed_by_id: user.sub,
-          },
-        }).catch(e => console.error('[quotes/POST] contactActivity(LEAD_CREATED) failed:', e));
-      }
+    // 3. Auto-link to pipeline lead
+    void (async () => {
+      try {
+        if (parsed.data.lead_id) {
+          await prisma.leadActivity.create({
+            data: { lead_id: parsed.data.lead_id, type: 'quote_created', metadata: { quote_id: quote.id, quote_number: quote.quote_number }, created_by: user.sub },
+          }).catch(() => {});
+          return;
+        }
 
-      // 4. Create pipeline Lead if missing
-      let leadWasNew = false;
-      if (!lead && contact) {
-        try {
-          // Look for ANY pipeline (prefer default, fall back to first active)
-          let defaultPipeline = await prisma.pipeline.findFirst({
-            where: { is_default: true, status: true },
-          }).catch(() => null);
-          if (!defaultPipeline) {
-            defaultPipeline = await prisma.pipeline.findFirst({
-              where: { status: true },
-              orderBy: { created_at: 'asc' },
+        const customer = await prisma.customer.findUnique({ where: { id: quote.customer_id } }).catch(() => null);
+        if (!customer?.phone) return;
+
+        const rawPhone = customer.phone;
+        const normalizedPhone = rawPhone.replace(/[\s\-\(\)]/g, '');
+
+        // Find or create CrmContact
+        let contact = await prisma.crmContact.findFirst({
+          where: { OR: [{ phone: normalizedPhone }, { phone: rawPhone }] },
+        }).catch(() => null);
+
+        let contactWasNew = false;
+        if (!contact) {
+          try {
+            contact = await prisma.crmContact.create({
+              data: {
+                name:           customer.name,
+                phone:          normalizedPhone,
+                owner_id:       user.sub,
+                assigned_to_id: user.sub,
+              },
+            });
+            contactWasNew = true;
+          } catch {
+            contact = await prisma.crmContact.findFirst({
+              where: { OR: [{ phone: normalizedPhone }, { phone: rawPhone }] },
             }).catch(() => null);
           }
+        }
 
-          const firstStage = defaultPipeline
-            ? await prisma.pipelineStage.findFirst({
-                where: { pipeline_id: defaultPipeline.id, status: true },
-                orderBy: { order: 'asc' },
-              }).catch(() => null)
-            : null;
-
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          lead = await prisma.lead.create({
+        if (contact && contactWasNew) {
+          prisma.contactActivity.create({
             data: {
-              name:           customer.name,
-              phone:          normalizedPhone,
-              crm_contact_id: contact.id,
-              pipeline_id:    defaultPipeline?.id ?? null,
-              stage_id:       firstStage?.id ?? null,
-              owner_id:       user.sub,
-            } as any,
-          });
-          leadWasNew = true;
-        } catch (e) {
-          console.error('[quotes/POST] lead.create failed:', e);
+              contact_id:      contact.id,
+              type:            'LEAD_CREATED',
+              description:     `Contact created from quote`,
+              metadata:        { source: 'quote', quote_number: quote.quote_number },
+              performed_by_id: user.sub,
+            },
+          }).catch(e => console.error('[QUOTE BG] contactActivity(LEAD_CREATED) failed:', e));
         }
-      }
 
-      // Log pipeline lead creation activity on the contact
-      if (contact && lead && leadWasNew) {
-        prisma.contactActivity.create({
-          data: {
-            contact_id:      contact.id,
-            type:            'LEAD_CREATED',
-            description:     `Pipeline lead created`,
-            metadata:        { lead_id: lead.id },
-            performed_by_id: user.sub,
-          },
-        }).catch(e => console.error('[quotes/POST] contactActivity(pipeline LEAD_CREATED) failed:', e));
-      }
+        // Find or create pipeline lead
+        let lead = contact
+          ? await prisma.lead.findFirst({
+              where: { crm_contact_id: contact.id, is_converted: false },
+              orderBy: { created_at: 'desc' },
+            }).catch(() => null)
+          : null;
 
-      // 5. Link quote → lead
-      if (lead) {
-        try {
-          await prisma.quote.update({ where: { id: quote.id }, data: { lead_id: lead.id } });
-          finalLeadId = lead.id;
-        } catch (e) {
-          console.error('[quotes/POST] quote.update(lead_id) failed:', e);
+        let leadWasNew = false;
+        if (!lead && contact) {
+          try {
+            let defaultPipeline = await prisma.pipeline.findFirst({
+              where: { is_default: true, status: true },
+            }).catch(() => null);
+            if (!defaultPipeline) {
+              defaultPipeline = await prisma.pipeline.findFirst({
+                where: { status: true },
+                orderBy: { created_at: 'asc' },
+              }).catch(() => null);
+            }
+
+            const firstStage = defaultPipeline
+              ? await prisma.pipelineStage.findFirst({
+                  where: { pipeline_id: defaultPipeline.id, status: true },
+                  orderBy: { order: 'asc' },
+                }).catch(() => null)
+              : null;
+
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            lead = await prisma.lead.create({
+              data: {
+                name:           customer.name,
+                phone:          normalizedPhone,
+                crm_contact_id: contact.id,
+                pipeline_id:    defaultPipeline?.id ?? null,
+                stage_id:       firstStage?.id ?? null,
+                owner_id:       user.sub,
+              } as any,
+            });
+            leadWasNew = true;
+          } catch (e) {
+            console.error('[QUOTE BG] lead.create failed:', e);
+          }
         }
+
+        if (contact && lead && leadWasNew) {
+          prisma.contactActivity.create({
+            data: {
+              contact_id:      contact.id,
+              type:            'LEAD_CREATED',
+              description:     `Pipeline lead created`,
+              metadata:        { lead_id: lead.id },
+              performed_by_id: user.sub,
+            },
+          }).catch(e => console.error('[QUOTE BG] contactActivity(pipeline) failed:', e));
+        }
+
+        if (lead) {
+          await prisma.quote.update({ where: { id: quote.id }, data: { lead_id: lead.id } })
+            .catch(e => console.error('[QUOTE BG] quote.update(lead_id) failed:', e));
+        }
+
+        if (contact && lead) {
+          prisma.contactActivity.create({
+            data: {
+              contact_id:      contact.id,
+              type:            'FIELD_UPDATE',
+              description:     `Quote ${quote.quote_number} created`,
+              metadata:        { quote_id: quote.id, quote_number: quote.quote_number, quote_type: quote.quote_type },
+              performed_by_id: user.sub,
+            },
+          }).catch(e => console.error('[QUOTE BG] contactActivity(FIELD_UPDATE) failed:', e));
+
+          prisma.leadActivity.create({
+            data: { lead_id: lead.id, type: 'quote_created', metadata: { quote_id: quote.id, quote_number: quote.quote_number }, created_by: user.sub },
+          }).catch(e => console.error('[QUOTE BG] leadActivity.create failed:', e));
+        }
+
+        console.log('[QUOTE BG] pipeline auto-link done in', Date.now() - bg0, 'ms');
+      } catch (e) {
+        console.error('[QUOTE BG] pipeline auto-link error:', e);
       }
+    })();
+  })();
 
-      // 6. Log quote-linked activity on contact (non-critical)
-      if (contact && lead) {
-        prisma.contactActivity.create({
-          data: {
-            contact_id:      contact.id,
-            type:            'FIELD_UPDATE',
-            description:     `Quote ${quote.quote_number} created`,
-            metadata:        { quote_id: quote.id, quote_number: quote.quote_number, quote_type: quote.quote_type },
-            performed_by_id: user.sub,
-          },
-        }).catch(e => console.error('[quotes/POST] contactActivity(FIELD_UPDATE) failed:', e));
+  console.log('[QUOTE] All done (returning to client)', Date.now() - t0, 'ms');
 
-        // Also log on the lead
-        prisma.leadActivity.create({
-          data: { lead_id: lead.id, type: 'quote_created', metadata: { quote_id: quote.id, quote_number: quote.quote_number }, created_by: user.sub },
-        }).catch(e => console.error('[quotes/POST] leadActivity.create failed:', e));
-      }
-    }
-  }
-
-  return created({ ...quote, lead_id: finalLeadId });
+  return created({ ...quote, lead_id: parsed.data.lead_id ?? null });
 }
