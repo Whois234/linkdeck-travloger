@@ -1418,7 +1418,7 @@ function MetaAdsTab() {
     fetch('/api/v1/app-settings')
       .then(r => r.json())
       .then(d => {
-        if (d.ok) {
+        if (d.success || d.ok) {
           setAccessToken(d.data?.meta_access_token  ?? '');
           setAdAccountId(d.data?.meta_ad_account_id ?? '');
         }
@@ -1432,7 +1432,7 @@ function MetaAdsTab() {
     try {
       const res = await fetch('/api/v1/crm/meta/ads');
       const d = await res.json();
-      if (d.ok) setAds(d.data ?? []);
+      if (d.success || d.ok) setAds(d.data ?? []);
     } finally { setLoadingAds(false); }
   }
 
