@@ -268,6 +268,7 @@ async function autoCreateContactFromGallabox(
     }
 
     // Extract prefilled code from first message body (e.g. "Hi I want Kerala trip #K01" → "K01")
+    const waText = (wa.text ?? {}) as Record<string, unknown>;
     const msgBody = (typeof waText.body === 'string' ? waText.body : null) ?? '';
     const prefilledMatch = msgBody.match(/#([A-Z0-9]+)/i);
     const extractedPrefilledCode = prefilledMatch ? prefilledMatch[1].toUpperCase() : (metaMapping?.prefilled_code ?? null);
