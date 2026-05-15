@@ -241,8 +241,8 @@ async function autoCreateContactFromGallabox(
     const ctwaClid     = (referral.ctwa_clid   ?? null) as string | null;
     const refParam     = (referral.ref         ?? null) as string | null;
 
-    // lead_source: 'whatsapp_ad' if came from an ad click, otherwise 'organic'
-    const gallaboxSource = (adId || adSourceType === 'AD') ? 'whatsapp_ad' : 'organic';
+    // lead_source: 'meta_ads' if came from a Meta CTWA ad click, otherwise 'organic'
+    const gallaboxSource = (adId || adSourceType === 'AD') ? 'meta_ads' : 'organic';
 
     // Platform is always WHATSAPP for Gallabox (even for CTWA ads — they come through WhatsApp)
     const adPlatform = 'WHATSAPP';
