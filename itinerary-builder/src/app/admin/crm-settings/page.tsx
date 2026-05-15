@@ -1688,9 +1688,11 @@ function MetaAdsTab() {
                       </td>
                       <td className="py-2 pr-4" style={{ color: '#64748B', maxWidth: 140 }}>
                         <p className="truncate">{ad.ad_set_name ?? '—'}</p>
+                        <p className="text-[10px] truncate" style={{ color: '#94A3B8' }}>{ad.ad_set_id}</p>
                       </td>
                       <td className="py-2 pr-4" style={{ color: '#64748B', maxWidth: 160 }}>
                         <p className="truncate">{ad.ad_name ?? '—'}</p>
+                        <p className="text-[10px] truncate" style={{ color: '#94A3B8' }}>{ad.ad_id}</p>
                       </td>
                       <td className="py-2 pr-3">
                         {isEdit ? (
