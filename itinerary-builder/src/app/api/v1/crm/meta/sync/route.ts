@@ -111,11 +111,11 @@ export async function POST(req: NextRequest) {
     }
 
     // Build lookup maps
-    const campaignMap: Record<string, string> = {};
-    for (const c of campaigns) campaignMap[String(c.id)] = String(c.name ?? '');
+    const campaignMap: Record<string, { name: string; status: string }> = {};
+    for (const c of campaigns) campaignMap[String(c.id)] = { name: String(c.name ?? ''), status: String(c.status ?? '').toUpperCase() };
 
-    const adsetMap: Record<string, { name: string; campaign_id: string }> = {};
-    for (const a of adsets) adsetMap[String(a.id)] = { name: String(a.name ?? ''), campaign_id: String(a.campaign_id ?? '') };
+    const adsetMap: Record<string, { name: string; campaign_id: string; status: string }> = {};
+    for (const a of adsets) adsetMap[String(a.id)] = { name: String(a.name ?? ''), campaign_id: String(a.campaign_id ?? ''), status: String(a.status ?? '').toUpperCase() };
 
     // Batch-fetch ALL existing mappings in ONE query (avoids N×findUnique)
     const adIds = ads.map(a => String(a.id ?? '')).filter(Boolean);
@@ -134,35 +134,43 @@ export async function POST(req: NextRequest) {
       ads.map(async (ad) => {
         const adId = String(ad.id ?? '');
         if (!adId) return;
-        const adsetId      = String(ad.adset_id    ?? '');
-        const campaignId   = String(ad.campaign_id  ?? '');
-        const adsetInfo    = adsetMap[adsetId];
-        const campaignName = campaignMap[campaignId] ?? '';
-        const existing     = existingMap[adId];
+        const adsetId         = String(ad.adset_id    ?? '');
+        const campaignId      = String(ad.campaign_id  ?? '');
+        const adsetInfo       = adsetMap[adsetId];
+        const campaignInfo    = campaignMap[campaignId];
+        const campaignName    = campaignInfo?.name    ?? '';
+        const campaignStatus  = campaignInfo?.status  ?? null;
+        const adSetStatus     = adsetInfo?.status     ?? null;
+        const adStatus        = String(ad.status ?? '').toUpperCase();
+        const existing        = existingMap[adId];
 
         await prisma.metaAdsMapping.upsert({
           where:  { ad_id: adId },
           update: {
-            ad_name:       String(ad.name ?? ''),
-            ad_set_id:     adsetId           || null,
-            ad_set_name:   adsetInfo?.name   || null,
-            campaign_id:   campaignId        || null,
-            campaign_name: campaignName      || null,
-            is_active:     String(ad.status ?? '').toUpperCase() === 'ACTIVE',
-            synced_at:     now,
+            ad_name:         String(ad.name ?? ''),
+            ad_set_id:       adsetId        || null,
+            ad_set_name:     adsetInfo?.name || null,
+            campaign_id:     campaignId     || null,
+            campaign_name:   campaignName   || null,
+            campaign_status: campaignStatus,
+            ad_set_status:   adSetStatus,
+            is_active:       adStatus === 'ACTIVE',
+            synced_at:       now,
           },
           create: {
-            ad_id:          adId,
-            ad_name:        String(ad.name ?? ''),
-            ad_set_id:      adsetId           || null,
-            ad_set_name:    adsetInfo?.name   || null,
-            campaign_id:    campaignId        || null,
-            campaign_name:  campaignName      || null,
-            destination:    existing?.destination    ?? null,
-            trip_type:      existing?.trip_type       ?? null,
-            prefilled_code: existing?.prefilled_code  ?? null,
-            is_active:      String(ad.status ?? '').toUpperCase() === 'ACTIVE',
-            synced_at:      now,
+            ad_id:           adId,
+            ad_name:         String(ad.name ?? ''),
+            ad_set_id:       adsetId        || null,
+            ad_set_name:     adsetInfo?.name || null,
+            campaign_id:     campaignId     || null,
+            campaign_name:   campaignName   || null,
+            campaign_status: campaignStatus,
+            ad_set_status:   adSetStatus,
+            destination:     existing?.destination    ?? null,
+            trip_type:       existing?.trip_type       ?? null,
+            prefilled_code:  existing?.prefilled_code  ?? null,
+            is_active:       adStatus === 'ACTIVE',
+            synced_at:       now,
           },
         });
       })

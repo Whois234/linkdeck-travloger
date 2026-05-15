@@ -1395,6 +1395,7 @@ interface MetaAdRow {
   id: string; ad_id: string; ad_name: string | null;
   ad_set_id: string | null; ad_set_name: string | null;
   campaign_id: string | null; campaign_name: string | null;
+  campaign_status: string | null; ad_set_status: string | null;
   destination: string | null; trip_type: string | null;
   prefilled_code: string | null; is_active: boolean; synced_at: string;
 }
@@ -1718,9 +1719,23 @@ function MetaAdsTab() {
                         ) : <span style={{ color: '#CBD5E1' }}>—</span>}
                       </td>
                       <td className="py-2 pr-3">
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${ad.is_active ? 'text-green-700 bg-green-50' : 'text-gray-400 bg-gray-50'}`}>
-                          {ad.is_active ? 'Active' : 'Paused'}
-                        </span>
+                        <div className="flex flex-col gap-0.5">
+                          {[
+                            { label: 'Campaign', val: ad.campaign_status },
+                            { label: 'Ad Set',   val: ad.ad_set_status },
+                            { label: 'Ad',       val: ad.is_active ? 'ACTIVE' : 'PAUSED' },
+                          ].map(({ label, val }) => {
+                            const active = val === 'ACTIVE';
+                            return (
+                              <div key={label} className="flex items-center gap-1">
+                                <span className="text-[9px] w-12 font-semibold" style={{ color: '#94A3B8' }}>{label}</span>
+                                <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${active ? 'text-green-700 bg-green-50' : 'text-gray-400 bg-gray-100'}`}>
+                                  {active ? 'Active' : (val ?? 'Unknown')}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </td>
                       <td className="py-2">
                         {isEdit ? (
