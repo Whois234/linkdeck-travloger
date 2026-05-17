@@ -13,6 +13,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     include: {
       stage: true,
       pipeline: { select: { id: true, name: true } },
+      assigned_agent: { select: { id: true, name: true } },
       lead_notes: { orderBy: { created_at: 'desc' } },
       call_logs: { orderBy: { created_at: 'desc' } },
       lead_tasks: { orderBy: { due_time: 'asc' } },
@@ -51,19 +52,50 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   if (body.travel_month !== undefined) data.travel_month = body.travel_month;
   if (body.budget_range !== undefined) data.budget_range = body.budget_range;
   if (body.status !== undefined) data.status = body.status;
-  if (body.assigned_agent_id !== undefined) data.assigned_agent_id = body.assigned_agent_id;
-  if (body.owner_id !== undefined) data.owner_id = body.owner_id;
+  if (body.assigned_agent_id !== undefined) {
+    // Never allow clearing assigned_agent_id to null — every lead must stay assigned.
+    // If caller tries to set null, fall back to the existing record value.
+    const safeAgentId = body.assigned_agent_id ?? record.assigned_agent_id ?? record.owner_id;
+    data.assigned_agent_id = safeAgentId;
+    // Keep owner_id in sync so the assignee always sees the lead in their pipeline.
+    if (body.owner_id === undefined && safeAgentId) {
+      data.owner_id = safeAgentId;
+    }
+  }
+  if (body.owner_id !== undefined) {
+    // Never allow clearing owner_id to null — fall back to assigned_agent_id.
+    data.owner_id = body.owner_id ?? record.assigned_agent_id ?? record.owner_id;
+  }
   if (body.notes !== undefined) data.notes = body.notes;
   if (body.pipeline_id !== undefined) data.pipeline_id = body.pipeline_id;
   if (body.stage_id !== undefined) data.stage_id = body.stage_id;
 
   if (Object.keys(data).length === 0) return err('No valid fields to update', 400);
 
+  const agentChanging = body.assigned_agent_id !== undefined && body.assigned_agent_id !== record.assigned_agent_id;
+
   const updated = await prisma.lead.update({
     where: { id: params.id },
     data,
-    include: { stage: true, pipeline: { select: { id: true, name: true } } },
+    include: { stage: true, pipeline: { select: { id: true, name: true } }, assigned_agent: { select: { id: true, name: true } } },
   });
+
+  // Log assignment activity when agent changes
+  if (agentChanging) {
+    const agentName = body.assigned_agent_id
+      ? ((updated.assigned_agent as { name?: string } | null)?.name ?? body.assigned_agent_id)
+      : null;
+    const byUser = await prisma.user.findUnique({ where: { id: user.sub }, select: { name: true } }).catch(() => null);
+    await prisma.leadActivity.create({
+      data: {
+        lead_id:    params.id,
+        type:       'assigned',
+        metadata:   { agent_id: body.assigned_agent_id ?? '', agent_name: agentName ?? '', by_name: byUser?.name ?? '' },
+        created_by: user.sub,
+      },
+    }).catch(() => {});
+  }
+
   return ok(updated);
 }
 

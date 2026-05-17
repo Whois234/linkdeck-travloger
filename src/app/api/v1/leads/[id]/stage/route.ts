@@ -3,6 +3,11 @@ import { prisma } from '@/lib/prisma';
 import { getAuthUser } from '@/lib/auth';
 import { ok, err, unauthorized } from '@/lib/api-response';
 import { z } from 'zod';
+import { sendNotificationToUserWithRules } from '@/lib/firebase/admin';
+import { waitUntil } from '@vercel/functions';
+
+export const dynamic    = 'force-dynamic';
+export const maxDuration = 10;
 
 const schema = z.object({ stage_id: z.string(), pipeline_id: z.string().optional() });
 
@@ -95,6 +100,25 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       created_by: user.sub,
     },
   });
+
+  // Push notification via waitUntil — response returns instantly, Vercel
+  // keeps the lambda alive in the background to complete the push work.
+  const notifRecipient = lead.assigned_agent_id ?? lead.owner_id ?? user.sub;
+  const _notifStart_stage = Date.now();
+  console.log('[NOTIFICATION TIMING] start', new Date().toISOString(), '| eventType: stage_changed | userId:', notifRecipient);
+  waitUntil(
+    sendNotificationToUserWithRules(
+      notifRecipient,
+      'stage_changed',
+      `Stage changed: ${stage.name}`,
+      `${lead.name ?? 'Lead'}: ${prevStage?.name ?? '—'} → ${stage.name}`,
+      { url: '/admin/pipelines' },
+    ).then(() => {
+      console.log('[NOTIFICATION TIMING] end', new Date().toISOString(), '| duration:', Date.now() - _notifStart_stage, 'ms | eventType: stage_changed');
+    }).catch((e) => {
+      console.error('[NOTIFICATION TIMING] error', new Date().toISOString(), '| eventType: stage_changed | err:', e);
+    })
+  );
 
   return ok(lead);
 }

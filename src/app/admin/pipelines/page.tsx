@@ -4,10 +4,10 @@ import dynamic from 'next/dynamic';
 import { useQueryClient } from '@tanstack/react-query';
 import { usePipelines, usePipeline, useUsers, useLeadStageMutation, usePrefetchLead, QK } from '@/lib/query-hooks';
 import {
-  Plus, Search, Phone, ChevronDown, X, Filter, ArrowUpDown, Trash2,
+  Plus, Search, Phone, ChevronDown, X, Trash2,
   MoveRight, CheckSquare, Square, Calendar, Users, MapPin, Wallet,
   MessageCircle, SlidersHorizontal, Star, Clock, FileText, PhoneCall,
-  CheckCircle2, Eye, ArrowRightLeft, UserCheck,
+  CheckCircle2, Eye, ArrowRightLeft, UserCheck, ArrowLeft, ArrowRight,
 } from 'lucide-react';
 import Link from 'next/link';
 import { Stage, Lead, Pipeline, STATUS_COLORS, formatDateTime } from './types';
@@ -101,6 +101,7 @@ function MoveToSheet({ lead, stages, stageCounts, onMove, onClose }: {
 const LeadCard = memo(function LeadCard({
   lead, stageColor, onDragStart, onClick, selected, onToggleSelect, onPrefetch,
   onLongPress, onMoveTap, onCall, onWhatsAppChat, isDragging,
+  onSwipeStage, prevStageName, prevStageColor, nextStageName, nextStageColor,
 }: {
   lead: Lead; stageColor: string;
   onDragStart: (e: React.DragEvent, leadId: string) => void;
@@ -113,6 +114,11 @@ const LeadCard = memo(function LeadCard({
   onCall: (lead: Lead) => void;
   onWhatsAppChat: (lead: Lead) => void;
   isDragging: boolean;
+  onSwipeStage: (lead: Lead, dir: 'prev' | 'next') => void;
+  prevStageName: string | null;
+  prevStageColor: string | null;
+  nextStageName: string | null;
+  nextStageColor: string | null;
 }) {
   const callCount  = lead._count?.call_logs ?? 0;
   const noteCount  = lead._count?.lead_notes ?? 0;
@@ -122,42 +128,182 @@ const LeadCard = memo(function LeadCard({
   const quoteApproved = topQuote?.status === 'APPROVED' || topQuote?.status === 'ACCEPTED';
 
   const cardRef        = useRef<HTMLDivElement>(null);
-  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didLongPress   = useRef(false);
-  const touchMoved     = useRef(false);
-  const startTouchRef  = useRef<{ x: number; y: number } | null>(null);
+  // Stable refs for callbacks (avoid stale closures in DOM event handlers)
+  const onSwipeStageRef = useRef(onSwipeStage);
+  useEffect(() => { onSwipeStageRef.current = onSwipeStage; }, [onSwipeStage]);
+  const leadRef = useRef(lead);
+  useEffect(() => { leadRef.current = lead; }, [lead]);
+  const onLongPressRef = useRef(onLongPress);
+  useEffect(() => { onLongPressRef.current = onLongPress; }, [onLongPress]);
 
-  function onTouchStart(e: React.TouchEvent) {
-    const t = e.touches[0];
-    startTouchRef.current = { x: t.clientX, y: t.clientY };
-    touchMoved.current   = false;
-    didLongPress.current = false;
-    longPressTimer.current = setTimeout(() => {
-      if (touchMoved.current) return;
-      didLongPress.current = true;
-      if (navigator.vibrate) navigator.vibrate(50);
-      const rect = cardRef.current?.getBoundingClientRect() ?? new DOMRect();
-      const st = startTouchRef.current ?? { x: rect.left, y: rect.top };
-      onLongPress(lead, rect, st.x, st.y);
-    }, 400);
-  }
+  // ── Unified PointerEvents handler: swipe-to-move + long-press drag ──────────
+  //
+  // Why PointerEvents instead of TouchEvents:
+  //   • setPointerCapture() locks the pointer to this element once horizontal
+  //     intent is confirmed — iOS scroll-snap can no longer steal the gesture
+  //   • No passive/non-passive conflict (touchmove passive = can't preventDefault)
+  //   • Handles swipe AND long-press in one place, eliminating the race where
+  //     the 400ms long-press timer fires during a slow horizontal swipe
+  //
+  // touch-action: pan-y (set on the div below) tells the browser: let vertical
+  // panning be native (so column still scrolls), horizontal is ours.
+  useEffect(() => {
+    const elMaybe = cardRef.current;
+    if (!elMaybe) return;
+    const el: HTMLDivElement = elMaybe; // narrowed — safe to use in closures
 
-  function onTouchMove(e: React.TouchEvent) {
-    const t = e.touches[0];
-    const st = startTouchRef.current;
-    if (st) {
-      const dx = Math.abs(t.clientX - st.x);
-      const dy = Math.abs(t.clientY - st.y);
-      if (dx > 6 || dy > 6) {
-        touchMoved.current = true;
-        if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+    let startX = 0, startY = 0;
+    let trackedId: number | null = null;   // which pointer we're following
+    let swipeActive = false;               // true = horizontal swipe in progress
+    let intentLocked = false;             // direction decision made
+    let hasMoved = false;                 // any movement > 6px → cancel long press
+    let swipeDx = 0;
+    let lpTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const hintNext = el.querySelector('.swipe-hint-next') as HTMLElement | null;
+    const hintPrev = el.querySelector('.swipe-hint-prev') as HTMLElement | null;
+
+    function resetVisual() {
+      el.style.transition = 'transform 0.38s cubic-bezier(0.34, 1.56, 0.64, 1)';
+      el.style.transform = '';
+      el.style.opacity = '';
+      setTimeout(() => { el.style.transition = ''; }, 400);
+      if (hintNext) hintNext.style.opacity = '0';
+      if (hintPrev) hintPrev.style.opacity = '0';
+    }
+
+    function clearLP() {
+      if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; }
+    }
+
+    function onPointerDown(e: PointerEvent) {
+      if (e.pointerType === 'mouse') return; // desktop: skip touch logic
+      if (trackedId !== null) return;        // already tracking another finger
+
+      trackedId = e.pointerId;
+      startX = e.clientX;
+      startY = e.clientY;
+      swipeDx = 0; swipeActive = false; intentLocked = false; hasMoved = false;
+      didLongPress.current = false;
+      el.style.transition = 'none';
+
+      // Long-press: 500ms hold with no meaningful movement → open drag sheet
+      lpTimer = setTimeout(() => {
+        if (hasMoved) return; // finger already moved — it's a swipe, not a long press
+        didLongPress.current = true;
+        if (navigator.vibrate) navigator.vibrate(50);
+        const rect = el.getBoundingClientRect();
+        onLongPressRef.current(leadRef.current, rect, startX, startY);
+        trackedId = null; // release tracking so drag-ghost takes over
+      }, 500);
+    }
+
+    function onPointerMove(e: PointerEvent) {
+      if (e.pointerId !== trackedId) return;
+
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      const adx = Math.abs(dx);
+      const ady = Math.abs(dy);
+
+      // Any movement > 6px → cancel long-press
+      if (!hasMoved && (adx > 6 || ady > 6)) {
+        hasMoved = true;
+        clearLP();
+      }
+
+      // Lock direction once movement is definitive (> 10px)
+      if (!intentLocked && (adx > 10 || ady > 10)) {
+        intentLocked = true;
+        if (adx > ady * 1.2) {
+          // ✅ Horizontal swipe intent — capture pointer so iOS scroll-snap
+          // can't intercept future events, then drive the animation ourselves
+          swipeActive = true;
+          try { el.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+        } else {
+          // Vertical intent — release tracking, let column scroll natively
+          trackedId = null;
+          el.style.transition = '';
+          el.style.transform = '';
+          return;
+        }
+      }
+
+      if (!swipeActive) return;
+
+      swipeDx = dx;
+      // Rubber-band: elastic feel, cap at 120px
+      const reach = Math.sign(dx) * Math.min(Math.abs(dx) * 0.6, 120);
+      el.style.transform = `translateX(${reach}px)`;
+
+      // Reveal stage name hints progressively
+      const progress = Math.min(1, (adx - 10) / 50);
+      if (dx > 10) {
+        if (hintNext) hintNext.style.opacity = String(progress);
+        if (hintPrev) hintPrev.style.opacity = '0';
+      } else if (dx < -10) {
+        if (hintPrev) hintPrev.style.opacity = String(progress);
+        if (hintNext) hintNext.style.opacity = '0';
+      } else {
+        if (hintNext) hintNext.style.opacity = '0';
+        if (hintPrev) hintPrev.style.opacity = '0';
       }
     }
-  }
 
-  function onTouchEnd() {
-    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
-  }
+    function onPointerUp(e: PointerEvent) {
+      if (e.pointerId !== trackedId) return;
+      clearLP();
+      trackedId = null;
+      if (!swipeActive) return;
+      swipeActive = false;
+      try { el.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+
+      const absDx = Math.abs(swipeDx);
+      if (absDx > 48) {
+        // Right swipe → next stage; left swipe → prev stage
+        const dir = swipeDx > 0 ? 'next' : 'prev';
+        if ((dir === 'next' && !nextStageName) || (dir === 'prev' && !prevStageName)) {
+          resetVisual(); return;
+        }
+        if (navigator.vibrate) navigator.vibrate(28);
+        el.style.transition = 'transform 0.2s ease-in, opacity 0.2s ease-in';
+        el.style.transform = `translateX(${swipeDx > 0 ? 200 : -200}px)`;
+        el.style.opacity = '0';
+        if (hintNext) hintNext.style.opacity = '0';
+        if (hintPrev) hintPrev.style.opacity = '0';
+        setTimeout(() => {
+          el.style.transform = '';
+          el.style.transition = '';
+          el.style.opacity = '';
+          onSwipeStageRef.current(leadRef.current, dir);
+        }, 210);
+      } else {
+        resetVisual();
+      }
+    }
+
+    function onPointerCancel(e: PointerEvent) {
+      if (e.pointerId !== trackedId) return;
+      clearLP();
+      trackedId = null;
+      swipeActive = false;
+      resetVisual();
+    }
+
+    el.addEventListener('pointerdown',   onPointerDown);
+    el.addEventListener('pointermove',   onPointerMove);
+    el.addEventListener('pointerup',     onPointerUp);
+    el.addEventListener('pointercancel', onPointerCancel);
+    return () => {
+      clearLP();
+      el.removeEventListener('pointerdown',   onPointerDown);
+      el.removeEventListener('pointermove',   onPointerMove);
+      el.removeEventListener('pointerup',     onPointerUp);
+      el.removeEventListener('pointercancel', onPointerCancel);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lead.id, !!prevStageName, !!nextStageName]);
 
   return (
     <div
@@ -167,11 +313,12 @@ const LeadCard = memo(function LeadCard({
       onDragStart={e => onDragStart(e, lead.id)}
       onMouseEnter={() => onPrefetch(lead.id)}
       onClick={() => { if (!didLongPress.current) onClick(lead); }}
-      onTouchStart={onTouchStart}
-      onTouchMove={onTouchMove}
-      onTouchEnd={onTouchEnd}
-      className="group relative cursor-pointer select-none transition-all duration-150"
+      className="group relative cursor-pointer select-none transition-all duration-150 overflow-hidden"
       style={{
+        // touch-action: pan-y → tells iOS/Android: vertical scroll is native,
+        // horizontal swipes are handled by our JS (not the scroll-snap container).
+        // This is the key fix that makes swipe-to-move work on mobile.
+        touchAction: 'pan-y',
         backgroundColor: isDragging ? 'transparent' : (selected ? '#EFF8FF' : '#fff'),
         border: isDragging ? `2px dashed ${stageColor}66` : (selected ? `1.5px solid ${T}` : '1px solid #E8EDF2'),
         borderRadius: 14,
@@ -184,6 +331,29 @@ const LeadCard = memo(function LeadCard({
         minHeight: isDragging ? 60 : undefined,
       }}
     >
+      {/* Swipe-right hint: move to next stage */}
+      {nextStageName && (
+        <div className="swipe-hint-next absolute inset-0 flex items-center justify-end pr-4 pointer-events-none rounded-[13px]"
+          style={{ opacity: 0, background: `linear-gradient(to left, ${nextStageColor ?? '#16A34A'}22 0%, transparent 60%)` }}>
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl"
+            style={{ backgroundColor: nextStageColor ?? '#16A34A', color: '#fff' }}>
+            <span className="text-[11px] font-bold leading-none">{nextStageName}</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </div>
+        </div>
+      )}
+      {/* Swipe-left hint: move to prev stage */}
+      {prevStageName && (
+        <div className="swipe-hint-prev absolute inset-0 flex items-center pl-4 pointer-events-none rounded-[13px]"
+          style={{ opacity: 0, background: `linear-gradient(to right, ${prevStageColor ?? '#64748B'}22 0%, transparent 60%)` }}>
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl"
+            style={{ backgroundColor: prevStageColor ?? '#64748B', color: '#fff' }}>
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span className="text-[11px] font-bold leading-none">{prevStageName}</span>
+          </div>
+        </div>
+      )}
+
       {/* Checkbox overlay */}
       <button
         onClick={e => onToggleSelect(lead.id, e)}
@@ -303,10 +473,12 @@ const LeadCard = memo(function LeadCard({
 // ─── Kanban Column ───────────────────────────────────────────────────────────
 
 const KanbanColumn = memo(function KanbanColumn({
-  stage, leads, onDragStart, onDrop, onLeadClick, selectedIds, onToggleSelect, onSelectAllInStage, onPrefetch,
-  onLongPress, onMoveTap, onCall, onWhatsAppChat, draggingLeadId,
+  stage, leads, loading, onDragStart, onDrop, onLeadClick, selectedIds, onToggleSelect, onSelectAllInStage, onPrefetch,
+  onLongPress, onMoveTap, onCall, onWhatsAppChat, draggingLeadId, isDragTarget, onSwipeStage,
+  prevStage, nextStage, trueCount,
 }: {
-  stage: Stage; leads: Lead[];
+  stage: Stage; leads: Lead[]; loading?: boolean;
+  trueCount?: number;  // real DB count (unaffected by the 300-lead cap)
   onDragStart: (e: React.DragEvent, leadId: string) => void;
   onDrop: (stageId: string) => void;
   onLeadClick: (lead: Lead) => void;
@@ -319,32 +491,59 @@ const KanbanColumn = memo(function KanbanColumn({
   onCall: (lead: Lead) => void;
   onWhatsAppChat: (lead: Lead) => void;
   draggingLeadId: string | null;
+  isDragTarget: boolean;
+  onSwipeStage: (lead: Lead, dir: 'prev' | 'next') => void;
+  prevStage: Stage | null;
+  nextStage: Stage | null;
 }) {
-  const PAGE_SIZE   = 20;
+  const PAGE_SIZE    = 20;
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [over, setOver] = useState(false);
-  const isOver = over;
+  const isOver       = over || isDragTarget;
   const allSelected  = leads.length > 0 && leads.every(l => selectedIds.has(l.id));
   const visibleLeads = leads.slice(0, visibleCount);
-  const hidden       = leads.length - visibleCount;
+  const hasMore      = visibleCount < leads.length;
+
+  // Sentinel ref — IntersectionObserver fires when user scrolls to bottom
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const scrollRef   = useRef<HTMLDivElement>(null);
+
+  // Auto-load more when the sentinel (bottom of visible cards) scrolls into view
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setVisibleCount(c => c + PAGE_SIZE);
+        }
+      },
+      { root: scrollRef.current, rootMargin: '60px', threshold: 0 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leads.length, visibleCount]);
 
   return (
     <div
       data-stage-id={stage.id}
-      className="flex flex-col flex-shrink-0 rounded-2xl overflow-hidden"
+      className="kanban-col flex flex-col flex-shrink-0 rounded-2xl"
       style={{
         width: 284,
         backgroundColor: '#F6F8FA',
+        scrollSnapAlign: 'start',
         border: `1px solid ${isOver ? stage.color + '88' : '#E2E8F0'}`,
         boxShadow: isOver ? `0 0 0 3px ${stage.color}33, 0 4px 16px ${stage.color}22` : '0 1px 4px rgba(0,0,0,0.04)',
         transition: 'box-shadow 0.15s, border-color 0.15s',
+        overflow: 'hidden',
       }}
       onDragOver={e => { e.preventDefault(); setOver(true); }}
       onDragLeave={() => setOver(false)}
       onDrop={() => { setOver(false); onDrop(stage.id); }}
     >
       {/* Column Header */}
-      <div className="px-4 pt-3.5 pb-3 flex items-center justify-between"
+      <div className="px-4 pt-3.5 pb-3 flex items-center justify-between flex-shrink-0"
         style={{
           background: `linear-gradient(135deg, ${stage.color}14 0%, ${stage.color}06 100%)`,
           borderBottom: `1.5px solid ${stage.color}30`,
@@ -363,14 +562,55 @@ const KanbanColumn = memo(function KanbanColumn({
         </div>
         <div className="flex items-center justify-center rounded-full text-[11px] font-extrabold min-w-[22px] h-5 px-1.5"
           style={{ backgroundColor: stage.color, color: '#fff', boxShadow: `0 1px 4px ${stage.color}66` }}>
-          {leads.length}
+          {trueCount ?? leads.length}
         </div>
       </div>
 
-      {/* Cards */}
+      {/* Cards — scrollable container */}
       <div
-        className="flex-1 overflow-y-auto p-3 space-y-2.5 transition-colors"
-        style={{ minHeight: 100, maxHeight: 'calc(100vh - 230px)', backgroundColor: isOver ? `${stage.color}08` : undefined, transition: 'background-color 0.15s' }}>
+        ref={scrollRef}
+        className="kanban-cards-scroll overflow-y-auto px-3 pt-3 space-y-2.5"
+        style={{
+          backgroundColor: isOver ? `${stage.color}08` : undefined,
+          transition: 'background-color 0.15s',
+          pointerEvents: 'auto',
+        }}>
+
+        {/* Touch drag drop indicator */}
+        {isDragTarget && (
+          <div className="mx-0 mb-2.5 rounded-xl border-2 border-dashed flex items-center justify-center py-3 transition-all"
+            style={{
+              borderColor: stage.color,
+              backgroundColor: stage.color + '12',
+              animation: 'pulse 1.2s ease-in-out infinite',
+            }}>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: stage.color }} />
+              <span className="text-[12px] font-bold" style={{ color: stage.color }}>Drop here</span>
+              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: stage.color }} />
+            </div>
+          </div>
+        )}
+
+        {/* Loading skeleton — while pipeline detail API is fetching */}
+        {loading && leads.length === 0 && (
+          <div className="space-y-2.5 animate-pulse">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="rounded-xl p-3 space-y-2"
+                style={{ backgroundColor: '#fff', border: '1px solid #E8EDF2', borderLeft: `3px solid ${stage.color}44` }}>
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-full" style={{ backgroundColor: stage.color + '22' }} />
+                  <div className="flex-1 space-y-1.5">
+                    <div className="h-3 rounded" style={{ backgroundColor: '#E2E8F0', width: `${55 + i * 12}%` }} />
+                    <div className="h-2.5 rounded" style={{ backgroundColor: '#F1F5F9', width: '45%' }} />
+                  </div>
+                </div>
+                <div className="h-2 rounded" style={{ backgroundColor: '#F1F5F9', width: '70%' }} />
+              </div>
+            ))}
+          </div>
+        )}
+
         {visibleLeads.map(lead => (
           <LeadCard key={lead.id} lead={lead} stageColor={stage.color}
             onDragStart={onDragStart} onClick={onLeadClick}
@@ -378,19 +618,27 @@ const KanbanColumn = memo(function KanbanColumn({
             onPrefetch={onPrefetch}
             onLongPress={onLongPress} onMoveTap={onMoveTap} onCall={onCall}
             onWhatsAppChat={onWhatsAppChat}
-            isDragging={draggingLeadId === lead.id} />
+            isDragging={draggingLeadId === lead.id}
+            onSwipeStage={onSwipeStage}
+            prevStageName={prevStage?.name ?? null}
+            prevStageColor={prevStage?.color ?? null}
+            nextStageName={nextStage?.name ?? null}
+            nextStageColor={nextStage?.color ?? null}
+          />
         ))}
 
-        {hidden > 0 && (
-          <button
-            onClick={() => setVisibleCount(c => c + PAGE_SIZE)}
-            className="w-full py-2.5 rounded-xl text-[12px] font-bold transition-colors hover:bg-white"
-            style={{ color: stage.color, border: `1.5px dashed ${stage.color}55`, backgroundColor: `${stage.color}08` }}>
-            Show {Math.min(hidden, PAGE_SIZE)} more
-          </button>
+        {/* Sentinel div — IntersectionObserver watches this to auto-load more */}
+        {hasMore && (
+          <div ref={sentinelRef} className="flex items-center justify-center py-3 gap-2">
+            <div className="w-3.5 h-3.5 rounded-full border-2 border-t-transparent animate-spin flex-shrink-0"
+              style={{ borderColor: stage.color, borderTopColor: 'transparent' }} />
+            <span className="text-[11px] font-semibold" style={{ color: stage.color + 'AA' }}>
+              {leads.length - visibleCount} more
+            </span>
+          </div>
         )}
 
-        {leads.length === 0 && (
+        {!loading && leads.length === 0 && (
           <div className="flex flex-col items-center justify-center gap-1.5 py-8 rounded-xl border-2 border-dashed transition-colors"
             style={{ borderColor: isOver ? stage.color + '88' : '#DDE3EB', color: '#94A3B8' }}>
             <div className="w-8 h-8 rounded-full flex items-center justify-center"
@@ -409,12 +657,13 @@ const KanbanColumn = memo(function KanbanColumn({
 
 interface BulkUser { id: string; name: string; role?: string }
 
-function BulkActionBar({ count, stages, users, onMoveStage, onAssign, onDelete, onClear }: {
+function BulkActionBar({ count, stages, users, onMoveStage, onAssign, onDelete, onClear, isDeleting }: {
   count: number; stages: Stage[]; users: BulkUser[];
   onMoveStage: (stageId: string) => void;
   onAssign: (userId: string, userName: string) => void;
   onDelete: () => void;
   onClear: () => void;
+  isDeleting?: boolean;
 }) {
   const [showStageMenu,  setShowStageMenu]  = useState(false);
   const [showAssignMenu, setShowAssignMenu] = useState(false);
@@ -496,13 +745,24 @@ function BulkActionBar({ count, stages, users, onMoveStage, onAssign, onDelete, 
       </div>
 
       <button onClick={onDelete}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold transition-colors hover:bg-white/10"
+        disabled={isDeleting}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold transition-colors hover:bg-white/10 disabled:opacity-60 disabled:cursor-not-allowed min-w-[90px] justify-center"
         style={{ color: '#FCA5A5' }}>
-        <Trash2 className="w-3.5 h-3.5" /> Delete
+        {isDeleting ? (
+          <>
+            <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+            </svg>
+            Deleting...
+          </>
+        ) : (
+          <><Trash2 className="w-3.5 h-3.5" /> Delete</>
+        )}
       </button>
 
       <div className="flex-1" />
-      <button onClick={onClear} className="w-6 h-6 rounded-lg flex items-center justify-center transition-colors hover:bg-white/10"
+      <button onClick={onClear} disabled={isDeleting} className="w-6 h-6 rounded-lg flex items-center justify-center transition-colors hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed"
         style={{ color: 'rgba(255,255,255,0.4)' }}>
         <X className="w-3.5 h-3.5" />
       </button>
@@ -510,24 +770,269 @@ function BulkActionBar({ count, stages, users, onMoveStage, onAssign, onDelete, 
   );
 }
 
-// ─── Filter Pill ─────────────────────────────────────────────────────────────
+// ─── Filter Panel (slide-in from right) ─────────────────────────────────────
 
-function FilterPill({ icon: Icon, label, active, onClick }: {
-  icon: React.ElementType; label: string; active?: boolean; onClick: () => void;
-}) {
+const LEAD_SOURCES = ['organic', 'ctwa', 'whatsapp_ad', 'meta', 'referral', 'phone', 'other'] as const;
+const SOURCE_COLORS: Record<string, { bg: string; text: string }> = {
+  organic:      { bg: '#F0FDF4', text: '#15803D' },
+  ctwa:         { bg: '#EFF6FF', text: '#2563EB' },
+  whatsapp_ad:  { bg: '#FEF9C3', text: '#A16207' },
+  meta:         { bg: '#F5F3FF', text: '#6D28D9' },
+  referral:     { bg: '#FFF7ED', text: '#C2410C' },
+  phone:        { bg: '#F0FDF4', text: '#16A34A' },
+  other:        { bg: '#F8FAFC', text: '#64748B' },
+};
+
+interface FilterPanelProps {
+  open: boolean;
+  onClose: () => void;
+  sortBy: string;
+  setSortBy: (v: string) => void;
+  fStatuses: string[];
+  setFStatuses: (v: string[]) => void;
+  fSources: string[];
+  setFSources: (v: string[]) => void;
+  fUserMode: 'include' | 'exclude';
+  setFUserMode: (v: 'include' | 'exclude') => void;
+  fUserIds: string[];
+  setFUserIds: (v: string[]) => void;
+  fDestination: string;
+  setFDestination: (v: string) => void;
+  filterDateFrom: string;
+  setFilterDateFrom: (v: string) => void;
+  filterDateTo: string;
+  setFilterDateTo: (v: string) => void;
+  users: CrmUser[];
+  onClearAll: () => void;
+}
+
+function FilterPanel({
+  open, onClose, sortBy, setSortBy,
+  fStatuses, setFStatuses, fSources, setFSources,
+  fUserMode, setFUserMode, fUserIds, setFUserIds,
+  fDestination, setFDestination,
+  filterDateFrom, setFilterDateFrom, filterDateTo, setFilterDateTo,
+  users, onClearAll,
+}: FilterPanelProps) {
+  const SORT_OPTIONS: { value: string; label: string }[] = [
+    { value: 'newest', label: 'Newest first' },
+    { value: 'oldest', label: 'Oldest first' },
+    { value: 'name',   label: 'Name A–Z' },
+    { value: 'budget_asc',  label: 'Budget ↑' },
+    { value: 'budget_desc', label: 'Budget ↓' },
+  ];
+
+  function toggleStatus(s: string) {
+    setFStatuses(fStatuses.includes(s) ? fStatuses.filter(x => x !== s) : [...fStatuses, s]);
+  }
+  function toggleSource(s: string) {
+    setFSources(fSources.includes(s) ? fSources.filter(x => x !== s) : [...fSources, s]);
+  }
+  function toggleUser(id: string) {
+    setFUserIds(fUserIds.includes(id) ? fUserIds.filter(x => x !== id) : [...fUserIds, id]);
+  }
+
   return (
-    <button onClick={onClick}
-      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-semibold transition-all"
-      style={{
-        border: `1px solid ${active ? T + '55' : '#E2E8F0'}`,
-        backgroundColor: active ? T + '0c' : 'white',
-        color: active ? T : '#64748B',
-        boxShadow: active ? `0 0 0 1px ${T}22` : undefined,
-      }}>
-      <Icon className="w-3.5 h-3.5" />
-      {label}
-      <ChevronDown className="w-3 h-3 opacity-50" />
-    </button>
+    <>
+      {/* Overlay */}
+      {open && (
+        <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm" onClick={onClose} />
+      )}
+      {/* Panel */}
+      <div
+        className="fixed top-0 right-0 h-full z-50 bg-white shadow-2xl flex flex-col"
+        style={{
+          width: 'min(360px, 100vw)',
+          transform: open ? 'translateX(0)' : 'translateX(100%)',
+          transition: 'transform 300ms cubic-bezier(0.4,0,0.2,1)',
+        }}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 flex-shrink-0">
+          <p className="text-base font-bold" style={{ color: '#0F172A' }}>Filters</p>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-slate-100 transition-colors">
+            <X className="w-4 h-4 text-slate-500" />
+          </button>
+        </div>
+
+        {/* Scrollable body */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+
+          {/* SORT */}
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider mb-2.5" style={{ color: '#94A3B8' }}>Sort</p>
+            <div className="space-y-1">
+              {SORT_OPTIONS.map(opt => (
+                <button key={opt.value} onClick={() => setSortBy(opt.value)}
+                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-[13px] font-medium text-left transition-colors"
+                  style={{
+                    backgroundColor: sortBy === opt.value ? T + '0c' : 'transparent',
+                    color: sortBy === opt.value ? T : '#374151',
+                  }}>
+                  {opt.label}
+                  {sortBy === opt.value && <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: T }} />}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="border-t border-slate-100" />
+
+          {/* LEAD STATUS */}
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider mb-2.5" style={{ color: '#94A3B8' }}>Lead Status</p>
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(STATUS_COLORS).map(([s, colors]) => {
+                const active = fStatuses.includes(s);
+                return (
+                  <button key={s} onClick={() => toggleStatus(s)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold transition-all"
+                    style={{
+                      backgroundColor: active ? colors.bg : '#F8FAFC',
+                      color: active ? colors.text : '#64748B',
+                      border: `1.5px solid ${active ? colors.text + '55' : '#E2E8F0'}`,
+                    }}>
+                    <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: colors.text }} />
+                    {s}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="border-t border-slate-100" />
+
+          {/* USERS */}
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider mb-2.5" style={{ color: '#94A3B8' }}>Users</p>
+            {/* Include / Exclude toggle */}
+            <div className="flex items-center gap-1 p-1 rounded-xl mb-3 inline-flex" style={{ backgroundColor: '#F1F5F9' }}>
+              {(['include', 'exclude'] as const).map(mode => (
+                <button key={mode} onClick={() => setFUserMode(mode)}
+                  className="px-4 py-1.5 rounded-lg text-[12px] font-bold capitalize transition-all"
+                  style={fUserMode === mode
+                    ? { backgroundColor: T, color: '#fff', boxShadow: `0 1px 4px ${T}44` }
+                    : { color: '#64748B' }}>
+                  {mode}
+                </button>
+              ))}
+            </div>
+            <div className="space-y-1 max-h-48 overflow-y-auto">
+              {/* Unassigned pseudo-user */}
+              {(() => {
+                const checked = fUserIds.includes('__unassigned__');
+                return (
+                  <label className="flex items-center gap-2.5 px-2 py-2 rounded-xl cursor-pointer hover:bg-slate-50 transition-colors">
+                    <input type="checkbox" checked={checked} onChange={() => toggleUser('__unassigned__')}
+                      className="w-4 h-4 rounded accent-teal-700 flex-shrink-0" />
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0"
+                      style={{ backgroundColor: '#94A3B8', color: '#fff' }}>?</div>
+                    <span className="text-[13px] font-medium truncate italic" style={{ color: '#64748B' }}>Unassigned</span>
+                  </label>
+                );
+              })()}
+              {users.map(u => {
+                const checked = fUserIds.includes(u.id);
+                return (
+                  <label key={u.id} className="flex items-center gap-2.5 px-2 py-2 rounded-xl cursor-pointer hover:bg-slate-50 transition-colors">
+                    <input type="checkbox" checked={checked} onChange={() => toggleUser(u.id)}
+                      className="w-4 h-4 rounded accent-teal-700 flex-shrink-0" />
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0"
+                      style={{ backgroundColor: T }}>
+                      {u.name.charAt(0).toUpperCase()}
+                    </div>
+                    <span className="text-[13px] font-medium truncate" style={{ color: '#0F172A' }}>{u.name}</span>
+                    <span className="text-[10px] ml-auto flex-shrink-0" style={{ color: '#94A3B8' }}>{u.role}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="border-t border-slate-100" />
+
+          {/* DATE RANGE */}
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider mb-2.5" style={{ color: '#94A3B8' }}>Date Range</p>
+            <div className="space-y-2">
+              {[
+                { label: 'From', val: filterDateFrom, set: setFilterDateFrom },
+                { label: 'To',   val: filterDateTo,   set: setFilterDateTo },
+              ].map(({ label, val, set }) => (
+                <div key={label}>
+                  <label className="text-[11px] font-semibold block mb-1" style={{ color: '#64748B' }}>{label}</label>
+                  <input type="date" value={val} onChange={e => set(e.target.value)}
+                    className="w-full text-[13px] rounded-xl px-3 py-2 outline-none"
+                    style={{ border: '1px solid #E2E8F0', color: '#0F172A' }} />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="border-t border-slate-100" />
+
+          {/* LEAD SOURCE */}
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider mb-2.5" style={{ color: '#94A3B8' }}>Lead Source</p>
+            <div className="flex flex-wrap gap-2">
+              {LEAD_SOURCES.map(s => {
+                const active = fSources.includes(s);
+                const colors = SOURCE_COLORS[s];
+                return (
+                  <button key={s} onClick={() => toggleSource(s)}
+                    className="inline-flex items-center px-3 py-1.5 rounded-full text-[12px] font-semibold transition-all capitalize"
+                    style={{
+                      backgroundColor: active ? colors.bg : '#F8FAFC',
+                      color: active ? colors.text : '#64748B',
+                      border: `1.5px solid ${active ? colors.text + '55' : '#E2E8F0'}`,
+                    }}>
+                    {s.replace('_', ' ')}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="border-t border-slate-100" />
+
+          {/* DESTINATION */}
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider mb-2.5" style={{ color: '#94A3B8' }}>Destination</p>
+            <div className="relative">
+              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none" style={{ color: '#94A3B8' }} />
+              <input
+                type="text"
+                value={fDestination}
+                onChange={e => setFDestination(e.target.value)}
+                placeholder="e.g. Maldives, Bali…"
+                className="w-full pl-9 pr-4 py-2 text-[13px] rounded-xl outline-none"
+                style={{ border: '1px solid #E2E8F0', color: '#0F172A' }}
+              />
+              {fDestination && (
+                <button onClick={() => setFDestination('')} className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                  <X className="w-3.5 h-3.5" style={{ color: '#94A3B8' }} />
+                </button>
+              )}
+            </div>
+          </div>
+
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center gap-3 px-5 py-4 border-t border-slate-100 flex-shrink-0">
+          <button onClick={onClearAll}
+            className="flex-1 py-2.5 rounded-xl text-[13px] font-bold transition-colors hover:bg-red-50"
+            style={{ color: '#EF4444', border: '1px solid #FECACA' }}>
+            Clear All
+          </button>
+          <button onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-white transition-opacity hover:opacity-90"
+            style={{ backgroundColor: T }}>
+            Apply &amp; Close
+          </button>
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -601,17 +1106,21 @@ interface CrmUser { id: string; name: string; role: string }
 export default function PipelinesPage() {
   const [activePipelineId, setActivePipelineId] = useState<string>('');
   const [search, setSearch]                     = useState('');
-  const [sortBy, setSortBy]                     = useState<'newest' | 'oldest' | 'name'>('newest');
-  const [filterStatus, setFilterStatus]         = useState<string>('');
-  const [showFilters, setShowFilters]           = useState(false);
+  const [sortBy, setSortBy]                     = useState('newest');
+  const [showFilterPanel, setShowFilterPanel]   = useState(false);
+  const [fStatuses, setFStatuses]               = useState<string[]>([]);
+  const [fSources, setFSources]                 = useState<string[]>([]);
+  const [fUserMode, setFUserMode]               = useState<'include' | 'exclude'>('include');
+  const [fUserIds, setFUserIds]                 = useState<string[]>([]);
+  const [fDestination, setFDestination]         = useState('');
   const [showAddLead, setShowAddLead]           = useState(false);
   const [selectedLead, setSelectedLead]         = useState<Lead | null>(null);
   const [selectedIds, setSelectedIds]           = useState<Set<string>>(new Set());
+  const [isDeleting,  setIsDeleting]            = useState(false);
+  const [selectingAll, setSelectingAll]         = useState(false);
   const [filterOwner, setFilterOwner]           = useState<string>('');
   const [filterDateFrom, setFilterDateFrom]     = useState('');
   const [filterDateTo, setFilterDateTo]         = useState('');
-  const [showDateFilter, setShowDateFilter]     = useState(false);
-  const [showSortMenu, setShowSortMenu]         = useState(false);
   const draggingLeadId = useRef<string | null>(null);
   const [moveLead, setMoveLead] = useState<Lead | null>(null);
   const [waPanel, setWaPanel]   = useState<{ phone: string; name: string } | null>(null);
@@ -629,9 +1138,11 @@ export default function PipelinesPage() {
     targetStageId: string | null;
   }
   const [mobileDrag, setMobileDrag] = useState<DragState | null>(null);
+  const [mobileDragTargetId, setMobileDragTargetId] = useState<string | null>(null);
   const mobileDragRef = useRef<DragState | null>(null);
   const boardScrollRef = useRef<HTMLDivElement>(null);
   const dragCleanupRef = useRef<(() => void) | null>(null);
+  const [activeColumnIdx, setActiveColumnIdx] = useState(0);
 
   const qc = useQueryClient();
 
@@ -651,13 +1162,32 @@ export default function PipelinesPage() {
 
   const filterParams = useMemo(() => {
     const p = new URLSearchParams();
-    if (filterOwner)    p.set('owner_id',  filterOwner);
+    // Quick user select (single include, existing behavior)
+    if (filterOwner) p.set('owner_id', filterOwner);
+    // Multi-user from panel overrides quick select
+    if (fUserIds.length > 0) {
+      const hasUnassigned = fUserIds.includes('__unassigned__');
+      const realUserIds   = fUserIds.filter(id => id !== '__unassigned__');
+      if (fUserMode === 'include') {
+        if (realUserIds.length > 0) p.set('owner_ids', realUserIds.join(','));
+        if (hasUnassigned)          p.set('include_unassigned', '1');
+      } else {
+        // Exclude mode: unassigned leads are naturally included when excluding named users
+        if (realUserIds.length > 0) p.set('exclude_owner_ids', realUserIds.join(','));
+      }
+      p.delete('owner_id'); // panel takes precedence
+    }
     if (filterDateFrom) p.set('date_from', filterDateFrom);
     if (filterDateTo)   p.set('date_to',   filterDateTo);
     return p;
-  }, [filterOwner, filterDateFrom, filterDateTo]);
+  }, [filterOwner, fUserIds, fUserMode, filterDateFrom, filterDateTo]);
 
-  const { data: pipelineDetail } = usePipeline(resolvedPipelineId, filterParams);
+  const { data: pipelineDetail, isLoading: loadingDetail } = usePipeline(resolvedPipelineId, filterParams);
+  // True per-stage counts from the API (not capped by the 300-lead limit)
+  const apiStageCounts = useMemo<Record<string, number>>(
+    () => ((pipelineDetail as { stageCounts?: Record<string, number> } | undefined)?.stageCounts ?? {}),
+    [pipelineDetail],
+  );
   const { data: usersData }      = useUsers();
   const users: CrmUser[]         = useMemo(() => (usersData as CrmUser[] | undefined) ?? [], [usersData]);
 
@@ -671,6 +1201,21 @@ export default function PipelinesPage() {
   ), [rawPipelines, resolvedPipelineId, pipelineDetail]);
 
   const activePipeline = useMemo(() => pipelines.find(p => p.id === resolvedPipelineId), [pipelines, resolvedPipelineId]);
+
+  // Track active column index for mobile dots indicator
+  useEffect(() => {
+    const el = boardScrollRef.current;
+    if (!el) return;
+    const stageCount = activePipeline?.stages?.length ?? 0;
+    const handleScroll = () => {
+      // col width on mobile ≈ viewport - 40px; gap = 16px; left padding = 16px
+      const colW = Math.max(240, el.offsetWidth - 40);
+      const idx = Math.round(el.scrollLeft / (colW + 16));
+      setActiveColumnIdx(Math.max(0, Math.min(idx, stageCount - 1)));
+    };
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    return () => el.removeEventListener('scroll', handleScroll);
+  }, [activePipeline?.stages?.length]);
 
   const handleDragStart = useCallback((e: React.DragEvent, leadId: string) => {
     draggingLeadId.current = leadId;
@@ -697,8 +1242,18 @@ export default function PipelinesPage() {
     setWaPanel({ phone: lead.phone, name: lead.name });
   }, []);
 
+  const handleSwipeStage = useCallback((lead: Lead, dir: 'prev' | 'next') => {
+    const stages = activePipeline?.stages ?? [];
+    const currentIdx = stages.findIndex(s => s.id === lead.stage_id);
+    if (currentIdx === -1) return;
+    const newIdx = dir === 'next' ? currentIdx + 1 : currentIdx - 1;
+    if (newIdx < 0 || newIdx >= stages.length) return;
+    const targetStage = stages[newIdx];
+    stageMutation.mutate({ leadId: lead.id, stageId: targetStage.id });
+    toast.success(`Moved to ${targetStage.name}`);
+  }, [activePipeline?.stages, stageMutation]);
+
   const handleLongPress = useCallback((lead: Lead, rect: DOMRect, touchX: number, touchY: number) => {
-    // Offset within card where finger is resting
     const offsetX = touchX - rect.left;
     const offsetY = touchY - rect.top;
 
@@ -714,28 +1269,41 @@ export default function PipelinesPage() {
     };
     mobileDragRef.current = initial;
     setMobileDrag(initial);
+    setMobileDragTargetId(lead.stage_id);
+
+    // RAF-based auto-scroll — runs every frame while drag is active
+    let lastTouchX = touchX;
+    let rafId: number | null = null;
+
+    function scrollLoop() {
+      const board = boardScrollRef.current;
+      if (!board || !mobileDragRef.current) return;
+      const br = board.getBoundingClientRect();
+      const edgeZone = 72;
+      if (lastTouchX < br.left + edgeZone) {
+        const speed = Math.ceil(((br.left + edgeZone - lastTouchX) / edgeZone) * 14);
+        board.scrollLeft -= speed;
+      } else if (lastTouchX > br.right - edgeZone) {
+        const speed = Math.ceil(((lastTouchX - (br.right - edgeZone)) / edgeZone) * 14);
+        board.scrollLeft += speed;
+      }
+      rafId = requestAnimationFrame(scrollLoop);
+    }
+    rafId = requestAnimationFrame(scrollLoop);
 
     function onMove(e: TouchEvent) {
       e.preventDefault();
       const t = e.touches[0];
+      lastTouchX = t.clientX;
       const ghostX = t.clientX - offsetX;
       const ghostY = t.clientY - offsetY;
 
-      // Auto-scroll the board horizontally when near edges
-      const board = boardScrollRef.current;
-      if (board) {
-        const br = board.getBoundingClientRect();
-        const edgeZone = 80;
-        if (t.clientX < br.left + edgeZone) board.scrollLeft -= 8;
-        else if (t.clientX > br.right - edgeZone) board.scrollLeft += 8;
-      }
-
-      // If finger enters Move To zone (bottom 120px) → open sheet immediately while still dragging
+      // If finger enters Move To zone (bottom 120px) → open sheet immediately
       const inMoveZone = t.clientY > window.innerHeight - 120;
       if (inMoveZone && mobileDragRef.current) {
-        const lead = mobileDragRef.current.lead;
+        const draggedLead = mobileDragRef.current.lead;
         cleanup();
-        setMoveLead(lead);
+        setMoveLead(draggedLead);
         return;
       }
 
@@ -750,32 +1318,45 @@ export default function PipelinesPage() {
       const next = { ...mobileDragRef.current!, ghostX, ghostY, targetStageId };
       mobileDragRef.current = next;
       setMobileDrag(next);
+      setMobileDragTargetId(targetStageId);
     }
 
     function cleanup() {
+      if (rafId !== null) cancelAnimationFrame(rafId);
       document.removeEventListener('touchmove', onMove);
       document.removeEventListener('touchend', onEnd);
-      document.removeEventListener('touchcancel', onEnd);
+      document.removeEventListener('touchcancel', onCancel);
       dragCleanupRef.current = null;
       mobileDragRef.current = null;
       setMobileDrag(null);
+      setMobileDragTargetId(null);
     }
 
     function onEnd() {
       const state = mobileDragRef.current;
       cleanup();
-      // Commit drop to whichever stage column the finger was over
-      if (state?.targetStageId && state.targetStageId !== state.lead.stage_id) {
+      if (!state) return;
+      if (state.targetStageId && state.targetStageId !== state.lead.stage_id) {
+        // Find target stage name for toast
+        const allStages = (activePipeline?.stages ?? []);
+        const targetStage = allStages.find(s => s.id === state.targetStageId);
         stageMutation.mutate({ leadId: state.lead.id, stageId: state.targetStageId });
+        if (navigator.vibrate) navigator.vibrate([30, 20, 30]);
+        toast.success(`Moved to ${targetStage?.name ?? 'stage'}`);
       }
+      // If dropped on same stage or no target — silently cancel (card snaps back via state cleanup)
+    }
+
+    function onCancel() {
+      cleanup();
     }
 
     document.addEventListener('touchmove', onMove, { passive: false });
     document.addEventListener('touchend', onEnd);
-    document.addEventListener('touchcancel', onEnd);
+    document.addEventListener('touchcancel', onCancel);
     dragCleanupRef.current = onEnd;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stageMutation]);
+  }, [stageMutation, activePipeline?.stages]);
 
   // Clean up listeners if component unmounts mid-drag
   useEffect(() => () => { dragCleanupRef.current?.(); }, []);
@@ -789,9 +1370,35 @@ export default function PipelinesPage() {
     });
   }, []);
 
-  function toggleSelectAll() {
-    const allIds = (activePipeline?.leads ?? []).map(l => l.id);
-    setSelectedIds(selectedIds.size === allIds.length ? new Set() : new Set(allIds));
+  async function toggleSelectAll() {
+    // If anything is selected → deselect all and stop
+    if (selectedIds.size > 0) { setSelectedIds(new Set()); return; }
+
+    const loadedIds  = (activePipeline?.leads ?? []).map(l => l.id);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const totalLeads = (pipelineDetail as any)?.totalLeads as number | undefined;
+
+    // If the count is unknown or nothing is truncated, select what's loaded
+    if (!totalLeads || totalLeads <= loadedIds.length) {
+      setSelectedIds(new Set(loadedIds));
+      return;
+    }
+
+    // More leads exist than are loaded — fetch ALL ids from the server
+    setSelectingAll(true);
+    try {
+      // Build query string manually to avoid URLSearchParams constructor compat issues
+      const qs = filterParams.toString();
+      const url = `/api/v1/pipelines/${resolvedPipelineId}?${qs ? qs + '&' : ''}ids_only=1`;
+      const res  = await fetch(url);
+      const json = await res.json() as { success?: boolean; data?: { ids?: string[] } };
+      const ids  = (json.success && json.data?.ids?.length) ? json.data.ids : loadedIds;
+      setSelectedIds(new Set(ids));
+    } catch {
+      setSelectedIds(new Set(loadedIds));
+    } finally {
+      setSelectingAll(false);
+    }
   }
 
   async function bulkMoveStage(stageId: string) {
@@ -818,24 +1425,29 @@ export default function PipelinesPage() {
     const count = selectedIds.size;
     if (!confirm(`Delete ${count} lead(s)? This cannot be undone.`)) return;
 
-    const results = await Promise.all(
-      Array.from(selectedIds).map(leadId =>
-        fetch(`/api/v1/leads/${leadId}`, { method: 'DELETE' }).then(r => r.json())
-      )
-    );
+    setIsDeleting(true);
+    try {
+      const results = await Promise.all(
+        Array.from(selectedIds).map(leadId =>
+          fetch(`/api/v1/leads/${leadId}`, { method: 'DELETE' }).then(r => r.json())
+        )
+      );
 
-    const failed = results.filter(r => !r.success).length;
-    const deleted = count - failed;
+      const failed = results.filter(r => !r.success).length;
+      const deleted = count - failed;
 
-    setSelectedIds(new Set());
-    qc.invalidateQueries({ queryKey: [...QK.pipeline(resolvedPipelineId), filterParams.toString()] });
+      setSelectedIds(new Set());
+      qc.invalidateQueries({ queryKey: [...QK.pipeline(resolvedPipelineId), filterParams.toString()] });
 
-    if (deleted > 0 && failed === 0) {
-      toast.success(`${deleted} lead${deleted > 1 ? 's' : ''} deleted successfully`);
-    } else if (deleted > 0 && failed > 0) {
-      toast.info(`${deleted} deleted, ${failed} could not be deleted (permission denied)`);
-    } else {
-      toast.error('Could not delete lead(s) — you may not have permission');
+      if (deleted > 0 && failed === 0) {
+        toast.success(`${deleted} lead${deleted > 1 ? 's' : ''} deleted successfully`);
+      } else if (deleted > 0 && failed > 0) {
+        toast.info(`${deleted} deleted, ${failed} could not be deleted (permission denied)`);
+      } else {
+        toast.error('Could not delete lead(s) — you may not have permission');
+      }
+    } finally {
+      setIsDeleting(false);
     }
   }
 
@@ -884,19 +1496,32 @@ export default function PipelinesPage() {
 
   const allLeads = useMemo(() => {
     let result = activePipeline?.leads ?? [];
-    if (search)       result = result.filter(l => l.name.toLowerCase().includes(search.toLowerCase()) || l.phone.includes(search));
-    if (filterStatus) result = result.filter(l => l.status === filterStatus);
-    if (sortBy === 'newest') result = [...result].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    if (sortBy === 'oldest') result = [...result].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-    if (sortBy === 'name')   result = [...result].sort((a, b) => a.name.localeCompare(b.name));
+    if (search)           result = result.filter(l => l.name.toLowerCase().includes(search.toLowerCase()) || l.phone.includes(search));
+    if (fStatuses.length > 0) result = result.filter(l => fStatuses.includes(l.status));
+    if (fSources.length > 0)  result = result.filter(l => fSources.includes(l.source ?? 'organic'));
+    if (fDestination)         result = result.filter(l => (l.destination_interest ?? '').toLowerCase().includes(fDestination.toLowerCase()));
+    if (sortBy === 'newest')      result = [...result].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    if (sortBy === 'oldest')      result = [...result].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    if (sortBy === 'name')        result = [...result].sort((a, b) => a.name.localeCompare(b.name));
+    if (sortBy === 'budget_asc')  result = [...result].sort((a, b) => (a.budget_range ?? '').localeCompare(b.budget_range ?? ''));
+    if (sortBy === 'budget_desc') result = [...result].sort((a, b) => (b.budget_range ?? '').localeCompare(a.budget_range ?? ''));
     return result;
-  }, [activePipeline?.leads, search, filterStatus, sortBy]);
+  }, [activePipeline?.leads, search, fStatuses, fSources, fDestination, sortBy]);
 
   const leadsForStage = useCallback((stageId: string) =>
     allLeads.filter(l => l.stage_id === stageId),
   [allLeads]);
 
-  const SORT_LABELS: Record<string, string> = { newest: 'Newest first', oldest: 'Oldest first', name: 'Name A–Z' };
+  function clearAllFilters() {
+    setFStatuses([]);
+    setFSources([]);
+    setFUserIds([]);
+    setFDestination('');
+    setFilterDateFrom('');
+    setFilterDateTo('');
+    setFilterOwner('');
+    setSortBy('newest');
+  }
 
   if (loadingPipelines) return <KanbanSkeleton />;
 
@@ -914,20 +1539,30 @@ export default function PipelinesPage() {
   const hasDateFilter   = !!(filterDateFrom || filterDateTo);
   const hasOwnerFilter  = !!filterOwner;
 
+  // Count active filter categories for badge
+  const activeFilterCount = [
+    fStatuses.length > 0,
+    fSources.length > 0,
+    fUserIds.length > 0,
+    hasDateFilter,
+    !!fDestination,
+    sortBy !== 'newest',
+  ].filter(Boolean).length;
+
   return (
     <div className="flex flex-col h-full -m-5 lg:-m-8">
 
       {/* ── Top Bar ─────────────────────────────────────────────────────── */}
-      <div className="flex-shrink-0 bg-white px-5 lg:px-8 pt-4 pb-3 space-y-3"
+      <div className="flex-shrink-0 bg-white px-4 lg:px-8 pt-4 pb-3 space-y-3"
         style={{ borderBottom: '1px solid #EDF0F4' }}>
 
         {/* Row 1: Pipeline tabs + CTA */}
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2 overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
           {/* Pipeline tabs */}
-          <div className="flex items-center gap-1 overflow-x-auto p-1 rounded-xl" style={{ backgroundColor: '#F1F5F9' }}>
+          <div className="flex items-center gap-1 p-1 rounded-xl flex-shrink-0" style={{ backgroundColor: '#F1F5F9' }}>
             {pipelines.map(p => (
               <button key={p.id} onClick={() => { setActivePipelineId(p.id); setSelectedIds(new Set()); }}
-                className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[13px] font-semibold whitespace-nowrap transition-all flex-shrink-0"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-semibold whitespace-nowrap transition-all flex-shrink-0"
                 style={resolvedPipelineId === p.id
                   ? { backgroundColor: '#fff', color: T, boxShadow: '0 1px 4px rgba(0,0,0,0.1)' }
                   : { color: '#64748B' }}>
@@ -937,52 +1572,65 @@ export default function PipelinesPage() {
             ))}
           </div>
 
-          <div className="flex-1" />
+          <div className="flex-1 hidden lg:block" />
 
-          {/* Lead count badge */}
-          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-semibold"
+          {/* Lead count badge — hidden on mobile to save space */}
+          <div className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-semibold flex-shrink-0"
             style={{ backgroundColor: '#F8FAFC', color: '#64748B', border: '1px solid #E2E8F0' }}>
             <Users className="w-3.5 h-3.5" />
-            {allLeads.length} leads
+            {loadingDetail && allLeads.length === 0
+              ? <span className="inline-block w-16 h-3 rounded animate-pulse" style={{ backgroundColor: '#E2E8F0' }} />
+              : <>{allLeads.length}{(pipelineDetail as Pipeline & { totalLeads?: number })?.totalLeads && (pipelineDetail as Pipeline & { totalLeads?: number }).totalLeads! > allLeads.length ? ` of ${(pipelineDetail as Pipeline & { totalLeads?: number }).totalLeads}` : ''} leads</>
+            }
           </div>
 
-          {/* Select all */}
-          <button onClick={toggleSelectAll}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-colors hover:bg-[#F8FAFC]"
+          {/* Select all — hidden on mobile */}
+          <button onClick={toggleSelectAll} disabled={selectingAll}
+            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-colors hover:bg-[#F8FAFC] flex-shrink-0 disabled:opacity-60 disabled:cursor-wait"
             style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>
-            {selectedIds.size > 0 && selectedIds.size === (activePipeline?.leads ?? []).length
-              ? <CheckSquare className="w-3.5 h-3.5" style={{ color: T }} />
-              : <Square className="w-3.5 h-3.5" />}
-            {selectedIds.size > 0 ? `${selectedIds.size} selected` : 'Select All'}
+            {selectingAll ? (
+              <>
+                <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                </svg>
+                Selecting…
+              </>
+            ) : selectedIds.size > 0 ? (
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              <><CheckSquare className="w-3.5 h-3.5" style={{ color: T }} />{selectedIds.size} of {(pipelineDetail as any)?.totalLeads ?? selectedIds.size} selected</>
+            ) : (
+              <><Square className="w-3.5 h-3.5" />Select All</>
+            )}
           </button>
 
           {/* New Lead */}
           {resolvedPipelineId && (
             <button onClick={() => setShowAddLead(true)}
-              className="inline-flex items-center gap-2 px-4 py-1.5 rounded-xl text-[13px] font-bold text-white transition-opacity hover:opacity-90"
+              className="inline-flex items-center gap-2 px-3 sm:px-4 py-1.5 rounded-xl text-[13px] font-bold text-white transition-opacity hover:opacity-90 flex-shrink-0"
               style={{ backgroundColor: T, boxShadow: `0 2px 8px ${T}44` }}>
-              <Plus className="w-4 h-4" /> New Lead
+              <Plus className="w-4 h-4" /> <span className="hidden xs:inline">New Lead</span><span className="xs:hidden">Add</span>
             </button>
           )}
 
-          {/* Configure */}
+          {/* Configure — hidden on mobile */}
           <Link href="/admin/pipelines/config"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-colors hover:bg-[#F8FAFC]"
+            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-colors hover:bg-[#F8FAFC] flex-shrink-0"
             style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>
             <SlidersHorizontal className="w-3.5 h-3.5" /> Configure
           </Link>
         </div>
 
-        {/* Row 2: Search + filters */}
+        {/* Row 2: Search + Quick User + Filters button + active chips */}
         <div className="flex items-center gap-2 flex-wrap">
           {/* Search */}
-          <div className="relative">
+          <div className="relative flex-shrink-0">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none" style={{ color: '#94A3B8' }} />
             <input
               value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Search leads…"
               className="pl-9 pr-4 py-2 text-[13px] rounded-xl outline-none transition-shadow focus:ring-2"
-              style={{ border: '1px solid #E2E8F0', width: 210, color: '#0F172A' }}
+              style={{ border: '1px solid #E2E8F0', width: 180, color: '#0F172A' }}
             />
             {search && (
               <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2">
@@ -991,32 +1639,8 @@ export default function PipelinesPage() {
             )}
           </div>
 
-          {/* Status filter */}
-          <div className="relative">
-            <FilterPill icon={Filter} label={filterStatus || 'Status'} active={!!filterStatus} onClick={() => setShowFilters(p => !p)} />
-            {showFilters && (
-              <div className="absolute top-11 left-0 bg-white rounded-2xl shadow-2xl z-20 overflow-hidden min-w-[170px] py-1.5"
-                style={{ border: '1px solid #E2E8F0' }}>
-                <button onClick={() => { setFilterStatus(''); setShowFilters(false); }}
-                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] font-medium hover:bg-[#F8FAFC] transition-colors"
-                  style={{ color: !filterStatus ? T : '#64748B' }}>
-                  All Statuses
-                </button>
-                {Object.keys(STATUS_COLORS).map(s => (
-                  <button key={s} onClick={() => { setFilterStatus(s); setShowFilters(false); }}
-                    className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[13px] font-medium hover:bg-[#F8FAFC] transition-colors text-left"
-                    style={{ color: filterStatus === s ? T : '#64748B' }}>
-                    <span className="w-2 h-2 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: STATUS_COLORS[s]?.text ?? '#94A3B8' }} />
-                    {s}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Owner filter */}
-          <div className="relative inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-semibold transition-all"
+          {/* Quick user select */}
+          <div className="relative inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-semibold transition-all flex-shrink-0"
             style={{
               border: `1px solid ${hasOwnerFilter ? T + '55' : '#E2E8F0'}`,
               backgroundColor: hasOwnerFilter ? T + '0c' : 'white',
@@ -1031,58 +1655,73 @@ export default function PipelinesPage() {
             </select>
           </div>
 
-          {/* Date filter */}
-          <div className="relative">
-            <FilterPill icon={Calendar} label="Date" active={hasDateFilter} onClick={() => setShowDateFilter(p => !p)} />
-            {showDateFilter && (
-              <div className="absolute top-11 left-0 bg-white rounded-2xl shadow-2xl z-20 p-4 space-y-3 min-w-[230px]"
-                style={{ border: '1px solid #E2E8F0' }}>
-                <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: '#94A3B8' }}>Date Range</p>
-                {[['From', filterDateFrom, setFilterDateFrom], ['To', filterDateTo, setFilterDateTo]].map(([lbl, val, setter]) => (
-                  <div key={lbl as string}>
-                    <label className="text-[11px] font-semibold" style={{ color: '#64748B' }}>{lbl as string}</label>
-                    <input type="date" value={val as string} onChange={e => (setter as (v: string) => void)(e.target.value)}
-                      className="w-full text-[13px] rounded-xl px-3 py-2 mt-1 outline-none"
-                      style={{ border: '1px solid #E2E8F0', color: '#0F172A' }} />
-                  </div>
-                ))}
-                <div className="flex gap-2 pt-1">
-                  <button onClick={() => { setFilterDateFrom(''); setFilterDateTo(''); setShowDateFilter(false); }}
-                    className="flex-1 py-2 rounded-xl text-[12px] font-semibold transition-colors hover:bg-[#F8FAFC]"
-                    style={{ border: '1px solid #E2E8F0', color: '#64748B' }}>Clear</button>
-                  <button onClick={() => setShowDateFilter(false)}
-                    className="flex-1 py-2 rounded-xl text-[12px] font-bold text-white"
-                    style={{ backgroundColor: T }}>Apply</button>
-                </div>
-              </div>
+          {/* Filters button with badge */}
+          <button
+            onClick={() => setShowFilterPanel(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-semibold transition-all flex-shrink-0"
+            style={{
+              border: `1px solid ${activeFilterCount > 0 ? T + '55' : '#E2E8F0'}`,
+              backgroundColor: activeFilterCount > 0 ? T + '0c' : 'white',
+              color: activeFilterCount > 0 ? T : '#64748B',
+            }}>
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            Filters
+            {activeFilterCount > 0 && (
+              <span className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-extrabold text-white"
+                style={{ backgroundColor: T }}>
+                {activeFilterCount}
+              </span>
             )}
-          </div>
+          </button>
 
-          {/* Sort */}
-          <div className="relative">
-            <FilterPill icon={ArrowUpDown} label={SORT_LABELS[sortBy]} active={sortBy !== 'newest'} onClick={() => setShowSortMenu(p => !p)} />
-            {showSortMenu && (
-              <div className="absolute top-11 right-0 bg-white rounded-2xl shadow-2xl z-20 overflow-hidden min-w-[160px] py-1.5"
-                style={{ border: '1px solid #E2E8F0' }}>
-                {(['newest', 'oldest', 'name'] as const).map(opt => (
-                  <button key={opt} onClick={() => { setSortBy(opt); setShowSortMenu(false); }}
-                    className="w-full flex items-center justify-between px-4 py-2.5 text-[13px] font-medium hover:bg-[#F8FAFC] transition-colors text-left"
-                    style={{ color: sortBy === opt ? T : '#64748B' }}>
-                    {SORT_LABELS[opt]}
-                    {sortBy === opt && <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: T }} />}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          {/* Active filter chips */}
+          {fStatuses.length > 0 && fStatuses.map(s => (
+            <span key={s} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold"
+              style={{ backgroundColor: STATUS_COLORS[s]?.bg ?? '#F8FAFC', color: STATUS_COLORS[s]?.text ?? '#64748B', border: '1px solid currentColor' }}>
+              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: STATUS_COLORS[s]?.text }} />
+              {s}
+              <button onClick={() => setFStatuses(fStatuses.filter(x => x !== s))} className="ml-0.5 hover:opacity-70">
+                <X className="w-2.5 h-2.5" />
+              </button>
+            </span>
+          ))}
+          {fSources.length > 0 && fSources.map(src => (
+            <span key={src} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold"
+              style={{ backgroundColor: SOURCE_COLORS[src]?.bg ?? '#F8FAFC', color: SOURCE_COLORS[src]?.text ?? '#64748B', border: '1px solid currentColor' }}>
+              {src.replace('_', ' ')}
+              <button onClick={() => setFSources(fSources.filter(x => x !== src))} className="ml-0.5 hover:opacity-70">
+                <X className="w-2.5 h-2.5" />
+              </button>
+            </span>
+          ))}
+          {hasDateFilter && (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold"
+              style={{ backgroundColor: '#F0FDF4', color: '#15803D', border: '1px solid currentColor' }}>
+              <Calendar className="w-2.5 h-2.5" />
+              {filterDateFrom && filterDateTo ? `${filterDateFrom} – ${filterDateTo}` : filterDateFrom || filterDateTo}
+              <button onClick={() => { setFilterDateFrom(''); setFilterDateTo(''); }} className="ml-0.5 hover:opacity-70">
+                <X className="w-2.5 h-2.5" />
+              </button>
+            </span>
+          )}
+          {fDestination && (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold"
+              style={{ backgroundColor: '#F0F9FF', color: '#0369A1', border: '1px solid currentColor' }}>
+              <MapPin className="w-2.5 h-2.5" />
+              {fDestination}
+              <button onClick={() => setFDestination('')} className="ml-0.5 hover:opacity-70">
+                <X className="w-2.5 h-2.5" />
+              </button>
+            </span>
+          )}
 
-          {/* Clear all filters */}
-          {(filterStatus || hasOwnerFilter || hasDateFilter) && (
+          {/* Clear all */}
+          {(activeFilterCount > 0 || hasOwnerFilter) && (
             <button
-              onClick={() => { setFilterStatus(''); setFilterOwner(''); setFilterDateFrom(''); setFilterDateTo(''); }}
-              className="inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-1 rounded-lg transition-colors hover:bg-[#FEF2F2]"
+              onClick={clearAllFilters}
+              className="inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-1 rounded-lg transition-colors hover:bg-[#FEF2F2] flex-shrink-0"
               style={{ color: '#EF4444' }}>
-              <X className="w-3 h-3" /> Clear filters
+              <X className="w-3 h-3" /> Clear all
             </button>
           )}
         </div>
@@ -1097,20 +1736,81 @@ export default function PipelinesPage() {
             onAssign={bulkAssign}
             onDelete={bulkDelete}
             onClear={() => setSelectedIds(new Set())}
+            isDeleting={isDeleting}
           />
         )}
       </div>
 
       {/* ── Kanban Board ────────────────────────────────────────────────── */}
-      <div ref={boardScrollRef} className="flex-1 overflow-x-auto overflow-y-hidden"
-        style={{ background: 'linear-gradient(160deg, #F0F4F8 0%, #EDF1F5 100%)' }}>
-        <div className="flex gap-4 h-full p-5 lg:p-8 min-w-max items-start">
-          {(activePipeline?.stages ?? []).map(stage => {
+
+      {/* Mobile column dots indicator — lg:hidden */}
+      {(activePipeline?.stages ?? []).length > 0 && (
+        <div className="lg:hidden flex items-center justify-center gap-1.5 py-2 flex-shrink-0"
+          style={{ backgroundColor: '#F0F4F8' }}>
+          {(activePipeline?.stages ?? []).map((stage, i) => (
+            <button
+              key={stage.id}
+              onClick={() => {
+                const el = boardScrollRef.current;
+                if (!el) return;
+                const colW = Math.max(240, el.offsetWidth - 40);
+                el.scrollTo({ left: i * (colW + 16), behavior: 'smooth' });
+              }}
+              className="transition-all duration-200"
+              style={{
+                width: i === activeColumnIdx ? 18 : 7,
+                height: 7,
+                borderRadius: 99,
+                backgroundColor: i === activeColumnIdx ? stage.color : '#CBD5E1',
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Mobile stage jump — dropdown to jump to any column */}
+      {(activePipeline?.stages ?? []).length > 1 && (
+        <div className="lg:hidden flex items-center gap-2 px-4 py-2 flex-shrink-0"
+          style={{ backgroundColor: '#F8FAFC', borderBottom: '1px solid #EDF0F4' }}>
+          <span className="text-[11px] font-bold uppercase tracking-wide flex-shrink-0" style={{ color: '#94A3B8' }}>Jump to</span>
+          <div className="flex-1 relative">
+            <select
+              value={activeColumnIdx}
+              onChange={(e) => {
+                const idx = Number(e.target.value);
+                const el = boardScrollRef.current;
+                if (!el) return;
+                const colW = Math.max(240, el.offsetWidth - 40);
+                el.scrollTo({ left: idx * (colW + 16), behavior: 'smooth' });
+              }}
+              className="w-full text-[13px] font-semibold rounded-xl px-3 py-2 outline-none appearance-none cursor-pointer"
+              style={{ border: '1px solid #E2E8F0', color: '#0F172A', backgroundColor: '#fff' }}
+            >
+              {(activePipeline?.stages ?? []).map((stage, i) => (
+                <option key={stage.id} value={i}>
+                  {stage.name} ({apiStageCounts[stage.id] ?? leadsForStage(stage.id).length})
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none" style={{ color: '#94A3B8' }} />
+          </div>
+        </div>
+      )}
+
+      {/* scrollbar-gutter:stable reserves scrollbar space so it never overlaps columns */}
+      <div ref={boardScrollRef} className="kanban-board flex-1 overflow-x-auto overflow-y-hidden"
+        style={{ background: 'linear-gradient(160deg, #F0F4F8 0%, #EDF1F5 100%)', scrollbarGutter: 'stable',
+          overscrollBehaviorX: 'none', scrollSnapType: 'x mandatory' }}>
+        <div className="flex gap-4 h-full min-w-max items-start" style={{ padding: '20px 16px 0 16px' }}>
+          {(activePipeline?.stages ?? []).map((stage, stageIdx) => {
+            const stages     = activePipeline?.stages ?? [];
             const stageLeads = leadsForStage(stage.id);
             return (
               <KanbanColumn
                 key={stage.id} stage={stage}
                 leads={stageLeads}
+                trueCount={apiStageCounts[stage.id]}
+                loading={loadingDetail}
                 onDragStart={handleDragStart}
                 onDrop={handleDrop}
                 onLeadClick={setSelectedLead}
@@ -1123,6 +1823,10 @@ export default function PipelinesPage() {
                 onCall={handleCall}
                 onWhatsAppChat={handleWhatsAppChat}
                 draggingLeadId={mobileDrag?.lead.id ?? null}
+                isDragTarget={mobileDragTargetId === stage.id}
+                onSwipeStage={handleSwipeStage}
+                prevStage={stageIdx > 0 ? stages[stageIdx - 1] : null}
+                nextStage={stageIdx < stages.length - 1 ? stages[stageIdx + 1] : null}
               />
             );
           })}
@@ -1141,7 +1845,7 @@ export default function PipelinesPage() {
         <MoveToSheet
           lead={moveLead}
           stages={activePipeline?.stages ?? []}
-          stageCounts={Object.fromEntries((activePipeline?.stages ?? []).map(s => [s.id, leadsForStage(s.id).length]))}
+          stageCounts={Object.keys(apiStageCounts).length > 0 ? apiStageCounts : Object.fromEntries((activePipeline?.stages ?? []).map(s => [s.id, leadsForStage(s.id).length]))}
           onMove={(stageId) => {
             stageMutation.mutate({ leadId: moveLead.id, stageId });
             setMoveLead(null);
@@ -1153,6 +1857,7 @@ export default function PipelinesPage() {
       {showAddLead && resolvedPipelineId && (
         <AddLeadDrawer
           pipelineId={resolvedPipelineId}
+          users={users}
           onClose={() => setShowAddLead(false)}
           onCreated={() => qc.invalidateQueries({ queryKey: [...QK.pipeline(resolvedPipelineId), filterParams.toString()] })}
         />
@@ -1187,6 +1892,7 @@ export default function PipelinesPage() {
         <LeadDrawer
           leadId={selectedLead.id}
           stages={activePipeline?.stages ?? []}
+          users={users.map(u => ({ id: u.id, name: u.name }))}
           onClose={() => setSelectedLead(null)}
           onUpdated={() => qc.invalidateQueries({ queryKey: [...QK.pipeline(resolvedPipelineId), filterParams.toString()] })}
           callState={callState}
@@ -1296,6 +2002,30 @@ export default function PipelinesPage() {
           onClose={() => setWaPanel(null)}
         />
       )}
+
+      {/* Filter panel (slide-in from right) */}
+      <FilterPanel
+        open={showFilterPanel}
+        onClose={() => setShowFilterPanel(false)}
+        sortBy={sortBy}
+        setSortBy={setSortBy}
+        fStatuses={fStatuses}
+        setFStatuses={setFStatuses}
+        fSources={fSources}
+        setFSources={setFSources}
+        fUserMode={fUserMode}
+        setFUserMode={setFUserMode}
+        fUserIds={fUserIds}
+        setFUserIds={setFUserIds}
+        fDestination={fDestination}
+        setFDestination={setFDestination}
+        filterDateFrom={filterDateFrom}
+        setFilterDateFrom={setFilterDateFrom}
+        filterDateTo={filterDateTo}
+        setFilterDateTo={setFilterDateTo}
+        users={users}
+        onClearAll={clearAllFilters}
+      />
     </div>
   );
 }

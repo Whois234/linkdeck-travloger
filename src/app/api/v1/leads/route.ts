@@ -139,15 +139,20 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Ensure every lead is always assigned to someone.
+  // If the caller didn't pass assigned_agent_id, fall back to the creator (owner).
+  const resolvedAssignedAgentId = rest.assigned_agent_id ?? user.sub;
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const record = await prisma.lead.create({
     data: {
       ...rest,
-      phone:          normalizedPhone,
-      crm_contact_id: crmContactId,
-      owner_id:       user.sub,
-      pipeline_id:    resolvedPipelineId,
-      stage_id:       resolvedStageId,
+      phone:             normalizedPhone,
+      crm_contact_id:    crmContactId,
+      owner_id:          user.sub,
+      assigned_agent_id: resolvedAssignedAgentId,
+      pipeline_id:       resolvedPipelineId,
+      stage_id:          resolvedStageId,
     } as any,
   });
 
