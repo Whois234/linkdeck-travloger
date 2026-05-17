@@ -1387,12 +1387,23 @@ export default function PipelinesPage() {
     // More leads exist than are loaded — fetch ALL ids from the server
     setSelectingAll(true);
     try {
-      // Build query string manually to avoid URLSearchParams constructor compat issues
-      const qs = filterParams.toString();
-      const url = `/api/v1/pipelines/${resolvedPipelineId}?${qs ? qs + '&' : ''}ids_only=1`;
-      const res  = await fetch(url);
-      const json = await res.json() as { success?: boolean; data?: { ids?: string[] } };
-      const ids  = (json.success && json.data?.ids?.length) ? json.data.ids : loadedIds;
+      const qs  = filterParams.toString();
+      // cache: 'no-store' prevents Safari/CDN from serving a stale cached response.
+      // _t param busts any edge-level cache that ignores Cache-Control.
+      const url = `/api/v1/pipelines/${resolvedPipelineId}?${qs ? qs + '&' : ''}ids_only=1&_t=${Date.now()}`;
+      const res  = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json() as { success?: boolean; data?: { ids?: string[]; leads?: { id: string }[] } };
+      let ids: string[];
+      if (json.success && Array.isArray(json.data?.ids) && json.data!.ids!.length > 0) {
+        // Fast-path: server returned just the IDs (new API)
+        ids = json.data!.ids!;
+      } else if (json.success && Array.isArray(json.data?.leads)) {
+        // Fallback: server returned full pipeline (old API without ids_only support)
+        ids = (json.data!.leads as { id: string }[]).map(l => l.id);
+      } else {
+        ids = loadedIds;
+      }
       setSelectedIds(new Set(ids));
     } catch {
       setSelectedIds(new Set(loadedIds));
